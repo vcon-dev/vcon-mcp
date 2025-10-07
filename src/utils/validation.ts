@@ -135,7 +135,7 @@ export class VConValidator {
 
       // Transfer dialogs must have transfer fields
       if (dialog.type === 'transfer') {
-        if (!dialog.transferee || !dialog.transferor || !dialog.transfer_target) {
+        if (dialog.transferee === undefined || dialog.transferor === undefined || dialog.transfer_target === undefined) {
           this.errors.push(`Dialog ${index} is transfer type but missing transfer fields`);
         }
       }

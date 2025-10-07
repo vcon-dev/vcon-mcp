@@ -196,6 +196,13 @@ describe('IETF vCon Spec Compliance', () => {
           dialog.disposition = 'no-answer';
         }
 
+        // Transfer dialogs require transfer fields
+        if (type === 'transfer') {
+          dialog.transferee = 0;
+          dialog.transferor = 0;
+          dialog.transfer_target = 0;
+        }
+
         const vcon: VCon = {
           vcon: '0.3.0',
           uuid: crypto.randomUUID(),
