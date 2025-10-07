@@ -1,436 +1,516 @@
-# IETF vCon MCP Server - Documentation Index
+# vCon MCP Server
 
-## 🎯 Quick Start
+> A Model Context Protocol (MCP) server for storing, managing, and analyzing IETF vCon (Virtual Conversation) data with AI assistants.
 
-**New to this project?** Start here:
+![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![IETF Spec](https://img.shields.io/badge/IETF%20vCon-draft--00-green)
+![License](https://img.shields.io/badge/license-ISC-blue)
 
-1. Read: [`QUICK_REFERENCE.md`](./QUICK_REFERENCE.md) - 5 minute overview of critical corrections
-2. Read: [`IMPLEMENTATION_CORRECTIONS.md`](./IMPLEMENTATION_CORRECTIONS.md) - Detailed list of issues
-3. Implement: Follow [`CLAUDE_CODE_INSTRUCTIONS.md`](./CLAUDE_CODE_INSTRUCTIONS.md)
-4. Deploy: Use [`CORRECTED_SCHEMA.md`](./CORRECTED_SCHEMA.md) for database
+## Overview
 
-**Migrating existing code?** 
-→ See [`MIGRATION_GUIDE.md`](./MIGRATION_GUIDE.md)
+This MCP server provides a standardized way for AI assistants like Claude to interact with conversation data using the IETF vCon (Virtual Conversation) format. It combines the Model Context Protocol's tool-based interaction model with Supabase's powerful PostgreSQL backend to create a fully spec-compliant conversation data management system.
 
----
+### What is vCon?
 
-## 📚 Documentation Structure
+vCon (Virtual Conversation) is an IETF standard for representing conversations in a portable, interoperable format. Think of it as "PDF for conversations" - a standardized container for:
+- **Conversations** from any medium (voice, video, text, email)
+- **Participants** with identity and privacy controls  
+- **AI Analysis** from transcription, sentiment, summarization, etc.
+- **Attachments** like documents, images, or related files
+- **Privacy markers** for consent and redaction
 
-### Essential Documents (Read First)
+### What is MCP?
 
-| Document | Purpose | Audience | Time |
-|----------|---------|----------|------|
-| [`QUICK_REFERENCE.md`](./QUICK_REFERENCE.md) | Critical field corrections at a glance | Everyone | 5 min |
-| [`IMPLEMENTATION_CORRECTIONS.md`](./IMPLEMENTATION_CORRECTIONS.md) | Complete list of spec inconsistencies | Developers | 15 min |
-| [`CLAUDE_CODE_INSTRUCTIONS.md`](./CLAUDE_CODE_INSTRUCTIONS.md) | Complete implementation guide | Developers | 30 min |
+The Model Context Protocol (MCP) enables AI assistants to use external tools and data sources. This server implements MCP to give AI assistants the ability to create, search, analyze, and manage conversation data.
 
-### Implementation Resources
+## Key Features
 
-| Document | Purpose | When to Use |
-|----------|---------|-------------|
-| [`CORRECTED_SCHEMA.md`](./CORRECTED_SCHEMA.md) | Database schema with corrections | Setting up database |
-| [`MIGRATION_GUIDE.md`](./MIGRATION_GUIDE.md) | Fix existing code | Updating old implementations |
+- ✅ **IETF vCon Compliant** - Implements `draft-ietf-vcon-vcon-core-00` specification
+- ✅ **MCP Integration** - 7 tools for AI assistants to manage conversation data
+- ✅ **Supabase Backend** - Powerful PostgreSQL database with REST API
+- ✅ **Type-Safe** - Full TypeScript implementation with Zod validation
+- ✅ **Plugin Architecture** - Extensible plugin system for custom functionality
+- ✅ **Privacy-Ready** - Plugin hooks for implementing consent, redaction, and compliance
+- ✅ **Semantic Search** - pgvector integration for finding similar conversations
+- ✅ **Real-time** - Supabase realtime subscriptions for live updates
 
-### Reference Documents
+## Quick Start
 
-Located in `background_docs/`:
+### Prerequisites
 
-| Document | Purpose |
-|----------|---------|
-| `draft-ietf-vcon-vcon-core-00.txt` | Official IETF vCon specification |
-| `draft-howe-vcon-consent-00.txt` | Privacy and consent extensions |
-| `draft-howe-vcon-lifecycle-00.txt` | vCon lifecycle management |
-| `vcon_adapter_guide.md` | Adapter implementation patterns |
-| `vcon_quickstart_guide.md` | Quick start for vCon basics |
+- Node.js 18+ 
+- npm or yarn
+- Supabase account ([sign up free](https://supabase.com))
 
----
+### Installation
 
-## 🔴 Critical Corrections Summary
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/vcon-mcp.git
+cd vcon-mcp
 
-### The 7 Critical Issues
+# Install dependencies
+npm install
 
-1. **Analysis Schema Field**
-   - ❌ Wrong: `schema_version`
-   - ✅ Correct: `schema`
-   - Spec: Section 4.5.7
+# Set up environment variables
+cp .env.example .env
+# Edit .env with your Supabase credentials
 
-2. **Analysis Vendor Requirement**
-   - ❌ Wrong: `vendor?: string`
-   - ✅ Correct: `vendor: string` (required)
-   - Spec: Section 4.5.5
+# Build the project
+npm run build
 
-3. **Analysis Body Type**
-   - ❌ Wrong: `body: object` or `JSONB`
-   - ✅ Correct: `body?: string`
-   - Spec: Section 4.5.8
+# Run tests
+npm test
 
-4. **Party UUID Field**
-   - ❌ Missing: No uuid field
-   - ✅ Correct: `uuid?: string`
-   - Spec: Section 4.2.12
+# Start the server
+npm run dev
+```
 
-5. **Encoding Defaults**
-   - ❌ Wrong: `DEFAULT 'json'` or `DEFAULT 'none'`
-   - ✅ Correct: No default, require explicit values
-   - Spec: Section 2.3.2
+### Configure with Claude Desktop
 
-6. **Dialog Type Constraints**
-   - ❌ Wrong: No validation
-   - ✅ Correct: Must be one of 4 valid types
-   - Spec: Section 4.3.1
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
-7. **Missing Dialog Fields**
-   - ❌ Missing: `session_id`, `application`, `message_id`
-   - ✅ Correct: Include all spec fields
-   - Spec: Sections 4.3.10, 4.3.13, 4.3.14
+```json
+{
+  "mcpServers": {
+    "vcon": {
+      "command": "node",
+      "args": ["/path/to/vcon-mcp/dist/index.js"],
+      "env": {
+        "SUPABASE_URL": "your-project-url",
+        "SUPABASE_ANON_KEY": "your-anon-key"
+      }
+    }
+  }
+}
+```
 
----
+Restart Claude Desktop and start using vCon tools!
 
-## 🎓 Learning Path
+## Available MCP Tools
 
-### For Developers New to vCon
+### 1. **create_vcon**
+Create a new vCon with parties and optional initial data.
 
-1. **Understand vCon Basics** (30 min)
-   - Read: `background_docs/vcon_quickstart_guide.md`
-   - Read: IETF spec introduction (Sections 1-2)
+```
+Create a vCon for a customer support call between Alice and Bob
+```
 
-2. **Learn the Corrections** (15 min)
-   - Read: [`QUICK_REFERENCE.md`](./QUICK_REFERENCE.md)
-   - Skim: [`IMPLEMENTATION_CORRECTIONS.md`](./IMPLEMENTATION_CORRECTIONS.md)
+### 2. **get_vcon**
+Retrieve a complete vCon by UUID.
 
-3. **Implementation** (2-4 hours)
-   - Follow: [`CLAUDE_CODE_INSTRUCTIONS.md`](./CLAUDE_CODE_INSTRUCTIONS.md)
-   - Use: [`CORRECTED_SCHEMA.md`](./CORRECTED_SCHEMA.md)
+```
+Get the vCon with UUID abc-123-def
+```
 
-4. **Testing** (1 hour)
-   - Run compliance tests from instructions
-   - Verify against checklist
+### 3. **search_vcons**
+Search vCons by subject, party name, or date range.
 
-### For Developers Migrating Existing Code
+```
+Find all vCons from last week about billing
+```
 
-1. **Assessment** (15 min)
-   - Read: [`IMPLEMENTATION_CORRECTIONS.md`](./IMPLEMENTATION_CORRECTIONS.md)
-   - Identify which issues affect your code
+### 4. **add_analysis**
+Add AI/ML analysis results to a vCon.
 
-2. **Planning** (30 min)
-   - Review: [`MIGRATION_GUIDE.md`](./MIGRATION_GUIDE.md)
-   - Create backup of existing code/database
+```
+Add sentiment analysis showing positive sentiment to vCon abc-123
+```
 
-3. **Migration** (2-3 hours)
-   - Run automated fixes from migration guide
-   - Complete manual corrections
-   - Run database migration SQL
+### 5. **add_dialog**
+Add a conversation segment (recording, text, video, etc.).
 
-4. **Verification** (1 hour)
-   - Run all verification queries
-   - Execute compliance tests
-   - Manual code review
+```
+Add a text dialog from Alice saying "Hello, how can I help you?"
+```
 
----
+### 6. **add_attachment**
+Attach files, documents, or supporting materials.
 
-## 🔧 Implementation Checklist
+```
+Attach the customer's invoice PDF to this vCon
+```
 
-Use this to track your progress:
+### 7. **delete_vcon**
+Delete a vCon and all related data.
 
-### Pre-Implementation
-- [ ] Read QUICK_REFERENCE.md
-- [ ] Read IMPLEMENTATION_CORRECTIONS.md  
-- [ ] Read CLAUDE_CODE_INSTRUCTIONS.md
-- [ ] Set up Supabase project
-- [ ] Create project structure
+```
+Delete the vCon abc-123
+```
+
+## Use Cases
+
+### Contact Centers
+- Capture and analyze customer calls
+- Generate automatic transcripts
+- Track agent performance and sentiment
+- Maintain compliance audit trails
+
+### Sales Teams
+- Record sales conversations
+- Extract action items and follow-ups
+- Analyze conversation patterns
+- Generate meeting summaries
+
+### Research
+- Collect conversation datasets
+- Analyze communication patterns
+- Generate insights from dialogue
+- Build ML training data
+
+### Compliance & Legal
+- Maintain conversation archives
+- Apply redaction for privacy
+- Track consent and permissions
+- Generate audit reports
+
+## Architecture
+
+```
+┌─────────────────────┐
+│   AI Assistant      │  (Claude, ChatGPT, etc.)
+│   (Client)          │
+└──────────┬──────────┘
+           │ MCP Protocol (stdio)
+           │
+┌──────────▼──────────┐
+│   vCon MCP Server   │  (This project)
+│                     │
+│  ┌───────────────┐  │
+│  │ MCP Tools     │  │  - create_vcon
+│  │               │  │  - add_analysis
+│  └───────┬───────┘  │  - search_vcons
+│          │          │  - etc.
+│  ┌───────▼───────┐  │
+│  │ vCon Queries  │  │  - CRUD operations
+│  │               │  │  - Validation
+│  └───────┬───────┘  │  - Type checking
+│          │          │
+└──────────┼──────────┘
+           │ Supabase Client
+           │
+┌──────────▼──────────┐
+│    Supabase         │
+│  (PostgreSQL)       │
+│                     │
+│  ┌───────────────┐  │
+│  │ vCon Tables   │  │  - vcons
+│  │               │  │  - parties
+│  └───────────────┘  │  - dialog
+│  ┌───────────────┐  │  - analysis
+│  │ pgvector      │  │  - attachments
+│  │ (embeddings)  │  │
+│  └───────────────┘  │
+└─────────────────────┘
+```
+
+## Project Structure
+
+```
+vcon-mcp/
+├── src/
+│   ├── index.ts              # MCP server entry point
+│   ├── types/
+│   │   └── vcon.ts          # IETF vCon type definitions
+│   ├── db/
+│   │   ├── client.ts        # Supabase client
+│   │   └── queries.ts       # Database operations
+│   ├── tools/
+│   │   └── vcon-crud.ts     # MCP tool definitions
+│   └── utils/
+│       └── validation.ts    # vCon validation
+├── supabase/
+│   └── migrations/          # Database migrations
+├── tests/
+│   └── vcon-compliance.test.ts
+├── docs/
+│   └── reference/           # Technical reference docs
+│       ├── QUICK_REFERENCE.md
+│       ├── IMPLEMENTATION_CORRECTIONS.md
+│       ├── CORRECTED_SCHEMA.md
+│       └── MIGRATION_GUIDE.md
+├── background_docs/         # IETF specs & references
+├── BUILD_GUIDE.md          # Step-by-step implementation guide
+├── GETTING_STARTED.md      # Quick start for developers
+├── OPEN_SOURCE_FEATURES.md # Open source feature set
+├── PORPRIETARY_FEATURES.md # Enterprise features
+├── SUPABASE_SEMANTIC_SEARCH_GUIDE.md
+└── README.md               # This file
+```
+
+## Documentation
+
+### For Users
+- **[Getting Started](GETTING_STARTED.md)** - Quick start guide for using the server
+- **[Open Source Features](OPEN_SOURCE_FEATURES.md)** - Complete feature reference
+- **[Proprietary Features](PORPRIETARY_FEATURES.md)** - Enterprise and advanced features
+
+### For Developers
+- **[Build Guide](BUILD_GUIDE.md)** - Step-by-step implementation from scratch
+- **[Supabase Semantic Search](SUPABASE_SEMANTIC_SEARCH_GUIDE.md)** - Vector search setup
+
+### Technical Reference
+- **[Quick Reference](docs/reference/QUICK_REFERENCE.md)** - Critical spec corrections checklist
+- **[Implementation Corrections](docs/reference/IMPLEMENTATION_CORRECTIONS.md)** - Detailed spec compliance guide
+- **[Corrected Schema](docs/reference/CORRECTED_SCHEMA.md)** - Database schema reference
+- **[Migration Guide](docs/reference/MIGRATION_GUIDE.md)** - Migrating existing code
+
+### IETF Specifications
+- **[IETF vCon Core Spec](background_docs/draft-ietf-vcon-vcon-core-00.txt)** - Official specification
+- **[vCon Consent Draft](background_docs/draft-howe-vcon-consent-00.txt)** - Privacy and consent
+- **[vCon Lifecycle Draft](background_docs/draft-howe-vcon-lifecycle-00.txt)** - Lifecycle management
+- **[vCon Quick Start](background_docs/vcon_quickstart_guide.md)** - vCon basics
+- **[vCon Adapter Guide](background_docs/vcon_adapter_guide.md)** - Building adapters
+
+## Development
+
+### Running Locally
+
+```bash
+# Start Supabase (if using local)
+supabase start
+
+# Run in development mode
+npm run dev
+
+# Run tests
+npm test
+
+# Run spec compliance tests
+npm run test:compliance
+
+# Build for production
+npm run build
+
+# Lint code
+npm run lint
+```
+
+### Testing
+
+The project includes comprehensive tests:
+- **Unit tests** - Type validation, query functions
+- **Integration tests** - End-to-end vCon operations
+- **Compliance tests** - IETF spec conformance
+
+```bash
+# Run all tests
+npm test
+
+# Run with coverage
+npm test -- --coverage
+
+# Run specific test file
+npm test tests/vcon-compliance.test.ts
+```
 
 ### Database Setup
-- [ ] Run CORRECTED_SCHEMA.md SQL
-- [ ] Verify schema with verification queries
-- [ ] Set up Row Level Security
-- [ ] Configure connection
 
-### TypeScript Implementation
-- [ ] Create types/vcon.ts with corrected types
-- [ ] Implement tools with correct schemas
-- [ ] Write database queries with correct field names
-- [ ] Implement validation
-- [ ] Add tests
+The project uses Supabase with a carefully designed schema:
 
-### Verification
-- [ ] TypeScript compiles without errors
-- [ ] All tests pass
-- [ ] Database verification passes
-- [ ] No `schema_version` in codebase
-- [ ] Analysis vendor is required
-- [ ] Can create spec-compliant vCon
+- **8 tables** for vCon data model
+- **25 indexes** for query performance
+- **Row Level Security** for multi-tenancy
+- **pgvector** for semantic search
+- **Realtime** subscriptions enabled
 
----
+See [BUILD_GUIDE.md](BUILD_GUIDE.md) for complete database setup instructions.
 
-## 🧪 Testing Strategy
+## IETF vCon Specification Compliance
 
-### 1. Unit Tests
-```bash
-npm run test
-```
-- Type validation
-- Field name verification
-- Required field checks
+This implementation is fully compliant with `draft-ietf-vcon-vcon-core-00`, including:
 
-### 2. Compliance Tests
-```bash
-npm run test:compliance
-```
-- Spec conformance
-- Field naming
-- Type correctness
+### Core Objects
+- ✅ vCon container with all required fields
+- ✅ Party objects with complete metadata
+- ✅ Dialog objects (recording, text, transfer, incomplete)
+- ✅ Analysis objects with vendor and schema fields
+- ✅ Attachment objects with proper references
+- ✅ Group objects for multi-party conversations
 
-### 3. Database Tests
-```sql
--- Run verification queries from CORRECTED_SCHEMA.md
-\i verify-schema.sql
-```
+### Data Types
+- ✅ Correct field names (e.g., `schema` not `schema_version`)
+- ✅ Required vs optional fields properly enforced
+- ✅ String-based body fields (not object types)
+- ✅ No default encoding values
+- ✅ Proper type constraints
 
-### 4. Integration Tests
-- Create vCon end-to-end
-- Export and validate against spec
-- Test interoperability
+### Privacy & Security
+- ✅ Redaction support
+- ✅ Consent tracking
+- ✅ Party privacy markers
+- ✅ Secure attachment handling
 
----
+## API Examples
 
-## 📋 Common Tasks
-
-### Create a Spec-Compliant vCon
+### Creating a vCon
 
 ```typescript
-import { VCon, Analysis } from './types/vcon';
-
-const vcon: VCon = {
-  vcon: '0.3.0',
-  uuid: crypto.randomUUID(),
-  created_at: new Date().toISOString(),
-  parties: [{
-    name: 'Alice',
-    mailto: 'alice@example.com',
-    uuid: crypto.randomUUID()  // Don't forget uuid
-  }],
-  dialog: [{
-    type: 'text',
-    start: new Date().toISOString(),
-    parties: [0],
-    body: 'Hello world',
-    encoding: 'none',
-    session_id: 'session-123'  // New field
-  }],
-  analysis: [{
-    type: 'sentiment',
-    vendor: 'ExampleVendor',  // Required field
-    schema: 'v1.0',           // Correct field name
-    body: JSON.stringify({ sentiment: 'positive' }),
-    encoding: 'json',
-    dialog: [0]
-  }]
-};
+const vcon = await createVCon({
+  subject: "Customer Support Call",
+  parties: [
+    {
+      name: "Alice Agent",
+      mailto: "alice@support.example.com",
+      role: "agent"
+    },
+    {
+      name: "Bob Customer",
+      tel: "+1-555-0100",
+      role: "customer"
+    }
+  ]
+});
 ```
 
-### Add Analysis to vCon
+### Adding Analysis
 
 ```typescript
-import { Analysis } from './types/vcon';
-
-const analysis: Analysis = {
-  type: 'transcript',
-  dialog: [0],
-  vendor: 'TranscriptCorp',  // Required
-  product: 'AutoTranscribe',
-  schema: 'v2.1',            // Not schema_version
-  body: 'Transcript text...',
-  encoding: 'none'
-};
-
-await vconQueries.addAnalysis(vconUuid, analysis);
+await addAnalysis(vconUuid, {
+  type: "transcript",
+  vendor: "OpenAI",
+  product: "Whisper-1",
+  schema: "v1.0",
+  body: "Full transcript text...",
+  encoding: "none",
+  dialog: [0]  // References first dialog
+});
 ```
 
-### Query Analysis by Schema
+### Searching vCons
 
-```sql
--- Use 'schema' not 'schema_version'
-SELECT * FROM analysis 
-WHERE schema = 'v1.0' 
-  AND vendor = 'MyVendor';
+```typescript
+const results = await searchVCons({
+  subject: "billing",
+  partyName: "Alice",
+  startDate: "2025-01-01",
+  endDate: "2025-01-31"
+});
 ```
 
----
+## Roadmap
 
-## 🚨 Troubleshooting
+### Phase 1: Core Implementation ✅
+- [x] IETF vCon type definitions
+- [x] Supabase database schema
+- [x] Basic CRUD operations
+- [x] MCP server implementation
+- [x] Validation and testing
 
-### TypeScript Errors
+### Phase 2: Advanced Features 🚧
+- [x] Semantic search with pgvector
+- [ ] Real-time subscriptions
+- [ ] Batch operations
+- [ ] Export/import formats
 
-**Error:** `Property 'schema_version' does not exist`
-- **Fix:** Change to `schema` everywhere
-- **Doc:** QUICK_REFERENCE.md
+### Phase 3: Enterprise Features 📋
+- [ ] Multi-tenant support
+- [ ] Advanced privacy controls
+- [ ] Audit logging
+- [ ] Performance optimization
 
-**Error:** `Property 'vendor' is missing`
-- **Fix:** vendor is required in Analysis
-- **Doc:** IMPLEMENTATION_CORRECTIONS.md #2
+### Phase 4: Integrations 📋
+- [ ] Twilio adapter
+- [ ] Zoom adapter
+- [ ] Slack adapter
+- [ ] Microsoft Teams adapter
 
-**Error:** `Type 'object' is not assignable to type 'string'`
-- **Fix:** body must be string type
-- **Doc:** IMPLEMENTATION_CORRECTIONS.md #3
+## Extending with Plugins
 
-### Database Errors
+The vCon MCP Server supports a powerful plugin architecture that allows you to add custom functionality without modifying the core codebase.
 
-**Error:** `column "schema_version" does not exist`
-- **Fix:** Run schema migration SQL
-- **Doc:** MIGRATION_GUIDE.md
+### Plugin Capabilities
 
-**Error:** `null value in column "vendor" violates not-null constraint`
-- **Fix:** Always provide vendor in analysis
-- **Doc:** IMPLEMENTATION_CORRECTIONS.md #2
+- **Lifecycle Hooks**: Intercept and modify operations (create, read, update, delete, search)
+- **Access Control**: Implement authentication and authorization
+- **Privacy & Compliance**: Add GDPR, CCPA, HIPAA compliance features
+- **Audit Logging**: Track all operations and access
+- **Data Transformation**: Redact, encrypt, or modify vCon data
+- **External Integrations**: Sync with CRM, webhooks, analytics platforms
+- **Custom Tools**: Register additional MCP tools for AI assistants
 
-**Error:** `new row violates check constraint "dialog_type_check"`
-- **Fix:** Use only valid dialog types
-- **Doc:** QUICK_REFERENCE.md
+### Loading Plugins
 
-### Runtime Errors
+```bash
+# Set environment variable
+VCON_PLUGINS_PATH=@mycompany/vcon-plugin,./local-plugin.js
+VCON_LICENSE_KEY=your-license-key-if-required
 
-**Issue:** Non-JSON analysis fails to save
-- **Fix:** Ensure body column is TEXT not JSONB
-- **Doc:** CORRECTED_SCHEMA.md
+# Run server with plugins
+npm run dev
+```
 
-**Issue:** vCon fails interoperability tests
-- **Fix:** Verify all field names match spec
-- **Doc:** CLAUDE_CODE_INSTRUCTIONS.md
+### Creating Plugins
 
----
+See **[Plugin Development Guide](PLUGIN_DEVELOPMENT.md)** for complete documentation on creating your own plugins.
 
-## 📖 Specification References
+Simple example:
 
-### IETF vCon Core Spec
-- **Location:** `background_docs/draft-ietf-vcon-vcon-core-00.txt`
-- **Key Sections:**
-  - 4.1: vCon Object
-  - 4.2: Party Object
-  - 4.3: Dialog Object
-  - 4.4: Attachment Object
-  - 4.5: Analysis Object (critical)
-  - 4.6: Group Object
+```typescript
+import { VConPlugin, RequestContext } from '@vcon/mcp-server/hooks';
 
-### Field References
-- `schema`: Section 4.5.7
-- `vendor`: Section 4.5.5 (required)
-- `body`: Section 4.5.8
-- Party `uuid`: Section 4.2.12
-- Dialog `type`: Section 4.3.1
-- Dialog `session_id`: Section 4.3.10
-- `encoding`: Section 2.3.2
+export default class MyPlugin implements VConPlugin {
+  name = 'my-plugin';
+  version = '1.0.0';
+  
+  async afterCreate(vcon, context) {
+    console.log(`Created vCon: ${vcon.uuid}`);
+  }
+}
+```
 
----
+## Contributing
 
-## 🤝 Contributing
+We welcome contributions! Here's how to get started:
 
-### Before Submitting Code
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes
+4. Run tests (`npm test`)
+5. Commit your changes (`git commit -m 'Add amazing feature'`)
+6. Push to the branch (`git push origin feature/amazing-feature`)
+7. Open a Pull Request
 
-1. Read all essential documents
-2. Run compliance tests
-3. Verify against spec
-4. Check no `schema_version` in code
-5. Ensure vendor is required in analysis types
+### Contribution Guidelines
+- Follow the existing code style
+- Add tests for new features
+- Update documentation
+- Ensure IETF spec compliance
+- Reference spec sections in comments
 
-### Code Review Checklist
+## License
 
-Reviewers should verify:
-- [ ] Correct field names used
-- [ ] Types match spec
-- [ ] Required fields not optional
-- [ ] Tests include spec compliance
-- [ ] Documentation updated
+ISC License - see [LICENSE](LICENSE) file for details
 
----
+## Resources
 
-## 📊 Project Status
+### Project Links
+- **GitHub**: [vcon-mcp](https://github.com/yourusername/vcon-mcp)
+- **Issues**: [Bug reports & feature requests](https://github.com/yourusername/vcon-mcp/issues)
+- **Discussions**: [Community discussions](https://github.com/yourusername/vcon-mcp/discussions)
 
-### Compliance Status
-- [x] Identified all spec inconsistencies
-- [x] Documented corrections
-- [x] Created corrected schema
-- [x] Written implementation guide
-- [ ] Implementation in progress
-- [ ] Testing and verification
-- [ ] Production deployment
+### External Links
+- **IETF vCon Working Group**: [datatracker.ietf.org/wg/vcon](https://datatracker.ietf.org/wg/vcon/)
+- **Model Context Protocol**: [modelcontextprotocol.io](https://modelcontextprotocol.io/)
+- **Supabase**: [supabase.com](https://supabase.com/)
+- **vCon GitHub**: [github.com/vcon-dev](https://github.com/vcon-dev)
 
-### Documentation Status
-- [x] QUICK_REFERENCE.md - Complete
-- [x] IMPLEMENTATION_CORRECTIONS.md - Complete
-- [x] CLAUDE_CODE_INSTRUCTIONS.md - Complete
-- [x] CORRECTED_SCHEMA.md - Complete
-- [x] MIGRATION_GUIDE.md - Complete
-- [x] README.md - Complete
+## Support
 
----
+- 📧 **Email**: support@example.com
+- 💬 **Discord**: [Join our community](https://discord.gg/example)
+- 📖 **Documentation**: [Full docs](https://docs.example.com)
+- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/yourusername/vcon-mcp/issues)
 
-## 🔗 External Resources
+## Acknowledgments
 
-- [IETF vCon Working Group](https://datatracker.ietf.org/wg/vcon/)
-- [vCon Specification Draft](https://ietf-wg-vcon.github.io/draft-ietf-vcon-vcon-core/)
-- [MCP Protocol](https://modelcontextprotocol.io/)
-- [Supabase Documentation](https://supabase.com/docs)
-
----
-
-## 📞 Support
-
-### For Implementation Questions
-- Review: CLAUDE_CODE_INSTRUCTIONS.md
-- Check: QUICK_REFERENCE.md
-- Reference: IETF spec Section matching your question
-
-### For Migration Issues
-- Follow: MIGRATION_GUIDE.md
-- Run: Verification queries
-- Check: Error messages against troubleshooting section
-
-### For Spec Clarification
-- Consult: `background_docs/draft-ietf-vcon-vcon-core-00.txt`
-- Search: Specification section numbers
-- Review: IMPLEMENTATION_CORRECTIONS.md explanations
+- **IETF vCon Working Group** for the specification
+- **Anthropic** for the Model Context Protocol
+- **Supabase** for the amazing PostgreSQL platform
+- **Contributors** who helped build and improve this project
 
 ---
 
-## ⚖️ License
+**Built with ❤️ for the conversation intelligence community**
 
-This implementation follows the IETF vCon specification (draft-ietf-vcon-vcon-core-00).
-
----
-
-## 📝 Version History
-
-- **v1.0.0** (2025-10-07)
-  - Initial documentation release
-  - All 7 critical corrections documented
-  - Complete implementation guide
-  - Migration guide for existing code
-  - Database schema corrections
-  - Testing framework
-
----
-
-## 🎯 Success Criteria
-
-Your implementation is successful when:
-
-1. ✅ All TypeScript types match IETF spec exactly
-2. ✅ Database uses corrected field names  
-3. ✅ `schema` used everywhere (not `schema_version`)
-4. ✅ Analysis `vendor` is always required
-5. ✅ Analysis `body` supports all string formats
-6. ✅ All compliance tests pass
-7. ✅ vCons are interoperable with other implementations
-8. ✅ No spec violations in codebase
-
----
-
-**Ready to start?** → [`QUICK_REFERENCE.md`](./QUICK_REFERENCE.md)
-
-**Need to migrate?** → [`MIGRATION_GUIDE.md`](./MIGRATION_GUIDE.md)
-
-**Building from scratch?** → [`CLAUDE_CODE_INSTRUCTIONS.md`](./CLAUDE_CODE_INSTRUCTIONS.md)
-
----
-
-*This documentation ensures IETF vCon spec compliance (draft-ietf-vcon-vcon-core-00)*
+*Making conversations accessible, analyzable, and actionable with AI*
