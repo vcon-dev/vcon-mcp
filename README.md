@@ -32,6 +32,7 @@ The Model Context Protocol (MCP) enables AI assistants to use external tools and
 - ✅ **Plugin Architecture** - Extensible plugin system for custom functionality
 - ✅ **Privacy-Ready** - Plugin hooks for implementing consent, redaction, and compliance
 - ✅ **Semantic Search** - pgvector integration for finding similar conversations
+- ✅ **Hybrid Search & Tags** - Keyword + semantic with tag filters via `attachments` of type `tags`
 - ✅ **Real-time** - Supabase realtime subscriptions for live updates
 
 ## Quick Start
@@ -137,6 +138,48 @@ Delete a vCon and all related data.
 ```
 Delete the vCon abc-123
 ```
+
+### 8. **update_vcon**
+Update top-level vCon metadata (subject, extensions, must_support).
+
+```
+Update vCon 01f3-... with subject "Updated Subject"
+```
+
+### 9. **create_vcon_from_template**
+Create a new vCon from a predefined template (phone_call, chat_conversation, email_thread, video_meeting, custom).
+
+```
+Create a phone_call vCon with two parties and subject "Onboarding"
+```
+
+### 10. **get_schema**
+Get vCon schema (json_schema or typescript).
+
+```
+Get the vCon JSON Schema
+```
+
+### 11. **get_examples**
+Get example vCons (minimal, phone_call, chat, email, video, full_featured) in JSON or YAML.
+
+```
+Show a minimal example vCon as JSON
+```
+
+## Available MCP Resources
+
+The server exposes URI-based resources for direct reads:
+
+- `vcon://uuid/{uuid}` – full vCon JSON
+- `vcon://uuid/{uuid}/metadata` – metadata only
+- `vcon://uuid/{uuid}/parties` – parties array
+- `vcon://uuid/{uuid}/dialog` – dialog array
+- `vcon://uuid/{uuid}/dialog/{index}` – specific dialog
+- `vcon://uuid/{uuid}/attachments` – attachments array
+- `vcon://uuid/{uuid}/attachments/{index}` – specific attachment
+- `vcon://uuid/{uuid}/analysis` – analysis array
+- `vcon://uuid/{uuid}/analysis/{type}` – analysis filtered by type
 
 ## Use Cases
 

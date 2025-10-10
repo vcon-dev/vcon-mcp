@@ -90,6 +90,86 @@ export class VConQueries {
   }
 
   /**
+   * Keyword search via RPC `search_vcons_keyword` with optional tag filters and date range.
+   */
+  async keywordSearch(params: {
+    query: string;
+    startDate?: string;
+    endDate?: string;
+    tags?: Record<string, string>;
+    limit?: number;
+  }): Promise<Array<{
+    vcon_id: string;
+    doc_type: string;
+    ref_index: number | null;
+    rank: number;
+    snippet: string | null;
+  }>> {
+    const { data, error } = await this.supabase.rpc('search_vcons_keyword', {
+      query_text: params.query,
+      start_date: params.startDate ?? null,
+      end_date: params.endDate ?? null,
+      tag_filter: params.tags ?? {},
+      max_results: params.limit ?? 50,
+    });
+    if (error) throw error;
+    return data as any;
+  }
+
+  /**
+   * Semantic search via RPC `search_vcons_semantic`.
+   * Pass a precomputed embedding vector to avoid coupling to an embedding provider here.
+   */
+  async semanticSearch(params: {
+    embedding: number[]; // vector(1536)
+    tags?: Record<string, string>;
+    threshold?: number;
+    limit?: number;
+  }): Promise<Array<{
+    vcon_id: string;
+    content_type: string;
+    content_reference: string | null;
+    content_text: string;
+    similarity: number;
+  }>> {
+    const { data, error } = await this.supabase.rpc('search_vcons_semantic', {
+      query_embedding: params.embedding,
+      tag_filter: params.tags ?? {},
+      match_threshold: params.threshold ?? 0.7,
+      match_count: params.limit ?? 50,
+    });
+    if (error) throw error;
+    return data as any;
+  }
+
+  /**
+   * Hybrid search via RPC `search_vcons_hybrid`.
+   * Provide either or both keyword_query and embedding.
+   */
+  async hybridSearch(params: {
+    keywordQuery?: string;
+    embedding?: number[];
+    tags?: Record<string, string>;
+    semanticWeight?: number; // 0..1
+    limit?: number;
+  }): Promise<Array<{
+    vcon_id: string;
+    combined_score: number;
+    semantic_score: number;
+    keyword_score: number;
+  }>> {
+    const { data, error } = await this.supabase.rpc('search_vcons_hybrid', {
+      keyword_query: params.keywordQuery ?? null,
+      query_embedding: params.embedding ?? null,
+      tag_filter: params.tags ?? {},
+      semantic_weight: params.semanticWeight ?? 0.6,
+      limit_results: params.limit ?? 50,
+    });
+    if (error) throw error;
+    return data as any;
+  }
+
+  /**
    * Add analysis to a vCon
    * ✅ CRITICAL: Uses 'schema' field, NOT 'schema_version'
    * ✅ CRITICAL: 'vendor' is required (NOT NULL)

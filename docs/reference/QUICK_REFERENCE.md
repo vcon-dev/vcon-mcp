@@ -84,6 +84,18 @@ interface Dialog {
 
 ---
 
+### Tags (Search)
+
+Tags are stored as a special attachment within the vCon:
+
+- `type: "tags"`
+- `encoding: "json"`
+- `body: ["key:value", ...]`
+
+Search RPCs (`search_vcons_keyword`, `search_vcons_semantic`, `search_vcons_hybrid`) parse tags from attachments for filtering.
+
+---
+
 ### Encoding Fields
 
 ```typescript

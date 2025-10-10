@@ -96,6 +96,49 @@ Your MCP server is now running in development mode with **4,443 production vCons
 }
 ```
 
+### 8. `update_vcon` - Update metadata
+```typescript
+{
+  "uuid": "002c489d-3eec-4596-bc72-da4eb3b05caa",
+  "updates": { "subject": "Updated Subject" }
+}
+```
+
+### 9. `create_vcon_from_template` - Create from template
+```typescript
+{
+  "template_name": "phone_call",
+  "subject": "Onboarding",
+  "parties": [{ "name": "Agent" }, { "name": "Customer" }]
+}
+```
+
+### 10. `get_schema` - Get vCon schema
+```typescript
+{
+  "format": "json_schema"
+}
+```
+
+### 11. `get_examples` - Get example vCons
+```typescript
+{
+  "example_type": "minimal",
+  "format": "json"
+}
+```
+
+## 🔗 MCP Resources
+
+You can read vCon content via URIs:
+
+- `vcon://uuid/{uuid}`
+- `vcon://uuid/{uuid}/metadata`
+- `vcon://uuid/{uuid}/parties`
+- `vcon://uuid/{uuid}/dialog` and `/dialog/{index}`
+- `vcon://uuid/{uuid}/attachments` and `/attachments/{index}`
+- `vcon://uuid/{uuid}/analysis` and `/analysis/{type}`
+
 ## 🗄️ Database Access
 
 ### Direct PostgreSQL

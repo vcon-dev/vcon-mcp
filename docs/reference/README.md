@@ -65,6 +65,7 @@ This implementation fixes 7 critical issues found in many vCon implementations:
 5. ✅ **Encoding Defaults** - No default values, explicit only
 6. ✅ **Dialog Type Constraints** - Must be one of 4 valid types
 7. ✅ **Dialog New Fields** - Added `session_id`, `application`, `message_id`
+8. ✅ **Tags Storage** - Tags live in an attachment: `type="tags"`, `encoding="json"`, `body=["key:value", ...]`; search derives filters from this
 
 ## IETF Specification
 
@@ -79,6 +80,7 @@ All corrections are based on:
 - **[BUILD_GUIDE.md](../../BUILD_GUIDE.md)** - Complete build instructions
 - **[GETTING_STARTED.md](../../GETTING_STARTED.md)** - User guide
 - **[Background Docs](../background_docs/)** - IETF specifications
+ - **[SUPABASE_SEMANTIC_SEARCH_GUIDE.md](../../SUPABASE_SEMANTIC_SEARCH_GUIDE.md)** - Vector search & hybrid search
 
 ---
 

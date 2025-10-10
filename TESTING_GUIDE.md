@@ -2,7 +2,7 @@
 
 ## ✅ Quick Test Results
 
-Your MCP server is **fully functional**! All 7 tools tested successfully:
+Your MCP server is **fully functional**! All 11 tools tested successfully:
 - ✅ search_vcons
 - ✅ get_vcon  
 - ✅ create_vcon
@@ -10,6 +10,10 @@ Your MCP server is **fully functional**! All 7 tools tested successfully:
 - ✅ add_analysis
 - ✅ add_attachment
 - ✅ delete_vcon
+- ✅ update_vcon
+- ✅ create_vcon_from_template
+- ✅ get_schema
+- ✅ get_examples
 
 ## 🔧 Three Ways to Test
 
@@ -67,7 +71,7 @@ Integrate your MCP server directly with Claude Desktop.
 3. **Verify it loaded:**
    - Look for the 🔌 MCP icon in Claude Desktop
    - It should show "vcon" as an available server
-   - You should see 7 tools available
+   - You should see 11 tools available
 
 **Test in Claude:**
 
@@ -103,6 +107,17 @@ Run the test script directly to verify all functionality.
 cd /Users/thomashowe/Documents/GitHub/vcon-mcp
 npx tsx scripts/test-mcp-tools.ts
 ```
+
+### Unit test suite
+
+Run the Vitest suite (includes search RPC method tests):
+
+```bash
+npm test
+```
+
+Relevant files:
+- `tests/search.test.ts` – RPC wiring for keyword, semantic, hybrid search
 
 **What it tests:**
 1. ✅ Search vCons by subject

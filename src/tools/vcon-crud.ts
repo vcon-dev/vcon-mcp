@@ -403,6 +403,40 @@ export const deleteVConTool = {
   }
 };
 
+/**
+ * Tool: Update vCon (metadata-only)
+ * Updates limited top-level fields. Use specific tools for arrays/components.
+ */
+export const updateVConTool = {
+  name: 'update_vcon',
+  description: 'Update top-level vCon metadata (subject, extensions, must_support). For dialog, analysis, attachments use their specific tools.',
+  inputSchema: {
+    type: 'object' as const,
+    properties: {
+      uuid: {
+        type: 'string',
+        description: 'UUID of the vCon to update',
+        pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      },
+      updates: {
+        type: 'object',
+        description: 'Allowed fields to update',
+        properties: {
+          subject: { type: 'string' },
+          extensions: { type: 'array', items: { type: 'string' } },
+          must_support: { type: 'array', items: { type: 'string' } }
+        }
+      },
+      return_updated: {
+        type: 'boolean',
+        description: 'Return the updated vCon',
+        default: true
+      }
+    },
+    required: ['uuid', 'updates']
+  }
+};
+
 // Export all tools as an array
 export const allTools = [
   createVConTool,
@@ -412,5 +446,6 @@ export const allTools = [
   addDialogTool,
   addAttachmentTool,
   deleteVConTool,
+  updateVConTool,
 ];
 

@@ -227,7 +227,7 @@ def generate_embedding_local(text: str) -> list[float]:
 # ALTER TABLE vcon_embeddings ALTER COLUMN embedding TYPE vector(384);
 ```
 
-### Option C: Batch Processing with Edge Functions
+### Option C: Batch Processing with Edge Functions (Preferred in this repo)
 
 ```typescript
 // Supabase Edge Function for batch embedding
@@ -263,6 +263,8 @@ serve(async (req) => {
   })
 })
 ```
+
+See `docs/INGEST_AND_EMBEDDINGS.md` for the production-ready function (`supabase/functions/embed-vcons/index.ts`), environment variables, and Cron scheduling. This repository standardizes on 384‑dim embeddings to match the migrations and HNSW index.
 
 ---
 
@@ -422,7 +424,7 @@ for result in results:
 
 ## Step 6: Hybrid Search (Semantic + Exact)
 
-### SQL Function for Hybrid Search
+### SQL Function for Hybrid Search with Tags-from-Attachments
 
 ```sql
 CREATE OR REPLACE FUNCTION search_vcons_hybrid(
@@ -443,7 +445,19 @@ RETURNS TABLE (
 ) AS $$
 BEGIN
     RETURN QUERY
-    WITH semantic_results AS (
+    WITH tags_kv AS (
+        SELECT a.vcon_id,
+               split_part(elem, ':', 1) AS key,
+               split_part(elem, ':', 2) AS value
+        FROM attachments a
+        CROSS JOIN LATERAL jsonb_array_elements_text(a.body::jsonb) AS elem
+        WHERE a.type = 'tags' AND a.encoding = 'json'
+    ),
+    tags_agg AS (
+        SELECT vcon_id, jsonb_object_agg(key, value) AS tags
+        FROM tags_kv GROUP BY vcon_id
+    ),
+    semantic_results AS (
         SELECT
             e.vcon_id,
             MAX(1 - (e.embedding <=> query_embedding)) AS semantic_score
@@ -455,35 +469,32 @@ BEGIN
         SELECT
             v.id AS vcon_id,
             ts_rank_cd(
-                to_tsvector('english', COALESCE(v.subject, '') || ' ' || COALESCE((v.metadata->>'content')::text, '')),
+                setweight(to_tsvector('english', COALESCE(v.subject, '')), 'A') ||
+                setweight(to_tsvector('english', COALESCE(d.body, '')), 'C') ||
+                setweight(to_tsvector('english', COALESCE(a.body, '')), 'B'),
                 plainto_tsquery('english', query_text)
             ) AS keyword_score
         FROM vcons v
-        WHERE to_tsvector('english', COALESCE(v.subject, '') || ' ' || COALESCE((v.metadata->>'content')::text, ''))
+        LEFT JOIN dialog d ON d.vcon_id = v.id
+        LEFT JOIN analysis a ON a.vcon_id = v.id
+        WHERE query_text IS NOT NULL
+          AND (setweight(to_tsvector('english', COALESCE(v.subject, '')), 'A') ||
+               setweight(to_tsvector('english', COALESCE(d.body, '')), 'C') ||
+               setweight(to_tsvector('english', COALESCE(a.body, '')), 'B'))
               @@ plainto_tsquery('english', query_text)
-    ),
-    tag_filtered AS (
-        SELECT v.id AS vcon_id
-        FROM vcons v
-        WHERE CASE
-            WHEN jsonb_typeof(tag_filters) = 'object' AND jsonb_object_keys(tag_filters) IS NOT NULL
-            THEN v.tags @> tag_filters
-            ELSE true
-        END
     )
     SELECT
         v.id AS vcon_id,
-        v.subject,
-        v.tags,
         COALESCE(sr.semantic_score, 0) AS semantic_score,
         COALESCE(kr.keyword_score, 0) AS keyword_score,
         (COALESCE(sr.semantic_score, 0) * semantic_weight + 
          COALESCE(kr.keyword_score, 0) * (1 - semantic_weight)) AS combined_score
     FROM vcons v
-    INNER JOIN tag_filtered tf ON v.id = tf.vcon_id
+    LEFT JOIN tags_agg ta ON ta.vcon_id = v.id
     LEFT JOIN semantic_results sr ON v.id = sr.vcon_id
     LEFT JOIN keyword_results kr ON v.id = kr.vcon_id
-    WHERE (sr.semantic_score IS NOT NULL OR kr.keyword_score IS NOT NULL)
+    WHERE (tag_filters = '{}'::jsonb OR (ta.tags IS NOT NULL AND ta.tags @> tag_filters))
+      AND (sr.semantic_score IS NOT NULL OR kr.keyword_score IS NOT NULL)
     ORDER BY combined_score DESC
     LIMIT match_count;
 END;

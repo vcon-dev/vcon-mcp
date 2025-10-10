@@ -287,6 +287,15 @@ The implementation mixes vCon extension fields (like `data_subject_id`, consent 
 - Create separate extension tables for privacy/consent tracking
 - Document which fields are extensions vs. core spec
 
+### 4. Tag Storage and Search
+
+Per `vcon-dev/vcon-lib`, tags are represented as a dedicated attachment rather than a top-level column:
+
+- Attachment with `type="tags"`, `encoding="json"`
+- `body` is an array of strings like `"key:value"`
+
+Search should derive tag filters by parsing this attachment (e.g., in SQL using `jsonb_array_elements_text`), or via a `vcon_tags_mv` materialized view with a GIN index on the aggregated JSONB object for performance.
+
 ---
 
 ## Implementation Priority

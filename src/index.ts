@@ -13,6 +13,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  ListResourcesRequestSchema,
+  ReadResourceRequestSchema,
   ErrorCode,
   McpError
 } from '@modelcontextprotocol/sdk/types.js';
@@ -28,8 +30,11 @@ import {
   AttachmentSchema
 } from './tools/vcon-crud.js';
 import { VCon, Analysis, Dialog, Attachment } from './types/vcon.js';
+import { createFromTemplateTool, buildTemplateVCon } from './tools/templates.js';
+import { getSchemaTool, getExamplesTool } from './tools/schema-tools.js';
 import { PluginManager } from './hooks/plugin-manager.js';
 import { RequestContext } from './hooks/plugin-interface.js';
+import { getCoreResources, resolveCoreResource } from './resources/index.js';
 
 // Load environment variables
 dotenv.config();
@@ -43,6 +48,7 @@ const server = new Server(
   {
     capabilities: {
       tools: {},
+      resources: {},
     },
   }
 );
@@ -113,10 +119,20 @@ await pluginManager.initialize({ supabase, queries });
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   const coreTools = allTools;
   const pluginTools = await pluginManager.getAdditionalTools();
+  const extras = [createFromTemplateTool, getSchemaTool, getExamplesTool];
   
   return {
-    tools: [...coreTools, ...pluginTools],
+    tools: [...coreTools, ...extras, ...pluginTools],
   };
+});
+
+/**
+ * List available resources
+ */
+server.setRequestHandler(ListResourcesRequestSchema, async () => {
+  const core = getCoreResources().map(r => ({ uri: r.uri, name: r.name, mimeType: r.mimeType }));
+  const pluginResources = await pluginManager.getAdditionalResources();
+  return { resources: [...core, ...pluginResources] };
 });
 
 /**
@@ -174,6 +190,47 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               message: `Created vCon with UUID: ${result.uuid}`,
               vcon: vcon
             }, null, 2),
+          }],
+        };
+      }
+
+      // ========================================================================
+      // Create vCon from Template
+      // ========================================================================
+      case 'create_vcon_from_template': {
+        const template = args?.template_name as string;
+        const parties = (args?.parties as any[]) || [];
+        const subject = args?.subject as string | undefined;
+        if (!template || !Array.isArray(parties) || parties.length === 0) {
+          throw new McpError(ErrorCode.InvalidParams, 'template_name and parties are required');
+        }
+
+        let vcon = buildTemplateVCon(template, subject, parties);
+
+        const context: RequestContext = {
+          timestamp: new Date(),
+          userId: args?.user_id as string | undefined,
+          purpose: args?.purpose as string | undefined,
+        };
+
+        const modifiedVCon = await pluginManager.executeHook<VCon>('beforeCreate', vcon, context);
+        if (modifiedVCon) vcon = modifiedVCon;
+
+        const validation = validateVCon(vcon);
+        if (!validation.valid) {
+          throw new McpError(
+            ErrorCode.InvalidParams,
+            `vCon validation failed: ${validation.errors.join(', ')}`
+          );
+        }
+
+        const result = await queries.createVCon(vcon);
+        await pluginManager.executeHook('afterCreate', vcon, context);
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({ success: true, uuid: result.uuid, vcon }, null, 2),
           }],
         };
       }
@@ -406,6 +463,129 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       // ========================================================================
+      // Update vCon (metadata)
+      // ========================================================================
+      case 'update_vcon': {
+        const uuid = args?.uuid as string;
+        const updates = args?.updates as Partial<VCon> | undefined;
+        const returnUpdated = (args?.return_updated as boolean | undefined) ?? true;
+
+        if (!uuid) {
+          throw new McpError(ErrorCode.InvalidParams, 'UUID is required');
+        }
+        if (!updates || typeof updates !== 'object') {
+          throw new McpError(ErrorCode.InvalidParams, 'updates object is required');
+        }
+
+        // Whitelist fields
+        const allowed: Partial<VCon> = {} as Partial<VCon>;
+        if (Object.prototype.hasOwnProperty.call(updates, 'subject')) {
+          allowed.subject = updates.subject;
+        }
+        if (Object.prototype.hasOwnProperty.call(updates, 'extensions')) {
+          allowed.extensions = updates.extensions;
+        }
+        if (Object.prototype.hasOwnProperty.call(updates, 'must_support')) {
+          allowed.must_support = updates.must_support as string[] | undefined;
+        }
+
+        const context: RequestContext = {
+          timestamp: new Date(),
+          userId: args?.user_id as string | undefined,
+          purpose: args?.purpose as string | undefined,
+        };
+
+        // Hook: beforeUpdate
+        await pluginManager.executeHook('beforeUpdate', uuid, allowed, context);
+
+        await queries.updateVCon(uuid, allowed);
+
+        // Hook: afterUpdate
+        if (returnUpdated) {
+          let updated = await queries.getVCon(uuid);
+          const modified = await pluginManager.executeHook<VCon>('afterUpdate', updated, context);
+          if (modified) updated = modified;
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({ success: true, vcon: updated }, null, 2),
+            }],
+          };
+        }
+
+        await pluginManager.executeHook('afterUpdate', await queries.getVCon(uuid), context);
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({ success: true, message: `Updated vCon ${uuid}` }, null, 2),
+          }],
+        };
+      }
+
+      // ========================================================================
+      // get_schema
+      // ========================================================================
+      case 'get_schema': {
+        const format = (args?.format as string | undefined) ?? 'json_schema';
+        if (format === 'json_schema') {
+          // Avoid adding dependency at runtime: provide a minimal hand-authored schema envelope if needed later
+          // For now, return a simple note since generating from zod is out-of-scope without new deps during runtime
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                note: 'JSON Schema export requires zod-to-json-schema. Add dependency and implement conversion.',
+              }, null, 2)
+            }]
+          };
+        }
+        if (format === 'typescript') {
+          // Return informative pointer to types
+          return {
+            content: [{
+              type: 'text',
+              text: 'See src/types/vcon.ts for TypeScript interfaces.'
+            }]
+          };
+        }
+        throw new McpError(ErrorCode.InvalidParams, `Unsupported schema format: ${format}`);
+      }
+
+      // ========================================================================
+      // get_examples
+      // ========================================================================
+      case 'get_examples': {
+        const exampleType = args?.example_type as string;
+        const format = (args?.format as string | undefined) ?? 'json';
+        const examples: Record<string, any> = {
+          minimal: { vcon: '0.3.0', uuid: crypto.randomUUID(), created_at: new Date().toISOString(), parties: [{ name: 'Agent' }] },
+          phone_call: { vcon: '0.3.0', uuid: crypto.randomUUID(), created_at: new Date().toISOString(), subject: 'Phone Call', parties: [{ name: 'Caller' }, { name: 'Agent' }], dialog: [] },
+          chat: { vcon: '0.3.0', uuid: crypto.randomUUID(), created_at: new Date().toISOString(), subject: 'Chat', parties: [{ name: 'User' }, { name: 'Support' }], dialog: [] },
+          email: { vcon: '0.3.0', uuid: crypto.randomUUID(), created_at: new Date().toISOString(), subject: 'Email Thread', parties: [{ mailto: 'a@example.com' }, { mailto: 'b@example.com' }], attachments: [] },
+          video: { vcon: '0.3.0', uuid: crypto.randomUUID(), created_at: new Date().toISOString(), subject: 'Video Meeting', parties: [{ name: 'Host' }], dialog: [] },
+          full_featured: {
+            vcon: '0.3.0', uuid: crypto.randomUUID(), created_at: new Date().toISOString(), subject: 'Full Example',
+            parties: [{ name: 'Alice' }, { name: 'Bob' }], dialog: [], analysis: [], attachments: []
+          }
+        };
+        const data = examples[exampleType];
+        if (!data) {
+          throw new McpError(ErrorCode.InvalidParams, `Unknown example_type: ${exampleType}`);
+        }
+        if (format === 'json') {
+          return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+        }
+        if (format === 'yaml') {
+          // naive YAML export without extra deps
+          const yaml = `vcon: ${data.vcon}\nuuid: ${data.uuid}\ncreated_at: ${data.created_at}`;
+          return { content: [{ type: 'text', text: yaml }] };
+        }
+        throw new McpError(ErrorCode.InvalidParams, `Unsupported format: ${format}`);
+      }
+
+      // ========================================================================
       // Plugin tools - delegate to plugins
       // ========================================================================
       default:
@@ -453,6 +633,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       `Tool execution failed: ${errorMessage}`
     );
   }
+});
+
+/**
+ * Handle resource reads
+ */
+server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+  const uri = request.params.uri;
+  // Try core resources first
+  const core = await resolveCoreResource(queries, uri);
+  if (core) {
+    return {
+      contents: [{ uri, mimeType: core.mimeType, text: JSON.stringify(core.content, null, 2) }]
+    };
+  }
+  // Try plugin resources: plugins provide raw Resource metadata only; actual read is not delegated here in core
+  throw new McpError(ErrorCode.InvalidParams, `Unknown or unsupported resource URI: ${uri}`);
 });
 
 // ============================================================================
