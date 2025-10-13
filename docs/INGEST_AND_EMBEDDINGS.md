@@ -77,6 +77,32 @@ curl -sS "https://<your-project-ref>.functions.supabase.co/embed-vcons?mode=embe
 
 The function responds with a JSON summary: counts for embedded, skipped, and errors.
 
+#### Backfill all unembedded conversations with rate limiting
+
+Use the provided script to process all conversations in batches:
+
+```bash
+# Default: 500 per batch, 2 second delay
+./scripts/backfill-embeddings.sh
+
+# Custom: 200 per batch, 5 second delay (for stricter rate limits)
+./scripts/backfill-embeddings.sh 200 5
+
+# Aggressive: 500 per batch, 0.5 second delay
+./scripts/backfill-embeddings.sh 500 0.5
+```
+
+The script will:
+- Loop through all unembedded text units in batches
+- Respect rate limits with configurable delays between batches
+- Show progress and totals
+- Stop automatically when all embeddings are complete
+
+**OpenAI Rate Limits:**
+- `text-embedding-3-small`: 5,000 requests/min, 5,000,000 tokens/min (Tier 1)
+- At 500 items/batch with 2s delay, you process ~15,000 items/minute
+- Adjust batch size and delay based on your API tier
+
 ---
 
 ### Optional: DB queue + trigger for near‑real‑time embedding

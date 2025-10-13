@@ -96,6 +96,18 @@ async function listMissingTextUnits(limit: number, vconId?: string): Promise<Tex
   return textUnits.slice(0, limit);
 }
 
+// Estimate token count (roughly 1 token per 4 characters for English)
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+// Truncate text to fit within token limit
+function truncateToTokens(text: string, maxTokens: number): string {
+  const maxChars = maxTokens * 4;
+  if (text.length <= maxChars) return text;
+  return text.substring(0, maxChars) + "...";
+}
+
 async function embedOpenAI(texts: string[]): Promise<number[][]> {
   const resp = await fetch("https://api.openai.com/v1/embeddings", {
     method: "POST",
@@ -173,12 +185,62 @@ serve(async (req) => {
       });
     }
 
-    const texts = units.map((u) => u.content_text);
-    const vectors = PROVIDER === "openai" ? await embedOpenAI(texts) : await embedHF(texts);
-    await upsertEmbeddings(units, vectors);
+    // Token-aware batching for OpenAI (max 300k tokens per request, use 250k for safety)
+    const MAX_TOKENS_PER_BATCH = 250000;
+    const MAX_TOKENS_PER_ITEM = 8000; // Truncate individual items if too long
+    
+    let totalEmbedded = 0;
+    let totalErrors = 0;
+    
+    if (PROVIDER === "openai") {
+      // Group units into token-aware batches
+      const batches: TextUnit[][] = [];
+      let currentBatch: TextUnit[] = [];
+      let currentTokens = 0;
+      
+      for (const unit of units) {
+        // Truncate extremely long texts
+        const truncated = truncateToTokens(unit.content_text, MAX_TOKENS_PER_ITEM);
+        const tokens = estimateTokens(truncated);
+        
+        // If adding this unit would exceed batch limit, start a new batch
+        if (currentBatch.length > 0 && currentTokens + tokens > MAX_TOKENS_PER_BATCH) {
+          batches.push(currentBatch);
+          currentBatch = [];
+          currentTokens = 0;
+        }
+        
+        currentBatch.push({ ...unit, content_text: truncated });
+        currentTokens += tokens;
+      }
+      
+      // Add remaining batch
+      if (currentBatch.length > 0) {
+        batches.push(currentBatch);
+      }
+      
+      // Process each batch
+      for (const batch of batches) {
+        try {
+          const texts = batch.map((u) => u.content_text);
+          const vectors = await embedOpenAI(texts);
+          await upsertEmbeddings(batch, vectors);
+          totalEmbedded += batch.length;
+        } catch (e) {
+          console.error(`Batch failed: ${(e as Error).message}`);
+          totalErrors += batch.length;
+        }
+      }
+    } else {
+      // HF processes one at a time anyway
+      const texts = units.map((u) => u.content_text);
+      const vectors = await embedHF(texts);
+      await upsertEmbeddings(units, vectors);
+      totalEmbedded = units.length;
+    }
 
     return new Response(
-      JSON.stringify({ embedded: units.length, skipped: 0, errors: 0 }),
+      JSON.stringify({ embedded: totalEmbedded, skipped: 0, errors: totalErrors }),
       { headers: { "Content-Type": "application/json" } }
     );
   } catch (e) {
