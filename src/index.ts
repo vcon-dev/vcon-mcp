@@ -32,9 +32,11 @@ import {
 import { VCon, Analysis, Dialog, Attachment } from './types/vcon.js';
 import { createFromTemplateTool, buildTemplateVCon } from './tools/templates.js';
 import { getSchemaTool, getExamplesTool } from './tools/schema-tools.js';
+import { allDatabaseTools } from './tools/database-tools.js';
 import { PluginManager } from './hooks/plugin-manager.js';
 import { RequestContext } from './hooks/plugin-interface.js';
 import { getCoreResources, resolveCoreResource } from './resources/index.js';
+import { DatabaseInspector } from './db/database-inspector.js';
 
 // Load environment variables
 dotenv.config();
@@ -55,11 +57,13 @@ const server = new Server(
 
 // Initialize database
 let queries: VConQueries;
+let dbInspector: DatabaseInspector;
 let supabase: any;
 
 try {
   supabase = getSupabaseClient();
   queries = new VConQueries(supabase);
+  dbInspector = new DatabaseInspector(supabase);
   console.error('✅ Database client initialized');
 } catch (error) {
   console.error('❌ Failed to initialize database:', error);
@@ -122,7 +126,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   const extras = [createFromTemplateTool, getSchemaTool, getExamplesTool];
   
   return {
-    tools: [...coreTools, ...extras, ...pluginTools],
+    tools: [...coreTools, ...extras, ...allDatabaseTools, ...pluginTools],
   };
 });
 
@@ -307,6 +311,136 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               success: true,
               count: results.length,
               vcons: results
+            }, null, 2),
+          }],
+        };
+      }
+
+      // ========================================================================
+      // Search vCon Content (Keyword)
+      // ========================================================================
+      case 'search_vcons_content': {
+        const query = args?.query as string;
+        if (!query) {
+          throw new McpError(ErrorCode.InvalidParams, 'query is required');
+        }
+
+        const results = await queries.keywordSearch({
+          query,
+          startDate: args?.start_date as string | undefined,
+          endDate: args?.end_date as string | undefined,
+          tags: args?.tags as Record<string, string> | undefined,
+          limit: (args?.limit as number | undefined) || 50,
+        });
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              count: results.length,
+              results: results.map(r => ({
+                vcon_id: r.vcon_id,
+                content_type: r.doc_type,
+                content_index: r.ref_index,
+                relevance_score: r.rank,
+                snippet: r.snippet
+              }))
+            }, null, 2),
+          }],
+        };
+      }
+
+      // ========================================================================
+      // Search vCons Semantic
+      // ========================================================================
+      case 'search_vcons_semantic': {
+        let embedding = args?.embedding as number[] | undefined;
+        const query = args?.query as string | undefined;
+
+        // If no embedding provided but query is, generate embedding
+        if (!embedding && query) {
+          // For now, require pre-computed embeddings
+          throw new McpError(
+            ErrorCode.InvalidParams,
+            'Embedding generation not yet implemented. Please provide a pre-computed embedding vector (384 dimensions) or use search_vcons_content for keyword search.'
+          );
+        }
+
+        if (!embedding) {
+          throw new McpError(ErrorCode.InvalidParams, 'Either embedding or query is required');
+        }
+
+        if (embedding.length !== 384) {
+          throw new McpError(ErrorCode.InvalidParams, 'Embedding must be 384 dimensions');
+        }
+
+        const results = await queries.semanticSearch({
+          embedding,
+          tags: args?.tags as Record<string, string> | undefined,
+          threshold: (args?.threshold as number | undefined) || 0.7,
+          limit: (args?.limit as number | undefined) || 50,
+        });
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              count: results.length,
+              results: results.map(r => ({
+                vcon_id: r.vcon_id,
+                content_type: r.content_type,
+                content_reference: r.content_reference,
+                content_text: r.content_text,
+                similarity_score: r.similarity
+              }))
+            }, null, 2),
+          }],
+        };
+      }
+
+      // ========================================================================
+      // Search vCons Hybrid
+      // ========================================================================
+      case 'search_vcons_hybrid': {
+        const query = args?.query as string;
+        let embedding = args?.embedding as number[] | undefined;
+
+        if (!query) {
+          throw new McpError(ErrorCode.InvalidParams, 'query is required');
+        }
+
+        // If embedding provided but wrong size, reject
+        if (embedding && embedding.length !== 384) {
+          throw new McpError(ErrorCode.InvalidParams, 'Embedding must be 384 dimensions');
+        }
+
+        // If no embedding provided, use keyword-only search
+        if (!embedding) {
+          console.error('⚠️  No embedding provided for hybrid search, falling back to keyword-only');
+        }
+
+        const results = await queries.hybridSearch({
+          keywordQuery: query,
+          embedding: embedding,
+          tags: args?.tags as Record<string, string> | undefined,
+          semanticWeight: (args?.semantic_weight as number | undefined) || 0.6,
+          limit: (args?.limit as number | undefined) || 50,
+        });
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              count: results.length,
+              results: results.map(r => ({
+                vcon_id: r.vcon_id,
+                combined_score: r.combined_score,
+                semantic_score: r.semantic_score,
+                keyword_score: r.keyword_score
+              }))
             }, null, 2),
           }],
         };
@@ -519,6 +653,84 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [{
             type: 'text',
             text: JSON.stringify({ success: true, message: `Updated vCon ${uuid}` }, null, 2),
+          }],
+        };
+      }
+
+      // ========================================================================
+      // Get Database Shape
+      // ========================================================================
+      case 'get_database_shape': {
+        const includeCounts = (args?.include_counts as boolean | undefined) ?? true;
+        const includeSizes = (args?.include_sizes as boolean | undefined) ?? true;
+        const includeIndexes = (args?.include_indexes as boolean | undefined) ?? true;
+        const includeColumns = (args?.include_columns as boolean | undefined) ?? false;
+
+        const shape = await dbInspector.getDatabaseShape({
+          includeCounts,
+          includeSizes,
+          includeIndexes,
+          includeColumns,
+        });
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              database_shape: shape
+            }, null, 2),
+          }],
+        };
+      }
+
+      // ========================================================================
+      // Get Database Stats
+      // ========================================================================
+      case 'get_database_stats': {
+        const includeQueryStats = (args?.include_query_stats as boolean | undefined) ?? true;
+        const includeIndexUsage = (args?.include_index_usage as boolean | undefined) ?? true;
+        const includeCacheStats = (args?.include_cache_stats as boolean | undefined) ?? true;
+        const tableName = args?.table_name as string | undefined;
+
+        const stats = await dbInspector.getDatabaseStats({
+          includeQueryStats,
+          includeIndexUsage,
+          includeCacheStats,
+          tableName,
+        });
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              database_stats: stats
+            }, null, 2),
+          }],
+        };
+      }
+
+      // ========================================================================
+      // Analyze Query
+      // ========================================================================
+      case 'analyze_query': {
+        const query = args?.query as string;
+        const analyzeMode = (args?.analyze_mode as 'explain' | 'explain_analyze' | undefined) || 'explain';
+
+        if (!query) {
+          throw new McpError(ErrorCode.InvalidParams, 'query is required');
+        }
+
+        const analysis = await dbInspector.analyzeQuery(query, analyzeMode);
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              query_analysis: analysis
+            }, null, 2),
           }],
         };
       }

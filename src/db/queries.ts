@@ -121,7 +121,7 @@ export class VConQueries {
    * Pass a precomputed embedding vector to avoid coupling to an embedding provider here.
    */
   async semanticSearch(params: {
-    embedding: number[]; // vector(1536)
+    embedding: number[]; // vector(384)
     tags?: Record<string, string>;
     threshold?: number;
     limit?: number;

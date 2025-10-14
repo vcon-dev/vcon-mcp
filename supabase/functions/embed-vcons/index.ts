@@ -57,7 +57,7 @@ async function listMissingTextUnits(limit: number, vconId?: string): Promise<Tex
     LIMIT :limit
   `;
 
-  // Gather analysis bodies
+  // Gather analysis bodies - prioritize encoding='none' which contains text-based analysis
   const analysisSql = `
     SELECT a.vcon_id,
            'analysis'::text as content_type,
@@ -67,8 +67,12 @@ async function listMissingTextUnits(limit: number, vconId?: string): Promise<Tex
     LEFT JOIN vcon_embeddings e
       ON e.vcon_id = a.vcon_id AND e.content_type = 'analysis' AND e.content_reference = a.analysis_index::text
     WHERE a.body IS NOT NULL AND a.body <> ''
+      AND (a.encoding = 'none' OR a.encoding IS NULL)
       AND e.id IS NULL
       ${vconId ? "AND a.vcon_id = :vcon_id" : ""}
+    ORDER BY 
+      CASE WHEN a.encoding = 'none' THEN 0 ELSE 1 END,
+      a.vcon_id
     LIMIT :limit
   `;
 

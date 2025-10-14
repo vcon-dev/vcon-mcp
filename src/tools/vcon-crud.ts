@@ -167,7 +167,8 @@ export const getVConTool = {
  */
 export const searchVConsTool = {
   name: 'search_vcons',
-  description: 'Search for vCons using various criteria. Returns an array of matching vCons.',
+  description: 'Search for vCons using various criteria. Returns an array of matching vCons. ' +
+    'For full-text or semantic search of conversation content, use search_vcons_content instead.',
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -202,6 +203,130 @@ export const searchVConsTool = {
         maximum: 100
       }
     }
+  }
+};
+
+/**
+ * Tool: Search vCon Content (Keyword Search)
+ * Searches through subject, dialog, analysis, and party information using full-text search
+ */
+export const searchVConsContentTool = {
+  name: 'search_vcons_content',
+  description: 'Full-text keyword search across vCon content including subject, dialog, analysis, and party info. ' +
+    'Searches through conversation text, analysis bodies, and participant details. Returns ranked results with snippets.',
+  inputSchema: {
+    type: 'object' as const,
+    properties: {
+      query: {
+        type: 'string',
+        description: 'Search query text (supports partial matches and typos)'
+      },
+      start_date: {
+        type: 'string',
+        description: 'Filter by vCons created on or after this date (ISO 8601 format)'
+      },
+      end_date: {
+        type: 'string',
+        description: 'Filter by vCons created on or before this date (ISO 8601 format)'
+      },
+      tags: {
+        type: 'object',
+        description: 'Filter by tags (key-value pairs). Example: {"department": "sales", "priority": "high"}',
+        additionalProperties: { type: 'string' }
+      },
+      limit: {
+        type: 'number',
+        description: 'Maximum number of results to return (default: 50)',
+        minimum: 1,
+        maximum: 100
+      }
+    },
+    required: ['query']
+  }
+};
+
+/**
+ * Tool: Semantic Search vCons
+ * Searches using AI embeddings for meaning-based similarity
+ */
+export const searchVConsSemanticTool = {
+  name: 'search_vcons_semantic',
+  description: 'Semantic search using AI embeddings to find conversations by meaning, not just keywords. ' +
+    'Searches through subject, dialog, and analysis content. Returns similar conversations based on semantic similarity. ' +
+    'Note: Requires embeddings to be generated for vCons (see embedding documentation).',
+  inputSchema: {
+    type: 'object' as const,
+    properties: {
+      query: {
+        type: 'string',
+        description: 'Search query describing what you are looking for'
+      },
+      embedding: {
+        type: 'array',
+        description: 'Pre-computed embedding vector (384 dimensions). If not provided, will be generated from query.',
+        items: { type: 'number' }
+      },
+      tags: {
+        type: 'object',
+        description: 'Filter by tags (key-value pairs)',
+        additionalProperties: { type: 'string' }
+      },
+      threshold: {
+        type: 'number',
+        description: 'Minimum similarity threshold (0-1, default: 0.7)',
+        minimum: 0,
+        maximum: 1
+      },
+      limit: {
+        type: 'number',
+        description: 'Maximum number of results to return (default: 50)',
+        minimum: 1,
+        maximum: 100
+      }
+    }
+  }
+};
+
+/**
+ * Tool: Hybrid Search vCons
+ * Combines keyword and semantic search for best results
+ */
+export const searchVConsHybridTool = {
+  name: 'search_vcons_hybrid',
+  description: 'Hybrid search combining keyword and semantic search for comprehensive results. ' +
+    'Uses both full-text matching and AI embeddings to find relevant conversations. ' +
+    'Ideal for complex queries where you want both exact matches and conceptually similar content.',
+  inputSchema: {
+    type: 'object' as const,
+    properties: {
+      query: {
+        type: 'string',
+        description: 'Search query text'
+      },
+      embedding: {
+        type: 'array',
+        description: 'Pre-computed embedding vector (384 dimensions). If not provided, will be generated from query.',
+        items: { type: 'number' }
+      },
+      tags: {
+        type: 'object',
+        description: 'Filter by tags (key-value pairs)',
+        additionalProperties: { type: 'string' }
+      },
+      semantic_weight: {
+        type: 'number',
+        description: 'Weight for semantic vs keyword (0-1, default: 0.6). Higher values favor semantic matching.',
+        minimum: 0,
+        maximum: 1
+      },
+      limit: {
+        type: 'number',
+        description: 'Maximum number of results to return (default: 50)',
+        minimum: 1,
+        maximum: 100
+      }
+    },
+    required: ['query']
   }
 };
 
@@ -442,6 +567,9 @@ export const allTools = [
   createVConTool,
   getVConTool,
   searchVConsTool,
+  searchVConsContentTool,
+  searchVConsSemanticTool,
+  searchVConsHybridTool,
   addAnalysisTool,
   addDialogTool,
   addAttachmentTool,

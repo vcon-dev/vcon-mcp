@@ -49,6 +49,15 @@ Notes:
 
 This repo uses a 384‑dimension embedding setup to match the migrations and HNSW index. The Edge Function batches any missing embeddings and supports on‑demand embedding for a specific `vcon_id`.
 
+#### Embedding Strategy
+
+The embedding system generates vectors for three types of content:
+1. **Subject**: The vCon subject line
+2. **Dialog**: Text from dialog entries (conversations, transcripts)
+3. **Analysis**: Analysis bodies with `encoding='none'` or `NULL`
+
+Analysis elements with `encoding='none'` are prioritized because they contain plain text analysis results (summaries, sentiment, transcripts) that are ideal for semantic search. Analysis with `encoding='base64url'` or `encoding='json'` are excluded as they typically contain structured data or binary content that doesn't benefit from text embeddings.
+
 Environment variables for the Edge Function (set in the Supabase project):
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`

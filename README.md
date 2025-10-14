@@ -31,8 +31,13 @@ The Model Context Protocol (MCP) enables AI assistants to use external tools and
 - ✅ **Type-Safe** - Full TypeScript implementation with Zod validation
 - ✅ **Plugin Architecture** - Extensible plugin system for custom functionality
 - ✅ **Privacy-Ready** - Plugin hooks for implementing consent, redaction, and compliance
-- ✅ **Semantic Search** - pgvector integration for finding similar conversations
-- ✅ **Hybrid Search & Tags** - Keyword + semantic with tag filters via `attachments` of type `tags`
+- ✅ **Advanced Search** - Four search tools for different use cases:
+  - Basic filtering (subject, parties, dates)
+  - Full-text keyword search (dialog, analysis, parties)
+  - Semantic search (AI embeddings for meaning-based search)
+  - Hybrid search (combines keyword and semantic)
+- ✅ **Tag Filtering** - Filter search results by tags via `attachments` of type `tags`
+- ✅ **Content Indexing** - Searches dialog bodies and analysis content (encoding='none')
 - ✅ **Real-time** - Supabase realtime subscriptions for live updates
 
 ## Quick Start
@@ -105,10 +110,31 @@ Get the vCon with UUID abc-123-def
 ```
 
 ### 3. **search_vcons**
-Search vCons by subject, party name, or date range.
+Search vCons by subject, party name, or date range (basic filtering).
 
 ```
 Find all vCons from last week about billing
+```
+
+### 3a. **search_vcons_content**
+Full-text keyword search across dialog, analysis, and party content.
+
+```
+Search for conversations mentioning "refund request"
+```
+
+### 3b. **search_vcons_semantic**
+AI-powered semantic search to find conversations by meaning (requires embeddings).
+
+```
+Find conversations where customers were frustrated with delivery times
+```
+
+### 3c. **search_vcons_hybrid**
+Combined keyword and semantic search for comprehensive results.
+
+```
+Search for billing disputes using both exact matches and similar concepts
 ```
 
 ### 4. **add_analysis**
@@ -162,6 +188,17 @@ Get the vCon JSON Schema
 
 ### 11. **get_examples**
 Get example vCons (minimal, phone_call, chat, email, video, full_featured) in JSON or YAML.
+
+## Database Inspection Tools
+
+### 12. **get_database_shape**
+Get comprehensive database structure information including tables, indexes, sizes, and relationships. Useful for debugging and understanding your database schema.
+
+### 13. **get_database_stats**
+Get database performance and usage statistics including cache hit ratios, table access patterns, and index usage. Essential for performance monitoring and optimization.
+
+### 14. **analyze_query**
+Analyze SQL query execution plans for performance optimization (limited support).
 
 ```
 Show a minimal example vCon as JSON

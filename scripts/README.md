@@ -26,8 +26,26 @@ Features:
 
 ## Embeddings
 
+### `generate-embeddings-v2.ts`
+Generate embeddings locally using OpenAI API. Processes subject lines, dialog text, and analysis with `encoding='none'`.
+
+```bash
+# Process 100 text units per batch with 2s delay
+npx tsx scripts/generate-embeddings-v2.ts 100 2
+
+# Process 200 per batch with 5s delay
+npx tsx scripts/generate-embeddings-v2.ts 200 5
+```
+
+Features:
+- Filters for text-based analysis (`encoding='none'`)
+- Prioritizes encoding='none' content
+- Token-aware batching
+- Automatic retry with fallback to individual items
+- Progress reporting
+
 ### `backfill-embeddings.sh`
-Process all unembedded conversations in batches with rate limiting.
+Process all unembedded conversations in batches with rate limiting using the Supabase Edge Function.
 
 ```bash
 # Default settings (500/batch, 2s delay)
@@ -66,6 +84,36 @@ Recommended settings by tier:
 - **Tier 1**: `500 2` (500/batch, 2s delay) = ~15k items/min
 - **Tier 2**: `500 1` (500/batch, 1s delay) = ~30k items/min  
 - **Free tier**: `100 10` (100/batch, 10s delay) = ~600 items/min
+
+### `check-embedding-coverage.sql`
+Check which analysis encodings have embeddings and coverage statistics.
+
+```bash
+psql $DATABASE_URL -f scripts/check-embedding-coverage.sql
+```
+
+Shows:
+- Analysis encoding distribution
+- Embedding coverage by encoding type
+- Count of embeddings for non-text encodings
+- Sample of analysis types and encodings
+
+### `cleanup-non-text-embeddings.sql`
+Optionally remove embeddings for analysis with `encoding='base64url'` or `encoding='json'`.
+
+```bash
+# Review what would be deleted (safe, read-only)
+psql $DATABASE_URL -f scripts/cleanup-non-text-embeddings.sql
+```
+
+**Warning:** This permanently deletes data. Review the preview queries first before uncommenting the DELETE statement.
+
+### `test-semantic-search.ts`
+Test semantic search functionality with sample queries.
+
+```bash
+npx tsx scripts/test-semantic-search.ts
+```
 
 ## Testing
 
