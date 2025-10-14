@@ -33,6 +33,7 @@ import { VCon, Analysis, Dialog, Attachment } from './types/vcon.js';
 import { createFromTemplateTool, buildTemplateVCon } from './tools/templates.js';
 import { getSchemaTool, getExamplesTool } from './tools/schema-tools.js';
 import { allDatabaseTools } from './tools/database-tools.js';
+import { allTagTools } from './tools/tag-tools.js';
 import { PluginManager } from './hooks/plugin-manager.js';
 import { RequestContext } from './hooks/plugin-interface.js';
 import { getCoreResources, resolveCoreResource } from './resources/index.js';
@@ -126,7 +127,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   const extras = [createFromTemplateTool, getSchemaTool, getExamplesTool];
   
   return {
-    tools: [...coreTools, ...extras, ...allDatabaseTools, ...pluginTools],
+    tools: [...coreTools, ...extras, ...allDatabaseTools, ...allTagTools, ...pluginTools],
   };
 });
 
@@ -730,6 +731,227 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             text: JSON.stringify({
               success: true,
               query_analysis: analysis
+            }, null, 2),
+          }],
+        };
+      }
+
+      // ========================================================================
+      // Add Tag
+      // ========================================================================
+      case 'add_tag': {
+        const vconUuid = args?.vcon_uuid as string;
+        const key = args?.key as string;
+        const value = args?.value;
+        const overwrite = (args?.overwrite as boolean | undefined) ?? true;
+
+        if (!vconUuid || !key || value === undefined || value === null) {
+          throw new McpError(ErrorCode.InvalidParams, 'vcon_uuid, key, and value are required');
+        }
+
+        await queries.addTag(vconUuid, key, value as string | number | boolean, overwrite);
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              message: `Tag '${key}' ${overwrite ? 'set' : 'added'} on vCon ${vconUuid}`,
+              key: key,
+              value: String(value)
+            }, null, 2),
+          }],
+        };
+      }
+
+      // ========================================================================
+      // Get Tag
+      // ========================================================================
+      case 'get_tag': {
+        const vconUuid = args?.vcon_uuid as string;
+        const key = args?.key as string;
+        const defaultValue = args?.default_value;
+
+        if (!vconUuid || !key) {
+          throw new McpError(ErrorCode.InvalidParams, 'vcon_uuid and key are required');
+        }
+
+        const value = await queries.getTag(vconUuid, key, defaultValue);
+        const exists = value !== defaultValue;
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              key: key,
+              value: value,
+              exists: exists
+            }, null, 2),
+          }],
+        };
+      }
+
+      // ========================================================================
+      // Get All Tags
+      // ========================================================================
+      case 'get_all_tags': {
+        const vconUuid = args?.vcon_uuid as string;
+
+        if (!vconUuid) {
+          throw new McpError(ErrorCode.InvalidParams, 'vcon_uuid is required');
+        }
+
+        const tags = await queries.getTags(vconUuid);
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              vcon_uuid: vconUuid,
+              tags: tags,
+              count: Object.keys(tags).length
+            }, null, 2),
+          }],
+        };
+      }
+
+      // ========================================================================
+      // Remove Tag
+      // ========================================================================
+      case 'remove_tag': {
+        const vconUuid = args?.vcon_uuid as string;
+        const key = args?.key as string;
+
+        if (!vconUuid || !key) {
+          throw new McpError(ErrorCode.InvalidParams, 'vcon_uuid and key are required');
+        }
+
+        await queries.removeTag(vconUuid, key);
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              message: `Tag '${key}' removed from vCon ${vconUuid}`
+            }, null, 2),
+          }],
+        };
+      }
+
+      // ========================================================================
+      // Update Tags
+      // ========================================================================
+      case 'update_tags': {
+        const vconUuid = args?.vcon_uuid as string;
+        const tags = args?.tags as Record<string, string | number | boolean>;
+        const merge = (args?.merge as boolean | undefined) ?? true;
+
+        if (!vconUuid || !tags || typeof tags !== 'object') {
+          throw new McpError(ErrorCode.InvalidParams, 'vcon_uuid and tags object are required');
+        }
+
+        await queries.updateTags(vconUuid, tags, merge);
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              message: `Tags ${merge ? 'merged' : 'replaced'} on vCon ${vconUuid}`,
+              tags: tags
+            }, null, 2),
+          }],
+        };
+      }
+
+      // ========================================================================
+      // Remove All Tags
+      // ========================================================================
+      case 'remove_all_tags': {
+        const vconUuid = args?.vcon_uuid as string;
+
+        if (!vconUuid) {
+          throw new McpError(ErrorCode.InvalidParams, 'vcon_uuid is required');
+        }
+
+        await queries.removeAllTags(vconUuid);
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              message: `All tags removed from vCon ${vconUuid}`
+            }, null, 2),
+          }],
+        };
+      }
+
+      // ========================================================================
+      // Search by Tags
+      // ========================================================================
+      case 'search_by_tags': {
+        const tags = args?.tags as Record<string, string>;
+        const limit = (args?.limit as number | undefined) || 50;
+
+        if (!tags || typeof tags !== 'object' || Object.keys(tags).length === 0) {
+          throw new McpError(ErrorCode.InvalidParams, 'tags object with at least one key-value pair is required');
+        }
+
+        const vconUuids = await queries.searchByTags(tags, limit);
+
+        // Optionally fetch full vCons
+        const fullVCons = await Promise.all(
+          vconUuids.slice(0, limit).map(uuid => queries.getVCon(uuid))
+        );
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              count: vconUuids.length,
+              tags_searched: tags,
+              vcon_uuids: vconUuids,
+              vcons: fullVCons
+            }, null, 2),
+          }],
+        };
+      }
+
+      // ========================================================================
+      // Get Unique Tags
+      // ========================================================================
+      case 'get_unique_tags': {
+        const includeCounts = (args?.include_counts as boolean | undefined) ?? false;
+        const keyFilter = args?.key_filter as string | undefined;
+        const minCount = (args?.min_count as number | undefined) ?? 1;
+
+        const result = await queries.getUniqueTags({
+          includeCounts,
+          keyFilter,
+          minCount
+        });
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              unique_keys: result.keys,
+              unique_key_count: result.keys.length,
+              tags_by_key: result.tagsByKey,
+              counts_per_value: result.countsPerValue,
+              total_vcons_with_tags: result.totalVCons,
+              summary: {
+                total_unique_keys: result.keys.length,
+                total_vcons: result.totalVCons,
+                filter_applied: keyFilter ? true : false,
+                min_count_filter: minCount
+              }
             }, null, 2),
           }],
         };

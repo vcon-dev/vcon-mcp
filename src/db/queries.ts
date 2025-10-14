@@ -565,5 +565,367 @@ export class VConQueries {
 
     if (error) throw error;
   }
+
+  // ============================================================================
+  // Tag Management Methods
+  // ============================================================================
+
+  /**
+   * Get all tags from a vCon as a key-value object
+   */
+  async getTags(vconUuid: string): Promise<Record<string, string>> {
+    // Get vcon_id
+    const { data: vcon, error: vconError } = await this.supabase
+      .from('vcons')
+      .select('id')
+      .eq('uuid', vconUuid)
+      .single();
+
+    if (vconError) throw vconError;
+
+    // Get tags attachment with encoding='json' (since body is JSON.stringify'd)
+    const { data: attachments, error: attachmentError } = await this.supabase
+      .from('attachments')
+      .select('body')
+      .eq('vcon_id', vcon.id)
+      .eq('type', 'tags')
+      .eq('encoding', 'json');
+
+    if (attachmentError) throw attachmentError;
+
+    if (!attachments || attachments.length === 0) {
+      return {};
+    }
+
+    // Parse tags from body (array of "key:value" strings)
+    const tagsArray = JSON.parse(attachments[0].body || '[]');
+    const tagsObject: Record<string, string> = {};
+    
+    for (const tagString of tagsArray) {
+      const colonIndex = tagString.indexOf(':');
+      if (colonIndex > 0) {
+        const key = tagString.substring(0, colonIndex);
+        const value = tagString.substring(colonIndex + 1);
+        tagsObject[key] = value;
+      }
+    }
+
+    return tagsObject;
+  }
+
+  /**
+   * Get a specific tag value
+   */
+  async getTag(vconUuid: string, key: string, defaultValue: any = null): Promise<any> {
+    const tags = await this.getTags(vconUuid);
+    return tags[key] !== undefined ? tags[key] : defaultValue;
+  }
+
+  /**
+   * Add or update a single tag
+   */
+  async addTag(vconUuid: string, key: string, value: string | number | boolean, overwrite: boolean = true): Promise<void> {
+    // Convert value to string
+    const valueStr = String(value);
+
+    // Get current tags
+    const currentTags = await this.getTags(vconUuid);
+
+    // Check if tag exists and overwrite is false
+    if (currentTags[key] !== undefined && !overwrite) {
+      throw new Error(`Tag '${key}' already exists. Set overwrite=true to update.`);
+    }
+
+    // Update tags
+    currentTags[key] = valueStr;
+
+    // Save tags
+    await this.saveTags(vconUuid, currentTags);
+  }
+
+  /**
+   * Remove a specific tag
+   */
+  async removeTag(vconUuid: string, key: string): Promise<void> {
+    const currentTags = await this.getTags(vconUuid);
+    
+    if (currentTags[key] === undefined) {
+      return; // Tag doesn't exist, nothing to do
+    }
+
+    delete currentTags[key];
+    await this.saveTags(vconUuid, currentTags);
+  }
+
+  /**
+   * Update multiple tags at once
+   */
+  async updateTags(vconUuid: string, tags: Record<string, string | number | boolean>, merge: boolean = true): Promise<void> {
+    let finalTags: Record<string, string>;
+
+    if (merge) {
+      // Merge with existing tags
+      const currentTags = await this.getTags(vconUuid);
+      finalTags = { ...currentTags };
+      
+      // Add/update new tags
+      for (const [key, value] of Object.entries(tags)) {
+        finalTags[key] = String(value);
+      }
+    } else {
+      // Replace all tags
+      finalTags = {};
+      for (const [key, value] of Object.entries(tags)) {
+        finalTags[key] = String(value);
+      }
+    }
+
+    await this.saveTags(vconUuid, finalTags);
+  }
+
+  /**
+   * Remove all tags from a vCon
+   */
+  async removeAllTags(vconUuid: string): Promise<void> {
+    await this.saveTags(vconUuid, {});
+  }
+
+  /**
+   * Search vCons by tags
+   */
+  async searchByTags(tags: Record<string, string>, limit: number = 50): Promise<string[]> {
+    // Use the database RPC to search by tags
+    const { data, error } = await this.supabase.rpc('search_vcons_by_tags', {
+      tag_filter: tags,
+      max_results: limit,
+    });
+
+    if (error) {
+      // If RPC doesn't exist, fall back to manual search
+      // Get all vCons with tags attachments (remove default 1000 row limit)
+      const { data: attachments, error: attachmentError } = await this.supabase
+        .from('attachments')
+        .select('vcon_id, body')
+        .eq('type', 'tags')
+        .eq('encoding', 'json')
+        .limit(1000000); // Set very high limit to get all rows
+
+      if (attachmentError) throw attachmentError;
+
+      // Filter vCons that have all the requested tags
+      const matchingVconIds = new Set<number>();
+
+      for (const attachment of attachments || []) {
+        const tagsArray = JSON.parse(attachment.body || '[]');
+        const tagsObject: Record<string, string> = {};
+        
+        for (const tagString of tagsArray) {
+          const colonIndex = tagString.indexOf(':');
+          if (colonIndex > 0) {
+            const key = tagString.substring(0, colonIndex);
+            const value = tagString.substring(colonIndex + 1);
+            tagsObject[key] = value;
+          }
+        }
+
+        // Check if all requested tags match
+        let allMatch = true;
+        for (const [key, value] of Object.entries(tags)) {
+          if (tagsObject[key] !== value) {
+            allMatch = false;
+            break;
+          }
+        }
+
+        if (allMatch) {
+          matchingVconIds.add(attachment.vcon_id);
+        }
+      }
+
+      // Get UUIDs for matching vcon_ids
+      const { data: vcons } = await this.supabase
+        .from('vcons')
+        .select('uuid')
+        .in('id', Array.from(matchingVconIds))
+        .limit(limit);
+
+      return (vcons || []).map(v => v.uuid);
+    }
+
+    return data as string[];
+  }
+
+  /**
+   * Get unique tags across all vCons
+   */
+  async getUniqueTags(options?: {
+    includeCounts?: boolean;
+    keyFilter?: string;
+    minCount?: number;
+  }): Promise<{
+    keys: string[];
+    tagsByKey: Record<string, string[]>;
+    countsPerValue?: Record<string, Record<string, number>>;
+    totalVCons: number;
+  }> {
+    const includeCounts = options?.includeCounts ?? false;
+    const keyFilter = options?.keyFilter?.toLowerCase();
+    const minCount = options?.minCount ?? 1;
+
+    // Get all tags attachments (remove default 1000 row limit)
+    const { data: attachments, error } = await this.supabase
+      .from('attachments')
+      .select('vcon_id, body', { count: 'exact' })
+      .eq('type', 'tags')
+      .eq('encoding', 'json')
+      .limit(1000000); // Set very high limit to get all rows
+
+    if (error) throw error;
+
+    const allTags: Record<string, Set<string>> = {};
+    const tagCounts: Record<string, Record<string, number>> = {};
+    const vconIds = new Set<number>();
+
+    // Parse all tags
+    for (const attachment of attachments || []) {
+      vconIds.add(attachment.vcon_id);
+      
+      try {
+        const tagsArray = JSON.parse(attachment.body || '[]');
+        
+        for (const tagString of tagsArray) {
+          const colonIndex = tagString.indexOf(':');
+          if (colonIndex > 0) {
+            const key = tagString.substring(0, colonIndex);
+            const value = tagString.substring(colonIndex + 1);
+
+            // Apply key filter if provided
+            if (keyFilter && !key.toLowerCase().includes(keyFilter)) {
+              continue;
+            }
+
+            // Initialize structures
+            if (!allTags[key]) {
+              allTags[key] = new Set<string>();
+            }
+            if (includeCounts) {
+              if (!tagCounts[key]) {
+                tagCounts[key] = {};
+              }
+              tagCounts[key][value] = (tagCounts[key][value] || 0) + 1;
+            }
+
+            allTags[key].add(value);
+          }
+        }
+      } catch (parseError) {
+        console.error('Failed to parse tags attachment:', parseError);
+        // Continue processing other attachments
+      }
+    }
+
+    // Convert sets to arrays and apply min count filter
+    const tagsByKey: Record<string, string[]> = {};
+    const filteredCounts: Record<string, Record<string, number>> = {};
+
+    for (const [key, valuesSet] of Object.entries(allTags)) {
+      const values: string[] = [];
+      
+      for (const value of valuesSet) {
+        const count = tagCounts[key]?.[value] ?? 1;
+        if (count >= minCount) {
+          values.push(value);
+          if (includeCounts && tagCounts[key]) {
+            if (!filteredCounts[key]) {
+              filteredCounts[key] = {};
+            }
+            filteredCounts[key][value] = count;
+          }
+        }
+      }
+
+      if (values.length > 0) {
+        tagsByKey[key] = values.sort();
+      }
+    }
+
+    const result: any = {
+      keys: Object.keys(tagsByKey).sort(),
+      tagsByKey,
+      totalVCons: vconIds.size
+    };
+
+    if (includeCounts) {
+      result.countsPerValue = filteredCounts;
+    }
+
+    return result;
+  }
+
+  /**
+   * Internal helper to save tags to the database
+   */
+  private async saveTags(vconUuid: string, tags: Record<string, string>): Promise<void> {
+    // Get vcon_id
+    const { data: vcon, error: vconError } = await this.supabase
+      .from('vcons')
+      .select('id')
+      .eq('uuid', vconUuid)
+      .single();
+
+    if (vconError) throw vconError;
+
+    // Convert tags object to array of "key:value" strings
+    const tagsArray = Object.entries(tags).map(([key, value]) => `${key}:${value}`);
+    const tagsBody = JSON.stringify(tagsArray);
+
+    // Check if tags attachment exists
+    const { data: existingAttachments } = await this.supabase
+      .from('attachments')
+      .select('id')
+      .eq('vcon_id', vcon.id)
+      .eq('type', 'tags')
+      .eq('encoding', 'json');
+
+    if (existingAttachments && existingAttachments.length > 0) {
+      // Update existing tags attachment
+      const { error: updateError } = await this.supabase
+        .from('attachments')
+        .update({ body: tagsBody })
+        .eq('id', existingAttachments[0].id);
+
+      if (updateError) throw updateError;
+    } else {
+      // Create new tags attachment with encoding='json' (since body is JSON.stringify'd)
+      const { data: nextIndexData } = await this.supabase
+        .from('attachments')
+        .select('attachment_index')
+        .eq('vcon_id', vcon.id)
+        .order('attachment_index', { ascending: false })
+        .limit(1);
+
+      const nextIndex = nextIndexData && nextIndexData.length > 0 
+        ? nextIndexData[0].attachment_index + 1 
+        : 0;
+
+      const { error: insertError } = await this.supabase
+        .from('attachments')
+        .insert({
+          vcon_id: vcon.id,
+          attachment_index: nextIndex,
+          type: 'tags',
+          encoding: 'json',
+          body: tagsBody,
+        });
+
+      if (insertError) throw insertError;
+    }
+
+    // Update the vCon's updated_at timestamp
+    await this.supabase
+      .from('vcons')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('uuid', vconUuid);
+  }
 }
 
