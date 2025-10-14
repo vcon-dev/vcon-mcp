@@ -42,9 +42,15 @@ export default defineConfig({
           text: 'Introduction',
           items: [
             { text: 'What is vCon?', link: '/guide/' },
-            { text: 'Getting Started', link: '/guide/getting-started' },
+            { text: 'Quick Start', link: '/guide/quick-start' },
             { text: 'Installation', link: '/guide/installation' },
             { text: 'Basic Usage', link: '/guide/basic-usage' },
+          ]
+        },
+        {
+          text: 'Advanced Setup',
+          items: [
+            { text: 'Getting Started (Developers)', link: '/guide/getting-started' },
           ]
         },
         {

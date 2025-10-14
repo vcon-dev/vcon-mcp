@@ -137,11 +137,13 @@ By combining MCP with vCon, AI assistants can:
 
 Ready to get started? Follow our guides:
 
-1. **[Getting Started](./getting-started.md)** - Set up the server in 5 minutes
-2. **[Installation](./installation.md)** - Detailed installation instructions
-3. **[Basic Usage](./basic-usage.md)** - Learn the core operations
+1. **[Installation](./installation.md)** - Complete installation guide
+2. **[Basic Usage](./basic-usage.md)** - Learn the core operations
+3. **[Getting Started](./getting-started.md)** - Quick start for developers
 4. **[Search Guide](./search.md)** - Master the search capabilities
 5. **[Tag Management](./tags.md)** - Organize your conversations
+6. **[Prompts Guide](./prompts.md)** - Understand query prompts
+7. **[Database Tools](./database-tools.md)** - Inspect your database
 
 ## Documentation Structure
 
