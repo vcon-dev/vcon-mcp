@@ -3,7 +3,7 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-package-lock.json
+# package-lock.json is now committed for reproducible builds
 yarn.lock
 
 # TypeScript

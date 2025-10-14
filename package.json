@@ -52,7 +52,7 @@
     "eslint": "^9.37.0",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3",
-    "vitepress": "^0.1.1",
+    "vitepress": "^1.0.0",
     "vitest": "^3.2.4",
     "zod-to-json-schema": "^3.23.3"
   }
