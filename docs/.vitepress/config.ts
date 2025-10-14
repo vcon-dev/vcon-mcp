@@ -79,8 +79,7 @@ export default defineConfig({
           text: 'Data Types',
           items: [
             { text: 'TypeScript Types', link: '/api/types' },
-            { text: 'Database Schema', link: '/api/database' },
-            { text: 'JSON Schema', link: '/api/json-schema' },
+            { text: 'Database Schema', link: '/api/schema' },
           ]
         }
       ],
