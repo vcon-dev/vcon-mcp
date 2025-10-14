@@ -15,6 +15,8 @@ import {
   ListToolsRequestSchema,
   ListResourcesRequestSchema,
   ReadResourceRequestSchema,
+  ListPromptsRequestSchema,
+  GetPromptRequestSchema,
   ErrorCode,
   McpError
 } from '@modelcontextprotocol/sdk/types.js';
@@ -38,6 +40,7 @@ import { PluginManager } from './hooks/plugin-manager.js';
 import { RequestContext } from './hooks/plugin-interface.js';
 import { getCoreResources, resolveCoreResource } from './resources/index.js';
 import { DatabaseInspector } from './db/database-inspector.js';
+import { allPrompts, generatePromptMessage } from './prompts/index.js';
 
 // Load environment variables
 dotenv.config();
@@ -52,6 +55,7 @@ const server = new Server(
     capabilities: {
       tools: {},
       resources: {},
+      prompts: {},
     },
   }
 );
@@ -135,7 +139,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
  * List available resources
  */
 server.setRequestHandler(ListResourcesRequestSchema, async () => {
-  const core = getCoreResources().map(r => ({ uri: r.uri, name: r.name, mimeType: r.mimeType }));
+  const core = getCoreResources().map(r => ({ 
+    uri: r.uri, 
+    name: r.name, 
+    description: r.description,
+    mimeType: r.mimeType 
+  }));
   const pluginResources = await pluginManager.getAdditionalResources();
   return { resources: [...core, ...pluginResources] };
 });
@@ -737,134 +746,95 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       // ========================================================================
-      // Add Tag
+      // Manage Tag (consolidated: add, update, remove)
       // ========================================================================
-      case 'add_tag': {
+      case 'manage_tag': {
         const vconUuid = args?.vcon_uuid as string;
+        const action = args?.action as string;
         const key = args?.key as string;
         const value = args?.value;
-        const overwrite = (args?.overwrite as boolean | undefined) ?? true;
 
-        if (!vconUuid || !key || value === undefined || value === null) {
-          throw new McpError(ErrorCode.InvalidParams, 'vcon_uuid, key, and value are required');
+        if (!vconUuid || !action || !key) {
+          throw new McpError(ErrorCode.InvalidParams, 'vcon_uuid, action, and key are required');
         }
 
-        await queries.addTag(vconUuid, key, value as string | number | boolean, overwrite);
-
-        return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              success: true,
-              message: `Tag '${key}' ${overwrite ? 'set' : 'added'} on vCon ${vconUuid}`,
-              key: key,
-              value: String(value)
-            }, null, 2),
-          }],
-        };
+        if (action === 'set') {
+          if (value === undefined || value === null) {
+            throw new McpError(ErrorCode.InvalidParams, 'value is required when action is "set"');
+          }
+          await queries.addTag(vconUuid, key, value as string | number | boolean, true);
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                message: `Tag '${key}' set on vCon ${vconUuid}`,
+                action: 'set',
+                key: key,
+                value: String(value)
+              }, null, 2),
+            }],
+          };
+        } else if (action === 'remove') {
+          await queries.removeTag(vconUuid, key);
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                message: `Tag '${key}' removed from vCon ${vconUuid}`,
+                action: 'remove',
+                key: key
+              }, null, 2),
+            }],
+          };
+        } else {
+          throw new McpError(ErrorCode.InvalidParams, 'action must be "set" or "remove"');
+        }
       }
 
       // ========================================================================
-      // Get Tag
+      // Get Tags (consolidated: get one or all)
       // ========================================================================
-      case 'get_tag': {
+      case 'get_tags': {
         const vconUuid = args?.vcon_uuid as string;
-        const key = args?.key as string;
+        const key = args?.key as string | undefined;
         const defaultValue = args?.default_value;
-
-        if (!vconUuid || !key) {
-          throw new McpError(ErrorCode.InvalidParams, 'vcon_uuid and key are required');
-        }
-
-        const value = await queries.getTag(vconUuid, key, defaultValue);
-        const exists = value !== defaultValue;
-
-        return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              success: true,
-              key: key,
-              value: value,
-              exists: exists
-            }, null, 2),
-          }],
-        };
-      }
-
-      // ========================================================================
-      // Get All Tags
-      // ========================================================================
-      case 'get_all_tags': {
-        const vconUuid = args?.vcon_uuid as string;
 
         if (!vconUuid) {
           throw new McpError(ErrorCode.InvalidParams, 'vcon_uuid is required');
         }
 
-        const tags = await queries.getTags(vconUuid);
-
-        return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              success: true,
-              vcon_uuid: vconUuid,
-              tags: tags,
-              count: Object.keys(tags).length
-            }, null, 2),
-          }],
-        };
-      }
-
-      // ========================================================================
-      // Remove Tag
-      // ========================================================================
-      case 'remove_tag': {
-        const vconUuid = args?.vcon_uuid as string;
-        const key = args?.key as string;
-
-        if (!vconUuid || !key) {
-          throw new McpError(ErrorCode.InvalidParams, 'vcon_uuid and key are required');
+        if (key) {
+          // Get single tag
+          const value = await queries.getTag(vconUuid, key, defaultValue);
+          const exists = value !== defaultValue;
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                key: key,
+                value: value,
+                exists: exists
+              }, null, 2),
+            }],
+          };
+        } else {
+          // Get all tags
+          const tags = await queries.getTags(vconUuid);
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                vcon_uuid: vconUuid,
+                tags: tags,
+                count: Object.keys(tags).length
+              }, null, 2),
+            }],
+          };
         }
-
-        await queries.removeTag(vconUuid, key);
-
-        return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              success: true,
-              message: `Tag '${key}' removed from vCon ${vconUuid}`
-            }, null, 2),
-          }],
-        };
-      }
-
-      // ========================================================================
-      // Update Tags
-      // ========================================================================
-      case 'update_tags': {
-        const vconUuid = args?.vcon_uuid as string;
-        const tags = args?.tags as Record<string, string | number | boolean>;
-        const merge = (args?.merge as boolean | undefined) ?? true;
-
-        if (!vconUuid || !tags || typeof tags !== 'object') {
-          throw new McpError(ErrorCode.InvalidParams, 'vcon_uuid and tags object are required');
-        }
-
-        await queries.updateTags(vconUuid, tags, merge);
-
-        return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              success: true,
-              message: `Tags ${merge ? 'merged' : 'replaced'} on vCon ${vconUuid}`,
-              tags: tags
-            }, null, 2),
-          }],
-        };
       }
 
       // ========================================================================
@@ -1086,6 +1056,58 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
 });
 
 // ============================================================================
+// Prompt Handlers
+// ============================================================================
+
+/**
+ * List available prompts
+ */
+server.setRequestHandler(ListPromptsRequestSchema, async () => {
+  return {
+    prompts: allPrompts.map(p => ({
+      name: p.name,
+      description: p.description,
+      arguments: p.arguments?.map(arg => ({
+        name: arg.name,
+        description: arg.description,
+        required: arg.required
+      }))
+    }))
+  };
+});
+
+/**
+ * Get prompt with arguments filled in
+ */
+server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+  const { name, arguments: args } = request.params;
+  
+  const prompt = allPrompts.find(p => p.name === name);
+  if (!prompt) {
+    throw new McpError(
+      ErrorCode.InvalidParams,
+      `Unknown prompt: ${name}`
+    );
+  }
+
+  // Generate the prompt message with the provided arguments
+  const message = generatePromptMessage(name, args || {});
+
+  return {
+    description: prompt.description,
+    messages: [
+      {
+        role: 'user',
+        content: {
+          type: 'text',
+          text: message
+        }
+      }
+    ]
+  };
+});
+
+// ============================================================================
 // Start Server
 // ============================================================================
 
@@ -1095,6 +1117,7 @@ async function main() {
     await server.connect(transport);
     console.error('✅ vCon MCP Server running on stdio');
     console.error('📚 Tools available:', allTools.length);
+    console.error('💬 Prompts available:', allPrompts.length);
     console.error('🔗 Database: Connected');
     console.error('');
     console.error('Ready to accept requests...');

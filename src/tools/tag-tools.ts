@@ -1,5 +1,5 @@
 /**
- * Tag Management Tools for vCons
+ * Tag Management Tools for vCons (Streamlined)
  * 
  * Tags in vCon are key-value pairs stored as a special attachment:
  * - type: "tags"
@@ -7,22 +7,29 @@
  * - body: ["key:value", "key2:value2", ...]
  * 
  * Tags provide simple, flexible metadata for categorization, filtering, and organization.
+ * 
+ * Consolidated from 8 tools to 5 tools for simpler API.
  */
 
 /**
- * Tool: Add or Update Tag
+ * Tool: Manage Tag (replaces add_tag, update_tags, remove_tag)
  */
-export const addTagTool = {
-  name: 'add_tag',
-  description: 'Add or update a tag on a vCon. Tags are key-value pairs for categorization and filtering. ' +
-    'If the tag key already exists, it will be updated unless overwrite is set to false.',
+export const manageTagTool = {
+  name: 'manage_tag',
+  description: 'Add, update, or remove a single tag on a vCon. Tags are key-value pairs for categorization and filtering. ' +
+    'Use action "set" to add/update a tag, or "remove" to delete it.',
   inputSchema: {
     type: 'object' as const,
     properties: {
       vcon_uuid: {
         type: 'string',
-        description: 'UUID of the vCon to add/update tag on',
+        description: 'UUID of the vCon',
         pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      },
+      action: {
+        type: 'string',
+        description: 'Action to perform: "set" to add/update tag, "remove" to delete tag',
+        enum: ['set', 'remove']
       },
       key: {
         type: 'string',
@@ -30,51 +37,19 @@ export const addTagTool = {
       },
       value: {
         type: ['string', 'number', 'boolean'],
-        description: 'Tag value (will be converted to string)'
-      },
-      overwrite: {
-        type: 'boolean',
-        description: 'Whether to overwrite existing tag with same key (default: true)',
-        default: true
+        description: 'Tag value (required when action is "set", will be converted to string)'
       }
     },
-    required: ['vcon_uuid', 'key', 'value']
+    required: ['vcon_uuid', 'action', 'key']
   }
 };
 
 /**
- * Tool: Get Tag Value
+ * Tool: Get Tags (replaces get_tag, get_all_tags)
  */
-export const getTagTool = {
-  name: 'get_tag',
-  description: 'Retrieve the value of a specific tag from a vCon.',
-  inputSchema: {
-    type: 'object' as const,
-    properties: {
-      vcon_uuid: {
-        type: 'string',
-        description: 'UUID of the vCon to retrieve tag from',
-        pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-      },
-      key: {
-        type: 'string',
-        description: 'Tag key to retrieve'
-      },
-      default_value: {
-        type: ['string', 'number', 'boolean', 'null'],
-        description: 'Value to return if tag does not exist (default: null)'
-      }
-    },
-    required: ['vcon_uuid', 'key']
-  }
-};
-
-/**
- * Tool: Get All Tags
- */
-export const getAllTagsTool = {
-  name: 'get_all_tags',
-  description: 'Retrieve all tags from a vCon as a key-value object.',
+export const getTagsTool = {
+  name: 'get_tags',
+  description: 'Retrieve tags from a vCon. Provide a specific key to get one tag value, or omit key to get all tags as an object.',
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -82,63 +57,17 @@ export const getAllTagsTool = {
         type: 'string',
         description: 'UUID of the vCon to retrieve tags from',
         pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-      }
-    },
-    required: ['vcon_uuid']
-  }
-};
-
-/**
- * Tool: Remove Tag
- */
-export const removeTagTool = {
-  name: 'remove_tag',
-  description: 'Remove a specific tag from a vCon.',
-  inputSchema: {
-    type: 'object' as const,
-    properties: {
-      vcon_uuid: {
-        type: 'string',
-        description: 'UUID of the vCon to remove tag from',
-        pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
       },
       key: {
         type: 'string',
-        description: 'Tag key to remove'
+        description: 'Specific tag key to retrieve. Omit this parameter to get all tags as an object.'
+      },
+      default_value: {
+        type: ['string', 'number', 'boolean', 'null'],
+        description: 'Value to return if the specified tag key does not exist (only used when key is provided, default: null)'
       }
     },
-    required: ['vcon_uuid', 'key']
-  }
-};
-
-/**
- * Tool: Update Multiple Tags
- */
-export const updateTagsTool = {
-  name: 'update_tags',
-  description: 'Update multiple tags on a vCon at once. Can add new tags and update existing ones.',
-  inputSchema: {
-    type: 'object' as const,
-    properties: {
-      vcon_uuid: {
-        type: 'string',
-        description: 'UUID of the vCon to update tags on',
-        pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-      },
-      tags: {
-        type: 'object',
-        description: 'Object with tag key-value pairs. Example: {"department": "sales", "priority": "high"}',
-        additionalProperties: {
-          type: ['string', 'number', 'boolean']
-        }
-      },
-      merge: {
-        type: 'boolean',
-        description: 'If true, merge with existing tags. If false, replace all tags (default: true)',
-        default: true
-      }
-    },
-    required: ['vcon_uuid', 'tags']
+    required: ['vcon_uuid']
   }
 };
 
@@ -215,13 +144,10 @@ export const getUniqueTagsTool = {
   }
 };
 
-// Export all tag tools as an array
+// Export all tag tools as an array (consolidated from 8 to 5)
 export const allTagTools = [
-  addTagTool,
-  getTagTool,
-  getAllTagsTool,
-  removeTagTool,
-  updateTagsTool,
+  manageTagTool,
+  getTagsTool,
   removeAllTagsTool,
   searchByTagsTool,
   getUniqueTagsTool

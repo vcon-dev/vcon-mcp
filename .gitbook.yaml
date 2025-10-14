@@ -1,0 +1,12 @@
+# GitBook Configuration
+# https://docs.gitbook.com/integrations/git-sync/content-configuration
+
+root: ./docs/
+
+structure:
+  readme: index.md
+  summary: SUMMARY.md
+
+redirects:
+  previous/page: new-folder/page.md
+

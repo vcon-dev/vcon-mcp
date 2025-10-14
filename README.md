@@ -4,7 +4,7 @@
 
 ![Version](https://img.shields.io/badge/version-1.0.0-blue)
 ![IETF Spec](https://img.shields.io/badge/IETF%20vCon-draft--00-green)
-![License](https://img.shields.io/badge/license-ISC-blue)
+![License](https://img.shields.io/badge/license-MIT-blue)
 
 ## Overview
 
@@ -27,6 +27,11 @@ The Model Context Protocol (MCP) enables AI assistants to use external tools and
 
 - ✅ **IETF vCon Compliant** - Implements `draft-ietf-vcon-vcon-core-00` specification
 - ✅ **MCP Integration** - 7 tools for AI assistants to manage conversation data
+- ✅ **Query Prompts** - 9 pre-built prompts to guide effective searching and retrieval:
+  - Exact tag matching (e.g., "find angry customers from June")
+  - Semantic search (e.g., "find frustrated users")
+  - Keyword search (e.g., "find conversations mentioning refund")
+  - Multi-criteria queries with step-by-step guidance
 - ✅ **Supabase Backend** - Powerful PostgreSQL database with REST API
 - ✅ **Type-Safe** - Full TypeScript implementation with Zod validation
 - ✅ **Plugin Architecture** - Extensible plugin system for custom functionality
@@ -322,6 +327,10 @@ vcon-mcp/
 
 ### For Users
 - **[Getting Started](GETTING_STARTED.md)** - Quick start guide for using the server
+- **[Prompts Guide](docs/PROMPTS_GUIDE.md)** - Comprehensive guide to query prompts
+- **[Prompts Quick Reference](PROMPTS_QUICK_REFERENCE.md)** - Quick reference for prompts
+- **[Search Tools Guide](docs/SEARCH_TOOLS_GUIDE.md)** - Detailed search tool documentation
+- **[Tag Management Guide](docs/TAG_MANAGEMENT_GUIDE.md)** - Tag system usage
 - **[Open Source Features](OPEN_SOURCE_FEATURES.md)** - Complete feature reference
 - **[Proprietary Features](PORPRIETARY_FEATURES.md)** - Enterprise and advanced features
 
@@ -560,7 +569,7 @@ We welcome contributions! Here's how to get started:
 
 ## License
 
-ISC License - see [LICENSE](LICENSE) file for details
+MIT License - see [LICENSE](LICENSE) file for details
 
 ## Resources
 

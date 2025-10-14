@@ -236,7 +236,7 @@ VCON_OFFLINE_MODE=false
 - **Package**: `@vcon/mcp-server`
 - **Registry**: npm public
 - **Installation**: `npm install @vcon/mcp-server`
-- **License**: ISC (open source)
+- **License**: MIT (open source)
 - **Access**: Public, anyone can use
 
 ### Privacy Suite

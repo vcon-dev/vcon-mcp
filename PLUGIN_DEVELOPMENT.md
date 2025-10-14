@@ -446,5 +446,5 @@ For questions or issues with plugin development:
 
 ## License
 
-When creating plugins, ensure they comply with the MIT/ISC license of the core server, or clearly state your plugin's license.
+When creating plugins, ensure they comply with the MIT license of the core server, or clearly state your plugin's license.
 
