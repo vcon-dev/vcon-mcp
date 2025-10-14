@@ -4,7 +4,7 @@ import { defineConfig } from 'vitepress'
 export default defineConfig({
   title: "vCon MCP Server",
   description: "IETF vCon MCP Server - Conversation Data Management with AI",
-  base: '/vcon-mcp/', // Update this to your GitHub repo name
+  base: 'vcon-dev/vcon-mcp', // Update this to your GitHub repo name
   
   head: [
     ['link', { rel: 'icon', type: 'image/svg+xml', href: '/vcon-mcp/logo.svg' }],
