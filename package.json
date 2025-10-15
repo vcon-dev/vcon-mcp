@@ -1,5 +1,5 @@
 {
-  "name": "@vcon/mcp-server",
+  "name": "@vcon/vcon-mcp",
   "version": "1.0.0",
   "description": "MCP Server for IETF vCon - Open Source Core",
   "type": "module",
@@ -33,7 +33,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourcompany/vcon-mcp"
+    "url": "https://github.com/vcon-dev/vcon-mcp"
   },
   "publishConfig": {
     "access": "public"
