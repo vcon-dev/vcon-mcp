@@ -15,6 +15,7 @@
     "dev": "tsx watch src/index.ts",
     "test": "vitest",
     "test:compliance": "vitest run tests/vcon-compliance.test.ts",
+    "test:console": "npx @modelcontextprotocol/inspector tsx src/index.ts",
     "lint": "eslint src/**/*.ts",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",

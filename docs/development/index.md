@@ -296,7 +296,7 @@ npm test
 npm run dev
 
 # Test with MCP Inspector
-npx @modelcontextprotocol/inspector node dist/index.js
+npm run test:console
 
 # Or test with Claude Desktop
 # Update claude_desktop_config.json
@@ -383,7 +383,7 @@ npm test -- --watch
 
 ```bash
 # Test with MCP Inspector
-npx @modelcontextprotocol/inspector node dist/index.js
+npm run test:console
 
 # Test with real client
 # Configure Claude Desktop and test manually

@@ -412,7 +412,7 @@ plugins/
 
 ```bash
 # Via MCP Inspector
-npx @modelcontextprotocol/inspector node dist/index.js
+npm run test:console
 
 # Access resource
 resources/list
@@ -423,6 +423,9 @@ resources/read vcon://stats
 
 ```bash
 # Via MCP Inspector
+npm run test:console
+
+# Then use:
 tools/list
 tools/call my_tool {"param": "value"}
 
@@ -434,6 +437,9 @@ npm run test:tools
 
 ```bash
 # Via MCP Inspector
+npm run test:console
+
+# Then use:
 prompts/list
 prompts/get my_prompt {"arg": "value"}
 ```

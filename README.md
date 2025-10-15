@@ -13,8 +13,9 @@ This MCP server provides a standardized way for AI assistants like Claude to int
 ### What is vCon?
 
 vCon (Virtual Conversation) is an IETF standard for representing conversations in a portable, interoperable format. Think of it as "PDF for conversations" - a standardized container for:
+
 - **Conversations** from any medium (voice, video, text, email)
-- **Participants** with identity and privacy controls  
+- **Participants** with identity and privacy controls
 - **AI Analysis** from transcription, sentiment, summarization, etc.
 - **Attachments** like documents, images, or related files
 - **Privacy markers** for consent and redaction
@@ -51,7 +52,7 @@ The Model Context Protocol (MCP) enables AI assistants to use external tools and
 
 ### Prerequisites
 
-- Node.js 18+ 
+- Node.js 18+
 - npm or yarn
 - Supabase account ([sign up free](https://supabase.com))
 
@@ -59,7 +60,7 @@ The Model Context Protocol (MCP) enables AI assistants to use external tools and
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/vcon-mcp.git
+git clone https://github.com/vcon-dev/vcon-mcp.git
 cd vcon-mcp
 
 # Install dependencies
@@ -106,6 +107,7 @@ Restart Claude Desktop and start using vCon tools!
 ## Available MCP Tools
 
 ### 1. **create_vcon**
+
 Create a new vCon with parties and optional initial data.
 
 ```
@@ -113,6 +115,7 @@ Create a vCon for a customer support call between Alice and Bob
 ```
 
 ### 2. **get_vcon**
+
 Retrieve a complete vCon by UUID.
 
 ```
@@ -120,6 +123,7 @@ Get the vCon with UUID abc-123-def
 ```
 
 ### 3. **search_vcons**
+
 Search vCons by subject, party name, or date range (basic filtering).
 
 ```
@@ -127,6 +131,7 @@ Find all vCons from last week about billing
 ```
 
 ### 3a. **search_vcons_content**
+
 Full-text keyword search across dialog, analysis, and party content.
 
 ```
@@ -134,6 +139,7 @@ Search for conversations mentioning "refund request"
 ```
 
 ### 3b. **search_vcons_semantic**
+
 AI-powered semantic search to find conversations by meaning (requires embeddings).
 
 ```
@@ -141,6 +147,7 @@ Find conversations where customers were frustrated with delivery times
 ```
 
 ### 3c. **search_vcons_hybrid**
+
 Combined keyword and semantic search for comprehensive results.
 
 ```
@@ -148,6 +155,7 @@ Search for billing disputes using both exact matches and similar concepts
 ```
 
 ### 4. **add_analysis**
+
 Add AI/ML analysis results to a vCon.
 
 ```
@@ -155,6 +163,7 @@ Add sentiment analysis showing positive sentiment to vCon abc-123
 ```
 
 ### 5. **add_dialog**
+
 Add a conversation segment (recording, text, video, etc.).
 
 ```
@@ -162,6 +171,7 @@ Add a text dialog from Alice saying "Hello, how can I help you?"
 ```
 
 ### 6. **add_attachment**
+
 Attach files, documents, or supporting materials.
 
 ```
@@ -169,6 +179,7 @@ Attach the customer's invoice PDF to this vCon
 ```
 
 ### 7. **delete_vcon**
+
 Delete a vCon and all related data.
 
 ```
@@ -176,6 +187,7 @@ Delete the vCon abc-123
 ```
 
 ### 8. **update_vcon**
+
 Update top-level vCon metadata (subject, extensions, must_support).
 
 ```
@@ -183,6 +195,7 @@ Update vCon 01f3-... with subject "Updated Subject"
 ```
 
 ### 9. **create_vcon_from_template**
+
 Create a new vCon from a predefined template (phone_call, chat_conversation, email_thread, video_meeting, custom).
 
 ```
@@ -190,6 +203,7 @@ Create a phone_call vCon with two parties and subject "Onboarding"
 ```
 
 ### 10. **get_schema**
+
 Get vCon schema (json_schema or typescript).
 
 ```
@@ -197,17 +211,21 @@ Get the vCon JSON Schema
 ```
 
 ### 11. **get_examples**
+
 Get example vCons (minimal, phone_call, chat, email, video, full_featured) in JSON or YAML.
 
 ## Database Inspection Tools
 
 ### 12. **get_database_shape**
+
 Get comprehensive database structure information including tables, indexes, sizes, and relationships. Useful for debugging and understanding your database schema.
 
 ### 13. **get_database_stats**
+
 Get database performance and usage statistics including cache hit ratios, table access patterns, and index usage. Essential for performance monitoring and optimization.
 
 ### 14. **analyze_query**
+
 Analyze SQL query execution plans for performance optimization (limited support).
 
 ```
@@ -231,24 +249,28 @@ The server exposes URI-based resources for direct reads:
 ## Use Cases
 
 ### Contact Centers
+
 - Capture and analyze customer calls
 - Generate automatic transcripts
 - Track agent performance and sentiment
 - Maintain compliance audit trails
 
 ### Sales Teams
+
 - Record sales conversations
 - Extract action items and follow-ups
 - Analyze conversation patterns
 - Generate meeting summaries
 
 ### Research
+
 - Collect conversation datasets
 - Analyze communication patterns
 - Generate insights from dialogue
 - Build ML training data
 
 ### Compliance & Legal
+
 - Maintain conversation archives
 - Apply redaction for privacy
 - Track consent and permissions
@@ -365,6 +387,7 @@ vcon-mcp/
 ## Documentation
 
 ### For Users
+
 - **[Getting Started](GETTING_STARTED.md)** - Quick start guide for using the server
 - **[Query Prompts Guide](docs/guide/prompts.md)** - How to use search and retrieval prompts
 - **[Search Tools Guide](docs/guide/search.md)** - Search strategies and tools
@@ -373,23 +396,27 @@ vcon-mcp/
 - **[Proprietary Features](PORPRIETARY_FEATURES.md)** - Enterprise and advanced features
 
 ### For Developers
+
 - **[Build Guide](BUILD_GUIDE.md)** - Step-by-step implementation from scratch
 - **[Supabase Semantic Search](SUPABASE_SEMANTIC_SEARCH_GUIDE.md)** - Vector search setup
 - **[Plugin Development](docs/development/plugins.md)** - Creating custom plugins
 
 ### API Reference
+
 - **[Tools API](docs/api/tools.md)** - MCP tools reference
 - **[Prompts API](docs/api/prompts.md)** - MCP prompts reference
 - **[Resources API](docs/api/resources.md)** - MCP resources reference
 - **[Types](docs/api/types.md)** - TypeScript type definitions
 
 ### Technical Reference
+
 - **[Quick Reference](docs/reference/QUICK_REFERENCE.md)** - Critical spec corrections checklist
 - **[Implementation Corrections](docs/reference/IMPLEMENTATION_CORRECTIONS.md)** - Detailed spec compliance guide
 - **[Corrected Schema](docs/reference/CORRECTED_SCHEMA.md)** - Database schema reference
 - **[Migration Guide](docs/reference/MIGRATION_GUIDE.md)** - Migrating existing code
 
 ### IETF Specifications
+
 - **[IETF vCon Core Spec](background_docs/draft-ietf-vcon-vcon-core-00.txt)** - Official specification
 - **[vCon Consent Draft](background_docs/draft-howe-vcon-consent-00.txt)** - Privacy and consent
 - **[vCon Lifecycle Draft](background_docs/draft-howe-vcon-lifecycle-00.txt)** - Lifecycle management
@@ -413,6 +440,9 @@ npm test
 # Run spec compliance tests
 npm run test:compliance
 
+# Launch MCP test console (interactive)
+npm run test:console
+
 # Build for production
 npm run build
 
@@ -423,6 +453,7 @@ npm run lint
 ### Testing
 
 The project includes comprehensive tests:
+
 - **Unit tests** - Type validation, query functions
 - **Integration tests** - End-to-end vCon operations
 - **Compliance tests** - IETF spec conformance
@@ -455,6 +486,7 @@ See [BUILD_GUIDE.md](BUILD_GUIDE.md) for complete database setup instructions.
 This implementation is fully compliant with `draft-ietf-vcon-vcon-core-00`, including:
 
 ### Core Objects
+
 - ✅ vCon container with all required fields
 - ✅ Party objects with complete metadata
 - ✅ Dialog objects (recording, text, transfer, incomplete)
@@ -463,6 +495,7 @@ This implementation is fully compliant with `draft-ietf-vcon-vcon-core-00`, incl
 - ✅ Group objects for multi-party conversations
 
 ### Data Types
+
 - ✅ Correct field names (e.g., `schema` not `schema_version`)
 - ✅ Required vs optional fields properly enforced
 - ✅ String-based body fields (not object types)
@@ -470,6 +503,7 @@ This implementation is fully compliant with `draft-ietf-vcon-vcon-core-00`, incl
 - ✅ Proper type constraints
 
 ### Privacy & Security
+
 - ✅ Redaction support
 - ✅ Consent tracking
 - ✅ Party privacy markers
@@ -525,25 +559,29 @@ const results = await searchVCons({
 ## Roadmap
 
 ### Phase 1: Core Implementation ✅
-- [x] IETF vCon type definitions
-- [x] Supabase database schema
-- [x] Basic CRUD operations
-- [x] MCP server implementation
-- [x] Validation and testing
+
+- [X] IETF vCon type definitions
+- [X] Supabase database schema
+- [X] Basic CRUD operations
+- [X] MCP server implementation
+- [X] Validation and testing
 
 ### Phase 2: Advanced Features 🚧
-- [x] Semantic search with pgvector
+
+- [X] Semantic search with pgvector
 - [ ] Real-time subscriptions
 - [ ] Batch operations
 - [ ] Export/import formats
 
 ### Phase 3: Enterprise Features 📋
+
 - [ ] Multi-tenant support
 - [ ] Advanced privacy controls
 - [ ] Audit logging
 - [ ] Performance optimization
 
 ### Phase 4: Integrations 📋
+
 - [ ] Twilio adapter
 - [ ] Zoom adapter
 - [ ] Slack adapter
@@ -555,13 +593,13 @@ The vCon MCP Server is highly extensible, supporting multiple ways to add custom
 
 ### Extension Options
 
-| Extension Type | Purpose | Use Case | Packaging |
-|---------------|---------|----------|-----------|
-| **Resources** | Discoverable data access | Browse recent vCons, statistics | Direct or plugin |
-| **Prompts** | Guided query templates | Help users search effectively | Direct only |
-| **Tools** | Executable operations | Analytics, exports, custom searches | Direct or plugin |
-| **Plugins** | Package multiple features | Privacy suite, compliance module | Plugin |
-| **Hooks** | Modify core behavior | Audit logging, access control | Plugin only |
+| Extension Type      | Purpose                   | Use Case                            | Packaging        |
+| ------------------- | ------------------------- | ----------------------------------- | ---------------- |
+| **Resources** | Discoverable data access  | Browse recent vCons, statistics     | Direct or plugin |
+| **Prompts**   | Guided query templates    | Help users search effectively       | Direct only      |
+| **Tools**     | Executable operations     | Analytics, exports, custom searches | Direct or plugin |
+| **Plugins**   | Package multiple features | Privacy suite, compliance module    | Plugin           |
+| **Hooks**     | Modify core behavior      | Audit logging, access control       | Plugin only      |
 
 ### Quick Start: Add a Custom Resource
 
@@ -658,6 +696,7 @@ We welcome contributions! Here's how to get started:
 7. Open a Pull Request
 
 ### Contribution Guidelines
+
 - Follow the existing code style
 - Add tests for new features
 - Update documentation
@@ -671,11 +710,13 @@ MIT License - see [LICENSE](LICENSE) file for details
 ## Resources
 
 ### Project Links
+
 - **GitHub**: [vcon-mcp](https://github.com/yourusername/vcon-mcp)
-- **Issues**: [Bug reports & feature requests](https://github.com/yourusername/vcon-mcp/issues)
+- **Issues**: [Bug reports &amp; feature requests](https://github.com/yourusername/vcon-mcp/issues)
 - **Discussions**: [Community discussions](https://github.com/yourusername/vcon-mcp/discussions)
 
 ### External Links
+
 - **IETF vCon Working Group**: [datatracker.ietf.org/wg/vcon](https://datatracker.ietf.org/wg/vcon/)
 - **Model Context Protocol**: [modelcontextprotocol.io](https://modelcontextprotocol.io/)
 - **Supabase**: [supabase.com](https://supabase.com/)
@@ -683,7 +724,7 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 ## Support
 
-- 📧 **Email**: support@example.com
+- 📧 **Email**: ohjesus@doesanyoneemail.anymore
 - 💬 **Discord**: [Join our community](https://discord.gg/example)
 - 📖 **Documentation**: [Full docs](https://docs.example.com)
 - 🐛 **Bug Reports**: [GitHub Issues](https://github.com/yourusername/vcon-mcp/issues)

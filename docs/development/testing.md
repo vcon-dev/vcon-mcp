@@ -23,8 +23,11 @@ The MCP Inspector provides a GUI for testing your server.
 
 **Start the Inspector:**
 ```bash
-cd /Users/thomashowe/Documents/GitHub/vcon-mcp
-npx @modelcontextprotocol/inspector node dist/index.js
+# Using npm script (recommended)
+npm run test:console
+
+# Or directly with npx
+npx @modelcontextprotocol/inspector tsx src/index.ts
 ```
 
 Then open **http://localhost:5173** in your browser.
@@ -188,7 +191,7 @@ npx tsx scripts/test-mcp-tools.ts
 
 ### 2. **Interactive Testing** (10 minutes)
 ```bash
-npx @modelcontextprotocol/inspector node dist/index.js
+npm run test:console
 ```
 - Open http://localhost:5173
 - Test each tool manually

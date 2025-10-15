@@ -1132,7 +1132,7 @@ main().catch((error) => {
 npm run dev
 
 # In another terminal, test with MCP Inspector
-npx @modelcontextprotocol/inspector node dist/index.js
+npm run test:console
 ```
 
 ### ✅ Phase 5 Checkpoint
