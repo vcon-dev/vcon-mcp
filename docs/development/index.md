@@ -116,6 +116,21 @@ npm run dev
 
 ---
 
+### 🔧 [Extending the Server](./extending.md)
+
+**Complete extension guide for resources, prompts, tools, and plugins:**
+- When to use each extension type
+- Adding custom resources (discoverable data access)
+- Creating custom prompts (guided query templates)
+- Building custom tools (executable operations)
+- Packaging as plugins (reusable modules)
+- Complete real-world examples
+- Best practices and patterns
+
+**Perfect for:** Understanding all extension options and choosing the right approach
+
+---
+
 ### 🤖 [Embeddings & Search](./embeddings.md)
 
 **AI-powered semantic search:**
@@ -321,6 +336,7 @@ git push origin feature/your-feature
    - Start with documentation or tests
 
 3. **Advance Your Skills**:
+   - Review [Extending Guide](./extending.md) to understand all options
    - Create a [Plugin](./plugins.md) to add functionality
    - Develop a [Custom Tool](./custom-tools.md)
    - Implement [Advanced Search](./embeddings.md)
@@ -333,7 +349,8 @@ git push origin feature/your-feature
    - Understand plugin system internals
 
 2. **Extend the System**:
-   - Build complex plugins
+   - Master the [Extension Guide](./extending.md)
+   - Build complex plugins with resources and tools
    - Add new search algorithms
    - Optimize performance
 

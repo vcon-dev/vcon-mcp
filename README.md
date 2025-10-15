@@ -549,19 +549,83 @@ const results = await searchVCons({
 - [ ] Slack adapter
 - [ ] Microsoft Teams adapter
 
-## Extending with Plugins
+## Extending the Server
 
-The vCon MCP Server supports a powerful plugin architecture that allows you to add custom functionality without modifying the core codebase.
+The vCon MCP Server is highly extensible, supporting multiple ways to add custom functionality:
 
-### Plugin Capabilities
+### Extension Options
 
-- **Lifecycle Hooks**: Intercept and modify operations (create, read, update, delete, search)
-- **Access Control**: Implement authentication and authorization
-- **Privacy & Compliance**: Add GDPR, CCPA, HIPAA compliance features
-- **Audit Logging**: Track all operations and access
-- **Data Transformation**: Redact, encrypt, or modify vCon data
-- **External Integrations**: Sync with CRM, webhooks, analytics platforms
-- **Custom Tools**: Register additional MCP tools for AI assistants
+| Extension Type | Purpose | Use Case | Packaging |
+|---------------|---------|----------|-----------|
+| **Resources** | Discoverable data access | Browse recent vCons, statistics | Direct or plugin |
+| **Prompts** | Guided query templates | Help users search effectively | Direct only |
+| **Tools** | Executable operations | Analytics, exports, custom searches | Direct or plugin |
+| **Plugins** | Package multiple features | Privacy suite, compliance module | Plugin |
+| **Hooks** | Modify core behavior | Audit logging, access control | Plugin only |
+
+### Quick Start: Add a Custom Resource
+
+```typescript
+// src/resources/index.ts
+export function getCoreResources(): ResourceDescriptor[] {
+  return [
+    // ... existing resources ...
+    {
+      uri: 'vcon://analytics/summary',
+      name: 'Analytics Summary',
+      description: 'Overall conversation analytics',
+      mimeType: 'application/json'
+    }
+  ];
+}
+```
+
+### Quick Start: Add a Custom Tool
+
+```typescript
+// src/tools/analytics-tools.ts
+export const analyticsTool = {
+  name: 'get_analytics',
+  description: 'Get conversation analytics',
+  inputSchema: {
+    type: 'object' as const,
+    properties: {
+      period: { type: 'string', enum: ['7d', '30d', '90d'] }
+    },
+    required: ['period']
+  }
+};
+
+export async function handleGetAnalytics(input: any): Promise<ToolResponse> {
+  // Implementation
+}
+```
+
+### Quick Start: Create a Plugin
+
+```typescript
+import { VConPlugin, RequestContext } from '@vcon/mcp-server/hooks';
+
+export default class MyPlugin implements VConPlugin {
+  name = 'my-plugin';
+  version = '1.0.0';
+  
+  // Register custom tools
+  registerTools(): Tool[] {
+    return [/* your tools */];
+  }
+  
+  // Register custom resources
+  registerResources(): Resource[] {
+    return [/* your resources */];
+  }
+  
+  // Lifecycle hook example
+  async afterCreate(vcon: VCon, context: RequestContext): Promise<void> {
+    console.log(`Created vCon: ${vcon.uuid}`);
+  }
+}
+```
 
 ### Loading Plugins
 
@@ -574,24 +638,12 @@ VCON_LICENSE_KEY=your-license-key-if-required
 npm run dev
 ```
 
-### Creating Plugins
+### Complete Extension Documentation
 
-See **[Plugin Development Guide](PLUGIN_DEVELOPMENT.md)** for complete documentation on creating your own plugins.
-
-Simple example:
-
-```typescript
-import { VConPlugin, RequestContext } from '@vcon/mcp-server/hooks';
-
-export default class MyPlugin implements VConPlugin {
-  name = 'my-plugin';
-  version = '1.0.0';
-  
-  async afterCreate(vcon, context) {
-    console.log(`Created vCon: ${vcon.uuid}`);
-  }
-}
-```
+- **[Extension Guide](docs/development/extending.md)** - Comprehensive guide with examples
+- **[Extension Quick Reference](docs/development/extension-quick-reference.md)** - Fast lookup and decision guide
+- **[Plugin Development](docs/development/plugins.md)** - Complete plugin documentation
+- **[Custom Tools](docs/development/custom-tools.md)** - Tool development guide
 
 ## Contributing
 
