@@ -1,5 +1,5 @@
 {
-  "name": "@vcon/vcon-mcp",
+  "name": "vcon-mcp",
   "version": "1.0.0",
   "description": "MCP Server for IETF vCon - Open Source Core",
   "type": "module",
