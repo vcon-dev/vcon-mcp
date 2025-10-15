@@ -21,7 +21,7 @@ import {
   McpError
 } from '@modelcontextprotocol/sdk/types.js';
 import dotenv from 'dotenv';
-import { getSupabaseClient } from './db/client.js';
+import { getSupabaseClient, getRedisClient, closeAllConnections } from './db/client.js';
 import { VConQueries } from './db/queries.js';
 import { validateVCon, validateAnalysis } from './utils/validation.js';
 import {
@@ -60,14 +60,16 @@ const server = new Server(
   }
 );
 
-// Initialize database
+// Initialize database and cache
 let queries: VConQueries;
 let dbInspector: DatabaseInspector;
 let supabase: any;
+let redis: any;
 
 try {
   supabase = getSupabaseClient();
-  queries = new VConQueries(supabase);
+  redis = getRedisClient(); // Optional - returns null if not configured
+  queries = new VConQueries(supabase, redis);
   dbInspector = new DatabaseInspector(supabase);
   console.error('✅ Database client initialized');
 } catch (error) {
@@ -1131,12 +1133,14 @@ async function main() {
 process.on('SIGINT', async () => {
   console.error('\n🛑 Shutting down gracefully...');
   await pluginManager.shutdown();
+  await closeAllConnections();
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
   console.error('\n🛑 Shutting down gracefully...');
   await pluginManager.shutdown();
+  await closeAllConnections();
   process.exit(0);
 });
 

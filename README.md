@@ -33,6 +33,7 @@ The Model Context Protocol (MCP) enables AI assistants to use external tools and
   - Keyword search (e.g., "find conversations mentioning refund")
   - Multi-criteria queries with step-by-step guidance
 - ✅ **Supabase Backend** - Powerful PostgreSQL database with REST API
+- ✅ **Redis Caching** - Optional high-performance cache layer for 20-50x faster reads
 - ✅ **Type-Safe** - Full TypeScript implementation with Zod validation
 - ✅ **Plugin Architecture** - Extensible plugin system for custom functionality
 - ✅ **Privacy-Ready** - Plugin hooks for implementing consent, redaction, and compliance
@@ -44,6 +45,7 @@ The Model Context Protocol (MCP) enables AI assistants to use external tools and
 - ✅ **Tag Filtering** - Filter search results by tags via `attachments` of type `tags`
 - ✅ **Content Indexing** - Searches dialog bodies and analysis content (encoding='none')
 - ✅ **Real-time** - Supabase realtime subscriptions for live updates
+- ✅ **Conserver Integration** - Compatible with vCon conserver for chain processing
 
 ## Quick Start
 
@@ -89,12 +91,15 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
       "args": ["/path/to/vcon-mcp/dist/index.js"],
       "env": {
         "SUPABASE_URL": "your-project-url",
-        "SUPABASE_ANON_KEY": "your-anon-key"
+        "SUPABASE_ANON_KEY": "your-anon-key",
+        "REDIS_URL": "redis://localhost:6379"
       }
     }
   }
 }
 ```
+
+**Note**: `REDIS_URL` is optional. If provided, enables high-performance caching for 20-50x faster reads. See [Redis-Supabase Integration Guide](docs/guide/redis-supabase-integration.md).
 
 Restart Claude Desktop and start using vCon tools!
 
@@ -251,6 +256,8 @@ The server exposes URI-based resources for direct reads:
 
 ## Architecture
 
+### Basic Architecture
+
 ```
 ┌─────────────────────┐
 │   AI Assistant      │  (Claude, ChatGPT, etc.)
@@ -288,6 +295,38 @@ The server exposes URI-based resources for direct reads:
 │  └───────────────┘  │
 └─────────────────────┘
 ```
+
+### With Redis Caching (Optional)
+
+For high-performance deployments, add Redis as a cache layer:
+
+```
+┌─────────────────────────────────────────────────┐
+│                  AI Assistant                    │
+└─────────────────────┬───────────────────────────┘
+                      │ MCP Protocol
+┌─────────────────────▼───────────────────────────┐
+│              vCon MCP Server                     │
+│                                                   │
+│  ┌───────────────────────────────────────────┐  │
+│  │         Cache-First Reads                  │  │
+│  │  Redis (hot) → Supabase (cold fallback)   │  │
+│  └───────────────────────────────────────────┘  │
+└─────────────┬───────────────────┬───────────────┘
+              │                   │
+      ┌───────▼───────┐   ┌───────▼───────┐
+      │  Redis Cache  │   │   Supabase    │
+      │  (Optional)   │   │  (Permanent)  │
+      │               │   │               │
+      │ - Fast reads  │   │ - Source of   │
+      │ - TTL expiry  │   │   truth       │
+      │ - Auto cache  │   │ - Full CRUD   │
+      └───────────────┘   └───────────────┘
+```
+
+**Enable caching** by setting `REDIS_URL` environment variable. See [Redis-Supabase Integration Guide](docs/guide/redis-supabase-integration.md) for details.
+
+**Performance**: Redis caching provides 20-50x faster reads for frequently accessed vCons.
 
 ## Project Structure
 
@@ -327,16 +366,22 @@ vcon-mcp/
 
 ### For Users
 - **[Getting Started](GETTING_STARTED.md)** - Quick start guide for using the server
-- **[Prompts Guide](docs/PROMPTS_GUIDE.md)** - Comprehensive guide to query prompts
-- **[Prompts Quick Reference](PROMPTS_QUICK_REFERENCE.md)** - Quick reference for prompts
-- **[Search Tools Guide](docs/SEARCH_TOOLS_GUIDE.md)** - Detailed search tool documentation
-- **[Tag Management Guide](docs/TAG_MANAGEMENT_GUIDE.md)** - Tag system usage
+- **[Query Prompts Guide](docs/guide/prompts.md)** - How to use search and retrieval prompts
+- **[Search Tools Guide](docs/guide/search.md)** - Search strategies and tools
+- **[Tag Management Guide](docs/guide/tags.md)** - Tagging and organization
 - **[Open Source Features](OPEN_SOURCE_FEATURES.md)** - Complete feature reference
 - **[Proprietary Features](PORPRIETARY_FEATURES.md)** - Enterprise and advanced features
 
 ### For Developers
 - **[Build Guide](BUILD_GUIDE.md)** - Step-by-step implementation from scratch
 - **[Supabase Semantic Search](SUPABASE_SEMANTIC_SEARCH_GUIDE.md)** - Vector search setup
+- **[Plugin Development](docs/development/plugins.md)** - Creating custom plugins
+
+### API Reference
+- **[Tools API](docs/api/tools.md)** - MCP tools reference
+- **[Prompts API](docs/api/prompts.md)** - MCP prompts reference
+- **[Resources API](docs/api/resources.md)** - MCP resources reference
+- **[Types](docs/api/types.md)** - TypeScript type definitions
 
 ### Technical Reference
 - **[Quick Reference](docs/reference/QUICK_REFERENCE.md)** - Critical spec corrections checklist

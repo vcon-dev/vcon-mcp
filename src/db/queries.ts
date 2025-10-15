@@ -10,10 +10,28 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
+import Redis from 'ioredis';
 import { VCon, Analysis, Dialog, Party, Attachment } from '../types/vcon.js';
 
 export class VConQueries {
-  constructor(private supabase: SupabaseClient) {}
+  private redis: Redis | null = null;
+  private cacheEnabled: boolean = false;
+  private cacheTTL: number = 3600; // Default 1 hour
+
+  constructor(
+    private supabase: SupabaseClient,
+    redis?: Redis | null
+  ) {
+    if (redis) {
+      this.redis = redis;
+      this.cacheEnabled = true;
+      // Get TTL from environment or use default
+      this.cacheTTL = parseInt(process.env.VCON_REDIS_EXPIRY || '3600', 10);
+      console.error(`✅ Cache layer enabled (TTL: ${this.cacheTTL}s)`);
+    } else {
+      console.error('ℹ️  Cache layer disabled (Redis not configured)');
+    }
+  }
 
   /**
    * Create a new vCon with all related entities
@@ -346,10 +364,74 @@ export class VConQueries {
   }
 
   /**
-   * Get a complete vCon by UUID
+   * Cache helper: Get vCon from Redis cache
+   * @private
+   */
+  private async getCachedVCon(uuid: string): Promise<VCon | null> {
+    if (!this.cacheEnabled || !this.redis) return null;
+
+    try {
+      const cached = await this.redis.get(`vcon:${uuid}`);
+      if (cached) {
+        console.error(`✅ Cache HIT for vCon ${uuid}`);
+        return JSON.parse(cached) as VCon;
+      }
+      console.error(`ℹ️  Cache MISS for vCon ${uuid}`);
+      return null;
+    } catch (error) {
+      console.error(`⚠️  Cache read error for ${uuid}:`, error);
+      return null; // Fall through to database
+    }
+  }
+
+  /**
+   * Cache helper: Store vCon in Redis cache
+   * @private
+   */
+  private async setCachedVCon(uuid: string, vcon: VCon): Promise<void> {
+    if (!this.cacheEnabled || !this.redis) return;
+
+    try {
+      await this.redis.setex(
+        `vcon:${uuid}`,
+        this.cacheTTL,
+        JSON.stringify(vcon)
+      );
+      console.error(`✅ Cached vCon ${uuid} (TTL: ${this.cacheTTL}s)`);
+    } catch (error) {
+      console.error(`⚠️  Cache write error for ${uuid}:`, error);
+      // Non-fatal: continue without caching
+    }
+  }
+
+  /**
+   * Cache helper: Invalidate cached vCon
+   * @private
+   */
+  private async invalidateCachedVCon(uuid: string): Promise<void> {
+    if (!this.cacheEnabled || !this.redis) return;
+
+    try {
+      await this.redis.del(`vcon:${uuid}`);
+      console.error(`✅ Invalidated cache for vCon ${uuid}`);
+    } catch (error) {
+      console.error(`⚠️  Cache invalidation error for ${uuid}:`, error);
+    }
+  }
+
+  /**
+   * Get a complete vCon by UUID (cache-first strategy)
    * ✅ Returns all fields with correct names
+   * ✅ Checks Redis cache first, falls back to Supabase
    */
   async getVCon(uuid: string): Promise<VCon> {
+    // Try cache first
+    const cached = await this.getCachedVCon(uuid);
+    if (cached) {
+      return cached;
+    }
+
+    // Cache miss - fetch from Supabase
     // Get main vcon
     const { data: vconData, error: vconError } = await this.supabase
       .from('vcons')
@@ -454,6 +536,9 @@ export class VConQueries {
       })),
     };
 
+    // Cache the result for future reads
+    await this.setCachedVCon(uuid, vcon);
+
     return vcon;
   }
 
@@ -544,6 +629,9 @@ export class VConQueries {
       .eq('uuid', uuid);
 
     if (error) throw error;
+
+    // Invalidate cache
+    await this.invalidateCachedVCon(uuid);
   }
 
   /**
@@ -564,6 +652,9 @@ export class VConQueries {
       .eq('uuid', uuid);
 
     if (error) throw error;
+
+    // Invalidate cache since data changed
+    await this.invalidateCachedVCon(uuid);
   }
 
   // ============================================================================
