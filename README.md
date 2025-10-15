@@ -28,6 +28,7 @@ The Model Context Protocol (MCP) enables AI assistants to use external tools and
 
 - ✅ **IETF vCon Compliant** - Implements `draft-ietf-vcon-vcon-core-00` specification
 - ✅ **MCP Integration** - 7 tools for AI assistants to manage conversation data
+- ✅ **OpenTelemetry Observability** - Full traces, metrics, and structured logs with console or OTLP export
 - ✅ **Query Prompts** - 9 pre-built prompts to guide effective searching and retrieval:
   - Exact tag matching (e.g., "find angry customers from June")
   - Semantic search (e.g., "find frustrated users")
@@ -349,6 +350,51 @@ For high-performance deployments, add Redis as a cache layer:
 **Enable caching** by setting `REDIS_URL` environment variable. See [Redis-Supabase Integration Guide](docs/guide/redis-supabase-integration.md) for details.
 
 **Performance**: Redis caching provides 20-50x faster reads for frequently accessed vCons.
+
+## Observability
+
+Built-in OpenTelemetry instrumentation provides production-ready monitoring:
+
+### Features
+
+- **Distributed Tracing**: Full request lifecycle tracing with spans for every operation
+- **Business Metrics**: Track vCon operations, search patterns, and usage
+- **Performance Metrics**: Monitor query duration, cache hit rates, and latency
+- **Structured Logging**: JSON logs with automatic trace context correlation
+- **Flexible Export**: Console (development) or OTLP (production) exporters
+
+### Quick Start
+
+```bash
+# Development (console export)
+OTEL_ENABLED=true
+OTEL_EXPORTER_TYPE=console
+
+# Production (OTLP collector)
+OTEL_ENABLED=true
+OTEL_EXPORTER_TYPE=otlp
+OTEL_ENDPOINT=http://localhost:4318
+```
+
+### Key Metrics
+
+- `vcon.created.count` - vCons created
+- `vcon.deleted.count` - vCons deleted
+- `vcon.search.count` - Searches performed (by type)
+- `tool.execution.duration` - Tool execution time
+- `db.query.count` - Database queries
+- `cache.hit` / `cache.miss` - Cache performance
+
+### Collector Examples
+
+```bash
+# Jaeger (all-in-one)
+docker run -d -p 4318:4318 -p 16686:16686 jaegertracing/all-in-one:latest
+
+# View traces at http://localhost:16686
+```
+
+See [Observability Guide](docs/guide/observability.md) for complete documentation.
 
 ## Project Structure
 

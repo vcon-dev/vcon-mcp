@@ -6,6 +6,7 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import Redis from 'ioredis';
+import { logWithContext, recordCounter } from '../observability/instrumentation.js';
 
 let supabase: SupabaseClient | null = null;
 let redis: Redis | null = null;
@@ -101,19 +102,26 @@ export function getRedisClient(): Redis | null {
       });
 
       redis.on('error', (error) => {
-        console.error('Redis connection error:', error.message);
+        logWithContext('error', 'Redis connection error', {
+          error_message: error.message,
+        });
+        recordCounter('cache.error', 1, {
+          error_type: error.name,
+        }, 'Cache connection errors');
       });
 
       redis.on('connect', () => {
-        console.error('✅ Redis cache connected');
+        logWithContext('info', 'Redis cache connected');
       });
 
       redis.on('close', () => {
-        console.error('⚠️  Redis cache connection closed');
+        logWithContext('warn', 'Redis cache connection closed');
       });
 
     } catch (error) {
-      console.error('Failed to initialize Redis client:', error);
+      logWithContext('error', 'Failed to initialize Redis client', {
+        error_message: error instanceof Error ? error.message : String(error),
+      });
       return null;
     }
   }

@@ -41,9 +41,15 @@ import { RequestContext } from './hooks/plugin-interface.js';
 import { getCoreResources, resolveCoreResource } from './resources/index.js';
 import { DatabaseInspector } from './db/database-inspector.js';
 import { allPrompts, generatePromptMessage } from './prompts/index.js';
+import { initializeObservability, shutdownObservability } from './observability/config.js';
+import { withSpan, recordCounter, recordHistogram, logWithContext, attachErrorToSpan } from './observability/instrumentation.js';
+import { ATTR_TOOL_NAME, ATTR_TOOL_SUCCESS, ATTR_VCON_UUID, ATTR_SEARCH_TYPE, ATTR_SEARCH_RESULTS_COUNT } from './observability/attributes.js';
 
 // Load environment variables
 dotenv.config();
+
+// Initialize observability
+await initializeObservability();
 
 // Initialize MCP server
 const server = new Server(
@@ -156,9 +162,18 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
  */
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
+  
+  return withSpan(`mcp.tool.${name}`, async (span) => {
+    const startTime = Date.now();
+    
+    span.setAttributes({
+      [ATTR_TOOL_NAME]: name,
+    });
 
-  try {
-    switch (name) {
+    try {
+      let result;
+      
+      switch (name) {
       // ========================================================================
       // Create vCon
       // ========================================================================
@@ -192,22 +207,32 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           );
         }
 
-        const result = await queries.createVCon(vcon);
+        const createResult = await queries.createVCon(vcon);
         
         // Hook: afterCreate
         await pluginManager.executeHook('afterCreate', vcon, context);
         
-        return {
+        // Record vCon creation metric
+        recordCounter('vcon.created.count', 1, {
+          [ATTR_VCON_UUID]: createResult.uuid,
+        }, 'vCon creation count');
+        
+        span.setAttributes({
+          [ATTR_VCON_UUID]: createResult.uuid,
+        });
+        
+        result = {
           content: [{
             type: 'text',
             text: JSON.stringify({
               success: true,
-              uuid: result.uuid,
-              message: `Created vCon with UUID: ${result.uuid}`,
+              uuid: createResult.uuid,
+              message: `Created vCon with UUID: ${createResult.uuid}`,
               vcon: vcon
             }, null, 2),
           }],
         };
+        break;
       }
 
       // ========================================================================
@@ -240,15 +265,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           );
         }
 
-        const result = await queries.createVCon(vcon);
+        const templateResult = await queries.createVCon(vcon);
         await pluginManager.executeHook('afterCreate', vcon, context);
 
-        return {
+        recordCounter('vcon.created.count', 1, {
+          [ATTR_VCON_UUID]: templateResult.uuid,
+        }, 'vCon creation count');
+        
+        span.setAttributes({
+          [ATTR_VCON_UUID]: templateResult.uuid,
+        });
+
+        result = {
           content: [{
             type: 'text',
-            text: JSON.stringify({ success: true, uuid: result.uuid, vcon }, null, 2),
+            text: JSON.stringify({ success: true, uuid: templateResult.uuid, vcon }, null, 2),
           }],
         };
+        break;
       }
 
       // ========================================================================
@@ -275,7 +309,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const filteredVCon = await pluginManager.executeHook<VCon>('afterRead', vcon, context);
         if (filteredVCon) vcon = filteredVCon;
         
-        return {
+        span.setAttributes({
+          [ATTR_VCON_UUID]: uuid,
+        });
+        
+        result = {
           content: [{
             type: 'text',
             text: JSON.stringify({
@@ -284,6 +322,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }, null, 2),
           }],
         };
+        break;
       }
 
       // ========================================================================
@@ -316,7 +355,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const filteredResults = await pluginManager.executeHook<VCon[]>('afterSearch', results, context);
         if (filteredResults) results = filteredResults;
         
-        return {
+        recordCounter('vcon.search.count', 1, {
+          [ATTR_SEARCH_TYPE]: 'basic',
+        }, 'vCon search count');
+        
+        span.setAttributes({
+          [ATTR_SEARCH_TYPE]: 'basic',
+          [ATTR_SEARCH_RESULTS_COUNT]: results.length,
+        });
+        
+        result = {
           content: [{
             type: 'text',
             text: JSON.stringify({
@@ -326,6 +374,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }, null, 2),
           }],
         };
+        break;
       }
 
       // ========================================================================
@@ -345,7 +394,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           limit: (args?.limit as number | undefined) || 50,
         });
 
-        return {
+        recordCounter('vcon.search.count', 1, {
+          [ATTR_SEARCH_TYPE]: 'keyword',
+        }, 'vCon search count');
+        
+        span.setAttributes({
+          [ATTR_SEARCH_TYPE]: 'keyword',
+          [ATTR_SEARCH_RESULTS_COUNT]: results.length,
+        });
+        
+        result = {
           content: [{
             type: 'text',
             text: JSON.stringify({
@@ -361,6 +419,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }, null, 2),
           }],
         };
+        break;
       }
 
       // ========================================================================
@@ -394,7 +453,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           limit: (args?.limit as number | undefined) || 50,
         });
 
-        return {
+        recordCounter('vcon.search.count', 1, {
+          [ATTR_SEARCH_TYPE]: 'semantic',
+        }, 'vCon search count');
+        
+        span.setAttributes({
+          [ATTR_SEARCH_TYPE]: 'semantic',
+          [ATTR_SEARCH_RESULTS_COUNT]: results.length,
+        });
+
+        result = {
           content: [{
             type: 'text',
             text: JSON.stringify({
@@ -410,6 +478,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }, null, 2),
           }],
         };
+        break;
       }
 
       // ========================================================================
@@ -441,7 +510,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           limit: (args?.limit as number | undefined) || 50,
         });
 
-        return {
+        recordCounter('vcon.search.count', 1, {
+          [ATTR_SEARCH_TYPE]: 'hybrid',
+        }, 'vCon search count');
+        
+        span.setAttributes({
+          [ATTR_SEARCH_TYPE]: 'hybrid',
+          [ATTR_SEARCH_RESULTS_COUNT]: results.length,
+        });
+
+        result = {
           content: [{
             type: 'text',
             text: JSON.stringify({
@@ -456,6 +534,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }, null, 2),
           }],
         };
+        break;
       }
 
       // ========================================================================
@@ -496,7 +575,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         await queries.addAnalysis(vconUuid, analysis);
         
-        return {
+        span.setAttributes({
+          [ATTR_VCON_UUID]: vconUuid,
+        });
+        
+        result = {
           content: [{
             type: 'text',
             text: JSON.stringify({
@@ -506,6 +589,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }, null, 2),
           }],
         };
+        break;
       }
 
       // ========================================================================
@@ -529,7 +613,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         await queries.addDialog(vconUuid, dialog);
         
-        return {
+        span.setAttributes({
+          [ATTR_VCON_UUID]: vconUuid,
+        });
+        
+        result = {
           content: [{
             type: 'text',
             text: JSON.stringify({
@@ -539,6 +627,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }, null, 2),
           }],
         };
+        break;
       }
 
       // ========================================================================
@@ -562,7 +651,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         await queries.addAttachment(vconUuid, attachment);
         
-        return {
+        span.setAttributes({
+          [ATTR_VCON_UUID]: vconUuid,
+        });
+        
+        result = {
           content: [{
             type: 'text',
             text: JSON.stringify({
@@ -572,6 +665,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }, null, 2),
           }],
         };
+        break;
       }
 
       // ========================================================================
@@ -597,7 +691,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // Hook: afterDelete
         await pluginManager.executeHook('afterDelete', uuid, context);
         
-        return {
+        recordCounter('vcon.deleted.count', 1, {
+          [ATTR_VCON_UUID]: uuid,
+        }, 'vCon deletion count');
+        
+        span.setAttributes({
+          [ATTR_VCON_UUID]: uuid,
+        });
+        
+        result = {
           content: [{
             type: 'text',
             text: JSON.stringify({
@@ -606,6 +708,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }, null, 2),
           }],
         };
+        break;
       }
 
       // ========================================================================
@@ -647,26 +750,30 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         await queries.updateVCon(uuid, allowed);
 
         // Hook: afterUpdate
+        span.setAttributes({
+          [ATTR_VCON_UUID]: uuid,
+        });
+        
         if (returnUpdated) {
           let updated = await queries.getVCon(uuid);
           const modified = await pluginManager.executeHook<VCon>('afterUpdate', updated, context);
           if (modified) updated = modified;
-          return {
+          result = {
             content: [{
               type: 'text',
               text: JSON.stringify({ success: true, vcon: updated }, null, 2),
             }],
           };
+        } else {
+          await pluginManager.executeHook('afterUpdate', await queries.getVCon(uuid), context);
+          result = {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({ success: true, message: `Updated vCon ${uuid}` }, null, 2),
+            }],
+          };
         }
-
-        await pluginManager.executeHook('afterUpdate', await queries.getVCon(uuid), context);
-
-        return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({ success: true, message: `Updated vCon ${uuid}` }, null, 2),
-          }],
-        };
+        break;
       }
 
       // ========================================================================
@@ -685,7 +792,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           includeColumns,
         });
 
-        return {
+        result = {
           content: [{
             type: 'text',
             text: JSON.stringify({
@@ -694,6 +801,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }, null, 2),
           }],
         };
+        break;
       }
 
       // ========================================================================
@@ -712,7 +820,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           tableName,
         });
 
-        return {
+        result = {
           content: [{
             type: 'text',
             text: JSON.stringify({
@@ -721,6 +829,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }, null, 2),
           }],
         };
+        break;
       }
 
       // ========================================================================
@@ -736,7 +845,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         const analysis = await dbInspector.analyzeQuery(query, analyzeMode);
 
-        return {
+        result = {
           content: [{
             type: 'text',
             text: JSON.stringify({
@@ -745,6 +854,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }, null, 2),
           }],
         };
+        break;
       }
 
       // ========================================================================
@@ -760,12 +870,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           throw new McpError(ErrorCode.InvalidParams, 'vcon_uuid, action, and key are required');
         }
 
+        span.setAttributes({
+          [ATTR_VCON_UUID]: vconUuid,
+        });
+        
         if (action === 'set') {
           if (value === undefined || value === null) {
             throw new McpError(ErrorCode.InvalidParams, 'value is required when action is "set"');
           }
           await queries.addTag(vconUuid, key, value as string | number | boolean, true);
-          return {
+          result = {
             content: [{
               type: 'text',
               text: JSON.stringify({
@@ -779,7 +893,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           };
         } else if (action === 'remove') {
           await queries.removeTag(vconUuid, key);
-          return {
+          result = {
             content: [{
               type: 'text',
               text: JSON.stringify({
@@ -793,6 +907,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         } else {
           throw new McpError(ErrorCode.InvalidParams, 'action must be "set" or "remove"');
         }
+        break;
       }
 
       // ========================================================================
@@ -807,11 +922,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           throw new McpError(ErrorCode.InvalidParams, 'vcon_uuid is required');
         }
 
+        span.setAttributes({
+          [ATTR_VCON_UUID]: vconUuid,
+        });
+        
         if (key) {
           // Get single tag
           const value = await queries.getTag(vconUuid, key, defaultValue);
           const exists = value !== defaultValue;
-          return {
+          result = {
             content: [{
               type: 'text',
               text: JSON.stringify({
@@ -825,7 +944,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         } else {
           // Get all tags
           const tags = await queries.getTags(vconUuid);
-          return {
+          result = {
             content: [{
               type: 'text',
               text: JSON.stringify({
@@ -837,6 +956,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }],
           };
         }
+        break;
       }
 
       // ========================================================================
@@ -851,7 +971,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         await queries.removeAllTags(vconUuid);
 
-        return {
+        span.setAttributes({
+          [ATTR_VCON_UUID]: vconUuid,
+        });
+
+        result = {
           content: [{
             type: 'text',
             text: JSON.stringify({
@@ -860,6 +984,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }, null, 2),
           }],
         };
+        break;
       }
 
       // ========================================================================
@@ -880,7 +1005,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           vconUuids.slice(0, limit).map(uuid => queries.getVCon(uuid))
         );
 
-        return {
+        recordCounter('vcon.search.count', 1, {
+          [ATTR_SEARCH_TYPE]: 'tags',
+        }, 'vCon search count');
+        
+        span.setAttributes({
+          [ATTR_SEARCH_TYPE]: 'tags',
+          [ATTR_SEARCH_RESULTS_COUNT]: vconUuids.length,
+        });
+
+        result = {
           content: [{
             type: 'text',
             text: JSON.stringify({
@@ -892,6 +1026,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }, null, 2),
           }],
         };
+        break;
       }
 
       // ========================================================================
@@ -902,31 +1037,32 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const keyFilter = args?.key_filter as string | undefined;
         const minCount = (args?.min_count as number | undefined) ?? 1;
 
-        const result = await queries.getUniqueTags({
+        const uniqueTagsResult = await queries.getUniqueTags({
           includeCounts,
           keyFilter,
           minCount
         });
 
-        return {
+        result = {
           content: [{
             type: 'text',
             text: JSON.stringify({
               success: true,
-              unique_keys: result.keys,
-              unique_key_count: result.keys.length,
-              tags_by_key: result.tagsByKey,
-              counts_per_value: result.countsPerValue,
-              total_vcons_with_tags: result.totalVCons,
+              unique_keys: uniqueTagsResult.keys,
+              unique_key_count: uniqueTagsResult.keys.length,
+              tags_by_key: uniqueTagsResult.tagsByKey,
+              counts_per_value: uniqueTagsResult.countsPerValue,
+              total_vcons_with_tags: uniqueTagsResult.totalVCons,
               summary: {
-                total_unique_keys: result.keys.length,
-                total_vcons: result.totalVCons,
+                total_unique_keys: uniqueTagsResult.keys.length,
+                total_vcons: uniqueTagsResult.totalVCons,
                 filter_applied: keyFilter ? true : false,
                 min_count_filter: minCount
               }
             }, null, 2),
           }],
         };
+        break;
       }
 
       // ========================================================================
@@ -937,7 +1073,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (format === 'json_schema') {
           // Avoid adding dependency at runtime: provide a minimal hand-authored schema envelope if needed later
           // For now, return a simple note since generating from zod is out-of-scope without new deps during runtime
-          return {
+          result = {
             content: [{
               type: 'text',
               text: JSON.stringify({
@@ -946,17 +1082,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               }, null, 2)
             }]
           };
-        }
-        if (format === 'typescript') {
+        } else if (format === 'typescript') {
           // Return informative pointer to types
-          return {
+          result = {
             content: [{
               type: 'text',
               text: 'See src/types/vcon.ts for TypeScript interfaces.'
             }]
           };
+        } else {
+          throw new McpError(ErrorCode.InvalidParams, `Unsupported schema format: ${format}`);
         }
-        throw new McpError(ErrorCode.InvalidParams, `Unsupported schema format: ${format}`);
+        break;
       }
 
       // ========================================================================
@@ -981,14 +1118,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           throw new McpError(ErrorCode.InvalidParams, `Unknown example_type: ${exampleType}`);
         }
         if (format === 'json') {
-          return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
-        }
-        if (format === 'yaml') {
+          result = { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+        } else if (format === 'yaml') {
           // naive YAML export without extra deps
           const yaml = `vcon: ${data.vcon}\nuuid: ${data.uuid}\ncreated_at: ${data.created_at}`;
-          return { content: [{ type: 'text', text: yaml }] };
+          result = { content: [{ type: 'text', text: yaml }] };
+        } else {
+          throw new McpError(ErrorCode.InvalidParams, `Unsupported format: ${format}`);
         }
-        throw new McpError(ErrorCode.InvalidParams, `Unsupported format: ${format}`);
+        break;
       }
 
       // ========================================================================
@@ -1007,15 +1145,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             purpose: args?.purpose as string | undefined,
           };
           
-          const result = await pluginManager.handlePluginToolCall(name, args, context);
+          const pluginResult = await pluginManager.handlePluginToolCall(name, args, context);
           
-          if (result) {
-            return {
+          if (pluginResult) {
+            result = {
               content: [{
                 type: 'text',
-                text: typeof result === 'string' ? result : JSON.stringify(result, null, 2),
+                text: typeof pluginResult === 'string' ? pluginResult : JSON.stringify(pluginResult, null, 2),
               }],
             };
+            break;
           }
         }
         
@@ -1023,22 +1162,64 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           ErrorCode.MethodNotFound,
           `Unknown tool: ${name}`
         );
-    }
-  } catch (error) {
-    // Handle errors
-    if (error instanceof McpError) {
-      throw error;
-    }
+      }
+      
+      // Record successful execution metrics
+      const duration = Date.now() - startTime;
+      recordHistogram('tool.execution.duration', duration, {
+        [ATTR_TOOL_NAME]: name,
+        [ATTR_TOOL_SUCCESS]: true,
+      }, 'Tool execution duration in milliseconds');
+      
+      recordCounter('tool.execution.count', 1, {
+        [ATTR_TOOL_NAME]: name,
+        status: 'success',
+      }, 'Tool execution count');
+      
+      span.setAttributes({
+        [ATTR_TOOL_SUCCESS]: true,
+      });
+      
+      return result;
+      
+    } catch (error) {
+      // Record failed execution metrics
+      const duration = Date.now() - startTime;
+      recordHistogram('tool.execution.duration', duration, {
+        [ATTR_TOOL_NAME]: name,
+        [ATTR_TOOL_SUCCESS]: false,
+      }, 'Tool execution duration in milliseconds');
+      
+      recordCounter('tool.execution.count', 1, {
+        [ATTR_TOOL_NAME]: name,
+        status: 'error',
+      }, 'Tool execution count');
+      
+      span.setAttributes({
+        [ATTR_TOOL_SUCCESS]: false,
+      });
+      
+      // Handle errors
+      if (error instanceof McpError) {
+        attachErrorToSpan(span, error);
+        throw error;
+      }
 
-    // Database or other errors
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error('Tool execution error:', errorMessage);
-    
-    throw new McpError(
-      ErrorCode.InternalError,
-      `Tool execution failed: ${errorMessage}`
-    );
-  }
+      // Database or other errors
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logWithContext('error', 'Tool execution error', {
+        tool_name: name,
+        error_message: errorMessage,
+      });
+      
+      attachErrorToSpan(span, error);
+      
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Tool execution failed: ${errorMessage}`
+      );
+    }
+  });
 });
 
 /**
@@ -1131,16 +1312,18 @@ async function main() {
 
 // Handle graceful shutdown
 process.on('SIGINT', async () => {
-  console.error('\n🛑 Shutting down gracefully...');
+  logWithContext('info', 'Shutting down gracefully (SIGINT)');
   await pluginManager.shutdown();
   await closeAllConnections();
+  await shutdownObservability();
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
-  console.error('\n🛑 Shutting down gracefully...');
+  logWithContext('info', 'Shutting down gracefully (SIGTERM)');
   await pluginManager.shutdown();
   await closeAllConnections();
+  await shutdownObservability();
   process.exit(0);
 });
 

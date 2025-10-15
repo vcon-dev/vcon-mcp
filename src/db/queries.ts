@@ -12,6 +12,8 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import Redis from 'ioredis';
 import { VCon, Analysis, Dialog, Party, Attachment } from '../types/vcon.js';
+import { withSpan, recordCounter, recordHistogram, logWithContext } from '../observability/instrumentation.js';
+import { ATTR_VCON_UUID, ATTR_DB_OPERATION, ATTR_CACHE_HIT, ATTR_SEARCH_TYPE, ATTR_SEARCH_RESULTS_COUNT, ATTR_SEARCH_THRESHOLD } from '../observability/attributes.js';
 
 export class VConQueries {
   private redis: Redis | null = null;
@@ -27,9 +29,13 @@ export class VConQueries {
       this.cacheEnabled = true;
       // Get TTL from environment or use default
       this.cacheTTL = parseInt(process.env.VCON_REDIS_EXPIRY || '3600', 10);
-      console.error(`✅ Cache layer enabled (TTL: ${this.cacheTTL}s)`);
+      logWithContext('info', 'Cache layer enabled', {
+        cache_ttl: this.cacheTTL,
+      });
     } else {
-      console.error('ℹ️  Cache layer disabled (Redis not configured)');
+      logWithContext('info', 'Cache layer disabled', {
+        reason: 'Redis not configured',
+      });
     }
   }
 
@@ -38,24 +44,40 @@ export class VConQueries {
    * ✅ Uses corrected field names throughout
    */
   async createVCon(vcon: VCon): Promise<{ uuid: string; id: string }> {
-    // Insert main vcon
-    const { data: vconData, error: vconError } = await this.supabase
-      .from('vcons')
-      .insert({
-        uuid: vcon.uuid,
-        vcon_version: vcon.vcon,
-        subject: vcon.subject,
-        created_at: vcon.created_at,
-        updated_at: vcon.updated_at,
-        extensions: vcon.extensions,          // ✅ Added per spec
-        must_support: vcon.must_support,      // ✅ Added per spec
-        redacted: vcon.redacted || {},
-        appended: vcon.appended || {},        // ✅ Added per spec
-      })
-      .select('id, uuid')
-      .single();
+    return withSpan('db.createVCon', async (span) => {
+      span.setAttributes({
+        [ATTR_VCON_UUID]: vcon.uuid,
+        [ATTR_DB_OPERATION]: 'insert',
+      });
+      
+      recordCounter('db.query.count', 1, {
+        operation: 'createVCon',
+      }, 'Database query count');
+      
+      // Insert main vcon
+      const { data: vconData, error: vconError } = await this.supabase
+        .from('vcons')
+        .insert({
+          uuid: vcon.uuid,
+          vcon_version: vcon.vcon,
+          subject: vcon.subject,
+          created_at: vcon.created_at,
+          updated_at: vcon.updated_at,
+          extensions: vcon.extensions,          // ✅ Added per spec
+          must_support: vcon.must_support,      // ✅ Added per spec
+          redacted: vcon.redacted || {},
+          appended: vcon.appended || {},        // ✅ Added per spec
+        })
+        .select('id, uuid')
+        .single();
 
-    if (vconError) throw vconError;
+      if (vconError) {
+        recordCounter('db.query.errors', 1, {
+          operation: 'createVCon',
+          error_type: vconError.code || 'unknown',
+        }, 'Database query errors');
+        throw vconError;
+      }
 
     // Insert parties
     if (vcon.parties.length > 0) {
@@ -97,14 +119,20 @@ export class VConQueries {
       }
     }
 
-    // Insert attachments if present
-    if (vcon.attachments && vcon.attachments.length > 0) {
-      for (let i = 0; i < vcon.attachments.length; i++) {
-        await this.addAttachment(vconData.uuid, vcon.attachments[i]);
+      // Insert attachments if present
+      if (vcon.attachments && vcon.attachments.length > 0) {
+        for (let i = 0; i < vcon.attachments.length; i++) {
+          await this.addAttachment(vconData.uuid, vcon.attachments[i]);
+        }
       }
-    }
 
-    return { uuid: vconData.uuid, id: vconData.id };
+      // Invalidate cache after creation
+      if (this.cacheEnabled && this.redis) {
+        await this.redis.del(`vcon:${vconData.uuid}`);
+      }
+
+      return { uuid: vconData.uuid, id: vconData.id };
+    });
   }
 
   /**
@@ -123,15 +151,39 @@ export class VConQueries {
     rank: number;
     snippet: string | null;
   }>> {
-    const { data, error } = await this.supabase.rpc('search_vcons_keyword', {
-      query_text: params.query,
-      start_date: params.startDate ?? null,
-      end_date: params.endDate ?? null,
-      tag_filter: params.tags ?? {},
-      max_results: params.limit ?? 50,
+    return withSpan('db.keywordSearch', async (span) => {
+      span.setAttributes({
+        [ATTR_SEARCH_TYPE]: 'keyword',
+        [ATTR_DB_OPERATION]: 'search',
+      });
+      
+      recordCounter('db.query.count', 1, {
+        operation: 'keywordSearch',
+      }, 'Database query count');
+      
+      const { data, error } = await this.supabase.rpc('search_vcons_keyword', {
+        query_text: params.query,
+        start_date: params.startDate ?? null,
+        end_date: params.endDate ?? null,
+        tag_filter: params.tags ?? {},
+        max_results: params.limit ?? 50,
+      });
+      
+      if (error) {
+        recordCounter('db.query.errors', 1, {
+          operation: 'keywordSearch',
+          error_type: error.code || 'unknown',
+        }, 'Database query errors');
+        throw error;
+      }
+      
+      const results = data as any;
+      span.setAttributes({
+        [ATTR_SEARCH_RESULTS_COUNT]: results?.length || 0,
+      });
+      
+      return results;
     });
-    if (error) throw error;
-    return data as any;
   }
 
   /**
@@ -150,14 +202,39 @@ export class VConQueries {
     content_text: string;
     similarity: number;
   }>> {
-    const { data, error } = await this.supabase.rpc('search_vcons_semantic', {
-      query_embedding: params.embedding,
-      tag_filter: params.tags ?? {},
-      match_threshold: params.threshold ?? 0.7,
-      match_count: params.limit ?? 50,
+    return withSpan('db.semanticSearch', async (span) => {
+      span.setAttributes({
+        [ATTR_SEARCH_TYPE]: 'semantic',
+        [ATTR_DB_OPERATION]: 'search',
+        [ATTR_SEARCH_THRESHOLD]: params.threshold || 0.7,
+      });
+      
+      recordCounter('db.query.count', 1, {
+        operation: 'semanticSearch',
+      }, 'Database query count');
+      
+      const { data, error } = await this.supabase.rpc('search_vcons_semantic', {
+        query_embedding: params.embedding,
+        tag_filter: params.tags ?? {},
+        match_threshold: params.threshold ?? 0.7,
+        match_count: params.limit ?? 50,
+      });
+      
+      if (error) {
+        recordCounter('db.query.errors', 1, {
+          operation: 'semanticSearch',
+          error_type: error.code || 'unknown',
+        }, 'Database query errors');
+        throw error;
+      }
+      
+      const results = data as any;
+      span.setAttributes({
+        [ATTR_SEARCH_RESULTS_COUNT]: results?.length || 0,
+      });
+      
+      return results;
     });
-    if (error) throw error;
-    return data as any;
   }
 
   /**
@@ -176,15 +253,40 @@ export class VConQueries {
     semantic_score: number;
     keyword_score: number;
   }>> {
-    const { data, error } = await this.supabase.rpc('search_vcons_hybrid', {
-      keyword_query: params.keywordQuery ?? null,
-      query_embedding: params.embedding ?? null,
-      tag_filter: params.tags ?? {},
-      semantic_weight: params.semanticWeight ?? 0.6,
-      limit_results: params.limit ?? 50,
+    return withSpan('db.hybridSearch', async (span) => {
+      span.setAttributes({
+        [ATTR_SEARCH_TYPE]: 'hybrid',
+        [ATTR_DB_OPERATION]: 'search',
+        'search.semantic_weight': params.semanticWeight || 0.6,
+      });
+      
+      recordCounter('db.query.count', 1, {
+        operation: 'hybridSearch',
+      }, 'Database query count');
+      
+      const { data, error } = await this.supabase.rpc('search_vcons_hybrid', {
+        keyword_query: params.keywordQuery ?? null,
+        query_embedding: params.embedding ?? null,
+        tag_filter: params.tags ?? {},
+        semantic_weight: params.semanticWeight ?? 0.6,
+        limit_results: params.limit ?? 50,
+      });
+      
+      if (error) {
+        recordCounter('db.query.errors', 1, {
+          operation: 'hybridSearch',
+          error_type: error.code || 'unknown',
+        }, 'Database query errors');
+        throw error;
+      }
+      
+      const results = data as any;
+      span.setAttributes({
+        [ATTR_SEARCH_RESULTS_COUNT]: results?.length || 0,
+      });
+      
+      return results;
     });
-    if (error) throw error;
-    return data as any;
   }
 
   /**
@@ -425,13 +527,29 @@ export class VConQueries {
    * ✅ Checks Redis cache first, falls back to Supabase
    */
   async getVCon(uuid: string): Promise<VCon> {
-    // Try cache first
-    const cached = await this.getCachedVCon(uuid);
-    if (cached) {
-      return cached;
-    }
+    return withSpan('db.getVCon', async (span) => {
+      span.setAttributes({
+        [ATTR_VCON_UUID]: uuid,
+        [ATTR_DB_OPERATION]: 'select',
+      });
+      
+      // Try cache first
+      const cached = await this.getCachedVCon(uuid);
+      if (cached) {
+        recordCounter('cache.hit', 1, { operation: 'getVCon' }, 'Cache hits');
+        span.setAttributes({ [ATTR_CACHE_HIT]: true });
+        return cached;
+      }
 
-    // Cache miss - fetch from Supabase
+      // Cache miss
+      recordCounter('cache.miss', 1, { operation: 'getVCon' }, 'Cache misses');
+      span.setAttributes({ [ATTR_CACHE_HIT]: false });
+      
+      recordCounter('db.query.count', 1, {
+        operation: 'getVCon',
+      }, 'Database query count');
+
+      // Cache miss - fetch from Supabase
     // Get main vcon
     const { data: vconData, error: vconError } = await this.supabase
       .from('vcons')
@@ -536,10 +654,11 @@ export class VConQueries {
       })),
     };
 
-    // Cache the result for future reads
-    await this.setCachedVCon(uuid, vcon);
+      // Cache the result for future reads
+      await this.setCachedVCon(uuid, vcon);
 
-    return vcon;
+      return vcon;
+    });
   }
 
   /**
