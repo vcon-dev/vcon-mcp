@@ -4,9 +4,9 @@
  * Run with: npx tsx scripts/test-tags.ts
  */
 
-import { getSupabaseClient } from '../src/db/client.js';
-import { VConQueries } from '../src/db/queries.js';
-import { VCon } from '../src/types/vcon.js';
+import { getSupabaseClient } from '../dist/db/client.js';
+import { VConQueries } from '../dist/db/queries.js';
+import { VCon } from '../dist/types/vcon.js';
 
 async function main() {
   console.log('🏷️  Testing Tag Functionality\n');

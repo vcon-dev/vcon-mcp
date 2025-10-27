@@ -3,28 +3,79 @@
 /**
  * vCon Loader Script
  * 
- * Loads production vCon files from a directory into the local Supabase database
+ * Loads production vCon files from a directory into the local Supabase database.
+ * This script is designed for loading standard vCon files that conform to the
+ * current vCon specification (0.3.0).
+ * 
+ * Features:
+ * - Validates vCon structure before loading
+ * - Skips vCons that already exist in the database
+ * - Provides detailed progress reporting
+ * - Handles errors gracefully with detailed error messages
+ * 
+ * Usage:
+ *   npx tsx scripts/load-vcons.ts [directory_path]
+ * 
+ * Arguments:
+ *   directory_path  Path to directory containing .vcon files (optional)
+ *                   Default: /Users/thomashowe/Downloads/31
+ * 
+ * Environment Variables:
+ *   SUPABASE_URL              Supabase project URL
+ *   SUPABASE_SERVICE_ROLE_KEY Service role key for admin operations
+ * 
+ * Examples:
+ *   # Load from default directory
+ *   npx tsx scripts/load-vcons.ts
+ * 
+ *   # Load from specific directory
+ *   npx tsx scripts/load-vcons.ts /path/to/vcon/files
+ * 
+ *   # Load with environment variables
+ *   SUPABASE_URL=http://127.0.0.1:54321 npx tsx scripts/load-vcons.ts
+ * 
+ * @author vCon MCP Team
+ * @version 1.0.0
+ * @since 2024-10-01
  */
 
 import { readdir, readFile } from 'fs/promises';
 import { join } from 'path';
 import dotenv from 'dotenv';
-import { getSupabaseClient } from '../src/db/client.js';
-import { VConQueries } from '../src/db/queries.js';
-import { VCon } from '../src/types/vcon.js';
-import { validateVCon } from '../src/utils/validation.js';
+import { getSupabaseClient } from '../dist/db/client.js';
+import { VConQueries } from '../dist/db/queries.js';
+import { VCon } from '../dist/types/vcon.js';
+import { validateVCon } from '../dist/utils/validation.js';
 
 // Load environment variables
 dotenv.config();
 
+/**
+ * Statistics tracking for vCon loading operations
+ */
 interface LoadStats {
+  /** Total number of vCon files found */
   total: number;
+  /** Number of vCons successfully loaded */
   successful: number;
+  /** Number of vCons that failed to load */
   failed: number;
+  /** Number of vCons skipped (already exist) */
   skipped: number;
+  /** Array of error details for failed loads */
   errors: Array<{ file: string; error: string }>;
 }
 
+/**
+ * Load vCon files from a directory into the database
+ * 
+ * This function processes all .vcon files in the specified directory,
+ * validates them, and loads them into the Supabase database. It skips
+ * vCons that already exist and provides detailed progress reporting.
+ * 
+ * @param directoryPath - Path to directory containing .vcon files
+ * @returns Promise resolving to loading statistics
+ */
 async function loadVConsFromDirectory(directoryPath: string): Promise<LoadStats> {
   const stats: LoadStats = {
     total: 0,
@@ -35,20 +86,20 @@ async function loadVConsFromDirectory(directoryPath: string): Promise<LoadStats>
   };
 
   try {
-    // Initialize database
+    // Initialize database connection and query interface
     const supabase = getSupabaseClient();
     const queries = new VConQueries(supabase);
 
     console.log(`📂 Reading vCon files from: ${directoryPath}\n`);
 
-    // Read all files in directory
+    // Read all files in directory and filter for .vcon files
     const files = await readdir(directoryPath);
     const vconFiles = files.filter(f => f.endsWith('.vcon'));
 
     stats.total = vconFiles.length;
     console.log(`Found ${stats.total} vCon files\n`);
 
-    // Process each file
+    // Process each vCon file sequentially
     for (let i = 0; i < vconFiles.length; i++) {
       const filename = vconFiles[i];
       const filepath = join(directoryPath, filename);
@@ -63,7 +114,7 @@ async function loadVConsFromDirectory(directoryPath: string): Promise<LoadStats>
         const content = await readFile(filepath, 'utf-8');
         const vcon: VCon = JSON.parse(content);
 
-        // Check if vCon already exists
+        // Check if vCon already exists in database to avoid duplicates
         try {
           const existing = await queries.getVCon(vcon.uuid);
           if (existing) {
@@ -77,7 +128,7 @@ async function loadVConsFromDirectory(directoryPath: string): Promise<LoadStats>
           // vCon doesn't exist, proceed with loading
         }
 
-        // Validate vCon
+        // Validate vCon structure before loading
         const validation = validateVCon(vcon);
         if (!validation.valid) {
           stats.failed++;
@@ -89,7 +140,7 @@ async function loadVConsFromDirectory(directoryPath: string): Promise<LoadStats>
           continue;
         }
 
-        // Load vCon into database
+        // Load validated vCon into database
         await queries.createVCon(vcon);
         stats.successful++;
 
@@ -139,7 +190,12 @@ async function loadVConsFromDirectory(directoryPath: string): Promise<LoadStats>
   return stats;
 }
 
-// Main execution
+/**
+ * Main execution function
+ * 
+ * Parses command line arguments and initiates the vCon loading process.
+ * Uses the first argument as the directory path, or defaults to a predefined path.
+ */
 async function main() {
   const args = process.argv.slice(2);
   const directoryPath = args[0] || '/Users/thomashowe/Downloads/31';

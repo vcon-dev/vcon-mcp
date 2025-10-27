@@ -8,7 +8,7 @@
  * Usage: npx tsx scripts/migrate-tags-encoding.ts
  */
 
-import { getSupabaseClient } from '../src/db/client.js';
+import { getSupabaseClient } from '../dist/db/client.js';
 
 async function main() {
   console.log('🔧 Migrating tags attachments encoding\n');

@@ -9,7 +9,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import { VConQueries } from '../src/db/queries.js';
+import { VConQueries } from '../dist/db/queries.js';
 import * as dotenv from 'dotenv';
 
 dotenv.config();

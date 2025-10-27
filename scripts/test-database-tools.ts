@@ -6,8 +6,8 @@
  */
 
 import dotenv from 'dotenv';
-import { getSupabaseClient } from '../src/db/client.js';
-import { DatabaseInspector } from '../src/db/database-inspector.js';
+import { getSupabaseClient } from '../dist/db/client.js';
+import { DatabaseInspector } from '../dist/db/database-inspector.js';
 
 dotenv.config();
 

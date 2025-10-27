@@ -6,8 +6,8 @@
  */
 
 import dotenv from 'dotenv';
-import { getSupabaseClient } from '../src/db/client.js';
-import { VConQueries } from '../src/db/queries.js';
+import { getSupabaseClient } from '../dist/db/client.js';
+import { VConQueries } from '../dist/db/queries.js';
 
 dotenv.config();
 
