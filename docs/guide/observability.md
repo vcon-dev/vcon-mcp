@@ -105,9 +105,53 @@ OTEL_ENDPOINT=http://localhost:4318
 
 ## Collector Setup
 
+### Testing Setup (Recommended)
+
+The easiest way to set up a local backend for testing is using Docker Compose with the included helper scripts:
+
+#### Quick Start with Docker Compose
+
+```bash
+# Start Jaeger backend
+./jaeger/start-jaeger.sh
+
+# Configure your server in .env
+OTEL_ENABLED=true
+OTEL_EXPORTER_TYPE=otlp
+OTEL_ENDPOINT=http://localhost:4318
+OTEL_SERVICE_NAME=vcon-mcp-server
+OTEL_SERVICE_VERSION=1.0.0
+
+# Start your server
+npm run dev
+
+# View traces at: http://localhost:16686
+```
+
+The `jaeger/docker-compose.yml` file includes a pre-configured Jaeger all-in-one setup. The helper scripts handle container management:
+
+- `./jaeger/start-jaeger.sh` - Starts Jaeger and checks health
+- `./jaeger/stop-jaeger.sh` - Stops and removes the container
+
+#### Manual Docker Compose
+
+You can also use docker-compose directly from the jaeger directory:
+
+```bash
+# Start
+cd jaeger
+docker compose up -d jaeger
+
+# Stop
+docker compose stop jaeger
+docker compose rm -f jaeger
+```
+
 ### Local Development
 
-#### Jaeger (All-in-One)
+#### Jaeger (All-in-One) - Manual Setup
+
+If you prefer to run Jaeger manually without docker-compose:
 
 ```bash
 docker run -d --name jaeger \

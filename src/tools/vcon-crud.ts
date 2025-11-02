@@ -168,7 +168,8 @@ export const getVConTool = {
 export const searchVConsTool = {
   name: 'search_vcons',
   description: 'Search for vCons using various criteria. Returns an array of matching vCons. ' +
-    'For full-text or semantic search of conversation content, use search_vcons_content instead.',
+    'For full-text or semantic search of conversation content, use search_vcons_content instead. ' +
+    '⚠️ LARGE DATABASE WARNING: Use response_format="metadata" for large result sets to avoid memory issues.',
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -198,9 +199,21 @@ export const searchVConsTool = {
       },
       limit: {
         type: 'number',
-        description: 'Maximum number of results to return (default: 10)',
+        description: 'Maximum number of results to return (default: 10, max: 1000)',
         minimum: 1,
-        maximum: 100
+        maximum: 1000,
+        default: 10
+      },
+      response_format: {
+        type: 'string',
+        enum: ['full', 'metadata', 'ids_only'],
+        description: 'Response format: "full" (complete vCons), "metadata" (summary info), "ids_only" (just UUIDs)',
+        default: 'metadata'
+      },
+      include_count: {
+        type: 'boolean',
+        description: 'Include total count of matching records (may be expensive for large datasets)',
+        default: false
       }
     }
   }
@@ -213,7 +226,8 @@ export const searchVConsTool = {
 export const searchVConsContentTool = {
   name: 'search_vcons_content',
   description: 'Full-text keyword search across vCon content including subject, dialog, analysis, and party info. ' +
-    'Searches through conversation text, analysis bodies, and participant details. Returns ranked results with snippets.',
+    'Searches through conversation text, analysis bodies, and participant details. Returns ranked results with snippets. ' +
+    '⚠️ LARGE DATABASE WARNING: Use response_format="snippets" for large result sets to avoid memory issues.',
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -236,9 +250,21 @@ export const searchVConsContentTool = {
       },
       limit: {
         type: 'number',
-        description: 'Maximum number of results to return (default: 50)',
+        description: 'Maximum number of results to return (default: 50, max: 1000)',
         minimum: 1,
-        maximum: 100
+        maximum: 1000,
+        default: 50
+      },
+      response_format: {
+        type: 'string',
+        enum: ['full', 'snippets', 'metadata', 'ids_only'],
+        description: 'Response format: "full" (complete vCons), "snippets" (with search highlights), "metadata" (summary), "ids_only" (just UUIDs)',
+        default: 'snippets'
+      },
+      include_count: {
+        type: 'boolean',
+        description: 'Include total count of matching records (may be expensive for large datasets)',
+        default: false
       }
     },
     required: ['query']
@@ -253,7 +279,8 @@ export const searchVConsSemanticTool = {
   name: 'search_vcons_semantic',
   description: 'Semantic search using AI embeddings to find conversations by meaning, not just keywords. ' +
     'Searches through subject, dialog, and analysis content. Returns similar conversations based on semantic similarity. ' +
-    'Note: Requires embeddings to be generated for vCons (see embedding documentation).',
+    'Note: Requires embeddings to be generated for vCons (see embedding documentation). ' +
+    '⚠️ LARGE DATABASE WARNING: Use response_format="metadata" for large result sets to avoid memory issues.',
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -275,13 +302,26 @@ export const searchVConsSemanticTool = {
         type: 'number',
         description: 'Minimum similarity threshold (0-1, default: 0.7)',
         minimum: 0,
-        maximum: 1
+        maximum: 1,
+        default: 0.7
       },
       limit: {
         type: 'number',
-        description: 'Maximum number of results to return (default: 50)',
+        description: 'Maximum number of results to return (default: 50, max: 1000)',
         minimum: 1,
-        maximum: 100
+        maximum: 1000,
+        default: 50
+      },
+      response_format: {
+        type: 'string',
+        enum: ['full', 'metadata', 'ids_only'],
+        description: 'Response format: "full" (complete vCons), "metadata" (summary info), "ids_only" (just UUIDs)',
+        default: 'metadata'
+      },
+      include_count: {
+        type: 'boolean',
+        description: 'Include total count of matching records (may be expensive for large datasets)',
+        default: false
       }
     }
   }
@@ -295,7 +335,8 @@ export const searchVConsHybridTool = {
   name: 'search_vcons_hybrid',
   description: 'Hybrid search combining keyword and semantic search for comprehensive results. ' +
     'Uses both full-text matching and AI embeddings to find relevant conversations. ' +
-    'Ideal for complex queries where you want both exact matches and conceptually similar content.',
+    'Ideal for complex queries where you want both exact matches and conceptually similar content. ' +
+    '⚠️ LARGE DATABASE WARNING: Use response_format="metadata" for large result sets to avoid memory issues.',
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -317,13 +358,26 @@ export const searchVConsHybridTool = {
         type: 'number',
         description: 'Weight for semantic vs keyword (0-1, default: 0.6). Higher values favor semantic matching.',
         minimum: 0,
-        maximum: 1
+        maximum: 1,
+        default: 0.6
       },
       limit: {
         type: 'number',
-        description: 'Maximum number of results to return (default: 50)',
+        description: 'Maximum number of results to return (default: 50, max: 1000)',
         minimum: 1,
-        maximum: 100
+        maximum: 1000,
+        default: 50
+      },
+      response_format: {
+        type: 'string',
+        enum: ['full', 'metadata', 'ids_only'],
+        description: 'Response format: "full" (complete vCons), "metadata" (summary info), "ids_only" (just UUIDs)',
+        default: 'metadata'
+      },
+      include_count: {
+        type: 'boolean',
+        description: 'Include total count of matching records (may be expensive for large datasets)',
+        default: false
       }
     },
     required: ['query']

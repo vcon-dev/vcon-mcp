@@ -10,6 +10,7 @@
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -21,6 +22,8 @@ import {
   McpError
 } from '@modelcontextprotocol/sdk/types.js';
 import dotenv from 'dotenv';
+import http from 'http';
+import { randomUUID } from 'crypto';
 import { getSupabaseClient, getRedisClient, closeAllConnections } from './db/client.js';
 import { VConQueries } from './db/queries.js';
 import { validateVCon, validateAnalysis } from './utils/validation.js';
@@ -35,11 +38,15 @@ import { VCon, Analysis, Dialog, Attachment } from './types/vcon.js';
 import { createFromTemplateTool, buildTemplateVCon } from './tools/templates.js';
 import { getSchemaTool, getExamplesTool } from './tools/schema-tools.js';
 import { allDatabaseTools } from './tools/database-tools.js';
+import { allDatabaseAnalyticsTools } from './tools/database-analytics.js';
+import { allDatabaseSizeTools } from './tools/database-size-tools.js';
 import { allTagTools } from './tools/tag-tools.js';
 import { PluginManager } from './hooks/plugin-manager.js';
 import { RequestContext } from './hooks/plugin-interface.js';
 import { getCoreResources, resolveCoreResource } from './resources/index.js';
 import { DatabaseInspector } from './db/database-inspector.js';
+import { DatabaseAnalytics } from './db/database-analytics.js';
+import { DatabaseSizeAnalyzer } from './db/database-size-analyzer.js';
 import { allPrompts, generatePromptMessage } from './prompts/index.js';
 import { initializeObservability, shutdownObservability } from './observability/config.js';
 import { withSpan, recordCounter, recordHistogram, logWithContext, attachErrorToSpan } from './observability/instrumentation.js';
@@ -69,6 +76,8 @@ const server = new Server(
 // Initialize database and cache
 let queries: VConQueries;
 let dbInspector: DatabaseInspector;
+let dbAnalytics: DatabaseAnalytics;
+let dbSizeAnalyzer: DatabaseSizeAnalyzer;
 let supabase: any;
 let redis: any;
 
@@ -77,6 +86,8 @@ try {
   redis = getRedisClient(); // Optional - returns null if not configured
   queries = new VConQueries(supabase, redis);
   dbInspector = new DatabaseInspector(supabase);
+  dbAnalytics = new DatabaseAnalytics(supabase);
+  dbSizeAnalyzer = new DatabaseSizeAnalyzer(supabase);
   console.error('✅ Database client initialized');
 } catch (error) {
   console.error('❌ Failed to initialize database:', error);
@@ -134,12 +145,30 @@ await pluginManager.initialize({ supabase, queries });
  * List available tools
  */
 server.setRequestHandler(ListToolsRequestSchema, async () => {
+  const transportType = process.env.MCP_TRANSPORT || 'stdio';
+  const requestId = randomUUID();
+  
+  logWithContext('info', 'MCP list tools request received', {
+    request_id: requestId,
+    transport: transportType,
+  });
+  
   const coreTools = allTools;
   const pluginTools = await pluginManager.getAdditionalTools();
   const extras = [createFromTemplateTool, getSchemaTool, getExamplesTool];
   
+  const tools = [...coreTools, ...extras, ...allDatabaseTools, ...allDatabaseAnalyticsTools, ...allDatabaseSizeTools, ...allTagTools, ...pluginTools];
+  
+  logWithContext('debug', 'MCP tools listed', {
+    request_id: requestId,
+    transport: transportType,
+    total_tools: tools.length,
+    core_tools: coreTools.length,
+    plugin_tools: pluginTools.length,
+  });
+  
   return {
-    tools: [...coreTools, ...extras, ...allDatabaseTools, ...allTagTools, ...pluginTools],
+    tools,
   };
 });
 
@@ -147,6 +176,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
  * List available resources
  */
 server.setRequestHandler(ListResourcesRequestSchema, async () => {
+  const transportType = process.env.MCP_TRANSPORT || 'stdio';
+  const requestId = randomUUID();
+  
+  logWithContext('info', 'MCP list resources request received', {
+    request_id: requestId,
+    transport: transportType,
+  });
+  
   const core = getCoreResources().map(r => ({ 
     uri: r.uri, 
     name: r.name, 
@@ -154,6 +191,15 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
     mimeType: r.mimeType 
   }));
   const pluginResources = await pluginManager.getAdditionalResources();
+  
+  logWithContext('debug', 'MCP resources listed', {
+    request_id: requestId,
+    transport: transportType,
+    total_resources: core.length + pluginResources.length,
+    core_resources: core.length,
+    plugin_resources: pluginResources.length,
+  });
+  
   return { resources: [...core, ...pluginResources] };
 });
 
@@ -162,6 +208,17 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
  */
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
+  const requestId = randomUUID();
+  const transportType = process.env.MCP_TRANSPORT || 'stdio';
+  
+  // Log incoming tool request (works for both HTTP and STDIO)
+  logWithContext('info', 'MCP tool request received', {
+    request_id: requestId,
+    transport: transportType,
+    tool_name: name,
+    has_arguments: !!args,
+    argument_keys: args ? Object.keys(args).join(', ') : 'none',
+  });
   
   return withSpan(`mcp.tool.${name}`, async (span) => {
     const startTime = Date.now();
@@ -335,6 +392,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           purpose: args?.purpose as string | undefined,
         };
         
+        const responseFormat = (args?.response_format as string | undefined) || 'metadata';
+        const includeCount = (args?.include_count as boolean | undefined) || false;
+        
         let filters = {
           subject: args?.subject as string | undefined,
           partyName: args?.party_name as string | undefined,
@@ -355,6 +415,32 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const filteredResults = await pluginManager.executeHook<VCon[]>('afterSearch', results, context);
         if (filteredResults) results = filteredResults;
         
+        // Format response based on requested format
+        let formattedResults;
+        if (responseFormat === 'ids_only') {
+          formattedResults = results.map(vcon => vcon.uuid);
+        } else if (responseFormat === 'metadata') {
+          formattedResults = results.map(vcon => ({
+            uuid: vcon.uuid,
+            subject: vcon.subject,
+            created_at: vcon.created_at,
+            parties_count: vcon.parties?.length || 0,
+            dialog_count: vcon.dialog?.length || 0,
+            analysis_count: vcon.analysis?.length || 0,
+            attachments_count: vcon.attachments?.length || 0
+          }));
+        } else {
+          formattedResults = results;
+        }
+
+        // Get total count if requested (expensive for large datasets)
+        let totalCount;
+        if (includeCount) {
+          const countFilters = { ...filters, limit: undefined };
+          const countResults = await queries.searchVCons(countFilters);
+          totalCount = countResults.length;
+        }
+        
         recordCounter('vcon.search.count', 1, {
           [ATTR_SEARCH_TYPE]: 'basic',
         }, 'vCon search count');
@@ -364,14 +450,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           [ATTR_SEARCH_RESULTS_COUNT]: results.length,
         });
         
+        const response: any = {
+          success: true,
+          count: results.length,
+          response_format: responseFormat,
+          results: formattedResults
+        };
+        
+        if (totalCount !== undefined) {
+          response.total_count = totalCount;
+        }
+        
         result = {
           content: [{
             type: 'text',
-            text: JSON.stringify({
-              success: true,
-              count: results.length,
-              vcons: results
-            }, null, 2),
+            text: JSON.stringify(response, null, 2),
           }],
         };
         break;
@@ -386,6 +479,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           throw new McpError(ErrorCode.InvalidParams, 'query is required');
         }
 
+        const responseFormat = (args?.response_format as string | undefined) || 'snippets';
+        const includeCount = (args?.include_count as boolean | undefined) || false;
+
         const results = await queries.keywordSearch({
           query,
           startDate: args?.start_date as string | undefined,
@@ -393,6 +489,46 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           tags: args?.tags as Record<string, string> | undefined,
           limit: (args?.limit as number | undefined) || 50,
         });
+
+        // Format response based on requested format
+        let formattedResults;
+        if (responseFormat === 'ids_only') {
+          formattedResults = results.map(r => r.vcon_id);
+        } else if (responseFormat === 'metadata') {
+          formattedResults = results.map(r => ({
+            vcon_id: r.vcon_id,
+            content_type: r.doc_type,
+            relevance_score: r.rank
+          }));
+        } else if (responseFormat === 'snippets') {
+          formattedResults = results.map(r => ({
+            vcon_id: r.vcon_id,
+            content_type: r.doc_type,
+            content_index: r.ref_index,
+            relevance_score: r.rank,
+            snippet: r.snippet
+          }));
+        } else {
+          // Full format - get complete vCons
+          const vconIds = [...new Set(results.map(r => r.vcon_id))];
+          const fullVCons = await Promise.all(
+            vconIds.slice(0, 20).map(id => queries.getVCon(id)) // Limit to 20 for memory safety
+          );
+          formattedResults = fullVCons;
+        }
+
+        // Get total count if requested
+        let totalCount;
+        if (includeCount) {
+          const countResults = await queries.keywordSearch({
+            query,
+            startDate: args?.start_date as string | undefined,
+            endDate: args?.end_date as string | undefined,
+            tags: args?.tags as Record<string, string> | undefined,
+            limit: undefined,
+          });
+          totalCount = countResults.length;
+        }
 
         recordCounter('vcon.search.count', 1, {
           [ATTR_SEARCH_TYPE]: 'keyword',
@@ -403,20 +539,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           [ATTR_SEARCH_RESULTS_COUNT]: results.length,
         });
         
+        const response: any = {
+          success: true,
+          count: results.length,
+          response_format: responseFormat,
+          results: formattedResults
+        };
+        
+        if (totalCount !== undefined) {
+          response.total_count = totalCount;
+        }
+        
         result = {
           content: [{
             type: 'text',
-            text: JSON.stringify({
-              success: true,
-              count: results.length,
-              results: results.map(r => ({
-                vcon_id: r.vcon_id,
-                content_type: r.doc_type,
-                content_index: r.ref_index,
-                relevance_score: r.rank,
-                snippet: r.snippet
-              }))
-            }, null, 2),
+            text: JSON.stringify(response, null, 2),
           }],
         };
         break;
@@ -858,6 +995,205 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       // ========================================================================
+      // Get Database Analytics
+      // ========================================================================
+      case 'get_database_analytics': {
+        const options = {
+          includeGrowthTrends: args?.include_growth_trends as boolean | undefined,
+          includeContentAnalytics: args?.include_content_analytics as boolean | undefined,
+          includeAttachmentStats: args?.include_attachment_stats as boolean | undefined,
+          includeTagAnalytics: args?.include_tag_analytics as boolean | undefined,
+          includeHealthMetrics: args?.include_health_metrics as boolean | undefined,
+          monthsBack: args?.months_back as number | undefined,
+        };
+
+        const analytics = await dbAnalytics.getDatabaseAnalytics(options);
+
+        result = {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              database_analytics: analytics
+            }, null, 2),
+          }],
+        };
+        break;
+      }
+
+      // ========================================================================
+      // Get Monthly Growth Analytics
+      // ========================================================================
+      case 'get_monthly_growth_analytics': {
+        const options = {
+          monthsBack: args?.months_back as number | undefined,
+          includeProjections: args?.include_projections as boolean | undefined,
+          granularity: args?.granularity as 'monthly' | 'weekly' | 'daily' | undefined,
+        };
+
+        const growth = await dbAnalytics.getMonthlyGrowthAnalytics(options);
+
+        result = {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              monthly_growth_analytics: growth
+            }, null, 2),
+          }],
+        };
+        break;
+      }
+
+      // ========================================================================
+      // Get Attachment Analytics
+      // ========================================================================
+      case 'get_attachment_analytics': {
+        const options = {
+          includeSizeDistribution: args?.include_size_distribution as boolean | undefined,
+          includeTypeBreakdown: args?.include_type_breakdown as boolean | undefined,
+          includeTemporalPatterns: args?.include_temporal_patterns as boolean | undefined,
+          topNTypes: args?.top_n_types as number | undefined,
+        };
+
+        const analytics = await dbAnalytics.getAttachmentAnalytics(options);
+
+        result = {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              attachment_analytics: analytics
+            }, null, 2),
+          }],
+        };
+        break;
+      }
+
+      // ========================================================================
+      // Get Tag Analytics
+      // ========================================================================
+      case 'get_tag_analytics': {
+        const options = {
+          includeFrequencyAnalysis: args?.include_frequency_analysis as boolean | undefined,
+          includeValueDistribution: args?.include_value_distribution as boolean | undefined,
+          includeTemporalTrends: args?.include_temporal_trends as boolean | undefined,
+          topNKeys: args?.top_n_keys as number | undefined,
+          minUsageCount: args?.min_usage_count as number | undefined,
+        };
+
+        const analytics = await dbAnalytics.getTagAnalytics(options);
+
+        result = {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              tag_analytics: analytics
+            }, null, 2),
+          }],
+        };
+        break;
+      }
+
+      // ========================================================================
+      // Get Content Analytics
+      // ========================================================================
+      case 'get_content_analytics': {
+        const options = {
+          includeDialogAnalysis: args?.include_dialog_analysis as boolean | undefined,
+          includeAnalysisBreakdown: args?.include_analysis_breakdown as boolean | undefined,
+          includePartyPatterns: args?.include_party_patterns as boolean | undefined,
+          includeConversationMetrics: args?.include_conversation_metrics as boolean | undefined,
+          includeTemporalContent: args?.include_temporal_content as boolean | undefined,
+        };
+
+        const analytics = await dbAnalytics.getContentAnalytics(options);
+
+        result = {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              content_analytics: analytics
+            }, null, 2),
+          }],
+        };
+        break;
+      }
+
+      // ========================================================================
+      // Get Database Health Metrics
+      // ========================================================================
+      case 'get_database_health_metrics': {
+        const options = {
+          includePerformanceMetrics: args?.include_performance_metrics as boolean | undefined,
+          includeStorageEfficiency: args?.include_storage_efficiency as boolean | undefined,
+          includeIndexHealth: args?.include_index_health as boolean | undefined,
+          includeConnectionMetrics: args?.include_connection_metrics as boolean | undefined,
+          includeRecommendations: args?.include_recommendations as boolean | undefined,
+        };
+
+        const health = await dbAnalytics.getDatabaseHealthMetrics(options);
+
+        result = {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              database_health_metrics: health
+            }, null, 2),
+          }],
+        };
+        break;
+      }
+
+      // ========================================================================
+      // Get Database Size Info
+      // ========================================================================
+      case 'get_database_size_info': {
+        const includeRecommendations = (args?.include_recommendations as boolean | undefined) ?? true;
+
+        const sizeInfo = await dbSizeAnalyzer.getDatabaseSizeInfo(includeRecommendations);
+
+        result = {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              database_size_info: sizeInfo
+            }, null, 2),
+          }],
+        };
+        break;
+      }
+
+      // ========================================================================
+      // Get Smart Search Limits
+      // ========================================================================
+      case 'get_smart_search_limits': {
+        const queryType = args?.query_type as string;
+        const estimatedResultSize = (args?.estimated_result_size as string | undefined) || 'unknown';
+
+        if (!queryType) {
+          throw new McpError(ErrorCode.InvalidParams, 'query_type is required');
+        }
+
+        const smartLimits = await dbSizeAnalyzer.getSmartSearchLimits(queryType, estimatedResultSize);
+
+        result = {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              smart_limits: smartLimits
+            }, null, 2),
+          }],
+        };
+        break;
+      }
+
+      // ========================================================================
       // Manage Tag (consolidated: add, update, remove)
       // ========================================================================
       case 'manage_tag': {
@@ -1180,6 +1516,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         [ATTR_TOOL_SUCCESS]: true,
       });
       
+      // Log successful tool execution (for both HTTP and STDIO)
+      logWithContext('info', 'MCP tool execution completed', {
+        request_id: requestId,
+        transport: transportType,
+        tool_name: name,
+        duration_ms: duration,
+        status: 'success',
+      });
+      
       return result;
       
     } catch (error) {
@@ -1207,8 +1552,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       // Database or other errors
       const errorMessage = error instanceof Error ? error.message : String(error);
-      logWithContext('error', 'Tool execution error', {
+      
+      logWithContext('error', 'MCP tool execution failed', {
+        request_id: requestId,
+        transport: transportType,
         tool_name: name,
+        duration_ms: duration,
+        status: 'error',
         error_message: errorMessage,
       });
       
@@ -1227,14 +1577,34 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
  */
 server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   const uri = request.params.uri;
+  const transportType = process.env.MCP_TRANSPORT || 'stdio';
+  const requestId = randomUUID();
+  
+  logWithContext('info', 'MCP read resource request received', {
+    request_id: requestId,
+    transport: transportType,
+    resource_uri: uri,
+  });
+  
   // Try core resources first
   const core = await resolveCoreResource(queries, uri);
   if (core) {
+    logWithContext('debug', 'MCP resource resolved', {
+      request_id: requestId,
+      transport: transportType,
+      resource_uri: uri,
+      mime_type: core.mimeType,
+    });
     return {
       contents: [{ uri, mimeType: core.mimeType, text: JSON.stringify(core.content, null, 2) }]
     };
   }
   // Try plugin resources: plugins provide raw Resource metadata only; actual read is not delegated here in core
+  logWithContext('warn', 'MCP resource not found', {
+    request_id: requestId,
+    transport: transportType,
+    resource_uri: uri,
+  });
   throw new McpError(ErrorCode.InvalidParams, `Unknown or unsupported resource URI: ${uri}`);
 });
 
@@ -1246,17 +1616,31 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
  * List available prompts
  */
 server.setRequestHandler(ListPromptsRequestSchema, async () => {
-  return {
-    prompts: allPrompts.map(p => ({
-      name: p.name,
-      description: p.description,
-      arguments: p.arguments?.map(arg => ({
-        name: arg.name,
-        description: arg.description,
-        required: arg.required
-      }))
+  const transportType = process.env.MCP_TRANSPORT || 'stdio';
+  const requestId = randomUUID();
+  
+  logWithContext('info', 'MCP list prompts request received', {
+    request_id: requestId,
+    transport: transportType,
+  });
+  
+  const prompts = allPrompts.map(p => ({
+    name: p.name,
+    description: p.description,
+    arguments: p.arguments?.map(arg => ({
+      name: arg.name,
+      description: arg.description,
+      required: arg.required
     }))
-  };
+  }));
+  
+  logWithContext('debug', 'MCP prompts listed', {
+    request_id: requestId,
+    transport: transportType,
+    total_prompts: prompts.length,
+  });
+  
+  return { prompts };
 });
 
 /**
@@ -1264,9 +1648,24 @@ server.setRequestHandler(ListPromptsRequestSchema, async () => {
  */
 server.setRequestHandler(GetPromptRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
+  const transportType = process.env.MCP_TRANSPORT || 'stdio';
+  const requestId = randomUUID();
+  
+  logWithContext('info', 'MCP get prompt request received', {
+    request_id: requestId,
+    transport: transportType,
+    prompt_name: name,
+    has_arguments: !!args,
+    argument_keys: args ? Object.keys(args).join(', ') : 'none',
+  });
   
   const prompt = allPrompts.find(p => p.name === name);
   if (!prompt) {
+    logWithContext('warn', 'MCP prompt not found', {
+      request_id: requestId,
+      transport: transportType,
+      prompt_name: name,
+    });
     throw new McpError(
       ErrorCode.InvalidParams,
       `Unknown prompt: ${name}`
@@ -1275,6 +1674,13 @@ server.setRequestHandler(GetPromptRequestSchema, async (request) => {
 
   // Generate the prompt message with the provided arguments
   const message = generatePromptMessage(name, args || {});
+  
+  logWithContext('debug', 'MCP prompt generated', {
+    request_id: requestId,
+    transport: transportType,
+    prompt_name: name,
+    message_length: message.length,
+  });
 
   return {
     description: prompt.description,
@@ -1294,16 +1700,431 @@ server.setRequestHandler(GetPromptRequestSchema, async (request) => {
 // Start Server
 // ============================================================================
 
+// Store HTTP server reference for graceful shutdown
+let httpServerInstance: http.Server | null = null;
+
 async function main() {
   try {
-    const transport = new StdioServerTransport();
-    await server.connect(transport);
-    console.error('✅ vCon MCP Server running on stdio');
-    console.error('📚 Tools available:', allTools.length);
-    console.error('💬 Prompts available:', allPrompts.length);
-    console.error('🔗 Database: Connected');
-    console.error('');
-    console.error('Ready to accept requests...');
+    const transportType = process.env.MCP_TRANSPORT || 'stdio';
+
+    if (transportType === 'http') {
+      // HTTP/Streamable HTTP transport
+      const port = parseInt(process.env.MCP_HTTP_PORT || '3000');
+      const host = process.env.MCP_HTTP_HOST || '127.0.0.1';
+
+      // Configure session management
+      const sessionIdGenerator = process.env.MCP_HTTP_STATELESS === 'true'
+        ? undefined
+        : () => randomUUID();
+
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator,
+        enableJsonResponse: process.env.MCP_HTTP_JSON_ONLY === 'true',
+        allowedHosts: process.env.MCP_HTTP_ALLOWED_HOSTS?.split(','),
+        allowedOrigins: process.env.MCP_HTTP_ALLOWED_ORIGINS?.split(','),
+        enableDnsRebindingProtection: process.env.MCP_HTTP_DNS_PROTECTION === 'true',
+        onsessioninitialized: (sessionId) => {
+          logWithContext('info', `HTTP session initialized: ${sessionId}`);
+        },
+        onsessionclosed: (sessionId) => {
+          logWithContext('info', `HTTP session closed: ${sessionId}`);
+        },
+      });
+
+      await server.connect(transport);
+
+      // Create HTTP server with comprehensive logging
+      const httpServer = http.createServer((req, res) => {
+        const requestId = randomUUID();
+        const startTime = Date.now();
+        const remoteAddress = req.socket.remoteAddress || 'unknown';
+        const remotePort = req.socket.remotePort || 0;
+        
+        // Capture request body for POST requests to see what method is being called
+        let requestBodyPreview = '';
+        if (req.method === 'POST' && req.headers['content-type']?.includes('json')) {
+          // Note: We can't read the body here as it would consume the stream
+          // But we can log that we'll try to capture it
+        }
+        
+        // Log incoming request
+        logWithContext('info', 'HTTP request received', {
+          request_id: requestId,
+          method: req.method,
+          url: req.url,
+          path: req.url?.split('?')[0],
+          query: req.url?.includes('?') ? req.url.split('?')[1] : undefined,
+          remote_address: remoteAddress,
+          remote_port: remotePort,
+          user_agent: req.headers['user-agent'],
+          content_type: req.headers['content-type'],
+          content_length: req.headers['content-length'],
+          mcp_session_id: req.headers['mcp-session-id'] || req.headers['x-session-id'] || 'none',
+          accept: req.headers['accept'],
+          referer: req.headers['referer'],
+          origin: req.headers['origin'],
+          all_headers: Object.keys(req.headers).join(', '), // Debug: see all headers
+        });
+
+        // Track response end to log completion
+        let responseSent = false;
+        const originalEnd = res.end.bind(res);
+        
+        let statusCode = 200;
+        const originalWriteHead = res.writeHead.bind(res);
+
+        // Handle errors
+        req.on('error', (error) => {
+          const duration = Date.now() - startTime;
+          logWithContext('error', 'HTTP request error', {
+            request_id: requestId,
+            method: req.method,
+            url: req.url,
+            error_message: error.message,
+            error_stack: error.stack,
+            duration_ms: duration,
+            remote_address: remoteAddress,
+          });
+          
+          recordCounter('http.request.error', 1, {
+            method: req.method || 'unknown',
+            error_type: error.constructor.name,
+          }, 'HTTP request errors');
+        });
+
+        res.on('error', (error) => {
+          const duration = Date.now() - startTime;
+          logWithContext('error', 'HTTP response error', {
+            request_id: requestId,
+            method: req.method,
+            url: req.url,
+            status_code: statusCode,
+            error_message: error.message,
+            error_stack: error.stack,
+            duration_ms: duration,
+            remote_address: remoteAddress,
+          });
+          
+          recordCounter('http.response.error', 1, {
+            method: req.method || 'unknown',
+            error_type: error.constructor.name,
+          }, 'HTTP response errors');
+        });
+
+        // Handle OPTIONS requests (CORS preflight) - browsers send these for cross-origin requests
+        if (req.method === 'OPTIONS') {
+          logWithContext('debug', 'HTTP CORS preflight request', {
+            request_id: requestId,
+            method: req.method,
+            url: req.url,
+            origin: req.headers['origin'],
+            cors_enabled: process.env.MCP_HTTP_CORS === 'true',
+          });
+          
+          // Set CORS headers if enabled
+          if (process.env.MCP_HTTP_CORS === 'true') {
+            res.setHeader('Access-Control-Allow-Origin', process.env.MCP_HTTP_CORS_ORIGIN || '*');
+            res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+            res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Session-ID, Mcp-Session-Id');
+            res.setHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id'); // Critical: expose session ID to browser
+            res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
+          } else {
+            // Even without explicit CORS, allow basic OPTIONS for localhost/same-origin scenarios
+            // This helps with browser-based MCP clients like MCP Inspector
+            const origin = req.headers['origin'];
+            if (origin && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
+              res.setHeader('Access-Control-Allow-Origin', origin);
+              res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+              res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Session-ID, Mcp-Session-Id');
+              res.setHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id'); // Critical: expose session ID to browser
+            }
+          }
+          
+          res.writeHead(204);
+          res.end();
+          return;
+        }
+        
+        // Set CORS headers for actual requests (before transport handles request)
+        // Always set CORS headers for localhost origins to help browser clients
+        const origin = req.headers['origin'];
+        if (process.env.MCP_HTTP_CORS === 'true') {
+          res.setHeader('Access-Control-Allow-Origin', process.env.MCP_HTTP_CORS_ORIGIN || '*');
+          res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+          res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Session-ID, Mcp-Session-Id');
+          // Set expose headers upfront so it's there when transport adds session ID
+          res.setHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id'); // Critical: expose session ID to browser
+        } else if (origin && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
+          // Allow localhost even if CORS not explicitly enabled
+          res.setHeader('Access-Control-Allow-Origin', origin);
+          res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+          res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Session-ID, Mcp-Session-Id');
+          // Set expose headers upfront so it's there when transport adds session ID
+          res.setHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id'); // Critical: expose session ID to browser
+          
+          // Log that we're enabling CORS for localhost
+          logWithContext('debug', 'CORS enabled for localhost origin', {
+            request_id: requestId,
+            origin,
+            exposed_headers: 'Mcp-Session-Id',
+          });
+        }
+
+        // Override writeHead to track status codes (will be set before transport uses it)
+        res.writeHead = function(code: number, ...args: any[]) {
+          statusCode = code;
+          return originalWriteHead(code, ...args);
+        };
+        
+        // Intercept response data to capture error responses
+        let responseBodyChunks: Buffer[] = [];
+        const originalWrite = res.write.bind(res);
+        res.write = function(chunk: any, ...args: any[]) {
+          // Capture response body for error logging (limited size)
+          if (statusCode >= 400 && responseBodyChunks.length < 10) {
+            const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk || '');
+            responseBodyChunks.push(buffer);
+          }
+          return originalWrite(chunk, ...args);
+        };
+        
+        // Intercept setHeader to capture response headers (especially Mcp-Session-Id)
+        // and ensure CORS headers are properly set when session ID is added
+        const responseHeaders: Record<string, string> = {};
+        const originalSetHeader = res.setHeader.bind(res);
+        res.setHeader = function(name: string, value: string | string[]) {
+          const headerName = name.toLowerCase();
+          const headerValue = Array.isArray(value) ? value.join(', ') : value;
+          responseHeaders[headerName] = headerValue;
+          
+          // If transport is setting Mcp-Session-Id, ensure CORS expose headers is set
+          if (headerName === 'mcp-session-id') {
+            const exposedHeaders = responseHeaders['access-control-expose-headers'] || '';
+            if (!exposedHeaders.includes('Mcp-Session-Id') && !exposedHeaders.includes('mcp-session-id')) {
+              const newExposedHeaders = exposedHeaders 
+                ? `${exposedHeaders}, Mcp-Session-Id`
+                : 'Mcp-Session-Id';
+              responseHeaders['access-control-expose-headers'] = newExposedHeaders;
+              originalSetHeader('Access-Control-Expose-Headers', newExposedHeaders);
+              
+              // Log that we're exposing the session ID
+              logWithContext('debug', 'Exposing Mcp-Session-Id header via CORS', {
+                request_id: requestId,
+                session_id: headerValue,
+                exposed_headers: newExposedHeaders,
+              });
+            }
+          }
+          
+          return originalSetHeader(name, value);
+        };
+        
+        // Set up res.end to log completion and capture errors
+        res.end = function(chunk?: any, ...args: any[]) {
+          // Capture final chunk if error
+          if (statusCode >= 400 && chunk && responseBodyChunks.length < 10) {
+            const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk || '');
+            responseBodyChunks.push(buffer);
+          }
+          
+          // Log error details if this is an error response
+          if (statusCode >= 400 && !responseSent) {
+            const errorBody = responseBodyChunks.length > 0 
+              ? Buffer.concat(responseBodyChunks).toString('utf-8').substring(0, 1000)
+              : undefined;
+            
+            logWithContext('warn', 'HTTP error response', {
+              request_id: requestId,
+              method: req.method,
+              url: req.url,
+              status_code: statusCode,
+              request_mcp_session_id: req.headers['mcp-session-id'] || req.headers['x-session-id'] || 'missing',
+              error_response_preview: errorBody,
+              content_length: req.headers['content-length'],
+            });
+          }
+          
+          // Log response completion with session ID if present
+          if (!responseSent) {
+            responseSent = true;
+            const duration = Date.now() - startTime;
+            
+            // Extract session ID from response headers
+            const responseSessionId = responseHeaders['mcp-session-id'] || undefined;
+            
+            // Log response with all relevant headers
+            const corsExposeHeaders = responseHeaders['access-control-expose-headers'];
+            
+            // Log response
+            logWithContext(statusCode >= 400 ? 'warn' : 'info', 'HTTP response sent', {
+              request_id: requestId,
+              method: req.method,
+              url: req.url,
+              status_code: statusCode,
+              duration_ms: duration,
+              response_size: chunk ? Buffer.byteLength(chunk) : 0,
+              remote_address: remoteAddress,
+              request_mcp_session_id: req.headers['mcp-session-id'] || req.headers['x-session-id'] || 'missing',
+              response_mcp_session_id: responseSessionId || 'none',
+              cors_expose_headers: corsExposeHeaders || 'none',
+              response_headers: Object.keys(responseHeaders).join(', '), // Debug: see all response headers
+            });
+            
+            // Record metrics
+            recordCounter('http.request.count', 1, {
+              method: req.method || 'unknown',
+              status_code: String(statusCode),
+            }, 'HTTP request count');
+            recordHistogram('http.request.duration', duration, {
+              method: req.method || 'unknown',
+              status_code: String(statusCode),
+            }, 'HTTP request duration in milliseconds');
+          }
+          
+          return originalEnd(chunk, ...args);
+        };
+
+        // Wrap transport.handleRequest to catch any unhandled errors
+        try {
+          transport.handleRequest(req, res);
+        } catch (error) {
+          const duration = Date.now() - startTime;
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorStack = error instanceof Error ? error.stack : undefined;
+          
+          logWithContext('error', 'HTTP request handling error', {
+            request_id: requestId,
+            method: req.method,
+            url: req.url,
+            error_message: errorMessage,
+            error_stack: errorStack,
+            duration_ms: duration,
+            remote_address: remoteAddress,
+          });
+          
+          recordCounter('http.request.error', 1, {
+            method: req.method || 'unknown',
+            error_type: error instanceof Error ? error.constructor.name : 'unknown',
+          }, 'HTTP request handling errors');
+          
+          if (!responseSent) {
+            try {
+              res.writeHead(500);
+              res.end(JSON.stringify({
+                jsonrpc: '2.0',
+                id: null,
+                error: {
+                  code: -32603,
+                  message: 'Internal error',
+                  data: errorMessage
+                }
+              }));
+            } catch (writeError) {
+              // If we can't write the error response, log it
+              logWithContext('error', 'Failed to write error response', {
+                request_id: requestId,
+                write_error: writeError instanceof Error ? writeError.message : String(writeError),
+              });
+            }
+          }
+        }
+      });
+
+      // Log connection events
+      httpServer.on('connection', (socket) => {
+        logWithContext('debug', 'HTTP client connected', {
+          remote_address: socket.remoteAddress,
+          remote_port: socket.remotePort,
+          local_address: socket.localAddress,
+          local_port: socket.localPort,
+        });
+      });
+
+      httpServer.on('close', () => {
+        logWithContext('info', 'HTTP server closed');
+      });
+
+      httpServer.on('error', (error) => {
+        logWithContext('error', 'HTTP server error', {
+          error_message: error.message,
+          error_stack: error.stack,
+          error_code: (error as any).code,
+        });
+      });
+
+      httpServer.listen(port, host, () => {
+        console.error('✅ vCon MCP Server running on HTTP');
+        console.error(`🌐 Listening on: http://${host}:${port}`);
+        console.error(`📡 Mode: ${sessionIdGenerator ? 'Stateful' : 'Stateless'}`);
+        console.error(`📚 Tools available: ${allTools.length}`);
+        console.error('💬 Prompts available:', allPrompts.length);
+        console.error('🔗 Database: Connected');
+        console.error('');
+        console.error('Ready to accept HTTP requests...');
+        
+        logWithContext('info', 'HTTP server started', {
+          host,
+          port,
+          transport: 'http',
+          mode: sessionIdGenerator ? 'stateful' : 'stateless',
+          tools_count: allTools.length,
+          prompts_count: allPrompts.length,
+          cors_enabled: process.env.MCP_HTTP_CORS === 'true',
+          json_only: process.env.MCP_HTTP_JSON_ONLY === 'true',
+          dns_protection: process.env.MCP_HTTP_DNS_PROTECTION === 'true',
+        });
+      });
+
+      // Store httpServer reference for graceful shutdown
+      (transport as any).httpServer = httpServer;
+      httpServerInstance = httpServer;
+
+    } else {
+      // Default: stdio transport
+      const transport = new StdioServerTransport();
+      await server.connect(transport);
+      
+      console.error('✅ vCon MCP Server running on stdio');
+      console.error('📚 Tools available:', allTools.length);
+      console.error('💬 Prompts available:', allPrompts.length);
+      console.error('🔗 Database: Connected');
+      console.error('');
+      console.error('Ready to accept requests...');
+      
+      logWithContext('info', 'STDIO server started', {
+        transport: 'stdio',
+        tools_count: allTools.length,
+        prompts_count: allPrompts.length,
+      });
+      
+      // Log stdin/stdout activity for debugging
+      // Note: We can't intercept individual messages easily with StdioServerTransport
+      // but we can log when the process receives data
+      process.stdin.on('data', (chunk) => {
+        // Only log if debug logging is enabled (to avoid flooding logs)
+        if (process.env.MCP_DEBUG === 'true') {
+          const preview = chunk.toString('utf-8').substring(0, 200);
+          logWithContext('debug', 'STDIO input received', {
+            size: chunk.length,
+            preview: preview,
+          });
+        }
+      });
+      
+      process.stdin.on('error', (error) => {
+        logWithContext('error', 'STDIO input error', {
+          error_message: error.message,
+          error_stack: error.stack,
+        });
+      });
+      
+      process.stdout.on('error', (error) => {
+        logWithContext('error', 'STDIO output error', {
+          error_message: error.message,
+          error_stack: error.stack,
+        });
+      });
+    }
   } catch (error) {
     console.error('❌ Failed to start server:', error);
     process.exit(1);
@@ -1311,21 +2132,52 @@ async function main() {
 }
 
 // Handle graceful shutdown
-process.on('SIGINT', async () => {
-  logWithContext('info', 'Shutting down gracefully (SIGINT)');
-  await pluginManager.shutdown();
-  await closeAllConnections();
-  await shutdownObservability();
-  process.exit(0);
-});
+async function gracefulShutdown(signal: string) {
+  logWithContext('info', `Shutting down gracefully (${signal})`, {
+    signal,
+  });
+  
+  // Close HTTP server if running
+  if (httpServerInstance) {
+    logWithContext('info', 'Closing HTTP server');
+    return new Promise<void>((resolve) => {
+      httpServerInstance!.close(() => {
+        logWithContext('info', 'HTTP server closed');
+        resolve();
+      });
+      
+      // Force close after 10 seconds
+      setTimeout(() => {
+        logWithContext('warn', 'Force closing HTTP server after timeout');
+        httpServerInstance!.close();
+        resolve();
+      }, 10000);
+    }).then(async () => {
+      await pluginManager.shutdown();
+      await closeAllConnections();
+      await shutdownObservability();
+      process.exit(0);
+    }).catch(async (error) => {
+      logWithContext('error', 'Error during graceful shutdown', {
+        error_message: error instanceof Error ? error.message : String(error),
+        error_stack: error instanceof Error ? error.stack : undefined,
+      });
+      await pluginManager.shutdown();
+      await closeAllConnections();
+      await shutdownObservability();
+      process.exit(1);
+    });
+  } else {
+    // No HTTP server, just shutdown other components
+    await pluginManager.shutdown();
+    await closeAllConnections();
+    await shutdownObservability();
+    process.exit(0);
+  }
+}
 
-process.on('SIGTERM', async () => {
-  logWithContext('info', 'Shutting down gracefully (SIGTERM)');
-  await pluginManager.shutdown();
-  await closeAllConnections();
-  await shutdownObservability();
-  process.exit(0);
-});
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
 // Start the server
 main().catch((error) => {

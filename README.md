@@ -27,7 +27,9 @@ The Model Context Protocol (MCP) enables AI assistants to use external tools and
 ## Key Features
 
 - ✅ **IETF vCon Compliant** - Implements `draft-ietf-vcon-vcon-core-00` specification
-- ✅ **MCP Integration** - 7 tools for AI assistants to manage conversation data
+- ✅ **MCP Integration** - 27+ tools for AI assistants to manage conversation data
+- ✅ **Database Analytics** - Comprehensive analytics for size, growth, content patterns, and health monitoring
+- ✅ **Large Database Support** - Smart response limiting, metadata-only options, and memory-safe queries
 - ✅ **OpenTelemetry Observability** - Full traces, metrics, and structured logs with console or OTLP export
 - ✅ **Query Prompts** - 9 pre-built prompts to guide effective searching and retrieval:
   - Exact tag matching (e.g., "find angry customers from June")
@@ -104,6 +106,107 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 **Note**: `REDIS_URL` is optional. If provided, enables high-performance caching for 20-50x faster reads. See [Redis-Supabase Integration Guide](docs/guide/redis-supabase-integration.md).
 
 Restart Claude Desktop and start using vCon tools!
+
+## Transport Options
+
+The vCon MCP Server supports multiple transport mechanisms for connecting AI assistants:
+
+### stdio Transport (Default)
+
+Standard input/output transport for CLI-based AI assistants like Claude Desktop.
+
+```bash
+# Default mode - no configuration needed
+npm run dev
+```
+
+Or explicitly in `.env`:
+```bash
+MCP_TRANSPORT=stdio
+```
+
+### HTTP Transport with Streamable HTTP
+
+HTTP server mode enables browser-based clients and remote connections using the MCP Streamable HTTP specification (2025-03-26).
+
+**Features:**
+- ✅ **Stateful or stateless** session management
+- ✅ **SSE streaming** for real-time responses
+- ✅ **JSON-only mode** for simple request/response
+- ✅ **CORS support** for browser clients
+- ✅ **DNS rebinding protection** for security
+- ✅ **Session resumability** (optional)
+
+**Configuration:**
+
+```bash
+# .env
+MCP_TRANSPORT=http
+MCP_HTTP_HOST=127.0.0.1
+MCP_HTTP_PORT=3000
+
+# Optional: Stateless mode (no session tracking)
+# MCP_HTTP_STATELESS=true
+
+# Optional: JSON-only responses (no SSE streaming)
+# MCP_HTTP_JSON_ONLY=true
+
+# Optional: CORS for browser clients
+# MCP_HTTP_CORS=true
+# MCP_HTTP_CORS_ORIGIN=*
+
+# Optional: DNS rebinding protection
+# MCP_HTTP_DNS_PROTECTION=true
+# MCP_HTTP_ALLOWED_HOSTS=localhost,127.0.0.1
+# MCP_HTTP_ALLOWED_ORIGINS=http://localhost:3000
+```
+
+**Starting the HTTP Server:**
+
+```bash
+npm run dev
+```
+
+The server will start on `http://127.0.0.1:3000` (default) and log:
+```
+✅ vCon MCP Server running on HTTP
+🌐 Listening on: http://127.0.0.1:3000
+📡 Mode: Stateful
+```
+
+**Client Connection:**
+
+```bash
+# Step 1: Initialize MCP connection
+curl -i -X POST http://127.0.0.1:3000 \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"my-client","version":"1.0.0"}}}'
+
+# Extract the Mcp-Session-Id from response headers
+
+# Step 2: Send MCP requests with session ID
+curl -X POST http://127.0.0.1:3000 \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "Mcp-Session-Id: <session-id-from-step-1>" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
+
+# GET request to establish SSE stream (for notifications)
+curl -X GET http://127.0.0.1:3000 \
+  -H "Mcp-Session-Id: <your-session-id>"
+
+# DELETE request to close session
+curl -X DELETE http://127.0.0.1:3000 \
+  -H "Mcp-Session-Id: <your-session-id>"
+```
+
+**Session Management:**
+
+- **Stateful mode** (default): Server generates and tracks session IDs
+- **Stateless mode** (`MCP_HTTP_STATELESS=true`): No session tracking, each request is independent
+
+See [MCP Streamable HTTP Specification](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports) for protocol details.
 
 ## Available MCP Tools
 
@@ -187,7 +290,71 @@ Delete a vCon and all related data.
 Delete the vCon abc-123
 ```
 
-### 8. **update_vcon**
+### 8. **get_database_analytics**
+
+Get comprehensive database analytics including size, growth trends, and content distribution.
+
+```
+Get database analytics for the last 6 months
+```
+
+### 9. **get_monthly_growth_analytics**
+
+Get detailed monthly growth patterns and projections.
+
+```
+Show me monthly growth trends for the past year
+```
+
+### 10. **get_attachment_analytics**
+
+Analyze attachment types, sizes, and storage patterns.
+
+```
+What types of files are being stored and how much space do they use?
+```
+
+### 11. **get_tag_analytics**
+
+Analyze tag usage patterns and value distribution.
+
+```
+Show me the most commonly used tags and their values
+```
+
+### 12. **get_content_analytics**
+
+Get insights into conversation content, dialog types, and party patterns.
+
+```
+Analyze the types of conversations and content being stored
+```
+
+### 13. **get_database_health_metrics**
+
+Monitor database performance and get optimization recommendations.
+
+```
+Check database health and performance metrics
+```
+
+### 14. **get_database_size_info**
+
+Get database size information and smart recommendations for large datasets.
+
+```
+Get database size info and recommendations for query limits
+```
+
+### 15. **get_smart_search_limits**
+
+Get smart search limits based on database size to prevent memory issues.
+
+```
+Get recommended limits for content search on this large database
+```
+
+### 16. **update_vcon**
 
 Update top-level vCon metadata (subject, extensions, must_support).
 
@@ -386,6 +553,22 @@ OTEL_ENDPOINT=http://localhost:4318
 - `cache.hit` / `cache.miss` - Cache performance
 
 ### Collector Examples
+
+**Testing Setup (Recommended):**
+
+```bash
+# Start Jaeger backend using docker-compose
+./jaeger/start-jaeger.sh
+
+# Configure .env
+OTEL_ENABLED=true
+OTEL_EXPORTER_TYPE=otlp
+OTEL_ENDPOINT=http://localhost:4318
+
+# View traces at http://localhost:16686
+```
+
+**Manual Docker Setup:**
 
 ```bash
 # Jaeger (all-in-one)

@@ -4,13 +4,15 @@ Complete reference for all Model Context Protocol (MCP) tools provided by the vC
 
 ## Overview
 
-The vCon MCP Server provides 20+ tools organized into these categories:
+The vCon MCP Server provides 25+ tools organized into these categories:
 
 - **[Core Operations](#core-operations)** - Create, read, update, delete vCons
 - **[Component Management](#component-management)** - Add dialog, analysis, attachments
 - **[Search & Query](#search--query)** - Four search modes with different capabilities
 - **[Tag Management](#tag-management)** - Organize with key-value metadata
 - **[Database Tools](#database-tools)** - Inspect and optimize database
+- **[Database Analytics](#database-analytics)** - Comprehensive database analytics and insights
+- **[Database Size Tools](#database-size-tools)** - Smart limits and size awareness for large databases
 - **[Schema & Examples](#schema--examples)** - Get schemas and example vCons
 
 ---
@@ -985,6 +987,548 @@ Analyze SQL query execution plan (limited support).
 ```
 
 **Note:** Has limited support due to RPC constraints. Use direct database access for full EXPLAIN capabilities.
+
+---
+
+## Database Analytics
+
+### get_database_analytics
+
+Get comprehensive database analytics including size, growth trends, content distribution, and health metrics.
+
+**Input Parameters:**
+
+```typescript
+{
+  include_growth_trends?: boolean,      // Include monthly growth trends (default: true)
+  include_content_analytics?: boolean,  // Include content analysis (default: true)
+  include_attachment_stats?: boolean,   // Include attachment statistics (default: true)
+  include_tag_analytics?: boolean,      // Include tag usage patterns (default: true)
+  include_health_metrics?: boolean,     // Include health metrics (default: true)
+  months_back?: number                  // Months to analyze (default: 12)
+}
+```
+
+**Response:**
+
+```typescript
+{
+  success: true,
+  database_analytics: {
+    timestamp: string,
+    summary: {
+      total_vcons: number,
+      total_parties: number,
+      total_dialogs: number,
+      total_analysis: number,
+      total_attachments: number,
+      total_size_bytes: number,
+      total_size_pretty: string,
+      database_health_score: number
+    },
+    tables: {
+      [table_name]: {
+        row_count: number,
+        total_size: string,
+        table_size: string
+      }
+    },
+    growth: {
+      monthly_data: Array<{
+        month: string,
+        vcon_count: number,
+        total_size: number
+      }>,
+      summary: {
+        total_growth: number,
+        avg_monthly_growth: number,
+        growth_percentage: number
+      }
+    },
+    content: {
+      dialog_types: Array<{
+        type: string,
+        count: number,
+        avg_duration: number
+      }>,
+      analysis_types: Array<{
+        type: string,
+        vendor: string,
+        count: number
+      }>,
+      party_roles: Array<{
+        role: string,
+        count: number,
+        unique_names: number
+      }>
+    },
+    attachments: {
+      type_breakdown: Array<{
+        type: string,
+        count: number,
+        total_size: number,
+        percentage: number
+      }>,
+      size_distribution: Array<{
+        size_bucket: string,
+        count: number,
+        percentage: number
+      }>
+    },
+    tags: {
+      tag_frequency: Array<{
+        key: string,
+        usage_count: number,
+        unique_values: number
+      }>,
+      value_distribution: Array<{
+        key: string,
+        value: string,
+        count: number,
+        percentage: number
+      }>
+    },
+    health: {
+      table_performance: Array<{
+        table_name: string,
+        sequential_scans: number,
+        index_scans: number,
+        dead_row_percentage: number
+      }>,
+      index_usage: Array<{
+        table_name: string,
+        index_name: string,
+        scans: number,
+        health_status: string
+      }>
+    }
+  }
+}
+```
+
+**Example:**
+
+```typescript
+{
+  "include_growth_trends": true,
+  "include_content_analytics": true,
+  "months_back": 6
+}
+```
+
+---
+
+### get_monthly_growth_analytics
+
+Get detailed monthly growth analytics with trends and projections.
+
+**Input Parameters:**
+
+```typescript
+{
+  months_back?: number,           // Months to analyze (default: 12)
+  include_projections?: boolean,  // Include growth projections (default: true)
+  granularity?: 'monthly' | 'weekly' | 'daily'  // Time granularity (default: 'monthly')
+}
+```
+
+**Response:**
+
+```typescript
+{
+  success: true,
+  monthly_growth_analytics: {
+    timestamp: string,
+    period: string,
+    granularity: string,
+    trends: {
+      vcon_creation: Array<{
+        period: string,
+        vcon_count: number,
+        unique_vcons: number
+      }>,
+      size_growth: Array<{
+        period: string,
+        dialog_size: number,
+        attachment_size: number,
+        total_size: number
+      }>,
+      content_volume: Array<{
+        period: string,
+        vcon_count: number,
+        dialog_count: number,
+        analysis_count: number,
+        attachment_count: number
+      }>
+    },
+    growth_rates: {
+      vcon_growth_rate: number,
+      size_growth_rate: number
+    },
+    projections: {
+      next_3_months: {
+        projected_vcons: number,
+        projected_size: number,
+        projected_size_pretty: string
+      },
+      growth_rates: {
+        vcon_growth_rate: number,
+        size_growth_rate: number
+      }
+    }
+  }
+}
+```
+
+---
+
+### get_attachment_analytics
+
+Get comprehensive attachment analytics including file type distribution and size analysis.
+
+**Input Parameters:**
+
+```typescript
+{
+  include_size_distribution?: boolean,  // Include size distribution (default: true)
+  include_type_breakdown?: boolean,     // Include file type breakdown (default: true)
+  include_temporal_patterns?: boolean,  // Include temporal patterns (default: false)
+  top_n_types?: number                  // Top N file types to analyze (default: 10)
+}
+```
+
+**Response:**
+
+```typescript
+{
+  success: true,
+  attachment_analytics: {
+    timestamp: string,
+    summary: {
+      total_attachments: number,
+      total_size: number,
+      avg_size: number,
+      unique_types: number,
+      vcons_with_attachments: number
+    },
+    type_breakdown: Array<{
+      type: string,
+      count: number,
+      total_size: number,
+      avg_size: number,
+      percentage: number
+    }>,
+    size_distribution: Array<{
+      size_bucket: string,
+      count: number,
+      total_size: number,
+      percentage: number
+    }>,
+    temporal_patterns: Array<{
+      month: string,
+      attachment_count: number,
+      total_size: number,
+      avg_size: number
+    }>
+  }
+}
+```
+
+---
+
+### get_tag_analytics
+
+Get comprehensive tag analytics including usage patterns and value distribution.
+
+**Input Parameters:**
+
+```typescript
+{
+  include_frequency_analysis?: boolean,  // Include frequency analysis (default: true)
+  include_value_distribution?: boolean,  // Include value distribution (default: true)
+  include_temporal_trends?: boolean,     // Include temporal trends (default: false)
+  top_n_keys?: number,                   // Top N tag keys to analyze (default: 20)
+  min_usage_count?: number               // Minimum usage count filter (default: 1)
+}
+```
+
+**Response:**
+
+```typescript
+{
+  success: true,
+  tag_analytics: {
+    timestamp: string,
+    summary: {
+      unique_keys: number,
+      unique_values: number,
+      vcons_with_tags: number,
+      total_tag_assignments: number
+    },
+    frequency_analysis: Array<{
+      key: string,
+      usage_count: number,
+      unique_values: number,
+      vcons_with_tag: number,
+      avg_values_per_key: number
+    }>,
+    value_distribution: Array<{
+      key: string,
+      value: string,
+      count: number,
+      percentage: number
+    }>,
+    temporal_trends: Array<{
+      month: string,
+      key: string,
+      usage_count: number
+    }>
+  }
+}
+```
+
+---
+
+### get_content_analytics
+
+Get comprehensive content analytics including dialog types, analysis breakdown, and conversation metrics.
+
+**Input Parameters:**
+
+```typescript
+{
+  include_dialog_analysis?: boolean,     // Include dialog analysis (default: true)
+  include_analysis_breakdown?: boolean,  // Include analysis breakdown (default: true)
+  include_party_patterns?: boolean,      // Include party patterns (default: true)
+  include_conversation_metrics?: boolean, // Include conversation metrics (default: true)
+  include_temporal_content?: boolean     // Include temporal content patterns (default: false)
+}
+```
+
+**Response:**
+
+```typescript
+{
+  success: true,
+  content_analytics: {
+    timestamp: string,
+    summary: {
+      total_vcons: number,
+      total_parties: number,
+      total_dialogs: number,
+      total_analysis: number,
+      total_attachments: number,
+      total_duration_seconds: number,
+      avg_duration_seconds: number
+    },
+    dialog_analysis: Array<{
+      type: string,
+      count: number,
+      avg_duration: number,
+      total_duration: number,
+      total_size: number,
+      unique_vcons: number
+    }>,
+    analysis_breakdown: Array<{
+      type: string,
+      vendor: string,
+      count: number,
+      avg_confidence: number,
+      unique_vcons: number
+    }>,
+    party_patterns: Array<{
+      role: string,
+      count: number,
+      unique_names: number,
+      unique_emails: number,
+      unique_phones: number,
+      unique_vcons: number
+    }>,
+    conversation_metrics: {
+      total_conversations: number,
+      avg_parties_per_conversation: number,
+      avg_dialogs_per_conversation: number,
+      avg_analysis_per_conversation: number,
+      avg_attachments_per_conversation: number,
+      avg_duration_per_conversation: number,
+      avg_size_per_conversation: number,
+      max_parties_in_conversation: number,
+      max_dialogs_in_conversation: number
+    },
+    temporal_content: Array<{
+      month: string,
+      vcon_count: number,
+      dialog_count: number,
+      analysis_count: number,
+      attachment_count: number,
+      total_duration: number
+    }>
+  }
+}
+```
+
+---
+
+### get_database_health_metrics
+
+Get database health metrics including performance indicators and optimization recommendations.
+
+**Input Parameters:**
+
+```typescript
+{
+  include_performance_metrics?: boolean,  // Include performance metrics (default: true)
+  include_storage_efficiency?: boolean,   // Include storage efficiency (default: true)
+  include_index_health?: boolean,         // Include index health (default: true)
+  include_connection_metrics?: boolean,   // Include connection metrics (default: true)
+  include_recommendations?: boolean       // Include recommendations (default: true)
+}
+```
+
+**Response:**
+
+```typescript
+{
+  success: true,
+  database_health_metrics: {
+    timestamp: string,
+    overall_score: number,
+    metrics: {
+      performance: Array<{
+        table_name: string,
+        sequential_scans: number,
+        index_scans: number,
+        inserts: number,
+        updates: number,
+        deletes: number,
+        live_rows: number,
+        dead_rows: number,
+        dead_row_percentage: number,
+        index_usage_ratio: number
+      }>,
+      storage: Array<{
+        table_name: string,
+        total_size: string,
+        table_size: string,
+        index_size: string,
+        index_size_percentage: number
+      }>,
+      indexes: Array<{
+        table_name: string,
+        index_name: string,
+        scans: number,
+        rows_read: number,
+        rows_fetched: number,
+        index_size: string,
+        health_status: 'UNUSED' | 'LOW_USAGE' | 'ACTIVE'
+      }>,
+      connections: {
+        heap_read: number,
+        heap_hit: number,
+        cache_hit_ratio: number,
+        idx_read: number,
+        idx_hit: number,
+        idx_cache_hit_ratio: number
+      }
+    },
+    recommendations: string[],
+    alerts: string[]
+  }
+}
+```
+
+---
+
+## Database Size Tools
+
+### get_database_size_info
+
+Get database size information and smart recommendations for query limits. Essential for large databases to prevent memory exhaustion.
+
+**Input Parameters:**
+
+```typescript
+{
+  include_recommendations?: boolean  // Include smart recommendations (default: true)
+}
+```
+
+**Response:**
+
+```typescript
+{
+  success: true,
+  database_size_info: {
+    total_vcons: number,
+    total_size_bytes: number,
+    total_size_pretty: string,
+    size_category: 'small' | 'medium' | 'large' | 'very_large',
+    recommendations: {
+      max_basic_search_limit: number,
+      max_content_search_limit: number,
+      max_semantic_search_limit: number,
+      max_analytics_limit: number,
+      recommended_response_format: string,
+      memory_warning: boolean
+    },
+    table_sizes: {
+      [table_name]: {
+        row_count: number,
+        size_bytes: number,
+        size_pretty: string
+      }
+    }
+  }
+}
+```
+
+**Example:**
+
+```typescript
+{
+  "include_recommendations": true
+}
+```
+
+---
+
+### get_smart_search_limits
+
+Get smart search limits based on database size and query complexity. Helps prevent memory exhaustion by suggesting appropriate limits.
+
+**Input Parameters:**
+
+```typescript
+{
+  query_type: 'basic' | 'content' | 'semantic' | 'hybrid' | 'analytics',
+  estimated_result_size?: 'small' | 'medium' | 'large' | 'unknown'  // Default: 'unknown'
+}
+```
+
+**Response:**
+
+```typescript
+{
+  success: true,
+  smart_limits: {
+    query_type: string,
+    estimated_result_size: string,
+    recommended_limit: number,
+    recommended_response_format: string,
+    memory_warning: boolean,
+    explanation: string
+  }
+}
+```
+
+**Example:**
+
+```typescript
+{
+  "query_type": "content",
+  "estimated_result_size": "large"
+}
+```
 
 ---
 
