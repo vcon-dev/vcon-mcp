@@ -695,8 +695,28 @@ export class VConQueries {
 
     query = query.order('created_at', { ascending: false });
 
-    const { data, error } = await query;
+    let data, error;
+    try {
+      const result = await query;
+      data = result.data;
+      error = result.error;
+    } catch (fetchError: any) {
+      // Handle network/connection errors
+      if (fetchError instanceof TypeError && fetchError.message.includes('fetch failed')) {
+        throw new Error(
+          `Database connection failed: Unable to reach Supabase. ` +
+          `Check your network connection and SUPABASE_URL configuration. ` +
+          `Original error: ${fetchError.message}`
+        );
+      }
+      throw fetchError;
+    }
+    
     if (error) throw error;
+    if (!data) {
+      // This shouldn't happen if error is null, but TypeScript needs this check
+      return [];
+    }
 
     // If party filters, need to join with parties table
     let vconUuids = data.map(v => v.uuid);
@@ -736,6 +756,90 @@ export class VConQueries {
     return Promise.all(
       vconUuids.map(uuid => this.getVCon(uuid))
     );
+  }
+
+  /**
+   * Get count of vCons matching search criteria (without fetching all data)
+   * This bypasses Supabase's 1000 row default limit by using count query
+   */
+  async searchVConsCount(filters: {
+    subject?: string;
+    partyName?: string;
+    partyEmail?: string;
+    partyTel?: string;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<number> {
+    // Build the same query as searchVCons but just get count
+    let query = this.supabase
+      .from('vcons')
+      .select('*', { count: 'exact', head: true });
+
+    if (filters.subject) {
+      query = query.ilike('subject', `%${filters.subject}%`);
+    }
+
+    if (filters.startDate) {
+      query = query.gte('created_at', filters.startDate);
+    }
+
+    if (filters.endDate) {
+      query = query.lte('created_at', filters.endDate);
+    }
+
+    // If party filters, we need to count vCons that match party criteria
+    // This is more complex - we'll need to do a subquery or join
+    if (filters.partyName || filters.partyEmail || filters.partyTel) {
+      // For party filters, we need to count distinct vcons that match party criteria
+      // Use a separate query to get matching vcon_ids, then count
+      let partyQuery = this.supabase
+        .from('parties')
+        .select('vcon_id');
+
+      if (filters.partyName) {
+        partyQuery = partyQuery.ilike('name', `%${filters.partyName}%`);
+      }
+      if (filters.partyEmail) {
+        partyQuery = partyQuery.ilike('mailto', `%${filters.partyEmail}%`);
+      }
+      if (filters.partyTel) {
+        partyQuery = partyQuery.ilike('tel', `%${filters.partyTel}%`);
+      }
+
+      const { data: partyData, error: partyError } = await partyQuery;
+      if (partyError) throw partyError;
+
+      if (!partyData || partyData.length === 0) {
+        return 0;
+      }
+
+      const partyVconIds = new Set(partyData.map(p => p.vcon_id));
+      
+      // Apply date/subject filters and count only matching vcons
+      let vconQuery = this.supabase
+        .from('vcons')
+        .select('id', { count: 'exact', head: true })
+        .in('id', Array.from(partyVconIds));
+
+      if (filters.subject) {
+        vconQuery = vconQuery.ilike('subject', `%${filters.subject}%`);
+      }
+      if (filters.startDate) {
+        vconQuery = vconQuery.gte('created_at', filters.startDate);
+      }
+      if (filters.endDate) {
+        vconQuery = vconQuery.lte('created_at', filters.endDate);
+      }
+
+      const { count, error: countError } = await vconQuery;
+      if (countError) throw countError;
+      return count || 0;
+    }
+
+    // For non-party filters, use the simple count query
+    const { count, error } = await query;
+    if (error) throw error;
+    return count || 0;
   }
 
   /**
