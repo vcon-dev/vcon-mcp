@@ -276,20 +276,28 @@ Search for vCons that have specific tag values. All specified tags must match (A
   tags: {                 // Tag key-value pairs to search for
     [key: string]: string;
   };
-  limit?: number;         // Maximum results (default: 50, max: 100)
+  limit?: number;         // Maximum UUIDs to return (default: 50, max: 100)
+  return_full_vcons?: boolean;  // Return full vCon objects (default: auto based on result size)
+  max_full_vcons?: number;      // Max full vCon objects to return (default: 20)
 }
 ```
 
+**Behavior:**
+- Always returns `vcon_uuids` for all matching vCons (up to `limit`)
+- For small result sets (≤20), full vCon objects are returned by default
+- For large result sets (>20), only UUIDs are returned by default to prevent response size limits
+- Use `get_vcon` to fetch individual vCons by UUID when needed
+
 **Examples:**
 ```javascript
-// Find all sales department vCons
+// Find all sales department vCons (returns UUIDs for large sets)
 search_by_tags({
   tags: {
     department: "sales"
   }
 })
 
-// Find high-priority open sales calls
+// Find high-priority open sales calls (small set, returns full vCons)
 search_by_tags({
   tags: {
     department: "sales",
@@ -297,6 +305,17 @@ search_by_tags({
     status: "open"
   },
   limit: 10
+})
+
+// Explicitly request full vCons for large result set (limited to 20)
+search_by_tags({
+  tags: {
+    direction: "out",
+    engagement: "true"
+  },
+  limit: 100,
+  return_full_vcons: true,
+  max_full_vcons: 20
 })
 ```
 

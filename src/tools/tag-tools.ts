@@ -106,9 +106,21 @@ export const searchByTagsTool = {
       },
       limit: {
         type: 'number',
-        description: 'Maximum number of results to return (default: 50)',
+        description: 'Maximum number of UUIDs to return (default: 50)',
         minimum: 1,
         maximum: 100
+      },
+      return_full_vcons: {
+        type: 'boolean',
+        description: 'If true, return full vCon objects. For large result sets, only first 20 full vCons are returned to prevent size limits. Default: false for result sets > 20, true for smaller sets.',
+        default: false
+      },
+      max_full_vcons: {
+        type: 'number',
+        description: 'Maximum number of full vCon objects to return when return_full_vcons is true (default: 20). Prevents response size issues.',
+        minimum: 1,
+        maximum: 50,
+        default: 20
       }
     },
     required: ['tags']

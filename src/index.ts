@@ -1329,6 +1329,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'search_by_tags': {
         const tags = args?.tags as Record<string, string>;
         const limit = (args?.limit as number | undefined) || 50;
+        const returnFullVCons = args?.return_full_vcons as boolean | undefined;
+        const maxFullVCons = (args?.max_full_vcons as number | undefined) || 20;
 
         if (!tags || typeof tags !== 'object' || Object.keys(tags).length === 0) {
           throw new McpError(ErrorCode.InvalidParams, 'tags object with at least one key-value pair is required');
@@ -1336,10 +1338,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         const vconUuids = await queries.searchByTags(tags, limit);
 
-        // Optionally fetch full vCons
-        const fullVCons = await Promise.all(
-          vconUuids.slice(0, limit).map(uuid => queries.getVCon(uuid))
-        );
+        // Determine if we should return full vCons
+        // Default behavior: return full vCons for small result sets (<= 20), only UUIDs for larger sets
+        const shouldReturnFull = returnFullVCons ?? (vconUuids.length <= 20);
+        
+        // Limit number of full vCons to prevent size issues
+        const numFullVCons = shouldReturnFull 
+          ? Math.min(vconUuids.length, maxFullVCons)
+          : 0;
+
+        let fullVCons: any[] = [];
+        if (numFullVCons > 0) {
+          fullVCons = await Promise.all(
+            vconUuids.slice(0, numFullVCons).map(uuid => queries.getVCon(uuid))
+          );
+        }
 
         recordCounter('vcon.search.count', 1, {
           [ATTR_SEARCH_TYPE]: 'tags',
@@ -1350,16 +1363,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           [ATTR_SEARCH_RESULTS_COUNT]: vconUuids.length,
         });
 
+        const response: any = {
+          success: true,
+          count: vconUuids.length,
+          tags_searched: tags,
+          vcon_uuids: vconUuids,
+        };
+
+        if (numFullVCons > 0) {
+          response.vcons = fullVCons;
+          if (numFullVCons < vconUuids.length) {
+            response.message = `Returned ${numFullVCons} full vCon objects (out of ${vconUuids.length} total matches). Use get_vcon to fetch individual vCons by UUID.`;
+          }
+        } else {
+          response.message = `Found ${vconUuids.length} matching vCons. Use get_vcon to fetch individual vCons by UUID, or set return_full_vcons=true to get full objects (limited to ${maxFullVCons} for large result sets).`;
+        }
+
         result = {
           content: [{
             type: 'text',
-            text: JSON.stringify({
-              success: true,
-              count: vconUuids.length,
-              tags_searched: tags,
-              vcon_uuids: vconUuids,
-              vcons: fullVCons
-            }, null, 2),
+            text: JSON.stringify(response, null, 2),
           }],
         };
         break;

@@ -912,15 +912,35 @@ export class VConQueries {
 
     if (error) {
       // If RPC doesn't exist, fall back to manual search
-      // Get all vCons with tags attachments (remove default 1000 row limit)
-      const { data: attachments, error: attachmentError } = await this.supabase
+      // Get all vCons with tags attachments (use pagination to bypass Supabase's 1000 row default limit)
+      // Note: We look for type='tags' regardless of encoding to handle legacy data
+      
+      // First, get the total count
+      const { count, error: countError } = await this.supabase
         .from('attachments')
-        .select('vcon_id, body')
-        .eq('type', 'tags')
-        .eq('encoding', 'json')
-        .limit(1000000); // Set very high limit to get all rows
+        .select('*', { count: 'exact', head: true })
+        .eq('type', 'tags');
 
-      if (attachmentError) throw attachmentError;
+      if (countError) throw countError;
+
+      // Fetch all attachments in batches (Supabase defaults to 1000 rows per query)
+      const batchSize = 1000;
+      const totalBatches = Math.ceil((count || 0) / batchSize);
+      const attachments: any[] = [];
+
+      for (let i = 0; i < totalBatches; i++) {
+        const from = i * batchSize;
+        const to = Math.min(from + batchSize - 1, (count || 0) - 1);
+        
+        const { data: batch, error: attachmentError } = await this.supabase
+          .from('attachments')
+          .select('vcon_id, body')
+          .eq('type', 'tags')
+          .range(from, to);
+
+        if (attachmentError) throw attachmentError;
+        if (batch) attachments.push(...batch);
+      }
 
       // Filter vCons that have all the requested tags
       const matchingVconIds = new Set<number>();
@@ -982,28 +1002,74 @@ export class VConQueries {
     const keyFilter = options?.keyFilter?.toLowerCase();
     const minCount = options?.minCount ?? 1;
 
-    // Get all tags attachments (remove default 1000 row limit)
-    const { data: attachments, error } = await this.supabase
+    // Get all tags attachments (use pagination to bypass Supabase's 1000 row default limit)
+    // Note: We look for type='tags' regardless of encoding to handle legacy data
+    // Tags should have encoding='json', but we're lenient to find tags that may have wrong encoding
+    
+    // First, get the total count
+    const { count, error: countError } = await this.supabase
       .from('attachments')
-      .select('vcon_id, body', { count: 'exact' })
-      .eq('type', 'tags')
-      .eq('encoding', 'json')
-      .limit(1000000); // Set very high limit to get all rows
+      .select('*', { count: 'exact', head: true })
+      .eq('type', 'tags');
 
-    if (error) throw error;
+    if (countError) throw countError;
+
+    // Fetch all attachments in batches (Supabase defaults to 1000 rows per query)
+    const batchSize = 1000;
+    const totalBatches = Math.ceil((count || 0) / batchSize);
+    const attachments: any[] = [];
+
+    for (let i = 0; i < totalBatches; i++) {
+      const from = i * batchSize;
+      const to = Math.min(from + batchSize - 1, (count || 0) - 1);
+      
+      const { data: batch, error } = await this.supabase
+        .from('attachments')
+        .select('vcon_id, body, encoding')
+        .eq('type', 'tags')
+        .range(from, to);
+
+      if (error) throw error;
+      if (batch) attachments.push(...batch);
+    }
 
     const allTags: Record<string, Set<string>> = {};
     const tagCounts: Record<string, Record<string, number>> = {};
     const vconIds = new Set<number>();
 
     // Parse all tags
+    let tagsWithWrongEncoding = 0;
     for (const attachment of attachments || []) {
       vconIds.add(attachment.vcon_id);
+      
+      // Warn if encoding is not 'json' (tags should have encoding='json')
+      if (attachment.encoding !== 'json') {
+        tagsWithWrongEncoding++;
+        if (tagsWithWrongEncoding === 1) {
+          // Only log once to avoid spam
+          logWithContext('warn', 'Found tags attachments with incorrect encoding', {
+            encoding: attachment.encoding || 'NULL',
+            suggestion: 'Run migration script: npx tsx scripts/migrate-tags-encoding.ts'
+          });
+        }
+      }
       
       try {
         const tagsArray = JSON.parse(attachment.body || '[]');
         
+        if (!Array.isArray(tagsArray)) {
+          logWithContext('warn', 'Tags attachment body is not an array', {
+            vcon_id: attachment.vcon_id,
+            encoding: attachment.encoding
+          });
+          continue;
+        }
+        
         for (const tagString of tagsArray) {
+          if (typeof tagString !== 'string') {
+            continue;
+          }
+          
           const colonIndex = tagString.indexOf(':');
           if (colonIndex > 0) {
             const key = tagString.substring(0, colonIndex);
@@ -1029,9 +1095,20 @@ export class VConQueries {
           }
         }
       } catch (parseError) {
-        console.error('Failed to parse tags attachment:', parseError);
+        logWithContext('error', 'Failed to parse tags attachment', {
+          vcon_id: attachment.vcon_id,
+          encoding: attachment.encoding,
+          error: parseError instanceof Error ? parseError.message : String(parseError)
+        });
         // Continue processing other attachments
       }
+    }
+    
+    if (tagsWithWrongEncoding > 0) {
+      logWithContext('info', `Processed ${tagsWithWrongEncoding} tags attachments with incorrect encoding`, {
+        total_tags: attachments?.length || 0,
+        wrong_encoding_count: tagsWithWrongEncoding
+      });
     }
 
     // Convert sets to arrays and apply min count filter

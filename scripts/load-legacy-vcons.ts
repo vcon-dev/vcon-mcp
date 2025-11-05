@@ -3,11 +3,13 @@
 /**
  * Legacy vCon Loader Script
  * 
- * Loads production vCon files and migrates them from older spec versions to current spec (0.3.0).
- * This script is designed for bulk loading of legacy vCon files with automatic migration
- * and performance optimizations for large datasets.
+ * Loads production vCon files from S3 bucket (default) or local directory and migrates them 
+ * from older spec versions to current spec (0.3.0). This script is designed for bulk loading 
+ * of legacy vCon files with automatic migration and performance optimizations for large datasets.
  * 
  * Key Features:
+ * - S3 bucket import (default) - loads recent vCons from AWS S3
+ * - Local directory import - fallback option for local files
  * - Automatic migration from legacy spec versions (0.0.1, 0.1.0, 0.2.0) to 0.3.0
  * - Encoding normalization (converts 'text' encoding to 'none' for plain text)
  * - Redis-based UUID tracking for fast duplicate detection
@@ -32,7 +34,8 @@
  * 
  * Arguments:
  *   directory  Path to directory containing .vcon files (optional)
- *              Default: /Users/thomashowe/Downloads/31
+ *              If S3 env vars are set, uses S3 by default
+ *              If directory provided, uses local directory instead
  * 
  * Options:
  *   --batch-size=N        Number of files per batch (default: 50)
@@ -40,17 +43,35 @@
  *   --retry-attempts=N    Max retry attempts for failed files (default: 3)
  *   --retry-delay=N       Delay between retries in ms (default: 1000)
  *   --dry-run             Don't actually load files, just validate
+ *   --hours=N             For S3: import vCons modified in last N hours (default: 24)
+ *   --prefix=PREFIX       For S3: filter objects by prefix (optional)
  * 
- * Environment Variables:
+ * Environment Variables (S3 - Default):
+ *   AWS_ACCESS_KEY_ID         AWS access key ID
+ *   AWS_SECRET_ACCESS_KEY     AWS secret access key
+ *   AWS_REGION                AWS region (default: us-east-1)
+ *   VCON_S3_BUCKET            S3 bucket name containing vCons
+ *   VCON_S3_PREFIX            Optional S3 prefix/folder path
+ * 
+ * Environment Variables (Database):
  *   SUPABASE_URL              Supabase project URL
  *   SUPABASE_SERVICE_ROLE_KEY Service role key for admin operations
  *   REDIS_URL                 Redis connection URL (optional)
  * 
  * Examples:
- *   # Basic usage with defaults
+ *   # Import recent vCons from S3 (default - last 24 hours)
  *   npx tsx scripts/load-legacy-vcons.ts
  * 
- *   # Load from specific directory with custom settings
+ *   # Import vCons from S3 modified in last 7 days
+ *   npx tsx scripts/load-legacy-vcons.ts --hours=168
+ * 
+ *   # Import from specific S3 prefix
+ *   VCON_S3_PREFIX=production/2024/ npx tsx scripts/load-legacy-vcons.ts
+ * 
+ *   # Load from local directory instead of S3
+ *   npx tsx scripts/load-legacy-vcons.ts /path/to/vcons
+ * 
+ *   # Load from directory with custom settings
  *   npx tsx scripts/load-legacy-vcons.ts /path/to/vcons --batch-size=100 --concurrency=5
  * 
  *   # Dry run to test migration without loading
@@ -60,13 +81,15 @@
  *   npx tsx scripts/load-legacy-vcons.ts --batch-size=25 --concurrency=2 --retry-attempts=5
  * 
  * @author vCon MCP Team
- * @version 2.0.0
+ * @version 3.0.0
  * @since 2024-10-01
  */
 
-import { readdir, readFile, stat, writeFile, readFile as readFileSync } from 'fs/promises';
+import { readdir, readFile, stat, writeFile, readFile as readFileSync, mkdtemp } from 'fs/promises';
 import { join } from 'path';
+import { tmpdir } from 'os';
 import dotenv from 'dotenv';
+import { S3Client, ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSupabaseClient } from '../dist/db/client.js';
 import { VConQueries } from '../dist/db/queries.js';
 import { VCon } from '../dist/types/vcon.js';
@@ -107,6 +130,10 @@ interface ProcessingOptions {
   retryAttempts?: number;
   /** Delay between retry attempts in milliseconds */
   retryDelay?: number;
+  /** For S3: hours to look back for recent vCons */
+  hours?: number;
+  /** For S3: prefix to filter objects */
+  prefix?: string;
 }
 
 /**
@@ -124,13 +151,13 @@ interface UUIDTracker {
   loadedUUIDs: Set<string>;
   
   /** Initialize the tracker (Redis or file-based) */
-  async init(): Promise<void>;
+  init(): Promise<void>;
   /** Check if a UUID has already been loaded */
-  async hasUUID(uuid: string): Promise<boolean>;
+  hasUUID(uuid: string): Promise<boolean>;
   /** Add a UUID to the tracking system */
-  async addUUID(uuid: string): Promise<void>;
+  addUUID(uuid: string): Promise<void>;
   /** Clean up resources */
-  async close(): Promise<void>;
+  close(): Promise<void>;
 }
 
 /**
@@ -286,6 +313,173 @@ class UUIDTrackerImpl implements UUIDTracker {
       await this.saveToTempFile();
     }
   }
+}
+
+/**
+ * Generate date prefixes for the time window (YYYY/MM/DD format)
+ * 
+ * @param hours - Hours to look back
+ * @param basePrefix - Optional base prefix to prepend
+ * @returns Array of date prefixes in YYYY/MM/DD format
+ */
+function generateDatePrefixes(hours: number, basePrefix?: string): string[] {
+  const prefixes: string[] = [];
+  const now = new Date();
+  const cutoffTime = new Date(now.getTime() - hours * 60 * 60 * 1000);
+  
+  // Generate prefixes for each day in the range
+  const currentDate = new Date(cutoffTime);
+  currentDate.setHours(0, 0, 0, 0); // Start of day
+  
+  while (currentDate <= now) {
+    const year = currentDate.getFullYear();
+    const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+    const day = String(currentDate.getDate()).padStart(2, '0');
+    const datePrefix = `${year}/${month}/${day}`;
+    
+    if (basePrefix) {
+      prefixes.push(`${basePrefix}${datePrefix}/`);
+    } else {
+      prefixes.push(`${datePrefix}/`);
+    }
+    
+    // Move to next day
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+  
+  return prefixes;
+}
+
+/**
+ * List recent vCons from S3 bucket using date-based prefixes for efficiency
+ * 
+ * Lists objects from S3 bucket that match the .vcon extension and were
+ * modified within the specified time window. Uses YYYY/MM/DD directory
+ * structure to optimize the search by only scanning relevant date directories.
+ * Downloads them to a temporary directory for processing.
+ * 
+ * @param bucket - S3 bucket name
+ * @param prefix - Optional base S3 prefix/folder path (will have date appended)
+ * @param hours - Hours to look back for recent vCons
+ * @param s3Client - Initialized S3 client
+ * @returns Promise resolving to array of downloaded vCon file paths
+ */
+async function listAndDownloadVConsFromS3(
+  bucket: string,
+  prefix: string | undefined,
+  hours: number,
+  s3Client: S3Client
+): Promise<string[]> {
+  const vconFiles: string[] = [];
+  const tempDir = await mkdtemp(join(tmpdir(), 'vcon-import-'));
+  const cutoffTime = new Date(Date.now() - hours * 60 * 60 * 1000);
+  
+  console.log(`📦 Listing vCons from S3 bucket: ${bucket}`);
+  if (prefix) {
+    console.log(`   Base prefix: ${prefix}`);
+  }
+  console.log(`   Modified after: ${cutoffTime.toISOString()}`);
+  
+  // Generate date prefixes for efficient searching
+  const datePrefixes = generateDatePrefixes(hours, prefix);
+  console.log(`   Searching ${datePrefixes.length} date directories (YYYY/MM/DD format)\n`);
+  
+  let totalObjects = 0;
+  let recentObjects = 0;
+  let downloadedCount = 0;
+  const startTime = Date.now();
+  const progressInterval = 100; // Show progress every N objects checked
+  const downloadProgressInterval = 10; // Show progress every N downloads
+  
+  // Process each date prefix
+  for (let i = 0; i < datePrefixes.length; i++) {
+    const datePrefix = datePrefixes[i];
+    console.log(`📅 Searching ${datePrefix} (${i + 1}/${datePrefixes.length})...`);
+    
+    let continuationToken: string | undefined;
+    let prefixObjects = 0;
+    let prefixRecent = 0;
+    
+    do {
+      const command = new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: datePrefix,
+        ContinuationToken: continuationToken
+      });
+      
+      const response = await s3Client.send(command);
+      
+      if (response.Contents) {
+        for (const object of response.Contents) {
+          totalObjects++;
+          prefixObjects++;
+          
+          // Show progress periodically while listing
+          if (totalObjects % progressInterval === 0) {
+            const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+            process.stdout.write(`\r🔍 Checking objects... ${totalObjects} checked, ${recentObjects} recent vCons found, ${downloadedCount} downloaded (${elapsed}s)`);
+          }
+          
+          // Check if object is recent enough and is a .vcon file
+          if (object.LastModified && object.LastModified >= cutoffTime && object.Key?.endsWith('.vcon')) {
+            recentObjects++;
+            prefixRecent++;
+            
+            // Download object to temp directory
+            const getCommand = new GetObjectCommand({
+              Bucket: bucket,
+              Key: object.Key
+            });
+            
+            try {
+              const getResponse = await s3Client.send(getCommand);
+              
+              if (getResponse.Body) {
+                // Convert stream to string
+                const chunks: Uint8Array[] = [];
+                const stream = getResponse.Body as any;
+                
+                for await (const chunk of stream) {
+                  chunks.push(chunk);
+                }
+                
+                const bodyString = Buffer.concat(chunks).toString('utf-8');
+                const localPath = join(tempDir, object.Key.split('/').pop() || `vcon-${recentObjects}.vcon`);
+                await writeFile(localPath, bodyString, 'utf-8');
+                vconFiles.push(localPath);
+                downloadedCount++;
+                
+                // Show progress periodically while downloading
+                if (downloadedCount % downloadProgressInterval === 0) {
+                  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                  process.stdout.write(`\r📥 Downloading... ${downloadedCount}/${recentObjects} vCons downloaded (${elapsed}s)`);
+                }
+              }
+            } catch (error) {
+              console.warn(`\n⚠️  Failed to download ${object.Key}: ${error}`);
+            }
+          }
+        }
+      }
+      
+      continuationToken = response.NextContinuationToken;
+    } while (continuationToken);
+    
+    // Clear progress line and show date summary
+    process.stdout.write('\r' + ' '.repeat(80) + '\r');
+    if (prefixRecent > 0) {
+      console.log(`   ✅ Found ${prefixRecent} vCons in ${datePrefix}`);
+    } else {
+      console.log(`   ⏭️  No vCons found in ${datePrefix}`);
+    }
+  }
+  
+  // Clear progress line and show final summary
+  process.stdout.write('\r' + ' '.repeat(80) + '\r');
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  console.log(`\n📊 Summary: ${totalObjects} total objects checked, ${recentObjects} recent .vcon files found, ${downloadedCount} downloaded (${elapsed}s)\n`);
+  
+  return vconFiles;
 }
 
 /**
@@ -476,21 +670,22 @@ function createBatches<T>(array: T[], batchSize: number): T[][] {
 }
 
 /**
- * Load legacy vCon files from a directory with migration and performance optimizations
+ * Load legacy vCon files from S3 bucket or local directory with migration and performance optimizations
  * 
  * This is the main processing function that orchestrates the entire loading workflow:
- * - Recursively finds all .vcon files in the directory
+ * - If S3 credentials are configured, loads from S3 bucket (default)
+ * - Otherwise, recursively finds all .vcon files in the specified directory
  * - Initializes UUID tracking system (Redis or file-based)
  * - Processes files in parallel batches with configurable concurrency
  * - Migrates legacy vCons to spec 0.3.0
  * - Provides comprehensive progress reporting and statistics
  * - Handles errors gracefully with detailed reporting
  * 
- * @param directoryPath - Path to directory containing .vcon files
+ * @param directoryPath - Path to directory containing .vcon files (optional if using S3)
  * @param options - Processing configuration options
  * @returns Promise resolving to comprehensive loading statistics
  */
-async function loadVConsFromDirectory(directoryPath: string, options: ProcessingOptions = { batchSize: 50, concurrency: 3, dryRun: false, retryAttempts: 3, retryDelay: 1000 }): Promise<LoadStats> {
+async function loadVConsFromDirectory(directoryPath: string | undefined, options: ProcessingOptions = { batchSize: 50, concurrency: 3, dryRun: false, retryAttempts: 3, retryDelay: 1000 }): Promise<LoadStats> {
   const stats: LoadStats = {
     total: 0,
     successful: 0,
@@ -511,10 +706,34 @@ async function loadVConsFromDirectory(directoryPath: string, options: Processing
     uuidTracker = new UUIDTrackerImpl();
     await uuidTracker.init();
 
-    console.log(`📂 Recursively searching for vCon files in: ${directoryPath}\n`);
-
-    // Recursively find all .vcon files
-    const vconFiles = await findVConFiles(directoryPath);
+    let vconFiles: string[] = [];
+    
+    // Check if S3 is configured and no directory path provided
+    const s3Bucket = process.env.VCON_S3_BUCKET;
+    const awsAccessKey = process.env.AWS_ACCESS_KEY_ID;
+    const awsSecretKey = process.env.AWS_SECRET_ACCESS_KEY;
+    
+    if (s3Bucket && awsAccessKey && awsSecretKey && !directoryPath) {
+      // Use S3 as source
+      const s3Client = new S3Client({
+        region: process.env.AWS_REGION || 'us-east-1',
+        credentials: {
+          accessKeyId: awsAccessKey,
+          secretAccessKey: awsSecretKey
+        }
+      });
+      
+      const prefix = options.prefix || process.env.VCON_S3_PREFIX;
+      const hours = options.hours || 24;
+      
+      vconFiles = await listAndDownloadVConsFromS3(s3Bucket, prefix, hours, s3Client);
+    } else if (directoryPath) {
+      // Use local directory
+      console.log(`📂 Recursively searching for vCon files in: ${directoryPath}\n`);
+      vconFiles = await findVConFiles(directoryPath);
+    } else {
+      throw new Error('Either S3 credentials (VCON_S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY) or a directory path must be provided');
+    }
 
     stats.total = vconFiles.length;
     console.log(`Found ${stats.total} vCon files\n`);
@@ -614,7 +833,10 @@ async function loadVConsFromDirectory(directoryPath: string, options: Processing
  */
 async function main() {
   const args = process.argv.slice(2);
-  const directoryPath = args[0] || '/Users/thomashowe/Downloads/31';
+  
+  // Parse directory path - if first arg doesn't start with --, it's the directory
+  const directoryArg = args.find(arg => !arg.startsWith('--'));
+  const directoryPath = directoryArg || undefined;
   
   // Parse command line options with improved defaults
   const batchSize = parseInt(args.find(arg => arg.startsWith('--batch-size='))?.split('=')[1] || '50');
@@ -622,18 +844,39 @@ async function main() {
   const retryAttempts = parseInt(args.find(arg => arg.startsWith('--retry-attempts='))?.split('=')[1] || '3');
   const retryDelay = parseInt(args.find(arg => arg.startsWith('--retry-delay='))?.split('=')[1] || '1000');
   const dryRun = args.includes('--dry-run');
+  const hours = parseInt(args.find(arg => arg.startsWith('--hours='))?.split('=')[1] || '24');
+  const prefix = args.find(arg => arg.startsWith('--prefix='))?.split('=')[1] || undefined;
   
   const options: ProcessingOptions = {
     batchSize,
     concurrency,
     dryRun,
     retryAttempts,
-    retryDelay
+    retryDelay,
+    hours,
+    prefix
   };
 
   console.log('🚀 Legacy vCon Loader Starting...\n');
   console.log(`Database: ${process.env.SUPABASE_URL}\n`);
-  console.log(`Options: batchSize=${batchSize}, concurrency=${concurrency}, retryAttempts=${retryAttempts}, retryDelay=${retryDelay}ms, dryRun=${dryRun}\n`);
+  
+  // Determine source
+  const s3Bucket = process.env.VCON_S3_BUCKET;
+  const awsAccessKey = process.env.AWS_ACCESS_KEY_ID;
+  const source = (s3Bucket && awsAccessKey && !directoryPath) ? 'S3' : 'Local Directory';
+  
+  console.log(`Source: ${source}`);
+  if (source === 'S3') {
+    console.log(`  Bucket: ${s3Bucket}`);
+    if (options.prefix || process.env.VCON_S3_PREFIX) {
+      console.log(`  Prefix: ${options.prefix || process.env.VCON_S3_PREFIX}`);
+    }
+    console.log(`  Hours: ${hours}`);
+  } else {
+    console.log(`  Directory: ${directoryPath || 'Not specified'}`);
+  }
+  
+  console.log(`\nOptions: batchSize=${batchSize}, concurrency=${concurrency}, retryAttempts=${retryAttempts}, retryDelay=${retryDelay}ms, dryRun=${dryRun}\n`);
 
   await loadVConsFromDirectory(directoryPath, options);
 }
