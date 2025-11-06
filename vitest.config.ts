@@ -5,6 +5,12 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     setupFiles: ['dotenv/config'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json', 'html'],
+      include: ['src/**/*.ts'],
+      exclude: ['src/**/*.test.ts', 'src/**/*.d.ts', 'node_modules/**'],
+    },
   },
 });
 
