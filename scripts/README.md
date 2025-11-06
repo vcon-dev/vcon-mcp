@@ -28,14 +28,23 @@ npx tsx scripts/load-vcons.ts /path/to/vcon/files
 - `SUPABASE_SERVICE_ROLE_KEY` - Service role key for admin operations
 
 ### `load-legacy-vcons.ts` - Legacy vCon Loader with Migration
-Load and migrate legacy vCon files (pre-0.3.0 spec) to the current specification. Optimized for bulk loading with performance features.
+Load and migrate legacy vCon files from S3 bucket (default) or local directory. Automatically migrates pre-0.3.0 spec files to the current specification. Optimized for bulk loading with performance features.
 
 **Usage:**
 ```bash
-# Basic usage with defaults
+# Import recent vCons from S3 (default - last 24 hours)
 npx tsx scripts/load-legacy-vcons.ts
 
-# Load from specific directory with custom settings
+# Import vCons from S3 modified in last 7 days
+npx tsx scripts/load-legacy-vcons.ts --hours=168
+
+# Import from specific S3 prefix
+VCON_S3_PREFIX=production/2024/ npx tsx scripts/load-legacy-vcons.ts
+
+# Load from local directory instead of S3
+npx tsx scripts/load-legacy-vcons.ts /path/to/vcons
+
+# Load from directory with custom settings
 npx tsx scripts/load-legacy-vcons.ts /path/to/vcons --batch-size=100 --concurrency=5
 
 # Dry run to test migration without loading
@@ -51,6 +60,15 @@ npx tsx scripts/load-legacy-vcons.ts --batch-size=25 --concurrency=2 --retry-att
 - `--retry-attempts=N` - Max retry attempts for failed files (default: 3)
 - `--retry-delay=N` - Delay between retries in ms (default: 1000)
 - `--dry-run` - Validate files but don't load into database
+- `--hours=N` - For S3: import vCons modified in last N hours (default: 24)
+- `--prefix=PREFIX` - For S3: filter objects by prefix (optional)
+
+**S3 Import Features (Default):**
+- Automatically detects S3 configuration from environment variables
+- Downloads recent vCons from S3 bucket based on modification time
+- Supports prefix filtering for specific S3 folders
+- Configurable time window for "recent" vCons
+- Downloads to temporary directory for processing
 
 **Migration Features:**
 - Automatic migration from legacy spec versions (0.0.1, 0.1.0, 0.2.0) to 0.3.0
@@ -64,7 +82,14 @@ npx tsx scripts/load-legacy-vcons.ts --batch-size=25 --concurrency=2 --retry-att
 - Progress reporting with ETA calculations
 - Retry logic with exponential backoff
 
-**Environment Variables:**
+**Environment Variables (S3 - Default):**
+- `AWS_ACCESS_KEY_ID` - AWS access key ID
+- `AWS_SECRET_ACCESS_KEY` - AWS secret access key
+- `AWS_REGION` - AWS region (default: us-east-1)
+- `VCON_S3_BUCKET` - S3 bucket name containing vCons
+- `VCON_S3_PREFIX` - Optional S3 prefix/folder path
+
+**Environment Variables (Database):**
 - `SUPABASE_URL` - Supabase project URL
 - `SUPABASE_SERVICE_ROLE_KEY` - Service role key for admin operations
 - `REDIS_URL` - Redis connection URL (optional, defaults to localhost:6379)
@@ -240,6 +265,38 @@ psql $DATABASE_URL -f scripts/cleanup-non-text-embeddings.sql
 ```
 
 **Warning:** This permanently deletes data. Review the preview queries first before uncommenting the DELETE statement.
+
+## Migration Scripts
+
+### `migrate-tags-encoding.ts` - Fix Tags Encoding
+Updates all tags attachments to use `encoding='json'` since the body contains JSON-formatted data.
+
+```bash
+npx tsx scripts/migrate-tags-encoding.ts
+```
+
+This script:
+- Finds all tags attachments
+- Analyzes current encoding distribution
+- Updates attachments with incorrect encoding to `encoding='json'`
+- Validates JSON format before updating
+- Provides detailed progress and results
+
+**Why:** Tags are stored as JSON arrays (`["key:value", ...]`), so the encoding must be `'json'`. Some legacy data may have `encoding='none'` or `NULL`, which needs to be corrected.
+
+### `verify-search-by-tags.ts` - Verify Search Function
+Verify that the `search_vcons_by_tags` database function exists and is working correctly.
+
+```bash
+npx tsx scripts/verify-search-by-tags.ts
+```
+
+This script:
+- Tests if the `search_vcons_by_tags` RPC function exists
+- Provides instructions if the function is missing
+- Shows how to apply the migration manually
+
+**Note:** If the function doesn't exist, apply the migration `20251016000000_add_search_vcons_by_tags.sql` via Supabase Dashboard or CLI.
 
 ### `test-semantic-search.ts`
 Test semantic search functionality with sample queries.

@@ -138,6 +138,42 @@ if (process.env.VCON_PLUGINS_PATH) {
 await pluginManager.initialize({ supabase, queries });
 
 // ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Normalize and validate ISO 8601 date strings
+ * Trims whitespace and validates the format
+ * 
+ * @param dateStr - Date string to normalize
+ * @returns Normalized date string or undefined if invalid
+ * @throws McpError if date format is invalid
+ */
+function normalizeDateString(dateStr: string | undefined): string | undefined {
+  if (!dateStr) return undefined;
+  
+  const trimmed = dateStr.trim();
+  if (!trimmed) return undefined;
+  
+  // Validate ISO 8601 format (supports Z, +/-HH:MM, +/-HHMM, and +/-HH)
+  const iso8601Regex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:?\d{2}?)$/;
+  if (!iso8601Regex.test(trimmed)) {
+    // Try parsing as Date to provide better error message
+    const parsed = new Date(trimmed);
+    if (isNaN(parsed.getTime())) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `Invalid date format: "${dateStr}". Expected ISO 8601 format (e.g., "2025-01-15T14:30:00Z" or "2025-01-15T14:30:00-05:00")`
+      );
+    }
+    // If it's a valid Date but not ISO format, convert it to ISO
+    return parsed.toISOString();
+  }
+  
+  return trimmed;
+}
+
+// ============================================================================
 // Tool Handlers
 // ============================================================================
 
@@ -400,8 +436,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           partyName: args?.party_name as string | undefined,
           partyEmail: args?.party_email as string | undefined,
           partyTel: args?.party_tel as string | undefined,
-          startDate: args?.start_date as string | undefined,
-          endDate: args?.end_date as string | undefined,
+          startDate: normalizeDateString(args?.start_date as string | undefined),
+          endDate: normalizeDateString(args?.end_date as string | undefined),
           limit: (args?.limit as number | undefined) || 10,
         };
 
@@ -409,7 +445,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const modifiedFilters = await pluginManager.executeHook<typeof filters>('beforeSearch', filters, context);
         if (modifiedFilters) filters = modifiedFilters;
 
-        let results = await queries.searchVCons(filters);
+        let results;
+        try {
+          results = await queries.searchVCons(filters);
+        } catch (dbError: any) {
+          // Improve error messages for database connection issues
+          if (dbError instanceof TypeError && dbError.message.includes('fetch failed')) {
+            throw new McpError(
+              ErrorCode.InternalError,
+              `Database connection failed: Unable to reach Supabase database. ` +
+              `Please check: 1) Network connectivity, 2) SUPABASE_URL is correct, 3) Supabase service is available. ` +
+              `Details: ${dbError.message}`
+            );
+          }
+          // Re-throw other errors as-is (they'll be handled by the outer catch)
+          throw dbError;
+        }
         
         // Hook: afterSearch (can filter or modify results)
         const filteredResults = await pluginManager.executeHook<VCon[]>('afterSearch', results, context);
@@ -433,12 +484,27 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           formattedResults = results;
         }
 
-        // Get total count if requested (expensive for large datasets)
+        // Get total count if requested (uses efficient count query, not limited by 1000 rows)
         let totalCount;
         if (includeCount) {
-          const countFilters = { ...filters, limit: undefined };
-          const countResults = await queries.searchVCons(countFilters);
-          totalCount = countResults.length;
+          try {
+            // Use count query instead of fetching all results (bypasses Supabase 1000 limit)
+            totalCount = await queries.searchVConsCount({
+              subject: filters.subject,
+              partyName: filters.partyName,
+              partyEmail: filters.partyEmail,
+              partyTel: filters.partyTel,
+              startDate: filters.startDate,
+              endDate: filters.endDate,
+            });
+          } catch (countError: any) {
+            // Log count error but don't fail the entire request
+            logWithContext('warn', 'Failed to get total count for search', {
+              tool_name: name,
+              error_message: countError instanceof Error ? countError.message : String(countError),
+            });
+            // Continue without total count
+          }
         }
         
         recordCounter('vcon.search.count', 1, {
@@ -484,8 +550,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         const results = await queries.keywordSearch({
           query,
-          startDate: args?.start_date as string | undefined,
-          endDate: args?.end_date as string | undefined,
+          startDate: normalizeDateString(args?.start_date as string | undefined),
+          endDate: normalizeDateString(args?.end_date as string | undefined),
           tags: args?.tags as Record<string, string> | undefined,
           limit: (args?.limit as number | undefined) || 50,
         });
@@ -518,16 +584,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
 
         // Get total count if requested
+        // NOTE: Currently limited to 1000 distinct vCons due to Supabase's row limit
+        // For accurate counts > 1000, a database RPC function would be needed
         let totalCount;
         if (includeCount) {
-          const countResults = await queries.keywordSearch({
-            query,
-            startDate: args?.start_date as string | undefined,
-            endDate: args?.end_date as string | undefined,
-            tags: args?.tags as Record<string, string> | undefined,
-            limit: undefined,
-          });
-          totalCount = countResults.length;
+          try {
+            totalCount = await queries.keywordSearchCount({
+              query,
+              startDate: normalizeDateString(args?.start_date as string | undefined),
+              endDate: normalizeDateString(args?.end_date as string | undefined),
+              tags: args?.tags as Record<string, string> | undefined,
+            });
+          } catch (countError: any) {
+            // Log count error but don't fail the entire request
+            logWithContext('warn', 'Failed to get total count for keyword search', {
+              tool_name: name,
+              error_message: countError instanceof Error ? countError.message : String(countError),
+            });
+            // Continue without total count
+          }
         }
 
         recordCounter('vcon.search.count', 1, {
@@ -1329,6 +1404,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'search_by_tags': {
         const tags = args?.tags as Record<string, string>;
         const limit = (args?.limit as number | undefined) || 50;
+        const returnFullVCons = args?.return_full_vcons as boolean | undefined;
+        const maxFullVCons = (args?.max_full_vcons as number | undefined) || 20;
 
         if (!tags || typeof tags !== 'object' || Object.keys(tags).length === 0) {
           throw new McpError(ErrorCode.InvalidParams, 'tags object with at least one key-value pair is required');
@@ -1336,10 +1413,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         const vconUuids = await queries.searchByTags(tags, limit);
 
-        // Optionally fetch full vCons
-        const fullVCons = await Promise.all(
-          vconUuids.slice(0, limit).map(uuid => queries.getVCon(uuid))
-        );
+        // Determine if we should return full vCons
+        // Default behavior: return full vCons for small result sets (<= 20), only UUIDs for larger sets
+        const shouldReturnFull = returnFullVCons ?? (vconUuids.length <= 20);
+        
+        // Limit number of full vCons to prevent size issues
+        const numFullVCons = shouldReturnFull 
+          ? Math.min(vconUuids.length, maxFullVCons)
+          : 0;
+
+        let fullVCons: any[] = [];
+        if (numFullVCons > 0) {
+          fullVCons = await Promise.all(
+            vconUuids.slice(0, numFullVCons).map(uuid => queries.getVCon(uuid))
+          );
+        }
 
         recordCounter('vcon.search.count', 1, {
           [ATTR_SEARCH_TYPE]: 'tags',
@@ -1350,16 +1438,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           [ATTR_SEARCH_RESULTS_COUNT]: vconUuids.length,
         });
 
+        const response: any = {
+          success: true,
+          count: vconUuids.length,
+          tags_searched: tags,
+          vcon_uuids: vconUuids,
+        };
+
+        if (numFullVCons > 0) {
+          response.vcons = fullVCons;
+          if (numFullVCons < vconUuids.length) {
+            response.message = `Returned ${numFullVCons} full vCon objects (out of ${vconUuids.length} total matches). Use get_vcon to fetch individual vCons by UUID.`;
+          }
+        } else {
+          response.message = `Found ${vconUuids.length} matching vCons. Use get_vcon to fetch individual vCons by UUID, or set return_full_vcons=true to get full objects (limited to ${maxFullVCons} for large result sets).`;
+        }
+
         result = {
           content: [{
             type: 'text',
-            text: JSON.stringify({
-              success: true,
-              count: vconUuids.length,
-              tags_searched: tags,
-              vcon_uuids: vconUuids,
-              vcons: fullVCons
-            }, null, 2),
+            text: JSON.stringify(response, null, 2),
           }],
         };
         break;
@@ -1550,8 +1648,32 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         throw error;
       }
 
-      // Database or other errors
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      // Database or other errors - extract meaningful error message
+      let errorMessage: string;
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (error && typeof error === 'object') {
+        // Try to extract message from error object
+        if ('message' in error && typeof error.message === 'string') {
+          errorMessage = error.message;
+        } else if ('error' in error && typeof error.error === 'string') {
+          errorMessage = error.error;
+        } else if ('code' in error && 'message' in error) {
+          // Supabase-style errors with code and message
+          errorMessage = `${error.code}: ${error.message}`;
+        } else {
+          // Try to JSON stringify for more details
+          try {
+            const errorStr = JSON.stringify(error, null, 2);
+            errorMessage = errorStr.length > 500 ? errorStr.substring(0, 500) + '...' : errorStr;
+          } catch {
+            // If JSON.stringify fails, use object inspection
+            errorMessage = `Error object: ${Object.keys(error).join(', ')}`;
+          }
+        }
+      } else {
+        errorMessage = String(error);
+      }
       
       logWithContext('error', 'MCP tool execution failed', {
         request_id: requestId,

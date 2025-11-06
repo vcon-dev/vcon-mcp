@@ -187,6 +187,34 @@ export class VConQueries {
   }
 
   /**
+   * Get count of distinct vCons matching keyword search criteria
+   * 
+   * NOTE: This method has a limitation - it fetches results and counts distinct vcon_ids,
+   * which means it's still subject to Supabase's 1000 row limit. For accurate counts
+   * exceeding 1000, a database RPC function that returns count directly would be needed.
+   * 
+   * @param params - Search parameters
+   * @returns Count of distinct vCons matching the search
+   */
+  async keywordSearchCount(params: {
+    query: string;
+    startDate?: string;
+    endDate?: string;
+    tags?: Record<string, string>;
+  }): Promise<number> {
+    // Use a large limit to get as many results as possible (still capped at 1000 by Supabase)
+    // Then count distinct vcon_ids
+    const results = await this.keywordSearch({
+      ...params,
+      limit: 1000, // Maximum allowed by Supabase
+    });
+    
+    // Count distinct vcon_ids (since one vcon can match multiple times)
+    const distinctVconIds = new Set(results.map(r => r.vcon_id));
+    return distinctVconIds.size;
+  }
+
+  /**
    * Semantic search via RPC `search_vcons_semantic`.
    * Pass a precomputed embedding vector to avoid coupling to an embedding provider here.
    */
@@ -695,8 +723,28 @@ export class VConQueries {
 
     query = query.order('created_at', { ascending: false });
 
-    const { data, error } = await query;
+    let data, error;
+    try {
+      const result = await query;
+      data = result.data;
+      error = result.error;
+    } catch (fetchError: any) {
+      // Handle network/connection errors
+      if (fetchError instanceof TypeError && fetchError.message.includes('fetch failed')) {
+        throw new Error(
+          `Database connection failed: Unable to reach Supabase. ` +
+          `Check your network connection and SUPABASE_URL configuration. ` +
+          `Original error: ${fetchError.message}`
+        );
+      }
+      throw fetchError;
+    }
+    
     if (error) throw error;
+    if (!data) {
+      // This shouldn't happen if error is null, but TypeScript needs this check
+      return [];
+    }
 
     // If party filters, need to join with parties table
     let vconUuids = data.map(v => v.uuid);
@@ -736,6 +784,90 @@ export class VConQueries {
     return Promise.all(
       vconUuids.map(uuid => this.getVCon(uuid))
     );
+  }
+
+  /**
+   * Get count of vCons matching search criteria (without fetching all data)
+   * This bypasses Supabase's 1000 row default limit by using count query
+   */
+  async searchVConsCount(filters: {
+    subject?: string;
+    partyName?: string;
+    partyEmail?: string;
+    partyTel?: string;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<number> {
+    // Build the same query as searchVCons but just get count
+    let query = this.supabase
+      .from('vcons')
+      .select('*', { count: 'exact', head: true });
+
+    if (filters.subject) {
+      query = query.ilike('subject', `%${filters.subject}%`);
+    }
+
+    if (filters.startDate) {
+      query = query.gte('created_at', filters.startDate);
+    }
+
+    if (filters.endDate) {
+      query = query.lte('created_at', filters.endDate);
+    }
+
+    // If party filters, we need to count vCons that match party criteria
+    // This is more complex - we'll need to do a subquery or join
+    if (filters.partyName || filters.partyEmail || filters.partyTel) {
+      // For party filters, we need to count distinct vcons that match party criteria
+      // Use a separate query to get matching vcon_ids, then count
+      let partyQuery = this.supabase
+        .from('parties')
+        .select('vcon_id');
+
+      if (filters.partyName) {
+        partyQuery = partyQuery.ilike('name', `%${filters.partyName}%`);
+      }
+      if (filters.partyEmail) {
+        partyQuery = partyQuery.ilike('mailto', `%${filters.partyEmail}%`);
+      }
+      if (filters.partyTel) {
+        partyQuery = partyQuery.ilike('tel', `%${filters.partyTel}%`);
+      }
+
+      const { data: partyData, error: partyError } = await partyQuery;
+      if (partyError) throw partyError;
+
+      if (!partyData || partyData.length === 0) {
+        return 0;
+      }
+
+      const partyVconIds = new Set(partyData.map(p => p.vcon_id));
+      
+      // Apply date/subject filters and count only matching vcons
+      let vconQuery = this.supabase
+        .from('vcons')
+        .select('id', { count: 'exact', head: true })
+        .in('id', Array.from(partyVconIds));
+
+      if (filters.subject) {
+        vconQuery = vconQuery.ilike('subject', `%${filters.subject}%`);
+      }
+      if (filters.startDate) {
+        vconQuery = vconQuery.gte('created_at', filters.startDate);
+      }
+      if (filters.endDate) {
+        vconQuery = vconQuery.lte('created_at', filters.endDate);
+      }
+
+      const { count, error: countError } = await vconQuery;
+      if (countError) throw countError;
+      return count || 0;
+    }
+
+    // For non-party filters, use the simple count query
+    const { count, error } = await query;
+    if (error) throw error;
+    return count || 0;
   }
 
   /**
@@ -912,15 +1044,35 @@ export class VConQueries {
 
     if (error) {
       // If RPC doesn't exist, fall back to manual search
-      // Get all vCons with tags attachments (remove default 1000 row limit)
-      const { data: attachments, error: attachmentError } = await this.supabase
+      // Get all vCons with tags attachments (use pagination to bypass Supabase's 1000 row default limit)
+      // Note: We look for type='tags' regardless of encoding to handle legacy data
+      
+      // First, get the total count
+      const { count, error: countError } = await this.supabase
         .from('attachments')
-        .select('vcon_id, body')
-        .eq('type', 'tags')
-        .eq('encoding', 'json')
-        .limit(1000000); // Set very high limit to get all rows
+        .select('*', { count: 'exact', head: true })
+        .eq('type', 'tags');
 
-      if (attachmentError) throw attachmentError;
+      if (countError) throw countError;
+
+      // Fetch all attachments in batches (Supabase defaults to 1000 rows per query)
+      const batchSize = 1000;
+      const totalBatches = Math.ceil((count || 0) / batchSize);
+      const attachments: any[] = [];
+
+      for (let i = 0; i < totalBatches; i++) {
+        const from = i * batchSize;
+        const to = Math.min(from + batchSize - 1, (count || 0) - 1);
+        
+        const { data: batch, error: attachmentError } = await this.supabase
+          .from('attachments')
+          .select('vcon_id, body')
+          .eq('type', 'tags')
+          .range(from, to);
+
+        if (attachmentError) throw attachmentError;
+        if (batch) attachments.push(...batch);
+      }
 
       // Filter vCons that have all the requested tags
       const matchingVconIds = new Set<number>();
@@ -982,28 +1134,74 @@ export class VConQueries {
     const keyFilter = options?.keyFilter?.toLowerCase();
     const minCount = options?.minCount ?? 1;
 
-    // Get all tags attachments (remove default 1000 row limit)
-    const { data: attachments, error } = await this.supabase
+    // Get all tags attachments (use pagination to bypass Supabase's 1000 row default limit)
+    // Note: We look for type='tags' regardless of encoding to handle legacy data
+    // Tags should have encoding='json', but we're lenient to find tags that may have wrong encoding
+    
+    // First, get the total count
+    const { count, error: countError } = await this.supabase
       .from('attachments')
-      .select('vcon_id, body', { count: 'exact' })
-      .eq('type', 'tags')
-      .eq('encoding', 'json')
-      .limit(1000000); // Set very high limit to get all rows
+      .select('*', { count: 'exact', head: true })
+      .eq('type', 'tags');
 
-    if (error) throw error;
+    if (countError) throw countError;
+
+    // Fetch all attachments in batches (Supabase defaults to 1000 rows per query)
+    const batchSize = 1000;
+    const totalBatches = Math.ceil((count || 0) / batchSize);
+    const attachments: any[] = [];
+
+    for (let i = 0; i < totalBatches; i++) {
+      const from = i * batchSize;
+      const to = Math.min(from + batchSize - 1, (count || 0) - 1);
+      
+      const { data: batch, error } = await this.supabase
+        .from('attachments')
+        .select('vcon_id, body, encoding')
+        .eq('type', 'tags')
+        .range(from, to);
+
+      if (error) throw error;
+      if (batch) attachments.push(...batch);
+    }
 
     const allTags: Record<string, Set<string>> = {};
     const tagCounts: Record<string, Record<string, number>> = {};
     const vconIds = new Set<number>();
 
     // Parse all tags
+    let tagsWithWrongEncoding = 0;
     for (const attachment of attachments || []) {
       vconIds.add(attachment.vcon_id);
+      
+      // Warn if encoding is not 'json' (tags should have encoding='json')
+      if (attachment.encoding !== 'json') {
+        tagsWithWrongEncoding++;
+        if (tagsWithWrongEncoding === 1) {
+          // Only log once to avoid spam
+          logWithContext('warn', 'Found tags attachments with incorrect encoding', {
+            encoding: attachment.encoding || 'NULL',
+            suggestion: 'Run migration script: npx tsx scripts/migrate-tags-encoding.ts'
+          });
+        }
+      }
       
       try {
         const tagsArray = JSON.parse(attachment.body || '[]');
         
+        if (!Array.isArray(tagsArray)) {
+          logWithContext('warn', 'Tags attachment body is not an array', {
+            vcon_id: attachment.vcon_id,
+            encoding: attachment.encoding
+          });
+          continue;
+        }
+        
         for (const tagString of tagsArray) {
+          if (typeof tagString !== 'string') {
+            continue;
+          }
+          
           const colonIndex = tagString.indexOf(':');
           if (colonIndex > 0) {
             const key = tagString.substring(0, colonIndex);
@@ -1029,9 +1227,20 @@ export class VConQueries {
           }
         }
       } catch (parseError) {
-        console.error('Failed to parse tags attachment:', parseError);
+        logWithContext('error', 'Failed to parse tags attachment', {
+          vcon_id: attachment.vcon_id,
+          encoding: attachment.encoding,
+          error: parseError instanceof Error ? parseError.message : String(parseError)
+        });
         // Continue processing other attachments
       }
+    }
+    
+    if (tagsWithWrongEncoding > 0) {
+      logWithContext('info', `Processed ${tagsWithWrongEncoding} tags attachments with incorrect encoding`, {
+        total_tags: attachments?.length || 0,
+        wrong_encoding_count: tagsWithWrongEncoding
+      });
     }
 
     // Convert sets to arrays and apply min count filter

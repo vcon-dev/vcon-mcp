@@ -8,7 +8,11 @@
  * Usage: npx tsx scripts/migrate-tags-encoding.ts
  */
 
+import dotenv from 'dotenv';
 import { getSupabaseClient } from '../dist/db/client.js';
+
+// Load environment variables from .env file
+dotenv.config();
 
 async function main() {
   console.log('🔧 Migrating tags attachments encoding\n');

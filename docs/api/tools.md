@@ -744,7 +744,9 @@ Find vCons by tag criteria (all tags must match).
   tags: {                 // Tag key-value pairs (required)
     [key: string]: string
   },
-  limit?: number          // Default: 50, Max: 100
+  limit?: number,         // Default: 50, Max: 100 - Maximum number of UUIDs to return
+  return_full_vcons?: boolean,  // Default: auto (true for ≤20 results, false for >20)
+  max_full_vcons?: number      // Default: 20 - Max full vCon objects to return (prevents size limits)
 }
 ```
 
@@ -755,10 +757,17 @@ Find vCons by tag criteria (all tags must match).
   success: boolean,
   count: number,
   tags_searched: object,
-  vcon_uuids: string[],
-  vcons: VCon[]
+  vcon_uuids: string[],   // Always returned (all matching UUIDs)
+  vcons?: VCon[],         // Only included if return_full_vcons=true
+  message?: string        // Helpful message about result size
 }
 ```
+
+**Behavior:**
+- Always returns `vcon_uuids` for all matching vCons (up to `limit`)
+- For large result sets (>20), only UUIDs are returned by default to prevent response size limits
+- Use `return_full_vcons: true` to get full vCon objects (limited to `max_full_vcons` to prevent size issues)
+- For small result sets (≤20), full vCon objects are returned by default
 
 **Example:**
 
