@@ -584,16 +584,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
 
         // Get total count if requested
+        // NOTE: Currently limited to 1000 distinct vCons due to Supabase's row limit
+        // For accurate counts > 1000, a database RPC function would be needed
         let totalCount;
         if (includeCount) {
-          const countResults = await queries.keywordSearch({
-            query,
-            startDate: args?.start_date as string | undefined,
-            endDate: args?.end_date as string | undefined,
-            tags: args?.tags as Record<string, string> | undefined,
-            limit: undefined,
-          });
-          totalCount = countResults.length;
+          try {
+            totalCount = await queries.keywordSearchCount({
+              query,
+              startDate: normalizeDateString(args?.start_date as string | undefined),
+              endDate: normalizeDateString(args?.end_date as string | undefined),
+              tags: args?.tags as Record<string, string> | undefined,
+            });
+          } catch (countError: any) {
+            // Log count error but don't fail the entire request
+            logWithContext('warn', 'Failed to get total count for keyword search', {
+              tool_name: name,
+              error_message: countError instanceof Error ? countError.message : String(countError),
+            });
+            // Continue without total count
+          }
         }
 
         recordCounter('vcon.search.count', 1, {

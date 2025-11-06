@@ -187,6 +187,34 @@ export class VConQueries {
   }
 
   /**
+   * Get count of distinct vCons matching keyword search criteria
+   * 
+   * NOTE: This method has a limitation - it fetches results and counts distinct vcon_ids,
+   * which means it's still subject to Supabase's 1000 row limit. For accurate counts
+   * exceeding 1000, a database RPC function that returns count directly would be needed.
+   * 
+   * @param params - Search parameters
+   * @returns Count of distinct vCons matching the search
+   */
+  async keywordSearchCount(params: {
+    query: string;
+    startDate?: string;
+    endDate?: string;
+    tags?: Record<string, string>;
+  }): Promise<number> {
+    // Use a large limit to get as many results as possible (still capped at 1000 by Supabase)
+    // Then count distinct vcon_ids
+    const results = await this.keywordSearch({
+      ...params,
+      limit: 1000, // Maximum allowed by Supabase
+    });
+    
+    // Count distinct vcon_ids (since one vcon can match multiple times)
+    const distinctVconIds = new Set(results.map(r => r.vcon_id));
+    return distinctVconIds.size;
+  }
+
+  /**
    * Semantic search via RPC `search_vcons_semantic`.
    * Pass a precomputed embedding vector to avoid coupling to an embedding provider here.
    */
