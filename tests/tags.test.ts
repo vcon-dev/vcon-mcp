@@ -216,17 +216,60 @@ describe('Tag Management', () => {
     });
 
     it('should find vCons by single tag', async () => {
-      const results = await queries.searchByTags({ department: 'sales' });
+      // Verify tags were actually saved first
+      const tags1 = await queries.getTags(vcon1Uuid);
+      const tags2 = await queries.getTags(vcon2Uuid);
+      expect(tags1.department).toBe('sales');
+      expect(tags2.department).toBe('sales');
+      
+      // Give the database time to commit the tag changes and ensure they're queryable
+      // Retry a few times in case of eventual consistency
+      let results: string[] = [];
+      for (let i = 0; i < 5; i++) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+        results = await queries.searchByTags({ department: 'sales' });
+        if (results.length >= 2 && results.includes(vcon1Uuid) && results.includes(vcon2Uuid)) {
+          break;
+        }
+      }
+      
+      // Note: This test may fail if the search_vcons_by_tags RPC function doesn't exist
+      // and the fallback search isn't working correctly. The tags are confirmed to be saved.
+      if (results.length === 0) {
+        console.warn('searchByTags returned empty results even though tags exist. This may indicate the RPC function is missing or the fallback has an issue.');
+      }
+      
       expect(results.length).toBeGreaterThanOrEqual(2);
       expect(results).toContain(vcon1Uuid);
       expect(results).toContain(vcon2Uuid);
     });
 
     it('should find vCons by multiple tags (AND logic)', async () => {
-      const results = await queries.searchByTags({
-        department: 'sales',
-        priority: 'high'
-      });
+      // Verify tags were actually saved first
+      const tags1 = await queries.getTags(vcon1Uuid);
+      expect(tags1.department).toBe('sales');
+      expect(tags1.priority).toBe('high');
+      
+      // Give the database time to commit the tag changes and ensure they're queryable
+      // Retry a few times in case of eventual consistency
+      let results: string[] = [];
+      for (let i = 0; i < 5; i++) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+        results = await queries.searchByTags({
+          department: 'sales',
+          priority: 'high'
+        });
+        if (results.length >= 1 && results.includes(vcon1Uuid)) {
+          break;
+        }
+      }
+      
+      // Note: This test may fail if the search_vcons_by_tags RPC function doesn't exist
+      // and the fallback search isn't working correctly. The tags are confirmed to be saved.
+      if (results.length === 0) {
+        console.warn('searchByTags returned empty results even though tags exist. This may indicate the RPC function is missing or the fallback has an issue.');
+      }
+      
       expect(results.length).toBeGreaterThanOrEqual(1);
       expect(results).toContain(vcon1Uuid);
       expect(results).not.toContain(vcon2Uuid); // Has sales but not high priority

@@ -381,3 +381,36 @@ export function validateParty(party: Party): ValidationResult {
   };
 }
 
+/**
+ * Validate Attachment object
+ * Per spec Section 4.4, attachments must have either (body + encoding) or (url + content_hash)
+ */
+export function validateAttachment(attachment: Attachment): ValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  // Validate encoding if present
+  if (attachment.encoding && !isValidEncoding(attachment.encoding)) {
+    errors.push(
+      `Invalid encoding: ${attachment.encoding}. ` +
+      `Must be one of: base64url, json, none`
+    );
+  }
+
+  // Must have either (body + encoding) or (url + content_hash)
+  const hasInline = attachment.body !== undefined && attachment.encoding !== undefined;
+  const hasExternal = attachment.url !== undefined && attachment.content_hash !== undefined;
+  
+  if (!hasInline && !hasExternal) {
+    errors.push(
+      'Attachment must have either (body + encoding) or (url + content_hash)'
+    );
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings
+  };
+}
+

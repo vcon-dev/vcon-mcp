@@ -16,51 +16,107 @@ describe('Search Count Limit Validation', () => {
   beforeEach(() => {
     // Create a chainable mock for Supabase queries
     // The mock needs to be thenable (awaitable) while also supporting method chaining
-    let pendingResult: any = null;
+    let queryResults: any[] = [];
+    let queryIndex = 0;
+    
+    // Track calls on all query builders
+    const callTrackers: any = {
+      select: vi.fn(),
+      ilike: vi.fn(),
+      gte: vi.fn(),
+      lte: vi.fn(),
+      from: vi.fn(),
+      in: vi.fn(),
+    };
     
     const createChainableMock = () => {
-      const mock: any = {
-        from: vi.fn(),
-        select: vi.fn(),
-        insert: vi.fn(),
-        update: vi.fn(),
-        delete: vi.fn(),
-        eq: vi.fn(),
-        single: vi.fn(),
-        limit: vi.fn(),
-        order: vi.fn(),
-        ilike: vi.fn(),
-        gte: vi.fn(),
-        lte: vi.fn(),
-        in: vi.fn(),
-        rpc: vi.fn(),
+      const createQueryBuilder = (): any => {
+        const queryBuilder: any = {};
+
+        // Create all query builder methods that return the builder for chaining
+        const chainMethods = ['from', 'select', 'insert', 'update', 'delete', 'eq', 
+                             'limit', 'order', 'ilike', 'gte', 'lte', 'in'];
+        
+        chainMethods.forEach(method => {
+          queryBuilder[method] = vi.fn((...args: any[]) => {
+            // Track the call
+            if (callTrackers[method]) {
+              callTrackers[method](...args);
+            }
+            // Return the builder itself for chaining
+            return queryBuilder;
+          });
+        });
+
+        // single() returns a promise
+        queryBuilder.single = vi.fn(() => {
+          const result = queryResults[queryIndex] || queryResults[queryResults.length - 1] || { data: null, error: null };
+          queryIndex++;
+          return Promise.resolve(result);
+        });
+
+        // Make the query builder thenable (awaitable)
+        queryBuilder.then = (resolve: any, reject: any) => {
+          const result = queryResults[queryIndex] || queryResults[queryResults.length - 1] || { data: null, error: null, count: null };
+          queryIndex++;
+          return Promise.resolve(result).then(resolve, reject);
+        };
+
+        return queryBuilder;
       };
 
-      // Make all methods return the mock itself for chaining (except single and rpc)
-      Object.keys(mock).forEach(key => {
-        if (key !== 'single' && key !== 'rpc') {
-          mock[key].mockImplementation((...args: any[]) => {
-            // Store the last select call's resolved value
-            if (key === 'select') {
-              // select() sets up the result that will be returned when awaited
-              const savedResult = pendingResult;
-              pendingResult = null;
-              return Promise.resolve(savedResult || { data: null, error: null });
-            }
-            return mock;
-          });
-        }
+      const mock: any = createQueryBuilder();
+      
+      // Override methods to track calls and return chainable builders
+      mock.from = vi.fn((...args: any[]) => {
+        callTrackers.from(...args);
+        return createQueryBuilder();
       });
-
-      // Make the mock itself thenable (awaitable)
-      mock.then = (resolve: any, reject: any) => {
-        const result = pendingResult || { data: null, error: null };
-        return Promise.resolve(result).then(resolve, reject);
+      mock.select = vi.fn((...args: any[]) => {
+        callTrackers.select(...args);
+        return createQueryBuilder();
+      });
+      mock.ilike = vi.fn((...args: any[]) => {
+        callTrackers.ilike(...args);
+        return createQueryBuilder();
+      });
+      mock.gte = vi.fn((...args: any[]) => {
+        callTrackers.gte(...args);
+        return createQueryBuilder();
+      });
+      mock.lte = vi.fn((...args: any[]) => {
+        callTrackers.lte(...args);
+        return createQueryBuilder();
+      });
+      mock.in = vi.fn((...args: any[]) => {
+        callTrackers.in(...args);
+        return createQueryBuilder();
+      });
+      
+      mock.rpc = vi.fn().mockImplementation(() => {
+        const result = queryResults[queryIndex] || queryResults[queryResults.length - 1] || { data: null, error: null };
+        queryIndex++;
+        return Promise.resolve(result);
+      });
+      
+      // Expose call trackers for assertions
+      mock._calls = callTrackers;
+      
+      // Helper to set the result(s) that will be returned when awaited
+      mock.setResult = (result: any) => {
+        queryResults = [result];
+        queryIndex = 0;
       };
       
-      // Helper to set the result that will be returned when awaited
-      mock.setResult = (result: any) => {
-        pendingResult = result;
+      // Helper to set multiple results for sequential queries
+      mock.setResults = (results: any[]) => {
+        queryResults = results;
+        queryIndex = 0;
+      };
+      
+      // Helper to reset query index
+      mock.resetQueryIndex = () => {
+        queryIndex = 0;
       };
 
       return mock;
@@ -81,7 +137,7 @@ describe('Search Count Limit Validation', () => {
       });
 
       // Verify it uses count: 'exact', head: true
-      expect(mockSupabase.select).toHaveBeenCalledWith('*', { count: 'exact', head: true });
+      expect(mockSupabase._calls.select).toHaveBeenCalledWith('*', { count: 'exact', head: true });
       expect(count).toBe(2500);
     });
 
@@ -101,22 +157,18 @@ describe('Search Count Limit Validation', () => {
     });
 
     it('should handle party filters correctly', async () => {
-      // Mock party query - first select returns party data
+      // Mock party query - first select returns party data, second returns count
       const mockPartyData = [
         { vcon_id: 1 },
         { vcon_id: 2 },
         { vcon_id: 3 },
       ];
       
-      // Setup results for party query then count query
-      let callNum = 0;
-      mockSupabase.select.mockImplementation(() => {
-        callNum++;
-        if (callNum === 1) {
-          return Promise.resolve({ data: mockPartyData, error: null });
-        }
-        return Promise.resolve({ count: 3, error: null });
-      });
+      // Setup results for sequential queries: party query then count query
+      mockSupabase.setResults([
+        { data: mockPartyData, error: null },  // Party query result
+        { count: 3, error: null }              // Count query result
+      ]);
 
       const count = await queries.searchVConsCount({
         partyName: 'John Doe',
@@ -125,7 +177,7 @@ describe('Search Count Limit Validation', () => {
 
       expect(count).toBe(3);
       // Verify party query was made
-      expect(mockSupabase.from).toHaveBeenCalledWith('parties');
+      expect(mockSupabase._calls.from).toHaveBeenCalledWith('parties');
     });
 
     it('should return 0 when no matching records', async () => {
@@ -147,7 +199,7 @@ describe('Search Count Limit Validation', () => {
 
       expect(count).toBe(42);
       // Verify ilike was called for subject filter
-      expect(mockSupabase.ilike).toHaveBeenCalledWith('subject', '%billing%');
+      expect(mockSupabase._calls.ilike).toHaveBeenCalledWith('subject', '%billing%');
     });
 
     it('should handle tag filters', async () => {
@@ -158,7 +210,7 @@ describe('Search Count Limit Validation', () => {
       vi.spyOn(queries, 'searchByTags').mockResolvedValue([testUuid1, testUuid2]);
       
       // Mock the base query to return UUIDs
-      mockSupabase.select.mockResolvedValueOnce({
+      mockSupabase.setResult({
         data: [{ uuid: testUuid1 }, { uuid: testUuid2 }, { uuid: crypto.randomUUID() }],
         error: null
       });
@@ -177,20 +229,12 @@ describe('Search Count Limit Validation', () => {
       // Mock searchByTags
       vi.spyOn(queries, 'searchByTags').mockResolvedValue([testUuid, crypto.randomUUID()]);
       
-      // Mock party query
+      // Mock sequential queries: party query, then UUID query
       const mockPartyData = [{ vcon_id: 1 }, { vcon_id: 2 }];
-      let callNum = 0;
-      mockSupabase.select.mockImplementation(() => {
-        callNum++;
-        if (callNum === 1) {
-          return Promise.resolve({ data: mockPartyData, error: null });
-        }
-        // Return UUIDs for vcons matching party filter
-        return Promise.resolve({ 
-          data: [{ uuid: testUuid }], 
-          error: null 
-        });
-      });
+      mockSupabase.setResults([
+        { data: mockPartyData, error: null },           // Party query result
+        { data: [{ uuid: testUuid }], error: null }     // UUID query result
+      ]);
 
       const count = await queries.searchVConsCount({
         tags: { department: 'sales' },
@@ -207,7 +251,7 @@ describe('Search Count Limit Validation', () => {
       vi.spyOn(queries, 'searchByTags').mockResolvedValue([]);
       
       // Mock the base query
-      mockSupabase.select.mockResolvedValueOnce({
+      mockSupabase.setResult({
         data: [{ uuid: crypto.randomUUID() }],
         error: null
       });
@@ -236,7 +280,7 @@ describe('Search Count Limit Validation', () => {
       });
 
       // The actual result will be limited by Supabase, but our code should handle it
-      expect(mockSupabase.select).toHaveBeenCalled();
+      expect(mockSupabase._calls.select).toHaveBeenCalled();
     });
   });
 
@@ -356,9 +400,7 @@ describe('Search Count Limit Validation', () => {
         error: { message: 'Database connection failed', code: 'PGRST116' },
       };
 
-      mockSupabase.select.mockReturnValue({
-        then: (resolve: any) => resolve(mockErrorResponse),
-      });
+      mockSupabase.setResult(mockErrorResponse);
 
       await expect(
         queries.searchVConsCount({ startDate: '2025-01-01T00:00:00Z' })
@@ -377,15 +419,8 @@ describe('Search Count Limit Validation', () => {
     });
 
     it('should handle empty party filter results', async () => {
-      // Mock empty party data - first select returns empty, second returns count 0
-      let callNum = 0;
-      mockSupabase.select.mockImplementation(() => {
-        callNum++;
-        if (callNum === 1) {
-          return Promise.resolve({ data: [], error: null });
-        }
-        return Promise.resolve({ count: 0, error: null });
-      });
+      // Mock empty party data - first select returns empty (which causes early return)
+      mockSupabase.setResult({ data: [], error: null });
 
       const count = await queries.searchVConsCount({
         partyName: 'NonExistent',
