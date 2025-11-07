@@ -1080,8 +1080,8 @@ export class VConQueries {
       max_results: limit,
     });
 
-    if (error) {
-      // If RPC doesn't exist, fall back to manual search
+    // Helper function for manual search fallback
+    const performManualSearch = async (): Promise<string[]> => {
       // Get all vCons with tags attachments (use pagination to bypass Supabase's 1000 row default limit)
       // Note: We look for type='tags' regardless of encoding to handle legacy data
       
@@ -1094,11 +1094,17 @@ export class VConQueries {
       if (countError) throw countError;
 
       // Fetch all attachments in batches (Supabase defaults to 1000 rows per query)
+      // Stop early if we've found enough matches
       const batchSize = 1000;
       const totalBatches = Math.ceil((count || 0) / batchSize);
-      const attachments: any[] = [];
+      const matchingVconIds = new Set<number>();
 
       for (let i = 0; i < totalBatches; i++) {
+        // Stop fetching if we have enough matches
+        if (matchingVconIds.size >= limit) {
+          break;
+        }
+
         const from = i * batchSize;
         const to = Math.min(from + batchSize - 1, (count || 0) - 1);
         
@@ -1109,50 +1115,85 @@ export class VConQueries {
           .range(from, to);
 
         if (attachmentError) throw attachmentError;
-        if (batch) attachments.push(...batch);
-      }
 
-      // Filter vCons that have all the requested tags
-      const matchingVconIds = new Set<number>();
+        // Process batch immediately to allow early exit
+        for (const attachment of batch || []) {
+          try {
+            const tagsArray = JSON.parse(attachment.body || '[]');
+            const tagsObject: Record<string, string> = {};
+            
+            for (const tagString of tagsArray) {
+              if (typeof tagString !== 'string') continue;
+              const colonIndex = tagString.indexOf(':');
+              if (colonIndex > 0) {
+                const key = tagString.substring(0, colonIndex);
+                const value = tagString.substring(colonIndex + 1);
+                tagsObject[key] = value;
+              }
+            }
 
-      for (const attachment of attachments || []) {
-        const tagsArray = JSON.parse(attachment.body || '[]');
-        const tagsObject: Record<string, string> = {};
-        
-        for (const tagString of tagsArray) {
-          const colonIndex = tagString.indexOf(':');
-          if (colonIndex > 0) {
-            const key = tagString.substring(0, colonIndex);
-            const value = tagString.substring(colonIndex + 1);
-            tagsObject[key] = value;
+            // Check if all requested tags match
+            let allMatch = true;
+            for (const [key, value] of Object.entries(tags)) {
+              if (tagsObject[key] !== value) {
+                allMatch = false;
+                break;
+              }
+            }
+
+            if (allMatch) {
+              matchingVconIds.add(attachment.vcon_id);
+              // Stop processing if we have enough matches
+              if (matchingVconIds.size >= limit) {
+                break;
+              }
+            }
+          } catch (parseError) {
+            // Skip attachments with invalid JSON
+            continue;
           }
-        }
-
-        // Check if all requested tags match
-        let allMatch = true;
-        for (const [key, value] of Object.entries(tags)) {
-          if (tagsObject[key] !== value) {
-            allMatch = false;
-            break;
-          }
-        }
-
-        if (allMatch) {
-          matchingVconIds.add(attachment.vcon_id);
         }
       }
 
       // Get UUIDs for matching vcon_ids
-      const { data: vcons } = await this.supabase
+      if (matchingVconIds.size === 0) {
+        return [];
+      }
+
+      const { data: vcons, error: vconsError } = await this.supabase
         .from('vcons')
         .select('uuid')
         .in('id', Array.from(matchingVconIds))
         .limit(limit);
 
+      if (vconsError) throw vconsError;
+
       return (vcons || []).map(v => v.uuid);
+    };
+
+    // If RPC doesn't exist or fails, use fallback
+    if (error) {
+      return performManualSearch();
     }
 
-    return data as string[];
+    // RPC succeeded but returned empty results
+    // Check if materialized view might be stale by verifying tag attachments exist
+    if (!data || data.length === 0) {
+      // Quick check: if there are any tag attachments, the view might be stale
+      const { count } = await this.supabase
+        .from('attachments')
+        .select('*', { count: 'exact', head: true })
+        .eq('type', 'tags')
+        .limit(1);
+
+      // If tag attachments exist but RPC returned empty, view is likely stale - use fallback
+      if (count && count > 0) {
+        return performManualSearch();
+      }
+    }
+
+    // RPC succeeded and returned results (or no tag attachments exist)
+    return (data || []) as string[];
   }
 
   /**
