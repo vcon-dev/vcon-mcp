@@ -13,6 +13,8 @@ import { DatabaseAnalytics } from '../../db/database-analytics.js';
 import { DatabaseSizeAnalyzer } from '../../db/database-size-analyzer.js';
 import { withSpan, recordCounter, recordHistogram, logWithContext, attachErrorToSpan } from '../../observability/instrumentation.js';
 import { ATTR_TOOL_NAME, ATTR_TOOL_SUCCESS } from '../../observability/attributes.js';
+import { createTextResponse, createSuccessResponse } from '../../utils/responses.js';
+import { extractErrorMessage, createMcpError } from '../../utils/errors.js';
 
 /**
  * Context passed to all tool handlers containing dependencies
@@ -135,27 +137,7 @@ export abstract class BaseToolHandler implements ToolHandler {
         }
 
         // Extract meaningful error message
-        let errorMessage: string;
-        if (error instanceof Error) {
-          errorMessage = error.message;
-        } else if (error && typeof error === 'object') {
-          if ('message' in error && typeof error.message === 'string') {
-            errorMessage = error.message;
-          } else if ('error' in error && typeof error.error === 'string') {
-            errorMessage = error.error;
-          } else if ('code' in error && 'message' in error) {
-            errorMessage = `${error.code}: ${error.message}`;
-          } else {
-            try {
-              const errorStr = JSON.stringify(error, null, 2);
-              errorMessage = errorStr.length > 500 ? errorStr.substring(0, 500) + '...' : errorStr;
-            } catch {
-              errorMessage = `Error object: ${Object.keys(error).join(', ')}`;
-            }
-          }
-        } else {
-          errorMessage = String(error);
-        }
+        const errorMessage = extractErrorMessage(error);
 
         logWithContext('error', 'MCP tool execution failed', {
           request_id: requestId,
@@ -196,22 +178,14 @@ export abstract class BaseToolHandler implements ToolHandler {
    * Create a text response from JSON data
    */
   protected createTextResponse(data: any): ToolResponse {
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify(data, null, 2),
-      }],
-    };
+    return createTextResponse(data);
   }
 
   /**
    * Create a success response
    */
-  protected createSuccessResponse(data: any): ToolResponse {
-    return this.createTextResponse({
-      success: true,
-      ...data,
-    });
+  protected createSuccessResponse(data: any = {}): ToolResponse {
+    return createSuccessResponse(data);
   }
 }
 

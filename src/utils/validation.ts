@@ -385,7 +385,7 @@ export function validateParty(party: Party): ValidationResult {
  * Validate Attachment object
  * Per spec Section 4.4, attachments must have either (body + encoding) or (url + content_hash)
  */
-export function validateAttachment(attachment: Attachment): ValidationResult {
+export function validateAttachment(attachment: any): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
 
