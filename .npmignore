@@ -1,0 +1,65 @@
+# Source files
+src/
+*.ts
+!*.d.ts
+tsconfig.json
+vitest.config.ts
+
+# Tests
+tests/
+test/
+*.test.ts
+*.spec.ts
+coverage/
+
+# Development files
+.github/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Documentation (keep README.md)
+docs/
+blog/
+archive/
+background_docs/
+*.md
+!README.md
+
+# Examples
+examples/
+
+# Scripts
+scripts/
+jaeger/
+
+# Supabase
+supabase/
+setup-online-supabase.sh
+
+# Build config
+vcon-mcp.code-workspace
+claude-desktop-config.json
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+.temp/
+.branches/
+
+# Git
+.git/
+.gitignore
+

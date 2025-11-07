@@ -1,6 +1,6 @@
 {
   "name": "vcon-mcp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "MCP Server for IETF vCon - Open Source Core",
   "type": "module",
   "main": "dist/index.js",
@@ -19,8 +19,14 @@
     "lint": "eslint src/**/*.ts",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
-    "docs:preview": "vitepress preview docs"
+    "docs:preview": "vitepress preview docs",
+    "prepublishOnly": "npm run build"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "keywords": [
     "vcon",
     "mcp",
@@ -34,7 +40,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/vcon-dev/vcon-mcp"
+    "url": "git+https://github.com/vcon-dev/vcon-mcp.git"
   },
   "publishConfig": {
     "access": "public"
