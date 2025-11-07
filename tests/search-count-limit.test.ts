@@ -149,6 +149,76 @@ describe('Search Count Limit Validation', () => {
       // Verify ilike was called for subject filter
       expect(mockSupabase.ilike).toHaveBeenCalledWith('subject', '%billing%');
     });
+
+    it('should handle tag filters', async () => {
+      const testUuid1 = crypto.randomUUID();
+      const testUuid2 = crypto.randomUUID();
+      
+      // Mock searchByTags to return matching UUIDs
+      vi.spyOn(queries, 'searchByTags').mockResolvedValue([testUuid1, testUuid2]);
+      
+      // Mock the base query to return UUIDs
+      mockSupabase.select.mockResolvedValueOnce({
+        data: [{ uuid: testUuid1 }, { uuid: testUuid2 }, { uuid: crypto.randomUUID() }],
+        error: null
+      });
+
+      const count = await queries.searchVConsCount({
+        tags: { department: 'sales' },
+      });
+
+      expect(queries.searchByTags).toHaveBeenCalledWith({ department: 'sales' }, 10000);
+      expect(count).toBe(2); // Only 2 match the tag filter
+    });
+
+    it('should combine tag filters with other filters', async () => {
+      const testUuid = crypto.randomUUID();
+      
+      // Mock searchByTags
+      vi.spyOn(queries, 'searchByTags').mockResolvedValue([testUuid, crypto.randomUUID()]);
+      
+      // Mock party query
+      const mockPartyData = [{ vcon_id: 1 }, { vcon_id: 2 }];
+      let callNum = 0;
+      mockSupabase.select.mockImplementation(() => {
+        callNum++;
+        if (callNum === 1) {
+          return Promise.resolve({ data: mockPartyData, error: null });
+        }
+        // Return UUIDs for vcons matching party filter
+        return Promise.resolve({ 
+          data: [{ uuid: testUuid }], 
+          error: null 
+        });
+      });
+
+      const count = await queries.searchVConsCount({
+        tags: { department: 'sales' },
+        partyName: 'John',
+        subject: 'Test',
+      });
+
+      expect(queries.searchByTags).toHaveBeenCalledWith({ department: 'sales' }, 10000);
+      expect(count).toBe(1); // Only 1 matches both party and tag filters
+    });
+
+    it('should return 0 when tag filter matches no vCons', async () => {
+      // Mock searchByTags to return empty array
+      vi.spyOn(queries, 'searchByTags').mockResolvedValue([]);
+      
+      // Mock the base query
+      mockSupabase.select.mockResolvedValueOnce({
+        data: [{ uuid: crypto.randomUUID() }],
+        error: null
+      });
+
+      const count = await queries.searchVConsCount({
+        tags: { department: 'nonexistent' },
+      });
+
+      expect(queries.searchByTags).toHaveBeenCalledWith({ department: 'nonexistent' }, 10000);
+      expect(count).toBe(0);
+    });
   });
 
   describe('searchVCons - count integration', () => {

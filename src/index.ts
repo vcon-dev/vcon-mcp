@@ -26,7 +26,7 @@ import http from 'http';
 import { randomUUID } from 'crypto';
 import { getSupabaseClient, getRedisClient, closeAllConnections } from './db/client.js';
 import { VConQueries } from './db/queries.js';
-import { validateVCon, validateAnalysis } from './utils/validation.js';
+import { validateVCon, validateAnalysis, validateUUID } from './utils/validation.js';
 import {
   allTools,
   AnalysisSchema,
@@ -389,8 +389,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           purpose: args?.purpose as string | undefined,
         };
         
-        if (!uuid) {
-          throw new McpError(ErrorCode.InvalidParams, 'UUID is required');
+        const uuidValidation = validateUUID(uuid, 'uuid');
+        if (!uuidValidation.valid) {
+          throw new McpError(ErrorCode.InvalidParams, uuidValidation.errors.join(', '));
         }
 
         // Hook: beforeRead (can throw to block access)
@@ -438,6 +439,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           partyTel: args?.party_tel as string | undefined,
           startDate: normalizeDateString(args?.start_date as string | undefined),
           endDate: normalizeDateString(args?.end_date as string | undefined),
+          tags: args?.tags as Record<string, string> | undefined,
           limit: (args?.limit as number | undefined) || 10,
         };
 
@@ -496,6 +498,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               partyTel: filters.partyTel,
               startDate: filters.startDate,
               endDate: filters.endDate,
+              tags: filters.tags,
             });
           } catch (countError: any) {
             // Log count error but don't fail the entire request
@@ -757,8 +760,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const vconUuid = args?.vcon_uuid as string;
         const analysisData = args?.analysis;
 
-        if (!vconUuid) {
-          throw new McpError(ErrorCode.InvalidParams, 'vcon_uuid is required');
+        const uuidValidation = validateUUID(vconUuid, 'vcon_uuid');
+        if (!uuidValidation.valid) {
+          throw new McpError(ErrorCode.InvalidParams, uuidValidation.errors.join(', '));
         }
 
         if (!analysisData) {
@@ -812,8 +816,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const vconUuid = args?.vcon_uuid as string;
         const dialogData = args?.dialog;
 
-        if (!vconUuid) {
-          throw new McpError(ErrorCode.InvalidParams, 'vcon_uuid is required');
+        const uuidValidation = validateUUID(vconUuid, 'vcon_uuid');
+        if (!uuidValidation.valid) {
+          throw new McpError(ErrorCode.InvalidParams, uuidValidation.errors.join(', '));
         }
 
         if (!dialogData) {
@@ -850,8 +855,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const vconUuid = args?.vcon_uuid as string;
         const attachmentData = args?.attachment;
 
-        if (!vconUuid) {
-          throw new McpError(ErrorCode.InvalidParams, 'vcon_uuid is required');
+        const uuidValidation = validateUUID(vconUuid, 'vcon_uuid');
+        if (!uuidValidation.valid) {
+          throw new McpError(ErrorCode.InvalidParams, uuidValidation.errors.join(', '));
         }
 
         if (!attachmentData) {
@@ -891,8 +897,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           purpose: args?.purpose as string | undefined,
         };
         
-        if (!uuid) {
-          throw new McpError(ErrorCode.InvalidParams, 'UUID is required');
+        const uuidValidation = validateUUID(uuid, 'uuid');
+        if (!uuidValidation.valid) {
+          throw new McpError(ErrorCode.InvalidParams, uuidValidation.errors.join(', '));
         }
 
         // Hook: beforeDelete (can throw to prevent deletion)
@@ -931,8 +938,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const updates = args?.updates as Partial<VCon> | undefined;
         const returnUpdated = (args?.return_updated as boolean | undefined) ?? true;
 
-        if (!uuid) {
-          throw new McpError(ErrorCode.InvalidParams, 'UUID is required');
+        const uuidValidation = validateUUID(uuid, 'uuid');
+        if (!uuidValidation.valid) {
+          throw new McpError(ErrorCode.InvalidParams, uuidValidation.errors.join(', '));
         }
         if (!updates || typeof updates !== 'object') {
           throw new McpError(ErrorCode.InvalidParams, 'updates object is required');
@@ -1277,8 +1285,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const key = args?.key as string;
         const value = args?.value;
 
-        if (!vconUuid || !action || !key) {
-          throw new McpError(ErrorCode.InvalidParams, 'vcon_uuid, action, and key are required');
+        const uuidValidation = validateUUID(vconUuid, 'vcon_uuid');
+        if (!uuidValidation.valid) {
+          throw new McpError(ErrorCode.InvalidParams, uuidValidation.errors.join(', '));
+        }
+        
+        if (!action || !key) {
+          throw new McpError(ErrorCode.InvalidParams, 'action and key are required');
         }
 
         span.setAttributes({
@@ -1329,8 +1342,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const key = args?.key as string | undefined;
         const defaultValue = args?.default_value;
 
-        if (!vconUuid) {
-          throw new McpError(ErrorCode.InvalidParams, 'vcon_uuid is required');
+        const uuidValidation = validateUUID(vconUuid, 'vcon_uuid');
+        if (!uuidValidation.valid) {
+          throw new McpError(ErrorCode.InvalidParams, uuidValidation.errors.join(', '));
         }
 
         span.setAttributes({
@@ -1376,8 +1390,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'remove_all_tags': {
         const vconUuid = args?.vcon_uuid as string;
 
-        if (!vconUuid) {
-          throw new McpError(ErrorCode.InvalidParams, 'vcon_uuid is required');
+        const uuidValidation = validateUUID(vconUuid, 'vcon_uuid');
+        if (!uuidValidation.valid) {
+          throw new McpError(ErrorCode.InvalidParams, uuidValidation.errors.join(', '));
         }
 
         await queries.removeAllTags(vconUuid);

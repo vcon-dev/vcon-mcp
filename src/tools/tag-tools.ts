@@ -36,7 +36,11 @@ export const manageTagTool = {
         description: 'Tag key/name (e.g., "department", "priority", "customer_id")'
       },
       value: {
-        type: ['string', 'number', 'boolean'],
+        oneOf: [
+          { type: 'string' },
+          { type: 'number' },
+          { type: 'boolean' }
+        ],
         description: 'Tag value (required when action is "set", will be converted to string)'
       }
     },
@@ -63,8 +67,14 @@ export const getTagsTool = {
         description: 'Specific tag key to retrieve. Omit this parameter to get all tags as an object.'
       },
       default_value: {
-        type: ['string', 'number', 'boolean', 'null'],
-        description: 'Value to return if the specified tag key does not exist (only used when key is provided, default: null)'
+        oneOf: [
+          { type: 'string' },
+          { type: 'number' },
+          { type: 'boolean' },
+          { type: 'null' }
+        ],
+        description: 'Value to return if the specified tag key does not exist (only used when key is provided, default: null)',
+        default: null
       }
     },
     required: ['vcon_uuid']
@@ -108,7 +118,8 @@ export const searchByTagsTool = {
         type: 'number',
         description: 'Maximum number of UUIDs to return (default: 50)',
         minimum: 1,
-        maximum: 100
+        maximum: 100,
+        default: 50
       },
       return_full_vcons: {
         type: 'boolean',
