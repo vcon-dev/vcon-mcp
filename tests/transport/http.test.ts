@@ -64,6 +64,36 @@ describe('HTTP Transport', () => {
       const transport = createHttpTransport(config);
       expect(transport).toBeDefined();
     });
+
+    it('should create stateless transport when stateless is true', () => {
+      const config = { stateless: true };
+      const transport = createHttpTransport(config);
+      expect(transport).toBeDefined();
+    });
+
+    it('should create transport with allowed hosts', () => {
+      const config = {
+        allowedHosts: ['localhost', 'example.com'],
+      };
+      const transport = createHttpTransport(config);
+      expect(transport).toBeDefined();
+    });
+
+    it('should create transport with allowed origins', () => {
+      const config = {
+        allowedOrigins: ['http://localhost:3000'],
+      };
+      const transport = createHttpTransport(config);
+      expect(transport).toBeDefined();
+    });
+
+    it('should create transport with DNS protection enabled', () => {
+      const config = {
+        dnsProtection: true,
+      };
+      const transport = createHttpTransport(config);
+      expect(transport).toBeDefined();
+    });
   });
 });
 

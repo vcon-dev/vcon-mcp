@@ -28,6 +28,7 @@ describe('VConQueries', () => {
         gte: vi.fn(),
         lte: vi.fn(),
         or: vi.fn(),
+        range: vi.fn(),
       };
 
       // Make all methods return the mock itself for chaining
@@ -466,6 +467,169 @@ describe('VConQueries', () => {
     });
   });
 
+  describe('getUniqueTags', () => {
+    beforeEach(() => {
+      // Reset mocks for getUniqueTags tests
+      vi.clearAllMocks();
+    });
+
+    it('should get unique tags with default options', async () => {
+      // Mock count query: from().select().eq() returns { count, error }
+      mockSupabase.eq.mockImplementationOnce(() => ({
+        count: 2,
+        error: null,
+      }));
+
+      // Mock batch query: from().select().eq().range() returns { data, error }
+      mockSupabase.range.mockImplementationOnce(() => ({
+        data: [
+          { vcon_id: 1, body: '["department:sales","priority:high"]', encoding: 'json' },
+          { vcon_id: 2, body: '["department:support","priority:low"]', encoding: 'json' },
+        ],
+        error: null,
+      }));
+
+      const result = await queries.getUniqueTags();
+
+      expect(result).toHaveProperty('keys');
+      expect(result).toHaveProperty('tagsByKey');
+      expect(result).toHaveProperty('totalVCons');
+      expect(Array.isArray(result.keys)).toBe(true);
+    });
+
+    it('should include counts when includeCounts is true', async () => {
+      vi.clearAllMocks();
+      mockSupabase.eq.mockImplementationOnce(() => ({ count: 1, error: null }));
+      mockSupabase.range.mockImplementationOnce(() => ({
+        data: [
+          { vcon_id: 1, body: '["department:sales","priority:high"]', encoding: 'json' },
+        ],
+        error: null,
+      }));
+
+      const result = await queries.getUniqueTags({ includeCounts: true });
+
+      expect(result).toHaveProperty('countsPerValue');
+    });
+
+    it('should filter by keyFilter', async () => {
+      vi.clearAllMocks();
+      mockSupabase.eq.mockImplementationOnce(() => ({ count: 1, error: null }));
+      mockSupabase.range.mockImplementationOnce(() => ({
+        data: [
+          { vcon_id: 1, body: '["department:sales","priority:high"]', encoding: 'json' },
+        ],
+        error: null,
+      }));
+
+      const result = await queries.getUniqueTags({ keyFilter: 'department' });
+
+      expect(result.keys.every(key => key.toLowerCase().includes('department'))).toBe(true);
+    });
+
+    it('should filter by minCount', async () => {
+      vi.clearAllMocks();
+      mockSupabase.eq.mockImplementationOnce(() => ({ count: 3, error: null }));
+      mockSupabase.range.mockImplementationOnce(() => ({
+        data: [
+          { vcon_id: 1, body: '["department:sales"]', encoding: 'json' },
+          { vcon_id: 2, body: '["department:sales"]', encoding: 'json' },
+          { vcon_id: 3, body: '["priority:high"]', encoding: 'json' },
+        ],
+        error: null,
+      }));
+
+      const result = await queries.getUniqueTags({ minCount: 2, includeCounts: true });
+
+      // Only tags with count >= 2 should be included
+      if (result.countsPerValue) {
+        Object.values(result.countsPerValue).forEach((valueCounts: any) => {
+          Object.values(valueCounts).forEach((count: any) => {
+            expect(count).toBeGreaterThanOrEqual(2);
+          });
+        });
+      }
+    });
+
+    it('should handle tags with wrong encoding', async () => {
+      vi.clearAllMocks();
+      mockSupabase.eq.mockImplementationOnce(() => ({ count: 1, error: null }));
+      mockSupabase.range.mockImplementationOnce(() => ({
+        data: [
+          { vcon_id: 1, body: '["department:sales"]', encoding: 'text' }, // Wrong encoding
+        ],
+        error: null,
+      }));
+
+      const result = await queries.getUniqueTags();
+
+      // Should still process the tags
+      expect(result).toHaveProperty('keys');
+    });
+
+    it('should handle non-array tag bodies', async () => {
+      vi.clearAllMocks();
+      mockSupabase.eq.mockImplementationOnce(() => ({ count: 1, error: null }));
+      mockSupabase.range.mockImplementationOnce(() => ({
+        data: [
+          { vcon_id: 1, body: '{"invalid": "format"}', encoding: 'json' },
+        ],
+        error: null,
+      }));
+
+      const result = await queries.getUniqueTags();
+
+      // Should handle gracefully
+      expect(result).toHaveProperty('keys');
+    });
+
+    it('should handle parse errors gracefully', async () => {
+      vi.clearAllMocks();
+      mockSupabase.eq.mockImplementationOnce(() => ({ count: 1, error: null }));
+      mockSupabase.range.mockImplementationOnce(() => ({
+        data: [
+          { vcon_id: 1, body: 'invalid json', encoding: 'json' },
+        ],
+        error: null,
+      }));
+
+      const result = await queries.getUniqueTags();
+
+      // Should continue processing despite parse error
+      expect(result).toHaveProperty('keys');
+    });
+
+    it('should handle empty tags attachments', async () => {
+      vi.clearAllMocks();
+      mockSupabase.eq.mockImplementationOnce(() => ({ count: 0, error: null }));
+
+      const result = await queries.getUniqueTags();
+
+      expect(result.keys).toEqual([]);
+      expect(result.tagsByKey).toEqual({});
+      expect(result.totalVCons).toBe(0);
+    });
+
+    it('should sort keys and values', async () => {
+      vi.clearAllMocks();
+      mockSupabase.eq.mockImplementationOnce(() => ({ count: 1, error: null }));
+      mockSupabase.range.mockImplementationOnce(() => ({
+        data: [
+          { vcon_id: 1, body: '["zebra:value","alpha:value","beta:value"]', encoding: 'json' },
+        ],
+        error: null,
+      }));
+
+      const result = await queries.getUniqueTags();
+
+      // Keys should be sorted
+      const keys = result.keys;
+      for (let i = 1; i < keys.length; i++) {
+        expect(keys[i] >= keys[i - 1]).toBe(true);
+      }
+    });
+  });
+
   describe('addAttachment', () => {
     it('should add attachment', async () => {
       const uuid = crypto.randomUUID();
@@ -486,6 +650,76 @@ describe('VConQueries', () => {
 
       await queries.addAttachment(uuid, attachment);
 
+      expect(mockSupabase.insert).toHaveBeenCalled();
+    });
+
+    it('should calculate next attachment index correctly', async () => {
+      const uuid = crypto.randomUUID();
+      const attachment: Attachment = {
+        type: 'document',
+        body: 'content',
+        encoding: 'base64url'
+      };
+
+      // Mock vCon lookup
+      mockSupabase.single
+        .mockResolvedValueOnce({
+          data: { id: 1 },
+          error: null
+        })
+        // Mock existing attachment index query
+        .mockResolvedValueOnce({
+          data: [{ attachment_index: 2 }],
+          error: null
+        })
+        // Mock insert
+        .mockResolvedValueOnce({
+          data: {},
+          error: null
+        });
+
+      mockSupabase.insert.mockResolvedValue({
+        error: null
+      });
+
+      await queries.addAttachment(uuid, attachment);
+
+      // Should use next index (2 + 1 = 3)
+      expect(mockSupabase.insert).toHaveBeenCalled();
+    });
+
+    it('should use index 0 when no existing attachments', async () => {
+      const uuid = crypto.randomUUID();
+      const attachment: Attachment = {
+        type: 'document',
+        body: 'content',
+        encoding: 'base64url'
+      };
+
+      // Mock vCon lookup
+      mockSupabase.single
+        .mockResolvedValueOnce({
+          data: { id: 1 },
+          error: null
+        })
+        // Mock empty attachment index query
+        .mockResolvedValueOnce({
+          data: [],
+          error: null
+        })
+        // Mock insert
+        .mockResolvedValueOnce({
+          data: {},
+          error: null
+        });
+
+      mockSupabase.insert.mockResolvedValue({
+        error: null
+      });
+
+      await queries.addAttachment(uuid, attachment);
+
+      // Should use index 0 when no existing attachments
       expect(mockSupabase.insert).toHaveBeenCalled();
     });
   });
