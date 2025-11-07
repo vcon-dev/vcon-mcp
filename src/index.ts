@@ -97,6 +97,9 @@ try {
 // Initialize plugin manager
 const pluginManager = new PluginManager();
 
+// Initialize tool handler registry
+const handlerRegistry = createHandlerRegistry();
+
 // Load plugins from environment/config
 if (process.env.VCON_PLUGINS_PATH) {
   const pluginPaths = process.env.VCON_PLUGINS_PATH.split(',');
@@ -136,42 +139,6 @@ if (process.env.VCON_PLUGINS_PATH) {
 
 // Initialize plugins
 await pluginManager.initialize({ supabase, queries });
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/**
- * Normalize and validate ISO 8601 date strings
- * Trims whitespace and validates the format
- * 
- * @param dateStr - Date string to normalize
- * @returns Normalized date string or undefined if invalid
- * @throws McpError if date format is invalid
- */
-function normalizeDateString(dateStr: string | undefined): string | undefined {
-  if (!dateStr) return undefined;
-  
-  const trimmed = dateStr.trim();
-  if (!trimmed) return undefined;
-  
-  // Validate ISO 8601 format (supports Z, +/-HH:MM, +/-HHMM, and +/-HH)
-  const iso8601Regex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:?\d{2}?)$/;
-  if (!iso8601Regex.test(trimmed)) {
-    // Try parsing as Date to provide better error message
-    const parsed = new Date(trimmed);
-    if (isNaN(parsed.getTime())) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        `Invalid date format: "${dateStr}". Expected ISO 8601 format (e.g., "2025-01-15T14:30:00Z" or "2025-01-15T14:30:00-05:00")`
-      );
-    }
-    // If it's a valid Date but not ISO format, convert it to ISO
-    return parsed.toISOString();
-  }
-  
-  return trimmed;
-}
 
 // ============================================================================
 // Tool Handlers
@@ -244,185 +211,410 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
  */
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
-  const requestId = randomUUID();
-  const transportType = process.env.MCP_TRANSPORT || 'stdio';
   
-  // Log incoming tool request (works for both HTTP and STDIO)
-  logWithContext('info', 'MCP tool request received', {
+  // Create handler context
+  const handlerContext: ToolHandlerContext = {
+    queries,
+    pluginManager,
+    dbInspector,
+    dbAnalytics,
+    dbSizeAnalyzer,
+    supabase,
+  };
+
+  // Try to get handler from registry
+  const handler = handlerRegistry.get(name);
+  
+  if (handler) {
+    // Use registered handler
+    return handler.handle(args, handlerContext);
+  }
+
+  // Check if this is a plugin tool
+  const pluginTools = await pluginManager.getAdditionalTools();
+  const pluginTool = pluginTools.find(t => t.name === name);
+  
+  if (pluginTool) {
+    // Delegate to plugin
+    const context: RequestContext = {
+      timestamp: new Date(),
+      userId: args?.user_id as string | undefined,
+      purpose: args?.purpose as string | undefined,
+    };
+    
+    const pluginResult = await pluginManager.handlePluginToolCall(name, args, context);
+    
+    if (pluginResult) {
+      return {
+        content: [{
+          type: 'text',
+          text: typeof pluginResult === 'string' ? pluginResult : JSON.stringify(pluginResult, null, 2),
+        }],
+      };
+    }
+  }
+  
+  // Tool not found
+  throw new McpError(
+    ErrorCode.MethodNotFound,
+    `Unknown tool: ${name}`
+  );
+});
+
+/**
+ * Handle resource reads
+ */
+server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+  const uri = request.params.uri;
+  const transportType = process.env.MCP_TRANSPORT || 'stdio';
+  const requestId = randomUUID();
+  
+  logWithContext('info', 'MCP read resource request received', {
     request_id: requestId,
     transport: transportType,
-    tool_name: name,
+    resource_uri: uri,
+  });
+  
+  // Try core resources first
+  const core = await resolveCoreResource(queries, uri);
+  if (core) {
+    logWithContext('debug', 'MCP resource resolved', {
+      request_id: requestId,
+      transport: transportType,
+      resource_uri: uri,
+      mime_type: core.mimeType,
+    });
+    return {
+      contents: [{ uri, mimeType: core.mimeType, text: JSON.stringify(core.content, null, 2) }]
+    };
+  }
+  // Try plugin resources: plugins provide raw Resource metadata only; actual read is not delegated here in core
+  logWithContext('warn', 'MCP resource not found', {
+    request_id: requestId,
+    transport: transportType,
+    resource_uri: uri,
+  });
+  throw new McpError(ErrorCode.InvalidParams, `Unknown or unsupported resource URI: ${uri}`);
+});
+
+// ============================================================================
+// Prompt Handlers
+// ============================================================================
+
+/**
+ * List available prompts
+ */
+server.setRequestHandler(ListPromptsRequestSchema, async () => {
+  const transportType = process.env.MCP_TRANSPORT || 'stdio';
+  const requestId = randomUUID();
+  
+  logWithContext('info', 'MCP list prompts request received', {
+    request_id: requestId,
+    transport: transportType,
+  });
+  
+  const prompts = allPrompts.map(p => ({
+    name: p.name,
+    description: p.description,
+    arguments: p.arguments?.map(arg => ({
+      name: arg.name,
+      description: arg.description,
+      required: arg.required
+    }))
+  }));
+  
+  logWithContext('debug', 'MCP prompts listed', {
+    request_id: requestId,
+    transport: transportType,
+    total_prompts: prompts.length,
+  });
+  
+  return { prompts };
+});
+
+/**
+ * Get prompt with arguments filled in
+ */
+server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+  const { name, arguments: args } = request.params;
+  const transportType = process.env.MCP_TRANSPORT || 'stdio';
+  const requestId = randomUUID();
+  
+  logWithContext('info', 'MCP get prompt request received', {
+    request_id: requestId,
+    transport: transportType,
+    prompt_name: name,
     has_arguments: !!args,
     argument_keys: args ? Object.keys(args).join(', ') : 'none',
   });
   
-  return withSpan(`mcp.tool.${name}`, async (span) => {
-    const startTime = Date.now();
-    
-    span.setAttributes({
-      [ATTR_TOOL_NAME]: name,
+  const prompt = allPrompts.find(p => p.name === name);
+  if (!prompt) {
+    logWithContext('warn', 'MCP prompt not found', {
+      request_id: requestId,
+      transport: transportType,
+      prompt_name: name,
     });
+    throw new McpError(
+      ErrorCode.InvalidParams,
+      `Unknown prompt: ${name}`
+    );
+  }
 
-    try {
-      let result;
+  // Generate the prompt message with the provided arguments
+  const message = generatePromptMessage(name, args || {});
+  
+  logWithContext('debug', 'MCP prompt generated', {
+    request_id: requestId,
+    transport: transportType,
+    prompt_name: name,
+    message_length: message.length,
+  });
+
+  return {
+    description: prompt.description,
+    messages: [
+      {
+        role: 'user',
+        content: {
+          type: 'text',
+          text: message
+        }
+      }
+    ]
+  };
+});
+
+// ============================================================================
+// Start Server
+// ============================================================================
+
+// Store HTTP server reference for graceful shutdown
+let httpServerInstance: http.Server | null = null;
+
+async function main() {
+  try {
+    const transportType = process.env.MCP_TRANSPORT || 'stdio';
+
+    if (transportType === 'http') {
+      // HTTP/Streamable HTTP transport
+      const port = parseInt(process.env.MCP_HTTP_PORT || '3000');
+      const host = process.env.MCP_HTTP_HOST || '127.0.0.1';
+
+      // Configure session management
+      const sessionIdGenerator = process.env.MCP_HTTP_STATELESS === 'true'
+        ? undefined
+        : () => randomUUID();
+
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator,
+        enableJsonResponse: process.env.MCP_HTTP_JSON_ONLY === 'true',
+        allowedHosts: process.env.MCP_HTTP_ALLOWED_HOSTS?.split(','),
+        allowedOrigins: process.env.MCP_HTTP_ALLOWED_ORIGINS?.split(','),
+        enableDnsRebindingProtection: process.env.MCP_HTTP_DNS_PROTECTION === 'true',
+        onsessioninitialized: (sessionId) => {
+          logWithContext('info', `HTTP session initialized: ${sessionId}`);
+        },
+        onsessionclosed: (sessionId) => {
+          logWithContext('info', `HTTP session closed: ${sessionId}`);
+        },
+      });
+
+      await server.connect(transport);
+
+      // Create HTTP server with comprehensive logging
+      const httpServer = http.createServer((req, res) => {
+        const requestId = randomUUID();
+        const startTime = Date.now();
+        const remoteAddress = req.socket.remoteAddress || 'unknown';
+        const remotePort = req.socket.remotePort || 0;
+        
+        // Capture request body for POST requests to see what method is being called
+        let requestBodyPreview = '';
+        if (req.method === 'POST' && req.headers['content-type']?.includes('json')) {
+          // Note: We can't read the body here as it would consume the stream
+          // But we can log that we'll try to capture it
+        }
+        
+        // Log incoming request
+        logWithContext('info', 'HTTP request received', {
+          request_id: requestId,
+          method: req.method,
+          url: req.url,
+          path: req.url?.split('?')[0],
+          query: req.url?.includes('?') ? req.url.split('?')[1] : undefined,
+          remote_address: remoteAddress,
+          remote_port: remotePort,
+          user_agent: req.headers['user-agent'],
+          content_type: req.headers['content-type'],
+          content_length: req.headers['content-length'],
+          mcp_session_id: req.headers['mcp-session-id'] || req.headers['x-session-id'] || 'none',
+          accept: req.headers['accept'],
+          referer: req.headers['referer'],
+          origin: req.headers['origin'],
+          all_headers: Object.keys(req.headers).join(', '), // Debug: see all headers
+        });
+
+        // Track response end to log completion
+        let responseSent = false;
+        const originalEnd = res.end.bind(res);
+        
+        let statusCode = 200;
+        const originalWriteHead = res.writeHead.bind(res);
+
+        // Handle errors
+        req.on('error', (error) => {
+          const duration = Date.now() - startTime;
+          logWithContext('error', 'HTTP request error', {
+            request_id: requestId,
+            method: req.method,
+            url: req.url,
+            error_message: error.message,
+            error_stack: error.stack,
+            duration_ms: duration,
+            remote_address: remoteAddress,
+          });
+          
+          recordCounter('http.request.error', 1, {
+            method: req.method || 'unknown',
+            error_type: error.constructor.name,
+          }, 'HTTP request errors');
+        });
+
+        res.on('error', (error) => {
+          const duration = Date.now() - startTime;
+          logWithContext('error', 'HTTP response error', {
+            request_id: requestId,
+            method: req.method,
+            url: req.url,
+            status_code: statusCode,
+            error_message: error.message,
+            error_stack: error.stack,
+            duration_ms: duration,
+            remote_address: remoteAddress,
+          });
+          
+          recordCounter('http.response.error', 1, {
+            method: req.method || 'unknown',
+            status_code: statusCode,
+            error_type: error.constructor.name,
+          }, 'HTTP response errors');
+        });
+
+        // Override writeHead to capture status code
+        res.writeHead = function(...args: any[]) {
+          if (args.length > 0 && typeof args[0] === 'number') {
+            statusCode = args[0];
+          }
+          return originalWriteHead.apply(this, args);
+        };
+
+        // Override end to log response completion
+        res.end = function(...args: any[]) {
+          if (!responseSent) {
+            responseSent = true;
+            const duration = Date.now() - startTime;
+            
+            logWithContext('info', 'HTTP response sent', {
+              request_id: requestId,
+              method: req.method,
+              url: req.url,
+              status_code: statusCode,
+              duration_ms: duration,
+              remote_address: remoteAddress,
+            });
+            
+            recordHistogram('http.request.duration', duration, {
+              method: req.method || 'unknown',
+              status_code: statusCode,
+            }, 'HTTP request duration in milliseconds');
+            
+            recordCounter('http.request.count', 1, {
+              method: req.method || 'unknown',
+              status_code: statusCode,
+            }, 'HTTP request count');
+          }
+          
+          return originalEnd.apply(this, args);
+        };
+
+        // Delegate to transport
+        transport.handleRequest(req, res);
+      });
+
+      httpServerInstance = httpServer;
       
-      switch (name) {
-      // ========================================================================
-      // Create vCon
-      // ========================================================================
-      case 'create_vcon': {
-        const context: RequestContext = {
-          timestamp: new Date(),
-          userId: args?.user_id as string | undefined,
-          purpose: args?.purpose as string | undefined,
-        };
-        
-        let vcon: VCon = {
-          vcon: '0.3.0',
-          uuid: crypto.randomUUID(),
-          created_at: new Date().toISOString(),
-          subject: args?.subject as string | undefined,
-          parties: (args?.parties as any[]) || [],
-          extensions: args?.extensions as string[] | undefined,
-          must_support: args?.must_support as string[] | undefined,
-        };
-
-        // Hook: beforeCreate
-        const modifiedVCon = await pluginManager.executeHook<VCon>('beforeCreate', vcon, context);
-        if (modifiedVCon) vcon = modifiedVCon;
-
-        // Validate before saving
-        const validation = validateVCon(vcon);
-        if (!validation.valid) {
-          throw new McpError(
-            ErrorCode.InvalidParams,
-            `vCon validation failed: ${validation.errors.join(', ')}`
-          );
-        }
-
-        const createResult = await queries.createVCon(vcon);
-        
-        // Hook: afterCreate
-        await pluginManager.executeHook('afterCreate', vcon, context);
-        
-        // Record vCon creation metric
-        recordCounter('vcon.created.count', 1, {
-          [ATTR_VCON_UUID]: createResult.uuid,
-        }, 'vCon creation count');
-        
-        span.setAttributes({
-          [ATTR_VCON_UUID]: createResult.uuid,
+      httpServer.listen(port, host, () => {
+        logWithContext('info', 'HTTP MCP server started', {
+          host,
+          port,
+          transport: 'http',
         });
-        
-        result = {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              success: true,
-              uuid: createResult.uuid,
-              message: `Created vCon with UUID: ${createResult.uuid}`,
-              vcon: vcon
-            }, null, 2),
-          }],
-        };
-        break;
-      }
+      });
 
-      // ========================================================================
-      // Create vCon from Template
-      // ========================================================================
-      case 'create_vcon_from_template': {
-        const template = args?.template_name as string;
-        const parties = (args?.parties as any[]) || [];
-        const subject = args?.subject as string | undefined;
-        if (!template || !Array.isArray(parties) || parties.length === 0) {
-          throw new McpError(ErrorCode.InvalidParams, 'template_name and parties are required');
-        }
-
-        let vcon = buildTemplateVCon(template, subject, parties);
-
-        const context: RequestContext = {
-          timestamp: new Date(),
-          userId: args?.user_id as string | undefined,
-          purpose: args?.purpose as string | undefined,
-        };
-
-        const modifiedVCon = await pluginManager.executeHook<VCon>('beforeCreate', vcon, context);
-        if (modifiedVCon) vcon = modifiedVCon;
-
-        const validation = validateVCon(vcon);
-        if (!validation.valid) {
-          throw new McpError(
-            ErrorCode.InvalidParams,
-            `vCon validation failed: ${validation.errors.join(', ')}`
-          );
-        }
-
-        const templateResult = await queries.createVCon(vcon);
-        await pluginManager.executeHook('afterCreate', vcon, context);
-
-        recordCounter('vcon.created.count', 1, {
-          [ATTR_VCON_UUID]: templateResult.uuid,
-        }, 'vCon creation count');
-        
-        span.setAttributes({
-          [ATTR_VCON_UUID]: templateResult.uuid,
+      httpServer.on('error', (error) => {
+        logWithContext('error', 'HTTP server error', {
+          error_message: error.message,
+          error_stack: error.stack,
         });
+      });
+    } else {
+      // STDIO transport
+      const transport = new StdioServerTransport();
+      await server.connect(transport);
+      
+      logWithContext('info', 'STDIO MCP server started', {
+        transport: 'stdio',
+      });
+    }
+  } catch (error) {
+    logWithContext('error', 'Failed to start MCP server', {
+      error_message: error instanceof Error ? error.message : String(error),
+      error_stack: error instanceof Error ? error.stack : undefined,
+    });
+    process.exit(1);
+  }
+}
 
-        result = {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({ success: true, uuid: templateResult.uuid, vcon }, null, 2),
-          }],
-        };
-        break;
-      }
+// Graceful shutdown
+process.on('SIGINT', async () => {
+  logWithContext('info', 'Received SIGINT, shutting down gracefully...');
+  
+  if (httpServerInstance) {
+    httpServerInstance.close(() => {
+      logWithContext('info', 'HTTP server closed');
+    });
+  }
+  
+  await shutdownObservability();
+  await pluginManager.shutdown();
+  
+  process.exit(0);
+});
 
-      // ========================================================================
-      // Get vCon
-      // ========================================================================
-      case 'get_vcon': {
-        const uuid = args?.uuid as string;
-        const context: RequestContext = {
-          timestamp: new Date(),
-          userId: args?.user_id as string | undefined,
-          purpose: args?.purpose as string | undefined,
-        };
-        
-        const uuidValidation = validateUUID(uuid, 'uuid');
-        if (!uuidValidation.valid) {
-          throw new McpError(ErrorCode.InvalidParams, uuidValidation.errors.join(', '));
-        }
+process.on('SIGTERM', async () => {
+  logWithContext('info', 'Received SIGTERM, shutting down gracefully...');
+  
+  if (httpServerInstance) {
+    httpServerInstance.close(() => {
+      logWithContext('info', 'HTTP server closed');
+    });
+  }
+  
+  await shutdownObservability();
+  await pluginManager.shutdown();
+  
+  process.exit(0);
+});
 
-        // Hook: beforeRead (can throw to block access)
-        await pluginManager.executeHook('beforeRead', uuid, context);
-
-        let vcon = await queries.getVCon(uuid);
-        
-        // Hook: afterRead (can modify returned data)
-        const filteredVCon = await pluginManager.executeHook<VCon>('afterRead', vcon, context);
-        if (filteredVCon) vcon = filteredVCon;
-        
-        span.setAttributes({
-          [ATTR_VCON_UUID]: uuid,
-        });
-        
-        result = {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              success: true,
-              vcon: vcon
-            }, null, 2),
-          }],
-        };
-        break;
-      }
-
-      // ========================================================================
-      // Search vCons
-      // ========================================================================
-      case 'search_vcons': {
+// Start the server
+main().catch((error) => {
+  logWithContext('error', 'Fatal error in main', {
+    error_message: error instanceof Error ? error.message : String(error),
+    error_stack: error instanceof Error ? error.stack : undefined,
+  });
+  process.exit(1);
+});
         const context: RequestContext = {
           timestamp: new Date(),
           userId: args?.user_id as string | undefined,
