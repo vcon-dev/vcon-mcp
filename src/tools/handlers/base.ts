@@ -4,6 +4,7 @@
  * Provides common interfaces and base classes for tool handlers
  */
 
+import crypto from 'crypto';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { VConQueries } from '../../db/queries.js';
 import { PluginManager } from '../../hooks/plugin-manager.js';

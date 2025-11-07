@@ -2,6 +2,7 @@
  * vCon CRUD Tool Handlers
  */
 
+import crypto from 'crypto';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { BaseToolHandler, ToolHandlerContext, ToolResponse } from './base.js';
 import { VCon, Analysis, Dialog, Attachment } from '../../types/vcon.js';

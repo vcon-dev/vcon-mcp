@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { VCon } from '../types/vcon.js';
 
 export const createFromTemplateTool = {
