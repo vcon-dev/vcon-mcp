@@ -699,6 +699,7 @@ export class VConQueries {
     partyTel?: string;
     startDate?: string;
     endDate?: string;
+    tags?: Record<string, string>;
     limit?: number;
   }): Promise<VCon[]> {
     let query = this.supabase
@@ -780,6 +781,13 @@ export class VConQueries {
       );
     }
 
+    // If tag filters, get matching UUIDs and intersect with current results
+    if (filters.tags && Object.keys(filters.tags).length > 0) {
+      const tagMatchingUuids = await this.searchByTags(filters.tags, filters.limit || 1000);
+      const tagMatchingSet = new Set(tagMatchingUuids);
+      vconUuids = vconUuids.filter(uuid => tagMatchingSet.has(uuid));
+    }
+
     // Fetch full vCons
     return Promise.all(
       vconUuids.map(uuid => this.getVCon(uuid))
@@ -797,6 +805,7 @@ export class VConQueries {
     partyTel?: string;
     startDate?: string;
     endDate?: string;
+    tags?: Record<string, string>;
   }): Promise<number> {
     // Build the same query as searchVCons but just get count
     let query = this.supabase
@@ -861,10 +870,39 @@ export class VConQueries {
 
       const { count, error: countError } = await vconQuery;
       if (countError) throw countError;
+      
+      // If tag filters, intersect with tag matching UUIDs
+      if (filters.tags && Object.keys(filters.tags).length > 0) {
+        const tagMatchingUuids = await this.searchByTags(filters.tags, 10000);
+        const tagMatchingSet = new Set(tagMatchingUuids);
+        
+        // Get UUIDs for the party-filtered vcons and count intersection
+        const { data: vconData } = await this.supabase
+          .from('vcons')
+          .select('uuid')
+          .in('id', Array.from(partyVconIds));
+        
+        const matchingUuids = vconData?.filter(v => tagMatchingSet.has(v.uuid)).map(v => v.uuid) || [];
+        return matchingUuids.length;
+      }
+      
       return count || 0;
     }
 
-    // For non-party filters, use the simple count query
+    // If tag filters but no party filters, get tag matching UUIDs and count intersection
+    if (filters.tags && Object.keys(filters.tags).length > 0) {
+      const tagMatchingUuids = await this.searchByTags(filters.tags, 10000);
+      const tagMatchingSet = new Set(tagMatchingUuids);
+      
+      // Get all UUIDs from the base query (with subject/date filters)
+      const { data: vconData } = await query.select('uuid');
+      if (!vconData) return 0;
+      
+      const matchingUuids = vconData.filter(v => tagMatchingSet.has(v.uuid));
+      return matchingUuids.length;
+    }
+
+    // For non-party, non-tag filters, use the simple count query
     const { count, error } = await query;
     if (error) throw error;
     return count || 0;

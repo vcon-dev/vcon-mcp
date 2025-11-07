@@ -167,7 +167,7 @@ export const getVConTool = {
  */
 export const searchVConsTool = {
   name: 'search_vcons',
-  description: 'Search for vCons using various criteria. Returns an array of matching vCons. ' +
+  description: 'Search for vCons using various criteria including tags. Returns an array of matching vCons. ' +
     'For full-text or semantic search of conversation content, use search_vcons_content instead. ' +
     '⚠️ LARGE DATABASE WARNING: Use response_format="metadata" for large result sets to avoid memory issues.',
   inputSchema: {
@@ -196,6 +196,11 @@ export const searchVConsTool = {
       end_date: {
         type: 'string',
         description: 'Filter by vCons created on or before this date (ISO 8601 format)'
+      },
+      tags: {
+        type: 'object',
+        description: 'Filter by tags (key-value pairs). Example: {"department": "sales", "priority": "high"}',
+        additionalProperties: { type: 'string' }
       },
       limit: {
         type: 'number',

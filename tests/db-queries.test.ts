@@ -283,6 +283,121 @@ describe('VConQueries', () => {
 
       expect(mockSupabase.limit).toHaveBeenCalledWith(10);
     });
+
+    it('should filter by tags', async () => {
+      const criteria = { tags: { department: 'sales', priority: 'high' } };
+      const testUuid1 = crypto.randomUUID();
+      const testUuid2 = crypto.randomUUID();
+
+      // Mock searchByTags to return matching UUIDs
+      vi.spyOn(queries, 'searchByTags').mockResolvedValue([testUuid1, testUuid2]);
+
+      // Mock the initial query
+      mockSupabase.order.mockResolvedValueOnce({
+        data: [{ uuid: testUuid1 }, { uuid: testUuid2 }, { uuid: crypto.randomUUID() }],
+        error: null
+      });
+
+      // Mock getVCon calls - need to return different values for each call
+      let callCount = 0;
+      mockSupabase.single.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          // First call for testUuid1
+          return Promise.resolve({
+            data: {
+              id: '1',
+              uuid: testUuid1,
+              vcon_version: '0.3.0',
+              created_at: new Date().toISOString(),
+              parties: []
+            },
+            error: null
+          });
+        } else {
+          // Second call for testUuid2
+          return Promise.resolve({
+            data: {
+              id: '2',
+              uuid: testUuid2,
+              vcon_version: '0.3.0',
+              created_at: new Date().toISOString(),
+              parties: []
+            },
+            error: null
+          });
+        }
+      });
+
+      // Mock order calls for getVCon (parties, dialog, etc.)
+      mockSupabase.order.mockResolvedValue({
+        data: [],
+        error: null
+      });
+
+      const result = await queries.searchVCons(criteria);
+
+      expect(queries.searchByTags).toHaveBeenCalledWith({ department: 'sales', priority: 'high' }, 1000);
+      expect(result).toHaveLength(2);
+      expect(result.map(v => v.uuid)).toContain(testUuid1);
+      expect(result.map(v => v.uuid)).toContain(testUuid2);
+    });
+
+    it('should combine tags with other filters', async () => {
+      const criteria = {
+        subject: 'Test',
+        tags: { department: 'sales' },
+        startDate: '2024-01-01',
+        limit: 10
+      };
+      const testUuid = crypto.randomUUID();
+
+      // Mock searchByTags
+      vi.spyOn(queries, 'searchByTags').mockResolvedValue([testUuid]);
+
+      // Mock the initial query with subject and date filters
+      mockSupabase.order.mockResolvedValueOnce({
+        data: [{ uuid: testUuid }, { uuid: crypto.randomUUID() }],
+        error: null
+      });
+
+      // Mock getVCon
+      mockSupabase.single.mockResolvedValue({
+        data: {
+          uuid: testUuid,
+          vcon_version: '0.3.0',
+          created_at: new Date().toISOString(),
+          parties: []
+        },
+        error: null
+      });
+
+      const result = await queries.searchVCons(criteria);
+
+      expect(queries.searchByTags).toHaveBeenCalledWith({ department: 'sales' }, 10);
+      expect(mockSupabase.ilike).toHaveBeenCalledWith('subject', '%Test%');
+      expect(mockSupabase.gte).toHaveBeenCalledWith('created_at', '2024-01-01');
+      expect(result).toHaveLength(1);
+      expect(result[0].uuid).toBe(testUuid);
+    });
+
+    it('should return empty array when tags filter matches no vCons', async () => {
+      const criteria = { tags: { department: 'nonexistent' } };
+
+      // Mock searchByTags to return empty array
+      vi.spyOn(queries, 'searchByTags').mockResolvedValue([]);
+
+      // Mock the initial query
+      mockSupabase.order.mockResolvedValueOnce({
+        data: [{ uuid: crypto.randomUUID() }],
+        error: null
+      });
+
+      const result = await queries.searchVCons(criteria);
+
+      expect(queries.searchByTags).toHaveBeenCalledWith({ department: 'nonexistent' }, 1000);
+      expect(result).toHaveLength(0);
+    });
   });
 
   describe('addAnalysis', () => {

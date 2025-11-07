@@ -438,6 +438,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           partyTel: args?.party_tel as string | undefined,
           startDate: normalizeDateString(args?.start_date as string | undefined),
           endDate: normalizeDateString(args?.end_date as string | undefined),
+          tags: args?.tags as Record<string, string> | undefined,
           limit: (args?.limit as number | undefined) || 10,
         };
 
@@ -496,6 +497,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               partyTel: filters.partyTel,
               startDate: filters.startDate,
               endDate: filters.endDate,
+              tags: filters.tags,
             });
           } catch (countError: any) {
             // Log count error but don't fail the entire request
