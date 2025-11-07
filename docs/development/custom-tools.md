@@ -672,7 +672,101 @@ return {
 };
 ```
 
-### 4. Progress Reporting
+### 5. Validation Strategy
+
+The vCon MCP Server uses a two-layer validation approach:
+
+**Layer 1: JSON Schema Validation** (at the MCP protocol level)
+- All tool input schemas must be valid JSON Schema
+- Use `oneOf` or `anyOf` for union types (not array syntax)
+- Include `default` values in schemas when defaults are mentioned in descriptions
+- This provides client-side validation and better error messages
+
+**Layer 2: Runtime Validation** (in tool handlers)
+- Use helper functions from `src/utils/validation.ts` for common validations
+- Validate UUIDs using `validateUUID()` helper
+- Use Zod schemas for complex object validation (where applicable)
+- Always validate required fields even if JSON Schema validates them
+
+**Example: UUID Validation**
+
+```typescript
+import { validateUUID } from '../utils/validation.js';
+import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
+
+case 'my_tool': {
+  const uuid = args?.uuid as string;
+  
+  // Validate UUID format
+  const uuidValidation = validateUUID(uuid, 'uuid');
+  if (!uuidValidation.valid) {
+    throw new McpError(ErrorCode.InvalidParams, uuidValidation.errors.join(', '));
+  }
+  
+  // Continue with tool logic...
+}
+```
+
+**Example: JSON Schema with Defaults**
+
+```typescript
+// ✅ Good - Default value in schema
+{
+  type: 'object',
+  properties: {
+    limit: {
+      type: 'number',
+      description: 'Maximum number of results (default: 50)',
+      minimum: 1,
+      maximum: 1000,
+      default: 50  // Include default in schema
+    }
+  }
+}
+
+// ❌ Bad - Default mentioned but not in schema
+{
+  type: 'object',
+  properties: {
+    limit: {
+      type: 'number',
+      description: 'Maximum number of results (default: 50)',  // Mentioned but not in schema
+      minimum: 1,
+      maximum: 1000
+    }
+  }
+}
+```
+
+**Example: Union Types in JSON Schema**
+
+```typescript
+// ✅ Good - Use oneOf for union types
+{
+  type: 'object',
+  properties: {
+    value: {
+      oneOf: [
+        { type: 'string' },
+        { type: 'number' },
+        { type: 'boolean' }
+      ]
+    }
+  }
+}
+
+// ❌ Bad - Invalid array syntax
+{
+  type: 'object',
+  properties: {
+    value: {
+      type: ['string', 'number', 'boolean']  // Invalid JSON Schema syntax
+    }
+  }
+}
+```
+
+### 6. Response Format Standardization
 
 For long-running operations:
 
@@ -702,7 +796,105 @@ async function handleLongRunningTool(input: MyInput): Promise<ToolResponse> {
 }
 ```
 
-### 5. Resource Cleanup
+### 6. Response Format Standardization
+
+All tools should return consistent response formats:
+
+**Standard Success Response:**
+```typescript
+{
+  content: [{
+    type: 'text',
+    text: JSON.stringify({
+      success: true,
+      // Tool-specific data
+      uuid: '...',
+      message: 'Operation completed successfully'
+    }, null, 2)
+  }]
+}
+```
+
+**Standard Error Response:**
+- Errors are thrown as `McpError` with appropriate `ErrorCode`
+- The MCP framework handles error formatting
+- Include actionable error messages with context
+
+**Response Fields:**
+- `success: boolean` - Always include for clarity
+- `message: string` - Human-readable description
+- Tool-specific data fields
+- `count`, `total_count` - For list/search operations
+- `uuid` - For operations that create or modify vCons
+
+**Example: Consistent Response Format**
+
+```typescript
+// ✅ Good - Consistent format
+result = {
+  content: [{
+    type: 'text',
+    text: JSON.stringify({
+      success: true,
+      uuid: createResult.uuid,
+      message: `Created vCon with UUID: ${createResult.uuid}`,
+      vcon: vcon
+    }, null, 2)
+  }]
+};
+
+// ❌ Bad - Inconsistent format
+result = {
+  content: [{
+    type: 'text',
+    text: JSON.stringify(createResult)  // Missing success field, inconsistent structure
+  }]
+};
+```
+
+### 8. Error Message Consistency
+
+Error messages should be clear, actionable, and consistent:
+
+**Guidelines:**
+- Use `McpError` with appropriate `ErrorCode` (InvalidParams, InternalError, etc.)
+- Include the parameter name in error messages
+- Provide examples or expected formats when relevant
+- Use consistent error message format across all tools
+
+**Example: Consistent Error Messages**
+
+```typescript
+// ✅ Good - Clear, actionable error
+const uuidValidation = validateUUID(uuid, 'uuid');
+if (!uuidValidation.valid) {
+  throw new McpError(
+    ErrorCode.InvalidParams,
+    uuidValidation.errors.join(', ')
+  );
+}
+
+// ✅ Good - Detailed error with context
+if (!analysisData || !analysisData.vendor) {
+  throw new McpError(
+    ErrorCode.InvalidParams,
+    'Analysis vendor is REQUIRED per IETF spec Section 4.5.5'
+  );
+}
+
+// ❌ Bad - Generic error
+if (!uuid) {
+  throw new McpError(ErrorCode.InvalidParams, 'Invalid');
+}
+```
+
+**Error Code Guidelines:**
+- `InvalidParams` - Client provided invalid input (validation errors, missing required fields)
+- `InternalError` - Server-side errors (database failures, unexpected exceptions)
+- `MethodNotFound` - Tool name doesn't exist
+- `InvalidRequest` - Malformed request structure
+
+### 9. Resource Cleanup
 
 ```typescript
 async function handleToolWithResources(input: MyInput): Promise<ToolResponse> {
@@ -733,7 +925,53 @@ async function handleToolWithResources(input: MyInput): Promise<ToolResponse> {
 
 ---
 
-## Examples
+## Summary: MCP Tools Best Practices Review
+
+This document reflects the best practices review and improvements made to ensure all MCP tools follow consistent patterns:
+
+### Key Improvements Made
+
+1. **JSON Schema Compliance**
+   - Fixed invalid union type syntax (replaced array syntax with `oneOf`)
+   - Added default values to all schemas where defaults were mentioned in descriptions
+   - Ensured all schemas are valid JSON Schema
+
+2. **Validation Consistency**
+   - Created `validateUUID()` helper function for consistent UUID validation
+   - Updated all tool handlers to use the validation helper
+   - Documented two-layer validation approach (JSON Schema + Runtime)
+
+3. **Response Format Standardization**
+   - Documented standard response format with `success` field
+   - Ensured consistent error handling using `McpError`
+   - Standardized response structure across all tools
+
+4. **Error Message Consistency**
+   - Standardized error message format
+   - Added parameter names to error messages
+   - Documented error code usage guidelines
+
+### Validation Helper Functions
+
+Available in `src/utils/validation.ts`:
+- `validateUUID(uuid, paramName)` - Validates UUID format and returns ValidationResult
+- `isValidUUID(uuid)` - Simple boolean check for UUID format
+- `validateVCon(vcon)` - Validates complete vCon object
+- `validateAnalysis(analysis)` - Validates analysis object
+
+### Tool Schema Checklist
+
+When creating new tools, ensure:
+- [ ] JSON Schema is valid (use `oneOf` for union types)
+- [ ] Default values are included in schema when mentioned in descriptions
+- [ ] Required fields are marked in `required` array
+- [ ] UUID parameters use pattern validation
+- [ ] Descriptions are clear and actionable
+- [ ] Handler uses `validateUUID()` for UUID parameters
+- [ ] Response includes `success` field
+- [ ] Errors use `McpError` with appropriate `ErrorCode`
+
+---
 
 ### Example 1: Batch Export Tool
 

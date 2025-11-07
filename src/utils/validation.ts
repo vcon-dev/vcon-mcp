@@ -295,6 +295,37 @@ export function validateAnalysis(analysis: Analysis): ValidationResult {
 }
 
 /**
+ * Validate UUID format
+ * Returns true if UUID matches standard format, false otherwise
+ */
+export function isValidUUID(uuid: string | undefined | null): boolean {
+  if (!uuid) return false;
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(uuid);
+}
+
+/**
+ * Validate UUID format and return validation result
+ * Use this in tool handlers for consistent validation
+ */
+export function validateUUID(uuid: string | undefined | null, paramName: string = 'uuid'): ValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  
+  if (!uuid) {
+    errors.push(`${paramName} is required`);
+  } else if (!isValidUUID(uuid)) {
+    errors.push(`Invalid ${paramName} format: "${uuid}". Expected UUID format (e.g., "550e8400-e29b-41d4-a716-446655440000")`);
+  }
+  
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings
+  };
+}
+
+/**
  * Validate Dialog type
  */
 export function validateDialog(dialog: Dialog): ValidationResult {
