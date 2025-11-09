@@ -45,13 +45,19 @@
  *   --dry-run             Don't actually load files, just validate
  *   --hours=N             For S3: import vCons modified in last N hours (default: 24)
  *   --prefix=PREFIX       For S3: filter objects by prefix (optional)
+ *   --sync                Enable continuous sync mode (checks for new vCons periodically)
+ *   --sync-interval=N     Minutes between sync checks in sync mode (default: 5)
  * 
  * Environment Variables (S3 - Default):
- *   AWS_ACCESS_KEY_ID         AWS access key ID
- *   AWS_SECRET_ACCESS_KEY     AWS secret access key
- *   AWS_REGION                AWS region (default: us-east-1)
- *   VCON_S3_BUCKET            S3 bucket name containing vCons
+ *   VCON_S3_BUCKET            S3 bucket name containing vCons (required for S3 mode)
  *   VCON_S3_PREFIX            Optional S3 prefix/folder path
+ *   AWS_REGION                AWS region (default: us-east-1)
+ *   
+ *   AWS Credentials (automatically detected via credential provider chain):
+ *   - Environment variables: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+ *   - Shared credentials file: ~/.aws/credentials
+ *   - IAM roles: If running on EC2/ECS/Lambda
+ *   - Other credential providers in the default chain
  * 
  * Environment Variables (Database):
  *   SUPABASE_URL              Supabase project URL
@@ -80,6 +86,12 @@
  *   # Conservative settings for large datasets
  *   npx tsx scripts/load-legacy-vcons.ts --batch-size=25 --concurrency=2 --retry-attempts=5
  * 
+ *   # Enable continuous sync mode (checks every 5 minutes for new vCons)
+ *   npx tsx scripts/load-legacy-vcons.ts --sync
+ * 
+ *   # Sync mode with custom interval (check every 10 minutes)
+ *   npx tsx scripts/load-legacy-vcons.ts --sync --sync-interval=10
+ * 
  * @author vCon MCP Team
  * @version 3.0.0
  * @since 2024-10-01
@@ -90,10 +102,58 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import dotenv from 'dotenv';
 import { S3Client, ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
+import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
 import { getSupabaseClient } from '../dist/db/client.js';
 import { VConQueries } from '../dist/db/queries.js';
 import { VCon } from '../dist/types/vcon.js';
 import { createClient } from 'redis';
+
+/**
+ * Test database connection and provide helpful error messages
+ */
+async function testDatabaseConnection(supabase: any): Promise<void> {
+  try {
+    // Try a simple query to test the connection
+    const { error } = await supabase
+      .from('vcons')
+      .select('id', { count: 'exact', head: true })
+      .limit(1);
+    
+    if (error) {
+      throw error;
+    }
+  } catch (error: any) {
+    const errorMessage = error?.message || String(error);
+    const supabaseUrl = process.env.SUPABASE_URL || 'unknown';
+    
+    // Check for common connection errors
+    if (errorMessage.includes('fetch failed') || 
+        errorMessage.includes('ECONNREFUSED') ||
+        errorMessage.includes('ENOTFOUND') ||
+        errorMessage.includes('network') ||
+        errorMessage.includes('connection')) {
+      
+      console.error('\n❌ Database Connection Failed\n');
+      console.error('The database is not accessible. Common causes:');
+      console.error('  1. Docker is not running');
+      console.error('  2. Supabase local instance is not started');
+      console.error('  3. Database URL is incorrect');
+      console.error(`\n  Current SUPABASE_URL: ${supabaseUrl}\n`);
+      
+      if (supabaseUrl.includes('127.0.0.1') || supabaseUrl.includes('localhost')) {
+        console.error('💡 To start local Supabase:');
+        console.error('     supabase start');
+        console.error('  Or check if Docker is running:\n');
+        console.error('     docker ps\n');
+      }
+      
+      throw new Error(`Database connection failed: ${errorMessage}`);
+    }
+    
+    // Re-throw other errors as-is
+    throw error;
+  }
+}
 
 // Load environment variables
 dotenv.config();
@@ -134,6 +194,10 @@ interface ProcessingOptions {
   hours?: number;
   /** For S3: prefix to filter objects */
   prefix?: string;
+  /** If true, continuously sync new vCons after initial load */
+  sync?: boolean;
+  /** Interval in minutes between sync checks (default: 5) */
+  syncInterval?: number;
 }
 
 /**
@@ -699,7 +763,13 @@ async function loadVConsFromDirectory(directoryPath: string | undefined, options
 
   try {
     // Initialize database
+    console.log('🔌 Testing database connection...');
     const supabase = getSupabaseClient();
+    
+    // Test connection before proceeding
+    await testDatabaseConnection(supabase);
+    console.log('   ✅ Database connection successful\n');
+    
     const queries = new VConQueries(supabase);
 
     // Initialize UUID tracker
@@ -709,18 +779,18 @@ async function loadVConsFromDirectory(directoryPath: string | undefined, options
     let vconFiles: string[] = [];
     
     // Check if S3 is configured and no directory path provided
+    // Use AWS SDK default credential provider chain which checks:
+    // 1. Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
+    // 2. Shared credentials file (~/.aws/credentials)
+    // 3. IAM roles (if running on EC2/ECS/Lambda)
+    // 4. Other credential providers
     const s3Bucket = process.env.VCON_S3_BUCKET;
-    const awsAccessKey = process.env.AWS_ACCESS_KEY_ID;
-    const awsSecretKey = process.env.AWS_SECRET_ACCESS_KEY;
     
-    if (s3Bucket && awsAccessKey && awsSecretKey && !directoryPath) {
-      // Use S3 as source
+    if (s3Bucket && !directoryPath) {
+      // Use S3 as source with default credential provider chain
       const s3Client = new S3Client({
         region: process.env.AWS_REGION || 'us-east-1',
-        credentials: {
-          accessKeyId: awsAccessKey,
-          secretAccessKey: awsSecretKey
-        }
+        credentials: fromNodeProviderChain()
       });
       
       const prefix = options.prefix || process.env.VCON_S3_PREFIX;
@@ -732,7 +802,7 @@ async function loadVConsFromDirectory(directoryPath: string | undefined, options
       console.log(`📂 Recursively searching for vCon files in: ${directoryPath}\n`);
       vconFiles = await findVConFiles(directoryPath);
     } else {
-      throw new Error('Either S3 credentials (VCON_S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY) or a directory path must be provided');
+      throw new Error('Either S3 bucket (VCON_S3_BUCKET) or a directory path must be provided. AWS credentials will be automatically detected from environment variables, AWS credentials file, or IAM roles.');
     }
 
     stats.total = vconFiles.length;
@@ -811,8 +881,25 @@ async function loadVConsFromDirectory(directoryPath: string | undefined, options
 
     console.log('\n✅ Load complete!\n');
 
-  } catch (error) {
-    console.error('❌ Fatal error:', error);
+  } catch (error: any) {
+    // Check if it's a database connection error that we've already handled
+    if (error?.message?.includes('Database connection failed')) {
+      console.error(error.message);
+      process.exit(1);
+    }
+    
+    // For other errors, provide context
+    const errorMessage = error?.message || String(error);
+    console.error('\n❌ Fatal error:', errorMessage);
+    
+    // Check if it might be a connection error we didn't catch
+    if (errorMessage.includes('fetch failed') || 
+        errorMessage.includes('ECONNREFUSED') ||
+        errorMessage.includes('network')) {
+      console.error('\n💡 This might be a database connection issue.');
+      console.error('   Make sure Docker and Supabase are running.\n');
+    }
+    
     process.exit(1);
   } finally {
     // Clean up UUID tracker
@@ -846,6 +933,8 @@ async function main() {
   const dryRun = args.includes('--dry-run');
   const hours = parseInt(args.find(arg => arg.startsWith('--hours='))?.split('=')[1] || '24');
   const prefix = args.find(arg => arg.startsWith('--prefix='))?.split('=')[1] || undefined;
+  const sync = args.includes('--sync');
+  const syncInterval = parseInt(args.find(arg => arg.startsWith('--sync-interval='))?.split('=')[1] || '5');
   
   const options: ProcessingOptions = {
     batchSize,
@@ -854,16 +943,26 @@ async function main() {
     retryAttempts,
     retryDelay,
     hours,
-    prefix
+    prefix,
+    sync,
+    syncInterval
   };
 
   console.log('🚀 Legacy vCon Loader Starting...\n');
-  console.log(`Database: ${process.env.SUPABASE_URL}\n`);
+  
+  // Check environment variables
+  const supabaseUrl = process.env.SUPABASE_URL;
+  if (!supabaseUrl) {
+    console.error('❌ Error: SUPABASE_URL environment variable is not set\n');
+    console.error('   Please set SUPABASE_URL in your .env file or environment\n');
+    process.exit(1);
+  }
+  
+  console.log(`Database: ${supabaseUrl}\n`);
   
   // Determine source
   const s3Bucket = process.env.VCON_S3_BUCKET;
-  const awsAccessKey = process.env.AWS_ACCESS_KEY_ID;
-  const source = (s3Bucket && awsAccessKey && !directoryPath) ? 'S3' : 'Local Directory';
+  const source = (s3Bucket && !directoryPath) ? 'S3' : 'Local Directory';
   
   console.log(`Source: ${source}`);
   if (source === 'S3') {
@@ -876,9 +975,113 @@ async function main() {
     console.log(`  Directory: ${directoryPath || 'Not specified'}`);
   }
   
-  console.log(`\nOptions: batchSize=${batchSize}, concurrency=${concurrency}, retryAttempts=${retryAttempts}, retryDelay=${retryDelay}ms, dryRun=${dryRun}\n`);
+  console.log(`\nOptions: batchSize=${batchSize}, concurrency=${concurrency}, retryAttempts=${retryAttempts}, retryDelay=${retryDelay}ms, dryRun=${dryRun}`);
+  if (sync) {
+    console.log(`Sync mode: Enabled (checking every ${syncInterval} minutes)\n`);
+  } else {
+    console.log();
+  }
 
   await loadVConsFromDirectory(directoryPath, options);
+  
+  // If sync mode is enabled, start continuous syncing
+  if (sync && !dryRun) {
+    await startSyncMode(directoryPath, options);
+  }
+}
+
+/**
+ * Continuous sync mode - periodically checks for and loads new vCons
+ */
+async function startSyncMode(directoryPath: string | undefined, options: ProcessingOptions): Promise<void> {
+  const syncIntervalMs = (options.syncInterval || 5) * 60 * 1000; // Convert minutes to milliseconds
+  let syncCount = 0;
+  let lastSyncTime = Date.now() - syncIntervalMs; // Start from one interval ago to catch recent vCons
+  
+  console.log('\n' + '='.repeat(60));
+  console.log('🔄 Starting Continuous Sync Mode');
+  console.log('='.repeat(60));
+  console.log(`Checking for new vCons every ${options.syncInterval || 5} minutes`);
+  console.log('Press Ctrl+C to stop\n');
+  
+  // Handle graceful shutdown
+  let isShuttingDown = false;
+  const shutdown = async () => {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    console.log('\n\n🛑 Shutting down sync mode...');
+    console.log(`   Completed ${syncCount} sync cycles`);
+    process.exit(0);
+  };
+  
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+  
+  while (!isShuttingDown) {
+    try {
+      // Wait for the sync interval
+      console.log(`\n⏳ Waiting ${options.syncInterval || 5} minutes until next sync check...`);
+      await new Promise(resolve => setTimeout(resolve, syncIntervalMs));
+      
+      if (isShuttingDown) break;
+      
+      syncCount++;
+      const now = Date.now();
+      const timeSinceLastSync = Math.floor((now - lastSyncTime) / 1000 / 60); // minutes
+      
+      console.log('\n' + '='.repeat(60));
+      console.log(`🔄 Sync Check #${syncCount} (${new Date().toISOString()})`);
+      console.log('='.repeat(60));
+      
+      // For sync mode, check for vCons modified since last sync
+      // Use a time window slightly larger than sync interval to account for clock skew
+      // Add 5 minutes buffer to ensure we don't miss any vCons
+      const bufferMinutes = 5;
+      const hoursToCheck = Math.max(1, Math.ceil((timeSinceLastSync + bufferMinutes) / 60)); // Convert to hours, minimum 1 hour
+      const syncOptions: ProcessingOptions = {
+        ...options,
+        hours: hoursToCheck
+      };
+      
+      console.log(`   Checking for vCons modified in last ${hoursToCheck} hour(s) (${timeSinceLastSync + bufferMinutes} minutes)`);
+      
+      // Only works with S3, not local directories
+      const s3Bucket = process.env.VCON_S3_BUCKET;
+      if (!s3Bucket && !directoryPath) {
+        console.error('❌ Sync mode requires S3 bucket (VCON_S3_BUCKET) or directory path');
+        break;
+      }
+      
+      if (directoryPath) {
+        console.log('⚠️  Sync mode with local directory will re-scan all files');
+        console.log('   Consider using S3 for incremental sync\n');
+      }
+      
+      const stats = await loadVConsFromDirectory(directoryPath, syncOptions);
+      
+      lastSyncTime = now;
+      
+      if (stats.total === 0) {
+        console.log('✅ No new vCons found');
+      } else {
+        console.log(`✅ Sync complete: ${stats.successful} loaded, ${stats.skipped} skipped, ${stats.failed} failed`);
+      }
+      
+    } catch (error: any) {
+      const errorMessage = error?.message || String(error);
+      console.error(`\n❌ Error during sync check: ${errorMessage}`);
+      
+      // Check if it's a connection error
+      if (errorMessage.includes('Database connection failed') || 
+          errorMessage.includes('fetch failed') ||
+          errorMessage.includes('ECONNREFUSED')) {
+        console.error('⚠️  Database connection lost. Will retry on next sync cycle.');
+      } else {
+        // For other errors, log but continue
+        console.error('⚠️  Continuing sync mode. Will retry on next cycle.');
+      }
+    }
+  }
 }
 
 // Run the loader
