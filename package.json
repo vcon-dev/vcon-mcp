@@ -23,7 +23,8 @@
     "prepublishOnly": "npm run build",
     "load:vcons": "tsx scripts/load-legacy-vcons.ts --hours=48",
     "sync:vcons": "tsx scripts/load-legacy-vcons.ts --hours=48 --sync",
-    "check:vcons": "tsx scripts/check-vcons.ts"
+    "check:vcons": "tsx scripts/check-vcons.ts",
+    "migrate:remote": "tsx scripts/migrate-to-remote.ts"
   },
   "files": [
     "dist",
