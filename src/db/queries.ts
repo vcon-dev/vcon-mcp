@@ -14,6 +14,7 @@ import Redis from 'ioredis';
 import { VCon, Analysis, Dialog, Party, Attachment } from '../types/vcon.js';
 import { withSpan, recordCounter, recordHistogram, logWithContext } from '../observability/instrumentation.js';
 import { ATTR_VCON_UUID, ATTR_DB_OPERATION, ATTR_CACHE_HIT, ATTR_SEARCH_TYPE, ATTR_SEARCH_RESULTS_COUNT, ATTR_SEARCH_THRESHOLD } from '../observability/attributes.js';
+import { getTenantConfig, extractTenantFromVCon } from '../config/tenant-config.js';
 
 export class VConQueries {
   private redis: Redis | null = null;
@@ -42,6 +43,7 @@ export class VConQueries {
   /**
    * Create a new vCon with all related entities
    * ✅ Uses corrected field names throughout
+   * ✅ Extracts and stores tenant_id for RLS multi-tenant support
    */
   async createVCon(vcon: VCon): Promise<{ uuid: string; id: string }> {
     return withSpan('db.createVCon', async (span) => {
@@ -53,6 +55,16 @@ export class VConQueries {
       recordCounter('db.query.count', 1, {
         operation: 'createVCon',
       }, 'Database query count');
+      
+      // Extract tenant_id from vCon attachments if RLS is enabled
+      const tenantConfig = getTenantConfig();
+      let tenantId: string | null = null;
+      if (tenantConfig.enabled) {
+        tenantId = extractTenantFromVCon(vcon, tenantConfig);
+        if (tenantId) {
+          span.setAttributes({ 'tenant_id': tenantId });
+        }
+      }
       
       // Insert main vcon
       const { data: vconData, error: vconError } = await this.supabase
@@ -67,6 +79,7 @@ export class VConQueries {
           must_support: vcon.must_support,      // ✅ Added per spec
           redacted: vcon.redacted || {},
           appended: vcon.appended || {},        // ✅ Added per spec
+          tenant_id: tenantId,                  // ✅ Added for RLS multi-tenant support
         })
         .select('id, uuid')
         .single();

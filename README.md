@@ -621,6 +621,7 @@ vcon-mcp/
 - **[Query Prompts Guide](docs/guide/prompts.md)** - How to use search and retrieval prompts
 - **[Search Tools Guide](docs/guide/search.md)** - Search strategies and tools
 - **[Tag Management Guide](docs/guide/tags.md)** - Tagging and organization
+- **[RLS Multi-Tenant Guide](docs/guide/rls-multi-tenant.md)** - Row Level Security setup for multi-tenant isolation
 - **[Open Source Features](OPEN_SOURCE_FEATURES.md)** - Complete feature reference
 - **[Proprietary Features](PORPRIETARY_FEATURES.md)** - Enterprise and advanced features
 
@@ -704,11 +705,12 @@ The project uses Supabase with a carefully designed schema:
 
 - **8 tables** for vCon data model
 - **25 indexes** for query performance
-- **Row Level Security** for multi-tenancy
+- **Row Level Security** for multi-tenancy (configurable tenant extraction from attachments)
 - **pgvector** for semantic search
 - **Realtime** subscriptions enabled
 
 See [BUILD_GUIDE.md](BUILD_GUIDE.md) for complete database setup instructions.
+See [RLS Multi-Tenant Guide](docs/guide/rls-multi-tenant.md) for enabling multi-tenant isolation.
 
 ## IETF vCon Specification Compliance
 
@@ -804,7 +806,7 @@ const results = await searchVCons({
 
 ### Phase 3: Enterprise Features 📋
 
-- [ ] Multi-tenant support
+- [X] Multi-tenant support (RLS with configurable tenant extraction)
 - [ ] Advanced privacy controls
 - [ ] Audit logging
 - [ ] Performance optimization

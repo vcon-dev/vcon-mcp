@@ -82,6 +82,52 @@ VCON_OFFLINE_MODE=false
 
 See [Plugin Development Guide](../development/plugins.md) for creating plugins.
 
+#### Row Level Security (RLS) Multi-Tenant Support
+
+Enable Row Level Security for multi-tenant data isolation:
+
+```bash
+# Enable RLS (default: false)
+RLS_ENABLED=true
+
+# Tenant extraction configuration
+# Attachment type to look for (default: "tenant")
+TENANT_ATTACHMENT_TYPE=tenant
+
+# JSON path to extract tenant ID from attachment body (default: "id")
+# Supports dot notation for nested paths (e.g., "metadata.tenant.id")
+TENANT_JSON_PATH=id
+
+# Current tenant ID for service role operations (optional)
+# Used when service role needs to operate in a specific tenant context
+CURRENT_TENANT_ID=1124
+```
+
+**How it works:**
+- When creating a vCon, the system looks for an attachment with `type="tenant"` (or your configured type)
+- Extracts the tenant ID from the attachment's `body` JSON using the configured path
+- Stores the tenant ID in the `vcons.tenant_id` column
+- RLS policies automatically filter queries to only show vCons matching the current tenant
+
+**Example tenant attachment:**
+```json
+{
+  "type": "tenant",
+  "body": "{\"id\": 1124}",
+  "encoding": "json"
+}
+```
+
+**For authenticated users:**
+- Tenant ID should be set in JWT claims as `tenant_id`
+- Supabase automatically provides this via `request.jwt.claims`
+
+**For service role:**
+- Set `CURRENT_TENANT_ID` environment variable
+- Or configure in Supabase app settings
+
+See [RLS Multi-Tenant Guide](rls-multi-tenant.md) for complete setup instructions.
+
 #### Logging and Debugging
 
 ```bash
@@ -243,7 +289,10 @@ rename-command SHUTDOWN SHUTDOWN_SECRET_NAME
 ### Supabase Security
 
 1. **Enable Row Level Security (RLS)**: Restrict access per user/tenant
+   - See [RLS Multi-Tenant Guide](rls-multi-tenant.md) for setup
+   - Configure `RLS_ENABLED=true` and tenant extraction settings
 2. **Use JWT authentication**: For multi-tenant applications
+   - Include `tenant_id` in JWT claims for automatic tenant filtering
 3. **Enable realtime authorization**: Control who can subscribe to changes
 4. **Set up database policies**: Enforce business logic at database level
 5. **Monitor API usage**: Track requests in Supabase dashboard

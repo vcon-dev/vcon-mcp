@@ -15,6 +15,15 @@
  *   REMOTE_SUPABASE_URL=https://ijuooeoejxyjmoxrwgzg.supabase.co \
  *   REMOTE_SUPABASE_KEY=your_remote_key \
  *   npx tsx scripts/migrate-to-remote.ts
+ * 
+ * Environment Variables for Performance Tuning:
+ *   EXPORT_BATCH_SIZE    Batch size for exporting vCons (default: 100)
+ *   IMPORT_BATCH_SIZE    Batch size for importing vCons (default: 100)
+ *                        Can increase to 200-500 for very large datasets
+ * 
+ * Examples:
+ *   # Use larger batches for faster migration
+ *   IMPORT_BATCH_SIZE=200 EXPORT_BATCH_SIZE=150 npm run migrate:remote
  */
 
 import dotenv from 'dotenv';
@@ -101,7 +110,8 @@ async function exportAllVCons(sourceSupabase: SupabaseClient, sourceQueries: VCo
   
   // Export each vCon with full data
   const vcons: VCon[] = [];
-  const exportBatchSize = 50;
+  // Larger batch size for export since we're just reading data
+  const exportBatchSize = parseInt(process.env.EXPORT_BATCH_SIZE || '100');
   
   for (let i = 0; i < allVconRows.length; i += exportBatchSize) {
     const batch = allVconRows.slice(i, i + exportBatchSize);
@@ -218,7 +228,11 @@ async function importVCons(
     errors: []
   };
   
-  const batchSize = 50;
+  // Larger batch size for import - can handle more concurrent operations
+  // Default to 100, but can be increased to 200-500 for very large migrations
+  const batchSize = parseInt(process.env.IMPORT_BATCH_SIZE || '100');
+  
+  console.log(`   Using batch size: ${batchSize} vCons per batch\n`);
   
   for (let i = 0; i < vcons.length; i += batchSize) {
     const batch = vcons.slice(i, i + batchSize);
