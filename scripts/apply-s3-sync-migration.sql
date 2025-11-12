@@ -1,5 +1,10 @@
 -- S3 Sync Tracking Table and Helper Functions
--- Run this in Supabase Dashboard → SQL Editor
+-- 
+-- NOTE: This script duplicates the migration in supabase/migrations/20251110132000_s3_sync_tracking.sql
+-- Only use this script if you need to manually apply the migration (e.g., in Supabase Dashboard SQL Editor)
+-- For normal development, the migration will be applied automatically via Supabase CLI
+--
+-- Run this in Supabase Dashboard → SQL Editor if needed
 
 -- Create sync tracking table
 CREATE TABLE IF NOT EXISTS s3_sync_tracking (

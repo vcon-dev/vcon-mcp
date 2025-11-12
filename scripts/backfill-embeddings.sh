@@ -9,8 +9,16 @@ set -e
 # Configuration
 BATCH_SIZE=${1:-500}  # Default 500 items per batch
 DELAY=${2:-2}         # Default 2 seconds between batches
-ENDPOINT="${SUPABASE_URL:-http://127.0.0.1:54321}/functions/v1/embed-vcons"
-ANON_KEY="${SUPABASE_ANON_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0}"
+SUPABASE_URL="${SUPABASE_URL:-http://127.0.0.1:54321}"
+ENDPOINT="${SUPABASE_URL}/functions/v1/embed-vcons"
+ANON_KEY="${SUPABASE_ANON_KEY}"
+
+# Check if ANON_KEY is set
+if [ -z "$ANON_KEY" ]; then
+  echo "❌ Error: SUPABASE_ANON_KEY environment variable is required"
+  echo "Usage: SUPABASE_ANON_KEY=your_key ./scripts/backfill-embeddings.sh [batch_size] [delay_seconds]"
+  exit 1
+fi
 
 echo "🚀 Starting embedding backfill..."
 echo "   Batch size: $BATCH_SIZE"

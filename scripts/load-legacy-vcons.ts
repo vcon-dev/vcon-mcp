@@ -64,6 +64,12 @@
  *   SUPABASE_SERVICE_ROLE_KEY Service role key for admin operations
  *   REDIS_URL                 Redis connection URL (optional)
  * 
+ * Environment Variables (RLS / Multi-Tenant):
+ *   RLS_ENABLED               Enable Row Level Security (set to 'true' to enable)
+ *   TENANT_ATTACHMENT_TYPE    Attachment type containing tenant info (default: 'tenant')
+ *   TENANT_JSON_PATH          JSON path to tenant ID in attachment (default: 'id')
+ *                             Example: 'id' for body.id, 'tenant.id' for body.tenant.id
+ * 
  * Examples:
  *   # Import recent vCons from S3 (default - last 24 hours)
  *   npx tsx scripts/load-legacy-vcons.ts
@@ -107,6 +113,7 @@ import { getSupabaseClient } from '../dist/db/client.js';
 import { VConQueries } from '../dist/db/queries.js';
 import { VCon } from '../dist/types/vcon.js';
 import { createClient } from 'redis';
+import { getTenantConfig, extractTenantFromVCon } from '../src/config/tenant-config.js';
 
 /**
  * Test database connection and provide helpful error messages
@@ -172,6 +179,10 @@ interface LoadStats {
   skipped: number;
   /** Number of vCons that required migration to spec 0.3.0 */
   migrated: number;
+  /** Number of vCons with tenant_id assigned (RLS) */
+  withTenant: number;
+  /** Number of vCons without tenant_id (RLS) */
+  withoutTenant: number;
   /** Array of error details for failed loads */
   errors: Array<{ file: string; error: string }>;
 }
@@ -605,7 +616,7 @@ async function processVConFile(
   queries: VConQueries, 
   options: ProcessingOptions,
   uuidTracker: UUIDTracker
-): Promise<{ success: boolean; migrated: boolean; skipped: boolean; error?: string }> {
+): Promise<{ success: boolean; migrated: boolean; skipped: boolean; hasTenant: boolean; error?: string }> {
   const filename = filepath.split('/').pop() || filepath;
   const retryAttempts = options.retryAttempts || 3;
   const retryDelay = options.retryDelay || 1000;
@@ -618,14 +629,14 @@ async function processVConFile(
 
       // Validate vCon has required fields
       if (!rawVcon.uuid) {
-        return { success: false, migrated: false, skipped: false, error: 'Missing UUID field' };
+        return { success: false, migrated: false, skipped: false, hasTenant: false, error: 'Missing UUID field' };
       }
 
       // Check if vCon already exists using UUID tracker (much faster than DB query)
       if (!options.dryRun) {
         const alreadyExists = await uuidTracker.hasUUID(rawVcon.uuid);
         if (alreadyExists) {
-          return { success: true, migrated: false, skipped: true };
+          return { success: true, migrated: false, skipped: true, hasTenant: false };
         }
       }
 
@@ -640,6 +651,10 @@ async function processVConFile(
         vcon = migrateVCon(rawVcon);
       }
 
+      // Check tenant_id extraction (for RLS) before loading
+      const tenantConfig = getTenantConfig();
+      const hasTenant = tenantConfig.enabled && extractTenantFromVCon(vcon, tenantConfig) !== null;
+
       // Load vCon into database (skip if dry run)
       if (!options.dryRun) {
         await queries.createVCon(vcon);
@@ -647,7 +662,7 @@ async function processVConFile(
         await uuidTracker.addUUID(vcon.uuid);
       }
 
-      return { success: true, migrated: needsMigration, skipped: false };
+      return { success: true, migrated: needsMigration, skipped: false, hasTenant };
     } catch (error) {
       // Improved error message extraction for Supabase errors
       let errorMsg: string;
@@ -683,11 +698,11 @@ async function processVConFile(
         detailedError = `${error.code}: ${errorMsg}`;
       }
       
-      return { success: false, migrated: false, skipped: false, error: detailedError };
+      return { success: false, migrated: false, skipped: false, hasTenant: false, error: detailedError };
     }
   }
   
-  return { success: false, migrated: false, skipped: false, error: 'Max retry attempts exceeded' };
+  return { success: false, migrated: false, skipped: false, hasTenant: false, error: 'Max retry attempts exceeded' };
 }
 
 /**
@@ -710,6 +725,12 @@ async function processBatch(
         stats.successful++;
         if (result.migrated) {
           stats.migrated++;
+        }
+        // Track tenant assignment for RLS
+        if (result.hasTenant) {
+          stats.withTenant++;
+        } else {
+          stats.withoutTenant++;
         }
       }
     } else {
@@ -756,6 +777,8 @@ async function loadVConsFromDirectory(directoryPath: string | undefined, options
     failed: 0,
     skipped: 0,
     migrated: 0,
+    withTenant: 0,
+    withoutTenant: 0,
     errors: []
   };
 
@@ -843,6 +866,33 @@ async function loadVConsFromDirectory(directoryPath: string | undefined, options
       await Promise.all(batchPromises);
     }
 
+    // Backfill tenant_id if RLS is enabled and we have vCons without tenant_id
+    const tenantConfig = getTenantConfig();
+    if (tenantConfig.enabled && stats.successful > 0) {
+      console.log('\n🔐 Backfilling tenant_id for loaded vCons...');
+      try {
+        const { data: backfillResults, error: backfillError } = await supabase.rpc('populate_tenant_ids_batch', {
+          p_attachment_type: tenantConfig.attachmentType,
+          p_json_path: tenantConfig.jsonPath,
+          p_batch_size: Math.max(1000, stats.successful)
+        });
+        
+        if (backfillError) {
+          console.log(`   ⚠️  Backfill failed: ${backfillError.message}`);
+        } else if (backfillResults && backfillResults.length > 0) {
+          const backfilled = backfillResults.filter((r: any) => r.updated && r.tenant_id).length;
+          if (backfilled > 0) {
+            console.log(`   ✅ Backfilled tenant_id for ${backfilled} vCons`);
+            // Update stats
+            stats.withTenant += backfilled;
+            stats.withoutTenant = Math.max(0, stats.withoutTenant - backfilled);
+          }
+        }
+      } catch (error: any) {
+        console.log(`   ⚠️  Backfill error: ${error.message}`);
+      }
+    }
+    
     // Print summary
     console.log('\n' + '='.repeat(60));
     console.log('📊 LOAD SUMMARY');
@@ -852,6 +902,20 @@ async function loadVConsFromDirectory(directoryPath: string | undefined, options
     console.log(`🔄 Migrated:      ${stats.migrated} (upgraded to spec 0.3.0)`);
     console.log(`⏭️  Skipped:       ${stats.skipped} (already in database)`);
     console.log(`❌ Failed:        ${stats.failed}`);
+    
+    // RLS/Tenant statistics
+    if (tenantConfig.enabled) {
+      console.log('\n🔐 RLS / Tenant Statistics:');
+      console.log(`   ✅ With tenant_id:    ${stats.withTenant}`);
+      console.log(`   ⚠️  Without tenant_id: ${stats.withoutTenant}`);
+      if (stats.withoutTenant > 0) {
+        console.log(`\n   ⚠️  WARNING: ${stats.withoutTenant} vCons loaded without tenant_id.`);
+        console.log(`      These vCons will be accessible to all tenants (tenant_id IS NULL).`);
+        console.log(`      Consider adding tenant attachments or manually setting tenant_id.`);
+        console.log(`      Tenant config: type='${tenantConfig.attachmentType}', path='${tenantConfig.jsonPath}'`);
+      }
+    }
+    
     console.log('='.repeat(60));
 
     if (stats.errors.length > 0) {
@@ -959,6 +1023,18 @@ async function main() {
   }
   
   console.log(`Database: ${supabaseUrl}\n`);
+  
+  // Check RLS configuration
+  const tenantConfig = getTenantConfig();
+  if (tenantConfig.enabled) {
+    console.log('🔐 Row Level Security (RLS): ENABLED');
+    console.log(`   Tenant attachment type: ${tenantConfig.attachmentType}`);
+    console.log(`   Tenant JSON path: ${tenantConfig.jsonPath}`);
+    console.log(`   Tenant ID will be extracted from attachments during load\n`);
+  } else {
+    console.log('🔐 Row Level Security (RLS): DISABLED');
+    console.log(`   Set RLS_ENABLED=true to enable multi-tenant support\n`);
+  }
   
   // Determine source
   const s3Bucket = process.env.VCON_S3_BUCKET;

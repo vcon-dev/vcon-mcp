@@ -42,4 +42,6 @@ logs/
 # Temporary files
 tmp/
 temp/
+temp_loaded_uuids.json
+backups/
 

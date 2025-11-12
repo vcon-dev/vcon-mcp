@@ -14,20 +14,16 @@
  * - Handles errors gracefully with detailed error messages
  * 
  * Usage:
- *   npx tsx scripts/load-vcons.ts [directory_path]
+ *   npx tsx scripts/load-vcons.ts <directory_path>
  * 
  * Arguments:
- *   directory_path  Path to directory containing .vcon files (optional)
- *                   Default: /Users/thomashowe/Downloads/31
+ *   directory_path  Path to directory containing .vcon files (required)
  * 
  * Environment Variables:
  *   SUPABASE_URL              Supabase project URL
  *   SUPABASE_SERVICE_ROLE_KEY Service role key for admin operations
  * 
  * Examples:
- *   # Load from default directory
- *   npx tsx scripts/load-vcons.ts
- * 
  *   # Load from specific directory
  *   npx tsx scripts/load-vcons.ts /path/to/vcon/files
  * 
@@ -194,11 +190,20 @@ async function loadVConsFromDirectory(directoryPath: string): Promise<LoadStats>
  * Main execution function
  * 
  * Parses command line arguments and initiates the vCon loading process.
- * Uses the first argument as the directory path, or defaults to a predefined path.
+ * Requires a directory path as the first argument.
  */
 async function main() {
   const args = process.argv.slice(2);
-  const directoryPath = args[0] || '/Users/thomashowe/Downloads/31';
+  
+  if (args.length === 0) {
+    console.error('❌ Error: Directory path is required');
+    console.error('\nUsage: npx tsx scripts/load-vcons.ts <directory_path>');
+    console.error('\nExample:');
+    console.error('  npx tsx scripts/load-vcons.ts /path/to/vcon/files');
+    process.exit(1);
+  }
+  
+  const directoryPath = args[0];
 
   console.log('🚀 vCon Loader Starting...\n');
   console.log(`Database: ${process.env.SUPABASE_URL}\n`);

@@ -6,9 +6,9 @@
 set -e
 
 # Configuration
-SUPABASE_URL="${SUPABASE_URL:-https://ijuooeoejxyjmoxrwgzg.supabase.co}"
+SUPABASE_URL="${SUPABASE_URL}"
 SERVICE_ROLE_KEY="${SUPABASE_SERVICE_ROLE_KEY}"
-API_KEY="${SUPABASE_API_KEY:-sb_publishable_Mo_CZ9Bzlr02ffxrjxPTkw_dN4m89fi}"
+API_KEY="${SUPABASE_API_KEY:-${SUPABASE_ANON_KEY}}"
 
 # Parameters
 SINCE_DAYS="${1:-7}"  # Days to go back (default: 7)
@@ -21,10 +21,22 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-# Check if SERVICE_ROLE_KEY is set
+# Check if required environment variables are set
 if [ -z "$SERVICE_ROLE_KEY" ]; then
   echo -e "${RED}Error: SUPABASE_SERVICE_ROLE_KEY environment variable is required${NC}"
   echo "Usage: SUPABASE_SERVICE_ROLE_KEY=your_key ./scripts/backfill-s3-sync.sh [days] [batch_size] [delay]"
+  exit 1
+fi
+
+if [ -z "$SUPABASE_URL" ]; then
+  echo -e "${RED}Error: SUPABASE_URL environment variable is required${NC}"
+  echo "Usage: SUPABASE_URL=your_url SUPABASE_SERVICE_ROLE_KEY=your_key ./scripts/backfill-s3-sync.sh [days] [batch_size] [delay]"
+  exit 1
+fi
+
+if [ -z "$API_KEY" ]; then
+  echo -e "${RED}Error: SUPABASE_API_KEY or SUPABASE_ANON_KEY environment variable is required${NC}"
+  echo "Usage: SUPABASE_API_KEY=your_key SUPABASE_SERVICE_ROLE_KEY=your_key ./scripts/backfill-s3-sync.sh [days] [batch_size] [delay]"
   exit 1
 fi
 
