@@ -410,6 +410,7 @@ class SupabaseStorage:
                 'url': attachment.get('url'),
                 'content_hash': attachment.get('content_hash'),
             }
+            # Upsert will use the unique constraint on (vcon_id, attachment_index)
             self.supabase.table('attachments').upsert(attachment_data).execute()
     
     # Helper methods for getting related entities
