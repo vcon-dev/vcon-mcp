@@ -404,15 +404,15 @@ Show a minimal example vCon as JSON
 
 The server exposes URI-based resources for direct reads:
 
-- `vcon://uuid/{uuid}` – full vCon JSON
-- `vcon://uuid/{uuid}/metadata` – metadata only
-- `vcon://uuid/{uuid}/parties` – parties array
-- `vcon://uuid/{uuid}/dialog` – dialog array
-- `vcon://uuid/{uuid}/dialog/{index}` – specific dialog
-- `vcon://uuid/{uuid}/attachments` – attachments array
-- `vcon://uuid/{uuid}/attachments/{index}` – specific attachment
-- `vcon://uuid/{uuid}/analysis` – analysis array
-- `vcon://uuid/{uuid}/analysis/{type}` – analysis filtered by type
+- `vcon://v1/vcons/{uuid}` – full vCon JSON
+- `vcon://v1/vcons/{uuid}/metadata` – metadata only
+- `vcon://v1/vcons/{uuid}/parties` – parties array
+- `vcon://v1/vcons/{uuid}/dialog` – dialog array
+- `vcon://v1/vcons/{uuid}/attachments` – attachments array
+- `vcon://v1/vcons/{uuid}/analysis` – analysis array
+- `vcon://v1/vcons/{uuid}/transcript` – transcript analysis (filtered)
+- `vcon://v1/vcons/{uuid}/summary` – summary analysis (filtered)
+- `vcon://v1/vcons/{uuid}/tags` – tags as object (parsed)
 
 ## Use Cases
 
@@ -840,7 +840,7 @@ export function getCoreResources(): ResourceDescriptor[] {
   return [
     // ... existing resources ...
     {
-      uri: 'vcon://analytics/summary',
+      uri: 'vcon://v1/analytics/summary',
       name: 'Analytics Summary',
       description: 'Overall conversation analytics',
       mimeType: 'application/json'

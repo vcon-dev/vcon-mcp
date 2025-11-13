@@ -3,6 +3,10 @@
 -- cleans up orphaned records, and verifies indexes
 -- Optimized for large datasets to avoid timeouts
 
+-- Suppress NOTICE messages for cleaner output (IF NOT EXISTS generates notices)
+-- Note: RAISE NOTICE statements in DO blocks will still show as they're intentional
+SET client_min_messages TO WARNING;
+
 -- Step 1: Ensure indexes exist first for performance
 CREATE INDEX IF NOT EXISTS idx_attachments_vcon ON attachments(vcon_id);
 CREATE INDEX IF NOT EXISTS idx_vcons_id ON vcons(id) WHERE id IS NOT NULL;

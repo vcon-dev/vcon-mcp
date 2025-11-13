@@ -1743,17 +1743,17 @@ Clean up malformed or deprecated tags.
 ### 4.7 Tag Resources (MCP URI Access)
 
 ```typescript
-"vcon://uuid/{uuid}/tags": {
+"vcon://v1/vcons/{uuid}/tags": {
   description: "Get all tags for a vCon";
   mimeType: "application/json";
 }
 
-"vcon://uuid/{uuid}/tags/{key}": {
+"vcon://v1/vcons/{uuid}/tags/{key}": {
   description: "Get specific tag value";
   mimeType: "application/json";
 }
 
-"vcon://tags/search": {
+"vcon://v1/tags/search": {
   description: "Search vCons by tags";
   mimeType: "application/json";
   parameters: {
@@ -1762,12 +1762,12 @@ Clean up malformed or deprecated tags.
   };
 }
 
-"vcon://tags/keys": {
+"vcon://v1/tags/keys": {
   description: "List all unique tag keys";
   mimeType: "application/json";
 }
 
-"vcon://tags/stats": {
+"vcon://v1/tags/stats": {
   description: "Tag usage statistics";
   mimeType: "application/json";
   parameters: {
@@ -1775,7 +1775,7 @@ Clean up malformed or deprecated tags.
   };
 }
 
-"vcon://tags/templates": {
+"vcon://v1/tags/templates": {
   description: "List tag templates";
   mimeType: "application/json";
 }

@@ -107,10 +107,10 @@ Get the vCon with UUID abc-123-def-456
 Show me the 10 most recent vCons
 ```
 
-Or use the `vcon://recent` resource:
+Or use the `vcon://v1/vcons/recent` resource:
 
 ```
-Read the vcon://recent resource
+Read the vcon://v1/vcons/recent resource
 ```
 
 #### Get Specific Fields
@@ -120,10 +120,14 @@ Show me just the parties from vCon abc-123
 ```
 
 Use resources:
-- `vcon://uuid/{uuid}/parties` - Just parties
-- `vcon://uuid/{uuid}/dialog` - Just dialog
-- `vcon://uuid/{uuid}/analysis` - Just analysis
-- `vcon://uuid/{uuid}/metadata` - Just metadata
+- `vcon://v1/vcons/{uuid}/parties` - Just parties
+- `vcon://v1/vcons/{uuid}/dialog` - Just dialog
+- `vcon://v1/vcons/{uuid}/analysis` - Just analysis
+- `vcon://v1/vcons/{uuid}/attachments` - Just attachments
+- `vcon://v1/vcons/{uuid}/metadata` - Just metadata
+- `vcon://v1/vcons/{uuid}/transcript` - Transcript analysis (derived)
+- `vcon://v1/vcons/{uuid}/summary` - Summary analysis (derived)
+- `vcon://v1/vcons/{uuid}/tags` - Tags as object (derived)
 
 ---
 
@@ -533,22 +537,26 @@ What vCon resources are available?
 
 | Resource | Purpose | Example |
 |----------|---------|---------|
-| `vcon://recent` | 10 most recent vCons | Full vCon objects |
-| `vcon://recent/25` | Recent with custom limit | Max 100 |
-| `vcon://uuid/{uuid}` | Specific vCon | Complete vCon |
-| `vcon://uuid/{uuid}/metadata` | Just metadata | Without dialog/analysis |
-| `vcon://uuid/{uuid}/parties` | Just parties | Array of parties |
-| `vcon://uuid/{uuid}/dialog` | All dialog | Array of dialog objects |
-| `vcon://uuid/{uuid}/analysis` | All analysis | Array of analysis objects |
+| `vcon://v1/vcons/recent` | 10 most recent vCons | Full vCon objects |
+| `vcon://v1/vcons/recent/25` | Recent with custom limit | Max 100 |
+| `vcon://v1/vcons/{uuid}` | Specific vCon | Complete vCon |
+| `vcon://v1/vcons/{uuid}/metadata` | Just metadata | Without dialog/analysis |
+| `vcon://v1/vcons/{uuid}/parties` | Just parties | Array of parties |
+| `vcon://v1/vcons/{uuid}/dialog` | All dialog | Array of dialog objects |
+| `vcon://v1/vcons/{uuid}/analysis` | All analysis | Array of analysis objects |
+| `vcon://v1/vcons/{uuid}/attachments` | All attachments | Array of attachment objects |
+| `vcon://v1/vcons/{uuid}/transcript` | Transcript analysis | Filtered analysis array |
+| `vcon://v1/vcons/{uuid}/summary` | Summary analysis | Filtered analysis array |
+| `vcon://v1/vcons/{uuid}/tags` | Tags | Parsed tags object |
 
 ### Using Resources
 
 ```
-Read vcon://recent
+Read vcon://v1/vcons/recent
 ```
 
 ```
-Read vcon://uuid/abc-123-def/parties
+Read vcon://v1/vcons/abc-123-def/parties
 ```
 
 Resources are faster than tools for simple reads.

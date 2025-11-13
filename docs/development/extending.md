@@ -87,7 +87,7 @@ A resource consists of:
 
 ```typescript
 interface Resource {
-  uri: string;              // Unique identifier (e.g., "vcon://stats")
+  uri: string;              // Unique identifier (e.g., "vcon://v1/statistics")
   name: string;             // Display name
   description: string;      // What data it provides
   mimeType: string;         // Content type (usually "application/json")
@@ -106,13 +106,13 @@ export function getCoreResources(): ResourceDescriptor[] {
     // ... existing resources ...
     
     {
-      uri: 'vcon://statistics',
+      uri: 'vcon://v1/statistics',
       name: 'vCon Statistics',
       description: 'Overall statistics about all vCons in the database',
       mimeType: 'application/json'
     },
     {
-      uri: 'vcon://statistics/daily',
+      uri: 'vcon://v1/statistics/daily',
       name: 'Daily Statistics',
       description: 'vCon creation statistics grouped by day',
       mimeType: 'application/json'
@@ -132,7 +132,7 @@ export async function resolveCoreResource(
 ): Promise<{ mimeType: string; content: any } | undefined> {
   
   // Handle your custom resource
-  if (uri === 'vcon://statistics') {
+  if (uri === 'vcon://v1/statistics') {
     const stats = await queries.getOverallStatistics();
     return {
       mimeType: 'application/json',
@@ -148,7 +148,7 @@ export async function resolveCoreResource(
     };
   }
   
-  if (uri === 'vcon://statistics/daily') {
+  if (uri === 'vcon://v1/statistics/daily') {
     const dailyStats = await queries.getDailyStatistics();
     return {
       mimeType: 'application/json',
@@ -198,9 +198,9 @@ Resources can include parameters in the URI:
 ```typescript
 // Resource definition
 {
-  uri: 'vcon://statistics/period/{days}',
+  uri: 'vcon://v1/statistics/period/{days}',
   name: 'Period Statistics',
-  description: 'Statistics for last N days. Use vcon://statistics/period/7 for last 7 days.',
+  description: 'Statistics for last N days. Use vcon://v1/statistics/period/7 for last 7 days.',
   mimeType: 'application/json'
 }
 
@@ -216,7 +216,7 @@ if (matchPeriod) {
 ### Resource Best Practices
 
 1. **Use Clear URI Schemes**
-   - Good: `vcon://analytics/sentiment`
+   - Good: `vcon://v1/analytics/sentiment`
    - Bad: `vcon://thing1`
 
 2. **Document Parameter Formats**
@@ -717,7 +717,7 @@ A complete analytics extension with resources, prompts, and tools.
 export function getAnalyticsResources(): ResourceDescriptor[] {
   return [
     {
-      uri: 'vcon://analytics/overview',
+      uri: 'vcon://v1/analytics/overview',
       name: 'Analytics Overview',
       description: 'High-level analytics overview',
       mimeType: 'application/json'
@@ -730,7 +730,7 @@ export async function resolveAnalyticsResource(
   uri: string
 ): Promise<{ mimeType: string; content: any } | undefined> {
   
-  if (uri === 'vcon://analytics/overview') {
+  if (uri === 'vcon://v1/analytics/overview') {
     const stats = await queries.getAnalyticsOverview();
     return {
       mimeType: 'application/json',
@@ -1252,8 +1252,8 @@ npm start
 ### 1. Naming Conventions
 
 **Resources:**
-- Use clear URI schemes: `vcon://`, `analytics://`, `customer://`
-- Include parameters in description: `customer://profile/{email}`
+- Use versioned URI schemes: `vcon://v1/...`, `analytics://v1/...`, `customer://v1/...`
+- Include parameters in description: `customer://v1/profile/{email}`
 - Keep URIs short and memorable
 
 **Prompts:**

@@ -52,14 +52,14 @@ Want to extend the server?
 ```typescript
 // 1. Define resource
 {
-  uri: 'vcon://stats',
+  uri: 'vcon://v1/stats',
   name: 'Statistics',
   description: 'Overall vCon statistics',
   mimeType: 'application/json'
 }
 
 // 2. Handle resolution
-if (uri === 'vcon://stats') {
+if (uri === 'vcon://v1/stats') {
   return {
     mimeType: 'application/json',
     content: { total: 100, recent: 10 }
@@ -329,7 +329,7 @@ export default class AuditPlugin implements VConPlugin {
 ### Pattern 1: Analytics Dashboard
 
 ```
-Resource: vcon://analytics/summary
+Resource: vcon://v1/analytics/summary
   └─> Quick stats display
 
 Tools: 
@@ -416,7 +416,7 @@ npm run test:console
 
 # Access resource
 resources/list
-resources/read vcon://stats
+resources/read vcon://v1/stats
 ```
 
 ### Test Tools

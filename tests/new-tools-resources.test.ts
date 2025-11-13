@@ -49,13 +49,20 @@ describe('Resources Endpoint Tests', () => {
     it('should return all expected core resources', () => {
       const resources = getCoreResources();
 
-      expect(resources).toHaveLength(5);
+      expect(resources).toHaveLength(12);
       expect(resources.map(r => r.uri)).toEqual([
-        'vcon://recent',
-        'vcon://recent/ids',
-        'vcon://list/ids',
-        'vcon://uuid/{uuid}',
-        'vcon://uuid/{uuid}/metadata',
+        'vcon://v1/vcons/recent',
+        'vcon://v1/vcons/recent/ids',
+        'vcon://v1/vcons/ids',
+        'vcon://v1/vcons/{uuid}',
+        'vcon://v1/vcons/{uuid}/metadata',
+        'vcon://v1/vcons/{uuid}/parties',
+        'vcon://v1/vcons/{uuid}/dialog',
+        'vcon://v1/vcons/{uuid}/analysis',
+        'vcon://v1/vcons/{uuid}/attachments',
+        'vcon://v1/vcons/{uuid}/transcript',
+        'vcon://v1/vcons/{uuid}/summary',
+        'vcon://v1/vcons/{uuid}/tags',
       ]);
     });
 
@@ -74,9 +81,9 @@ describe('Resources Endpoint Tests', () => {
       });
     });
 
-    it('should include vcon://uuid/{uuid} resource', () => {
+    it('should include vcon://v1/vcons/{uuid} resource', () => {
       const resources = getCoreResources();
-      const uuidResource = resources.find(r => r.uri === 'vcon://uuid/{uuid}');
+      const uuidResource = resources.find(r => r.uri === 'vcon://v1/vcons/{uuid}');
 
       expect(uuidResource).toBeDefined();
       expect(uuidResource?.name).toBe('Get vCon by UUID');
@@ -96,7 +103,7 @@ describe('Resources Endpoint Tests', () => {
 
       vi.spyOn(queries, 'searchVCons').mockResolvedValue(mockVCons);
 
-      const result = await resolveCoreResource(queries, 'vcon://recent');
+      const result = await resolveCoreResource(queries, 'vcon://v1/vcons/recent');
 
       expect(result).toBeDefined();
       expect(result?.mimeType).toBe('application/json');
@@ -118,7 +125,7 @@ describe('Resources Endpoint Tests', () => {
 
       vi.spyOn(queries, 'searchVCons').mockResolvedValue(mockVCons);
 
-      const result = await resolveCoreResource(queries, 'vcon://recent/25');
+      const result = await resolveCoreResource(queries, 'vcon://v1/vcons/recent/25');
 
       expect(result).toBeDefined();
       expect(result?.content).toHaveProperty('limit', 25);
@@ -129,7 +136,7 @@ describe('Resources Endpoint Tests', () => {
     it('should enforce max limit of 100', async () => {
       vi.spyOn(queries, 'searchVCons').mockResolvedValue([]);
 
-      resolveCoreResource(queries, 'vcon://recent/200');
+      resolveCoreResource(queries, 'vcon://v1/vcons/recent/200');
 
       expect(queries.searchVCons).toHaveBeenCalledWith({ limit: 100 });
     });
@@ -137,7 +144,7 @@ describe('Resources Endpoint Tests', () => {
     it('should handle empty results', async () => {
       vi.spyOn(queries, 'searchVCons').mockResolvedValue([]);
 
-      const result = await resolveCoreResource(queries, 'vcon://recent');
+      const result = await resolveCoreResource(queries, 'vcon://v1/vcons/recent');
 
       expect(result).toBeDefined();
       expect(result?.content).toHaveProperty('count', 0);
@@ -157,7 +164,7 @@ describe('Resources Endpoint Tests', () => {
 
       vi.spyOn(queries, 'searchVCons').mockResolvedValue(mockVCons);
 
-      const result = await resolveCoreResource(queries, 'vcon://recent/ids');
+      const result = await resolveCoreResource(queries, 'vcon://v1/vcons/recent/ids');
 
       expect(result).toBeDefined();
       expect(result?.mimeType).toBe('application/json');
@@ -188,7 +195,7 @@ describe('Resources Endpoint Tests', () => {
 
       vi.spyOn(queries, 'searchVCons').mockResolvedValue(mockVCons);
 
-      const result = await resolveCoreResource(queries, 'vcon://recent/ids/50');
+      const result = await resolveCoreResource(queries, 'vcon://v1/vcons/recent/ids/50');
 
       expect(result).toBeDefined();
       expect(result?.content).toHaveProperty('limit', 50);
@@ -199,7 +206,7 @@ describe('Resources Endpoint Tests', () => {
     it('should enforce max limit of 100 for recent IDs', async () => {
       vi.spyOn(queries, 'searchVCons').mockResolvedValue([]);
 
-      resolveCoreResource(queries, 'vcon://recent/ids/200');
+      resolveCoreResource(queries, 'vcon://v1/vcons/recent/ids/200');
 
       expect(queries.searchVCons).toHaveBeenCalledWith({ limit: 100 });
     });
@@ -217,7 +224,7 @@ describe('Resources Endpoint Tests', () => {
 
       vi.spyOn(queries, 'searchVCons').mockResolvedValue(mockVCons);
 
-      const result = await resolveCoreResource(queries, 'vcon://list/ids');
+      const result = await resolveCoreResource(queries, 'vcon://v1/vcons/ids');
 
       expect(result).toBeDefined();
       expect(result?.content).toHaveProperty('count', 100);
@@ -239,7 +246,7 @@ describe('Resources Endpoint Tests', () => {
 
       vi.spyOn(queries, 'searchVCons').mockResolvedValue(mockVCons);
 
-      const result = await resolveCoreResource(queries, 'vcon://list/ids/500');
+      const result = await resolveCoreResource(queries, 'vcon://v1/vcons/ids/500');
 
       expect(result).toBeDefined();
       expect(result?.content).toHaveProperty('limit', 500);
@@ -249,7 +256,7 @@ describe('Resources Endpoint Tests', () => {
     it('should enforce max limit of 1000', async () => {
       vi.spyOn(queries, 'searchVCons').mockResolvedValue([]);
 
-      resolveCoreResource(queries, 'vcon://list/ids/2000');
+      resolveCoreResource(queries, 'vcon://v1/vcons/ids/2000');
 
       expect(queries.searchVCons).toHaveBeenCalledWith({ limit: 1001 }); // Fetch one extra
     });
@@ -266,7 +273,7 @@ describe('Resources Endpoint Tests', () => {
 
       vi.spyOn(queries, 'searchVCons').mockResolvedValue(mockVCons);
 
-      const result = await resolveCoreResource(queries, 'vcon://list/ids/100');
+      const result = await resolveCoreResource(queries, 'vcon://v1/vcons/ids/100');
 
       expect(result).toBeDefined();
       expect(result?.content).toHaveProperty('has_more', true);
@@ -287,7 +294,7 @@ describe('Resources Endpoint Tests', () => {
 
       vi.spyOn(queries, 'searchVCons').mockResolvedValue(mockVCons);
 
-      const result = await resolveCoreResource(queries, `vcon://list/ids/50/after/${encodeURIComponent(afterTimestamp)}`);
+      const result = await resolveCoreResource(queries, `vcon://v1/vcons/ids/50/after/${encodeURIComponent(afterTimestamp)}`);
 
       expect(result).toBeDefined();
       expect(queries.searchVCons).toHaveBeenCalledWith({
@@ -307,7 +314,7 @@ describe('Resources Endpoint Tests', () => {
 
       vi.spyOn(queries, 'searchVCons').mockResolvedValue(mockVCons);
 
-      const result = await resolveCoreResource(queries, 'vcon://list/ids/100');
+      const result = await resolveCoreResource(queries, 'vcon://v1/vcons/ids/100');
 
       expect(result).toBeDefined();
       expect(result?.content).toHaveProperty('has_more', false);
@@ -339,7 +346,7 @@ describe('Resources Endpoint Tests', () => {
     it('should return full vCon by UUID', async () => {
       vi.spyOn(queries, 'getVCon').mockResolvedValue(mockVCon);
 
-      const result = await resolveCoreResource(queries, `vcon://uuid/${testUuid}`);
+      const result = await resolveCoreResource(queries, `vcon://v1/vcons/${testUuid}`);
 
       expect(result).toBeDefined();
       expect(result?.mimeType).toBe('application/json');
@@ -350,7 +357,7 @@ describe('Resources Endpoint Tests', () => {
     it('should return full vCon by UUID with trailing slash', async () => {
       vi.spyOn(queries, 'getVCon').mockResolvedValue(mockVCon);
 
-      const result = await resolveCoreResource(queries, `vcon://uuid/${testUuid}/`);
+      const result = await resolveCoreResource(queries, `vcon://v1/vcons/${testUuid}/`);
 
       expect(result).toBeDefined();
       expect(result?.content).toEqual(mockVCon);
@@ -359,7 +366,7 @@ describe('Resources Endpoint Tests', () => {
     it('should return metadata only for metadata endpoint', async () => {
       vi.spyOn(queries, 'getVCon').mockResolvedValue(mockVCon);
 
-      const result = await resolveCoreResource(queries, `vcon://uuid/${testUuid}/metadata`);
+      const result = await resolveCoreResource(queries, `vcon://v1/vcons/${testUuid}/metadata`);
 
       expect(result).toBeDefined();
       expect(result?.mimeType).toBe('application/json');
@@ -376,7 +383,7 @@ describe('Resources Endpoint Tests', () => {
     it('should return undefined for invalid UUID format', async () => {
       vi.spyOn(queries, 'getVCon');
       
-      const result = await resolveCoreResource(queries, 'vcon://uuid/invalid-uuid');
+      const result = await resolveCoreResource(queries, 'vcon://v1/vcons/invalid-uuid');
 
       expect(result).toBeUndefined();
       expect(queries.getVCon).not.toHaveBeenCalled();
@@ -385,7 +392,7 @@ describe('Resources Endpoint Tests', () => {
     it('should return undefined for unsupported UUID suffix', async () => {
       vi.spyOn(queries, 'getVCon').mockResolvedValue(mockVCon);
 
-      const result = await resolveCoreResource(queries, `vcon://uuid/${testUuid}/unsupported`);
+      const result = await resolveCoreResource(queries, `vcon://v1/vcons/${testUuid}/unsupported`);
 
       expect(result).toBeUndefined();
     });
@@ -393,7 +400,7 @@ describe('Resources Endpoint Tests', () => {
 
   describe('resolveCoreResource - Error Cases', () => {
     it('should return undefined for unknown URI', async () => {
-      const result = await resolveCoreResource(queries, 'vcon://unknown/resource');
+      const result = await resolveCoreResource(queries, 'vcon://v1/unknown/resource');
 
       expect(result).toBeUndefined();
     });
@@ -408,7 +415,7 @@ describe('Resources Endpoint Tests', () => {
       vi.spyOn(queries, 'searchVCons').mockRejectedValue(new Error('Database error'));
 
       await expect(
-        resolveCoreResource(queries, 'vcon://recent')
+        resolveCoreResource(queries, 'vcon://v1/vcons/recent')
       ).rejects.toThrow('Database error');
     });
 
@@ -417,7 +424,7 @@ describe('Resources Endpoint Tests', () => {
       vi.spyOn(queries, 'getVCon').mockRejectedValue(new Error('vCon not found'));
 
       await expect(
-        resolveCoreResource(queries, `vcon://uuid/${testUuid}`)
+        resolveCoreResource(queries, `vcon://v1/vcons/${testUuid}`)
       ).rejects.toThrow('vCon not found');
     });
   });
@@ -435,8 +442,8 @@ describe('Resources Endpoint Tests', () => {
       vi.spyOn(queries, 'searchVCons').mockResolvedValue([mockVCon]);
       vi.spyOn(queries, 'getVCon').mockResolvedValue(mockVCon);
 
-      const recentResult = await resolveCoreResource(queries, 'vcon://recent');
-      const uuidResult = await resolveCoreResource(queries, 'vcon://uuid/123e4567-e89b-12d3-a456-426614174000');
+      const recentResult = await resolveCoreResource(queries, 'vcon://v1/vcons/recent');
+      const uuidResult = await resolveCoreResource(queries, 'vcon://v1/vcons/123e4567-e89b-12d3-a456-426614174000');
 
       expect(recentResult?.mimeType).toBe('application/json');
       expect(uuidResult?.mimeType).toBe('application/json');
@@ -453,10 +460,249 @@ describe('Resources Endpoint Tests', () => {
 
       vi.spyOn(queries, 'getVCon').mockResolvedValue(mockVCon);
 
-      const result = await resolveCoreResource(queries, 'vcon://uuid/123e4567-e89b-12d3-a456-426614174000');
+      const result = await resolveCoreResource(queries, 'vcon://v1/vcons/123e4567-e89b-12d3-a456-426614174000');
 
       // Should be able to JSON.stringify without errors
       expect(() => JSON.stringify(result?.content)).not.toThrow();
+    });
+  });
+
+  describe('Subresource endpoints', () => {
+    const testUuid = '123e4567-e89b-12d3-a456-426614174000';
+    const mockVCon: VCon = {
+      vcon: '0.3.0',
+      uuid: testUuid,
+      created_at: new Date().toISOString(),
+      subject: 'Test vCon',
+      parties: [
+        { name: 'Alice', mailto: 'alice@example.com' },
+        { name: 'Bob', tel: '+1-555-1234' }
+      ],
+      dialog: [
+        { type: 'text', start: '2024-01-01T10:00:00Z', parties: [0, 1], body: 'Hello' }
+      ],
+      analysis: [
+        { type: 'sentiment', vendor: 'TestVendor', body: '{"score": 0.8}' },
+        { type: 'summary', vendor: 'TestVendor', body: 'Test summary' }
+      ],
+      attachments: [
+        { type: 'tags', encoding: 'json', body: '["key1:value1", "key2:value2"]' },
+        { type: 'document', filename: 'test.pdf' }
+      ]
+    };
+
+    it('should return parties subresource', async () => {
+      vi.spyOn(queries, 'getVCon').mockResolvedValue(mockVCon);
+
+      const result = await resolveCoreResource(queries, `vcon://v1/vcons/${testUuid}/parties`);
+
+      expect(result).toBeDefined();
+      expect(result?.mimeType).toBe('application/json');
+      expect(result?.content).toHaveProperty('parties');
+      expect(result?.content.parties).toHaveLength(2);
+      expect(result?.content.parties[0]).toHaveProperty('name', 'Alice');
+    });
+
+    it('should return dialog subresource', async () => {
+      vi.spyOn(queries, 'getVCon').mockResolvedValue(mockVCon);
+
+      const result = await resolveCoreResource(queries, `vcon://v1/vcons/${testUuid}/dialog`);
+
+      expect(result).toBeDefined();
+      expect(result?.mimeType).toBe('application/json');
+      expect(result?.content).toHaveProperty('dialog');
+      expect(result?.content.dialog).toHaveLength(1);
+      expect(result?.content.dialog[0]).toHaveProperty('type', 'text');
+    });
+
+    it('should return analysis subresource', async () => {
+      vi.spyOn(queries, 'getVCon').mockResolvedValue(mockVCon);
+
+      const result = await resolveCoreResource(queries, `vcon://v1/vcons/${testUuid}/analysis`);
+
+      expect(result).toBeDefined();
+      expect(result?.mimeType).toBe('application/json');
+      expect(result?.content).toHaveProperty('analysis');
+      expect(result?.content.analysis).toHaveLength(2);
+    });
+
+    it('should return attachments subresource', async () => {
+      vi.spyOn(queries, 'getVCon').mockResolvedValue(mockVCon);
+
+      const result = await resolveCoreResource(queries, `vcon://v1/vcons/${testUuid}/attachments`);
+
+      expect(result).toBeDefined();
+      expect(result?.mimeType).toBe('application/json');
+      expect(result?.content).toHaveProperty('attachments');
+      expect(result?.content.attachments).toHaveLength(2);
+    });
+
+    it('should return empty arrays for missing subresources', async () => {
+      const minimalVCon: VCon = {
+        vcon: '0.3.0',
+        uuid: testUuid,
+        created_at: new Date().toISOString(),
+        subject: 'Minimal vCon',
+        parties: []
+      };
+
+      vi.spyOn(queries, 'getVCon').mockResolvedValue(minimalVCon);
+
+      const dialogResult = await resolveCoreResource(queries, `vcon://v1/vcons/${testUuid}/dialog`);
+      const analysisResult = await resolveCoreResource(queries, `vcon://v1/vcons/${testUuid}/analysis`);
+      const attachmentsResult = await resolveCoreResource(queries, `vcon://v1/vcons/${testUuid}/attachments`);
+
+      expect(dialogResult?.content.dialog).toEqual([]);
+      expect(analysisResult?.content.analysis).toEqual([]);
+      expect(attachmentsResult?.content.attachments).toEqual([]);
+    });
+  });
+
+  describe('Derived resource endpoints', () => {
+    const testUuid = '123e4567-e89b-12d3-a456-426614174000';
+
+    it('should return transcript derived resource', async () => {
+      const mockVCon: VCon = {
+        vcon: '0.3.0',
+        uuid: testUuid,
+        created_at: new Date().toISOString(),
+        subject: 'Test vCon',
+        parties: [],
+        analysis: [
+          { type: 'transcript', vendor: 'Google', body: 'Hello world' },
+          { type: 'summary', vendor: 'OpenAI', body: 'Test summary' },
+          { type: 'transcript', vendor: 'Azure', body: 'Another transcript' }
+        ]
+      };
+
+      vi.spyOn(queries, 'getVCon').mockResolvedValue(mockVCon);
+
+      const result = await resolveCoreResource(queries, `vcon://v1/vcons/${testUuid}/transcript`);
+
+      expect(result).toBeDefined();
+      expect(result?.mimeType).toBe('application/json');
+      expect(result?.content).toHaveProperty('count', 2);
+      expect(result?.content).toHaveProperty('transcripts');
+      expect(result?.content.transcripts).toHaveLength(2);
+      expect(result?.content.transcripts[0].type).toBe('transcript');
+      expect(result?.content.transcripts[1].type).toBe('transcript');
+    });
+
+    it('should return summary derived resource', async () => {
+      const mockVCon: VCon = {
+        vcon: '0.3.0',
+        uuid: testUuid,
+        created_at: new Date().toISOString(),
+        subject: 'Test vCon',
+        parties: [],
+        analysis: [
+          { type: 'summary', vendor: 'OpenAI', body: 'Summary 1' },
+          { type: 'transcript', vendor: 'Google', body: 'Transcript' },
+          { type: 'summary', vendor: 'Anthropic', body: 'Summary 2' }
+        ]
+      };
+
+      vi.spyOn(queries, 'getVCon').mockResolvedValue(mockVCon);
+
+      const result = await resolveCoreResource(queries, `vcon://v1/vcons/${testUuid}/summary`);
+
+      expect(result).toBeDefined();
+      expect(result?.mimeType).toBe('application/json');
+      expect(result?.content).toHaveProperty('count', 2);
+      expect(result?.content).toHaveProperty('summaries');
+      expect(result?.content.summaries).toHaveLength(2);
+      expect(result?.content.summaries[0].type).toBe('summary');
+      expect(result?.content.summaries[1].type).toBe('summary');
+    });
+
+    it('should return tags derived resource', async () => {
+      const mockVCon: VCon = {
+        vcon: '0.3.0',
+        uuid: testUuid,
+        created_at: new Date().toISOString(),
+        subject: 'Test vCon',
+        parties: [],
+        attachments: [
+          { type: 'tags', encoding: 'json', body: '["department:sales", "priority:high", "status:open"]' },
+          { type: 'document', filename: 'test.pdf' }
+        ]
+      };
+
+      vi.spyOn(queries, 'getVCon').mockResolvedValue(mockVCon);
+
+      const result = await resolveCoreResource(queries, `vcon://v1/vcons/${testUuid}/tags`);
+
+      expect(result).toBeDefined();
+      expect(result?.mimeType).toBe('application/json');
+      expect(result?.content).toHaveProperty('tags');
+      expect(result?.content.tags).toEqual({
+        department: 'sales',
+        priority: 'high',
+        status: 'open'
+      });
+    });
+
+    it('should return empty tags object when no tags exist', async () => {
+      const mockVCon: VCon = {
+        vcon: '0.3.0',
+        uuid: testUuid,
+        created_at: new Date().toISOString(),
+        subject: 'Test vCon',
+        parties: [],
+        attachments: [
+          { type: 'document', filename: 'test.pdf' }
+        ]
+      };
+
+      vi.spyOn(queries, 'getVCon').mockResolvedValue(mockVCon);
+
+      const result = await resolveCoreResource(queries, `vcon://v1/vcons/${testUuid}/tags`);
+
+      expect(result).toBeDefined();
+      expect(result?.content.tags).toEqual({});
+    });
+
+    it('should handle malformed tags gracefully', async () => {
+      const mockVCon: VCon = {
+        vcon: '0.3.0',
+        uuid: testUuid,
+        created_at: new Date().toISOString(),
+        subject: 'Test vCon',
+        parties: [],
+        attachments: [
+          { type: 'tags', encoding: 'json', body: 'invalid json' }
+        ]
+      };
+
+      vi.spyOn(queries, 'getVCon').mockResolvedValue(mockVCon);
+
+      const result = await resolveCoreResource(queries, `vcon://v1/vcons/${testUuid}/tags`);
+
+      expect(result).toBeDefined();
+      expect(result?.content.tags).toEqual({});
+    });
+
+    it('should return empty arrays for derived resources when no matches', async () => {
+      const mockVCon: VCon = {
+        vcon: '0.3.0',
+        uuid: testUuid,
+        created_at: new Date().toISOString(),
+        subject: 'Test vCon',
+        parties: [],
+        analysis: [
+          { type: 'sentiment', vendor: 'TestVendor', body: '{}' }
+        ]
+      };
+
+      vi.spyOn(queries, 'getVCon').mockResolvedValue(mockVCon);
+
+      const transcriptResult = await resolveCoreResource(queries, `vcon://v1/vcons/${testUuid}/transcript`);
+      const summaryResult = await resolveCoreResource(queries, `vcon://v1/vcons/${testUuid}/summary`);
+
+      expect(transcriptResult?.content.count).toBe(0);
+      expect(transcriptResult?.content.transcripts).toEqual([]);
+      expect(summaryResult?.content.count).toBe(0);
+      expect(summaryResult?.content.summaries).toEqual([]);
     });
   });
 });

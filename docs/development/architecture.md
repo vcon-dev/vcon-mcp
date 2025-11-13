@@ -96,7 +96,7 @@ const server = new Server(
 The server implements three MCP interfaces:
 
 1. **Tools** - Operations (create, read, update, delete, search)
-2. **Resources** - URI-based data access (`vcon://uuid/...`)
+2. **Resources** - URI-based data access (`vcon://v1/vcons/...`)
 3. **Prompts** - Query templates and guidance
 
 #### Request Flow

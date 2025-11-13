@@ -75,7 +75,7 @@ The vCon MCP Server implements MCP to give AI assistants access to conversation 
 
 **Over 27 tools** for managing conversations. These include creating conversations, searching them, updating them, adding analysis, managing tags, and getting analytics.
 
-**Resources** that let the assistant directly read conversation data using URI paths. For example, the assistant can request a resource like `vcon://uuid/abc123` to get a specific conversation, or `vcon://uuid/abc123/parties` to get just the participant information.
+**Resources** that let the assistant directly read conversation data using URI paths. For example, the assistant can request a resource like `vcon://v1/vcons/abc123` to get a specific conversation, or `vcon://v1/vcons/abc123/parties` to get just the participant information.
 
 **9 prompts** that guide the assistant on effective searching and retrieval. These prompts help the assistant understand when to use different search strategies and how to structure queries.
 

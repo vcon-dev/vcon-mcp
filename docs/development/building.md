@@ -1390,7 +1390,7 @@ npm list @modelcontextprotocol/sdk
    - Export vCon to JWS/JWE
 
 2. **Add Resources**
-   - `vcon://uuid` URI scheme
+   - `vcon://v1/vcons` URI scheme
    - List recent vCons
    - vCon templates
 

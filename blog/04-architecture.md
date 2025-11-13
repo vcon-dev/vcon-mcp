@@ -24,7 +24,7 @@ The server exposes three types of interfaces:
 
 **Tools** are actions the assistant can perform. When you ask the assistant to create a conversation or search for something, it uses a tool. Each tool has a name, description, input parameters, and output format. The assistant reads these definitions and knows how to use each tool.
 
-**Resources** are data the assistant can read. Resources use URI paths, similar to URLs. For example, a resource might be `vcon://uuid/abc123` to access a specific conversation, or `vcon://uuid/abc123/parties` to get just the participant information. Resources are read-only, which keeps them safe.
+**Resources** are data the assistant can read. Resources use URI paths, similar to URLs. For example, a resource might be `vcon://v1/vcons/abc123` to access a specific conversation, or `vcon://v1/vcons/abc123/parties` to get just the participant information. Resources are read-only, which keeps them safe.
 
 **Prompts** are guidance templates that help the assistant work effectively. They explain how to structure queries, what information to include, and best practices. The assistant uses prompts to understand how to accomplish tasks correctly.
 

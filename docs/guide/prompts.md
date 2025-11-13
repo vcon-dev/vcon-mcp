@@ -386,7 +386,7 @@ Here's a quick reference of the tools prompts will guide you to use:
 ### With Resources
 After finding vCons, access them via resources:
 ```
-vcon://{uuid}
+vcon://v1/vcons/{uuid}
 ```
 
 ### With Tags

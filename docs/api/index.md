@@ -29,11 +29,11 @@ The vCon MCP Server provides a comprehensive API for managing virtual conversati
 
 URI-based access to vCon data:
 
-- `vcon://recent` - Get recent vCons
-- `vcon://recent/ids` - Lightweight ID lists
-- `vcon://list/ids` - Paginated ID browsing
-- `vcon://uuid/{uuid}` - Get specific vCon
-- `vcon://uuid/{uuid}/metadata` - Get metadata only
+- `vcon://v1/vcons/recent` - Get recent vCons
+- `vcon://v1/vcons/recent/ids` - Lightweight ID lists
+- `vcon://v1/vcons/ids` - Paginated ID browsing
+- `vcon://v1/vcons/{uuid}` - Get specific vCon
+- `vcon://v1/vcons/{uuid}/metadata` - Get metadata only
 
 [View Resources Reference →](./resources.md)
 
@@ -141,15 +141,15 @@ const tagResults = await callTool("search_by_tags", {
 
 ```typescript
 // Get recent vCons
-const recent = await readResource("vcon://recent/10");
+const recent = await readResource("vcon://v1/vcons/recent/10");
 
 // Get specific vCon
 const vcon = await readResource(
-  "vcon://uuid/123e4567-e89b-12d3-a456-426614174000"
+  "vcon://v1/vcons/123e4567-e89b-12d3-a456-426614174000"
 );
 
 // List IDs for navigation
-const ids = await readResource("vcon://recent/ids/50");
+const ids = await readResource("vcon://v1/vcons/recent/ids/50");
 ```
 
 ### Use Query Prompts

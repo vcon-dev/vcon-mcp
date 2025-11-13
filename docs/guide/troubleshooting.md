@@ -454,7 +454,7 @@ Error: JavaScript heap out of memory
 
 3. Use resources for simple reads:
    ```
-   Read vcon://uuid/abc-123/metadata
+   Read vcon://v1/vcons/abc-123/metadata
    ```
 
 ---

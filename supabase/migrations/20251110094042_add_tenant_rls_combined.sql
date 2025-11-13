@@ -2,6 +2,9 @@
 -- This migration adds tenant_id column, extraction function, and RLS policies
 -- Combined version including fixes for ambiguous column reference and batched processing
 
+-- Suppress NOTICE messages for cleaner output (IF NOT EXISTS generates notices)
+SET client_min_messages TO WARNING;
+
 -- Step 1: Add tenant_id column to vcons table
 ALTER TABLE vcons ADD COLUMN IF NOT EXISTS tenant_id TEXT;
 
@@ -62,9 +65,17 @@ BEGIN
     v_value := v_value->v_path_part;
   END LOOP;
 
-  -- Convert to text if found
+  -- Convert to text if found - handle different JSONB types correctly
   IF v_value IS NOT NULL AND v_value != 'null'::JSONB THEN
-    RETURN v_value::TEXT;
+    -- FIXED: Use #>> '{}' operator for string extraction (removes quotes)
+    -- For JSONB strings, ::TEXT includes quotes, but #>> '{}' extracts the text value
+    IF jsonb_typeof(v_value) = 'string' THEN
+      RETURN v_value #>> '{}';  -- Extract string value without quotes
+    ELSIF jsonb_typeof(v_value) IN ('number', 'boolean') THEN
+      RETURN v_value::TEXT;  -- Numbers and booleans convert cleanly to text
+    ELSE
+      RETURN v_value::TEXT;  -- Fallback for other types (arrays, objects)
+    END IF;
   END IF;
 
   RETURN NULL;
@@ -123,6 +134,7 @@ $$ LANGUAGE plpgsql;
 
 -- Step 4b: Create batched version to avoid timeouts on large datasets
 -- This function processes a limited number of vCons at a time
+-- FIXED: Added SECURITY DEFINER to bypass RLS when updating tenant_id
 CREATE OR REPLACE FUNCTION populate_tenant_ids_batch(
   p_attachment_type TEXT DEFAULT 'tenant',
   p_json_path TEXT DEFAULT 'id',
@@ -133,7 +145,11 @@ RETURNS TABLE(
   tenant_id TEXT,
   updated BOOLEAN,
   processed_count INTEGER
-) AS $$
+) 
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 DECLARE
   v_vcon RECORD;
   v_extracted_tenant TEXT;

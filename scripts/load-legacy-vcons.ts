@@ -114,6 +114,7 @@ import { VConQueries } from '../dist/db/queries.js';
 import { VCon } from '../dist/types/vcon.js';
 import { createClient } from 'redis';
 import { getTenantConfig, extractTenantFromVCon } from '../src/config/tenant-config.js';
+import { createClient as createSupabaseClient, SupabaseClient } from '@supabase/supabase-js';
 
 /**
  * Test database connection and provide helpful error messages
@@ -787,7 +788,21 @@ async function loadVConsFromDirectory(directoryPath: string | undefined, options
   try {
     // Initialize database
     console.log('🔌 Testing database connection...');
-    const supabase = getSupabaseClient();
+    // Use service role key for admin operations (bypasses RLS)
+    // Fall back to anon key if service role not available
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+    
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error('Missing SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_ANON_KEY)');
+    }
+    
+    const supabase: SupabaseClient = createSupabaseClient(supabaseUrl, supabaseKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
     
     // Test connection before proceeding
     await testDatabaseConnection(supabase);

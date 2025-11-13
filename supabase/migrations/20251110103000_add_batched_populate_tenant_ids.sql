@@ -1,5 +1,6 @@
 -- Add batched version of populate_tenant_ids to avoid timeouts on large datasets
 -- This function processes a limited number of vCons at a time
+-- FIXED: Added SECURITY DEFINER to bypass RLS when updating tenant_id
 
 CREATE OR REPLACE FUNCTION populate_tenant_ids_batch(
   p_attachment_type TEXT DEFAULT 'tenant',
@@ -11,7 +12,11 @@ RETURNS TABLE(
   tenant_id TEXT,
   updated BOOLEAN,
   processed_count INTEGER
-) AS $$
+) 
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 DECLARE
   v_vcon RECORD;
   v_extracted_tenant TEXT;

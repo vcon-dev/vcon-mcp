@@ -181,7 +181,7 @@ Four search modes:
 
 Example:
 - **Tool:** `create_vcon` - Creates new vCon
-- **Resource:** `vcon://recent` - Reads recent vCons
+- **Resource:** `vcon://v1/vcons/recent` - Reads recent vCons
 - **Prompt:** `find_by_tags` - Guides tag-based search
 
 ---

@@ -21,7 +21,7 @@ This guide provides an overview of all the ways you can extend and customize the
 
 ```typescript
 {
-  uri: 'vcon://analytics/summary',
+  uri: 'vcon://v1/analytics/summary',
   name: 'Analytics Summary',
   description: 'Overall conversation analytics',
   mimeType: 'application/json'
@@ -124,7 +124,7 @@ What do you want to add?
 
 ├─ Browse or display data?
 │  └─ Use: RESOURCES
-│     └─ Example: vcon://analytics/summary
+│     └─ Example: vcon://v1/analytics/summary
 │
 ├─ Guide users through queries?
 │  └─ Use: PROMPTS
@@ -152,7 +152,7 @@ What do you want to add?
 **Goal:** Provide analytics and insights
 
 **Solution:**
-- **Resource:** `vcon://analytics/summary` for quick stats
+- **Resource:** `vcon://v1/analytics/summary` for quick stats
 - **Tool:** `analyze_trends` for detailed analysis with parameters
 - **Prompt:** `analyze_conversation_patterns` to guide users
 
@@ -274,7 +274,7 @@ vcon-mcp/
 export function getCoreResources(): ResourceDescriptor[] {
   return [
     {
-      uri: 'vcon://stats',
+      uri: 'vcon://v1/stats',
       name: 'Statistics',
       description: 'Overall vCon statistics',
       mimeType: 'application/json'
@@ -286,7 +286,7 @@ export async function resolveCoreResource(
   queries: VConQueries,
   uri: string
 ): Promise<{ mimeType: string; content: any } | undefined> {
-  if (uri === 'vcon://stats') {
+  if (uri === 'vcon://v1/stats') {
     const stats = await queries.getStatistics();
     return { mimeType: 'application/json', content: stats };
   }

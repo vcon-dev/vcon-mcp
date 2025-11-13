@@ -185,7 +185,7 @@ Database request for data. Implemented in `src/db/queries.ts`. Also refers to se
 Process of hiding or removing sensitive information. Supported via privacy levels. See [Privacy Features](./enterprise-features.md#privacy-levels).
 
 ### Resource
-URI-based data access in MCP. Examples: `vcon://uuid/{uuid}`, `vcon://recent`. See [Resources](../api/resources.md).
+URI-based data access in MCP. Examples: `vcon://v1/vcons/{uuid}`, `vcon://v1/vcons/recent`. See [Resources](../api/resources.md).
 
 ### RLS
 Row Level Security. PostgreSQL feature for access control at the row level. Can be enabled for multi-tenant deployments.
@@ -239,7 +239,7 @@ Programming language adding static types to JavaScript. Used throughout the serv
 ## U
 
 ### URI
-Uniform Resource Identifier. Used by MCP resources. Examples: `vcon://uuid/{uuid}`, `vcon://recent/{count}`.
+Uniform Resource Identifier. Used by MCP resources. Examples: `vcon://v1/vcons/{uuid}`, `vcon://v1/vcons/recent/{count}`.
 
 ### UUID
 Universally Unique Identifier. RFC 4122 format. Required field in vCon main object and optional in Party object.
