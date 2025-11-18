@@ -12,6 +12,7 @@ import { DatabaseSizeAnalyzer } from '../db/database-size-analyzer.js';
 import { PluginManager } from '../hooks/plugin-manager.js';
 import { getSupabaseClient, getRedisClient } from '../db/client.js';
 import { createHandlerRegistry, type ToolHandlerRegistry } from '../tools/handlers/index.js';
+import { setTenantContext, verifyTenantContext, debugTenantVisibility } from '../db/tenant-context.js';
 
 export interface ServerContext {
   server: Server;
@@ -47,14 +48,14 @@ export function createServer(): Server {
 /**
  * Initialize database and cache clients
  */
-export function initializeDatabase(): {
+export async function initializeDatabase(): Promise<{
   queries: VConQueries;
   dbInspector: DatabaseInspector;
   dbAnalytics: DatabaseAnalytics;
   dbSizeAnalyzer: DatabaseSizeAnalyzer;
   supabase: any;
   redis: any;
-} {
+}> {
   const supabase = getSupabaseClient();
   const redis = getRedisClient(); // Optional - returns null if not configured
   const queries = new VConQueries(supabase, redis);
@@ -63,6 +64,20 @@ export function initializeDatabase(): {
   const dbSizeAnalyzer = new DatabaseSizeAnalyzer(supabase);
 
   console.error('✅ Database client initialized');
+  
+  // Set tenant context for RLS if enabled
+  try {
+    await setTenantContext(supabase);
+    await verifyTenantContext(supabase);
+    
+    // Debug tenant visibility
+    if (process.env.MCP_DEBUG === 'true' || process.env.RLS_DEBUG === 'true') {
+      await debugTenantVisibility(supabase);
+    }
+  } catch (error) {
+    console.error('⚠️  Warning: Failed to set tenant context:', error);
+    // Continue anyway - the server should still work for non-RLS scenarios
+  }
 
   return {
     queries,
@@ -127,7 +142,7 @@ export async function setupServer(): Promise<ServerContext> {
   // Initialize server
   const server = createServer();
 
-  // Initialize database
+  // Initialize database (now async due to tenant context setup)
   const {
     queries,
     dbInspector,
@@ -135,7 +150,7 @@ export async function setupServer(): Promise<ServerContext> {
     dbSizeAnalyzer,
     supabase,
     redis,
-  } = initializeDatabase();
+  } = await initializeDatabase();
 
   // Initialize plugin manager
   const pluginManager = new PluginManager();

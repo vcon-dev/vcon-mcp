@@ -24,7 +24,8 @@
     "load:vcons": "tsx scripts/load-legacy-vcons.ts --hours=48",
     "sync:vcons": "tsx scripts/load-legacy-vcons.ts --hours=48 --sync",
     "check:vcons": "tsx scripts/check-vcons.ts",
-    "migrate:remote": "tsx scripts/migrate-to-remote.ts"
+    "migrate:remote": "tsx scripts/migrate-to-remote.ts",
+    "test:tenant": "tsx scripts/test-tenant-setup.ts"
   },
   "files": [
     "dist",

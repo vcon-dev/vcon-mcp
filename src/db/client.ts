@@ -19,13 +19,21 @@ let redis: Redis | null = null;
 export function getSupabaseClient(): SupabaseClient {
   if (!supabase) {
     const url = process.env.SUPABASE_URL;
-    const key = process.env.SUPABASE_ANON_KEY;
+    // For RLS with service role, prefer SERVICE_ROLE_KEY if available
+    // Otherwise fall back to ANON_KEY
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
 
     if (!url || !key) {
       throw new Error(
-        'Missing Supabase credentials. Set SUPABASE_URL and SUPABASE_ANON_KEY environment variables.'
+        'Missing Supabase credentials. Set SUPABASE_URL and either SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY environment variables.'
       );
     }
+
+    logWithContext('info', 'Initializing Supabase client', {
+      url: url,
+      key_type: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'service_role' : 'anon',
+      rls_enabled: process.env.RLS_ENABLED === 'true',
+    });
 
     supabase = createClient(url, key, {
       auth: {
