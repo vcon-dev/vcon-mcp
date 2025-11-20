@@ -195,8 +195,9 @@ async function checkDatabaseStatus() {
         });
       }
 
-      // Get dialog types distribution
-      const { data: allDialogs } = await supabase.from('dialog').select('type').limit(1000);
+      // Get dialog types distribution using aggregation
+      // Note: Supabase doesn't support GROUP BY directly, so we fetch types and aggregate
+      const { data: allDialogs } = await supabase.from('dialog').select('type');
       if (allDialogs) {
         const typeCounts: Record<string, number> = {};
         allDialogs.forEach((d) => {
@@ -204,11 +205,11 @@ async function checkDatabaseStatus() {
           typeCounts[type] = (typeCounts[type] || 0) + 1;
         });
 
-        console.log('\nDialog Types Distribution (sample):');
+        console.log('\nDialog Types Distribution:');
         Object.entries(typeCounts)
           .sort(([, a], [, b]) => b - a)
           .forEach(([type, count]) => {
-            console.log(`  - ${type}: ${count}`);
+            console.log(`  - ${type}: ${count.toLocaleString()}`);
           });
       }
     } else {
@@ -230,7 +231,7 @@ async function checkDatabaseStatus() {
 
     if (totalAttachments && totalAttachments > 0) {
       // Get attachment types distribution
-      const { data: allAttachments } = await supabase.from('attachments').select('type').limit(1000);
+      const { data: allAttachments } = await supabase.from('attachments').select('type');
       if (allAttachments) {
         const typeCounts: Record<string, number> = {};
         allAttachments.forEach((a) => {
@@ -238,11 +239,11 @@ async function checkDatabaseStatus() {
           typeCounts[type] = (typeCounts[type] || 0) + 1;
         });
 
-        console.log('\nAttachment Types Distribution (sample):');
+        console.log('\nAttachment Types Distribution:');
         Object.entries(typeCounts)
           .sort(([, a], [, b]) => b - a)
           .forEach(([type, count]) => {
-            console.log(`  - ${type}: ${count}`);
+            console.log(`  - ${type}: ${count.toLocaleString()}`);
           });
       }
     } else {
@@ -264,7 +265,7 @@ async function checkDatabaseStatus() {
 
     if (totalAnalysis && totalAnalysis > 0) {
       // Get analysis data
-      const { data: allAnalysis } = await supabase.from('analysis').select('type, vendor, product, analysis_index').limit(1000);
+      const { data: allAnalysis } = await supabase.from('analysis').select('type, vendor, product, analysis_index');
       if (allAnalysis) {
         const typeCounts: Record<string, number> = {};
         const vendorCounts: Record<string, number> = {};
@@ -276,18 +277,18 @@ async function checkDatabaseStatus() {
           vendorCounts[vendor] = (vendorCounts[vendor] || 0) + 1;
         });
 
-        console.log('\nAnalysis Types Distribution (sample):');
+        console.log('\nAnalysis Types Distribution:');
         Object.entries(typeCounts)
           .sort(([, a], [, b]) => b - a)
           .forEach(([type, count]) => {
-            console.log(`  - ${type}: ${count}`);
+            console.log(`  - ${type}: ${count.toLocaleString()}`);
           });
 
-        console.log('\nAnalysis Vendors Distribution (sample):');
+        console.log('\nAnalysis Vendors Distribution:');
         Object.entries(vendorCounts)
           .sort(([, a], [, b]) => b - a)
           .forEach(([vendor, count]) => {
-            console.log(`  - ${vendor}: ${count}`);
+            console.log(`  - ${vendor}: ${count.toLocaleString()}`);
           });
 
         // Get sample analysis
