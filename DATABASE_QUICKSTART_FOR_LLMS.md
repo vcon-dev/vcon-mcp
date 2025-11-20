@@ -884,3 +884,4 @@ testVConOperations().catch(console.error);
 
 You're now ready to build applications on the vCon database! 🚀
 
+

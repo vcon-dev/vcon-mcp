@@ -1,8 +1,8 @@
-## vCon import from filesystem and Supabase embeddings (Edge Function)
+## vCon import from filesystem and embeddings generation
 
 This guide shows how to:
 - Import vCons from your local filesystem into Supabase using the existing loader scripts
-- Generate and maintain 384‑dim embeddings via a Supabase Edge Function, with optional Cron and DB triggers
+- Generate and maintain 384‑dim embeddings via npm tool, with optional Cron scheduling and DB triggers
 
 ---
 
@@ -45,9 +45,9 @@ Notes:
 
 ---
 
-### Embeddings via Supabase Edge Function (Option B)
+### Embeddings via npm Tool
 
-This repo uses a 384‑dimension embedding setup to match the migrations and HNSW index. The Edge Function batches any missing embeddings and supports on‑demand embedding for a specific `vcon_id`.
+This repo uses a 384‑dimension embedding setup to match the migrations and HNSW index. The npm tool batches any missing embeddings and supports on‑demand embedding for a specific `vcon_id`.
 
 #### Embedding Strategy
 
@@ -58,33 +58,45 @@ The embedding system generates vectors for three types of content:
 
 Analysis elements with `encoding='none'` are prioritized because they contain plain text analysis results (summaries, sentiment, transcripts) that are ideal for semantic search. Analysis with `encoding='base64url'` or `encoding='json'` are excluded as they typically contain structured data or binary content that doesn't benefit from text embeddings.
 
-Environment variables for the Edge Function (set in the Supabase project):
+Environment variables (set in `.env` file or exported):
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - One provider (choose one):
   - `OPENAI_API_KEY` (uses `text-embedding-3-small` with `dimensions=384`)
   - or `HF_API_TOKEN` (Hugging Face Inference API with `sentence-transformers/all-MiniLM-L6-v2`)
 
-Deploy the function:
+#### Generate Embeddings
+
+Using npm script:
 
 ```bash
-supabase functions deploy embed-vcons
+# Default: backfill mode, 100 items
+npm run embeddings:generate
+
+# Custom batch size
+npm run embeddings:generate -- --limit=500
+
+# Embed specific vCon
+npm run embeddings:generate -- --mode=embed --vcon-id=<uuid>
+
+# Force specific provider
+npm run embeddings:generate -- --provider=openai
 ```
 
-Manual triggers:
-- Backfill (default mode):
+Or using tsx directly:
 
 ```bash
-curl -sS "https://<your-project-ref>.functions.supabase.co/embed-vcons?mode=backfill&limit=200"
+# Backfill mode (default)
+npx tsx scripts/embed-vcons.ts
+
+# With options
+npx tsx scripts/embed-vcons.ts --mode=backfill --limit=200
+
+# Single vCon
+npx tsx scripts/embed-vcons.ts --mode=embed --vcon-id=<uuid>
 ```
 
-- Embed a single vCon:
-
-```bash
-curl -sS "https://<your-project-ref>.functions.supabase.co/embed-vcons?mode=embed&vcon_id=<uuid>"
-```
-
-The function responds with a JSON summary: counts for embedded, skipped, and errors.
+The tool displays progress and a summary of embedded, skipped, and error counts.
 
 #### Backfill all unembedded conversations with rate limiting
 
@@ -92,13 +104,11 @@ Use the provided script to process all conversations in batches:
 
 ```bash
 # Default: 500 per batch, 2 second delay
-./scripts/backfill-embeddings.sh
+npm run embeddings:backfill
 
-# Custom: 200 per batch, 5 second delay (for stricter rate limits)
-./scripts/backfill-embeddings.sh 200 5
-
-# Aggressive: 500 per batch, 0.5 second delay
-./scripts/backfill-embeddings.sh 500 0.5
+# Or directly with custom settings
+./scripts/backfill-embeddings.sh 200 5  # 200 per batch, 5 second delay
+./scripts/backfill-embeddings.sh 500 0.5  # Aggressive: 500 per batch, 0.5 second delay
 ```
 
 The script will:
@@ -119,7 +129,7 @@ The script will:
 Apply the migration that creates a simple queue and a trigger that enqueues newly inserted vCons:
 
 ```sql
--- supabase/migrations/<timestamp>_embedding_queue_and_trigger.sql
+-- supabase/migrations/20251010140000_embedding_queue_and_trigger.sql
 CREATE TABLE IF NOT EXISTS embedding_queue (
   id bigserial primary key,
   vcon_id uuid not null references vcons(id) on delete cascade,
@@ -136,25 +146,25 @@ CREATE TRIGGER trg_enqueue_embedding AFTER INSERT ON vcons
 FOR EACH ROW EXECUTE FUNCTION enqueue_embedding();
 ```
 
-You can either:
-- Schedule the Edge Function with Cron (polling/backfill), or
-- Have the function drain `embedding_queue` on each run for lower latency.
+You can then:
+- Schedule the npm tool with a cron job to run periodically, or
+- Run the backfill script manually after bulk imports
 
 ---
 
-### Scheduling with Supabase Cron
-Configure a schedule in the Supabase Dashboard → Edge Functions → Schedules to run every 5 minutes:
+### Scheduling with Cron (System Level)
 
-```text
-GET /embed-vcons?mode=backfill&limit=200
+You can schedule the embedding tool to run periodically using system cron:
+
+```bash
+# Edit crontab
+crontab -e
+
+# Add entry to run every 5 minutes
+*/5 * * * * cd /path/to/vcon-mcp && /usr/bin/npm run embeddings:generate -- --limit=200 >> /var/log/embeddings.log 2>&1
 ```
 
-Ensure the Edge Function environment contains the provider key and Supabase URL/Service Role key.
-
-Environment variables (Edge Function):
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `OPENAI_API_KEY` or `HF_API_TOKEN`
+Or use a process manager like systemd timers or supervisor for more robust scheduling.
 
 ---
 

@@ -292,11 +292,14 @@ See the following guides:
 
 **Quick start:**
 ```bash
-# Generate embeddings for all vCons
-./scripts/backfill-embeddings.sh 500 2
+# Generate embeddings for all vCons (default: 500 per batch, 2 second delay)
+npm run embeddings:backfill
+
+# Or with custom settings
+./scripts/backfill-embeddings.sh 200 5
 
 # Check embedding coverage
-psql $DATABASE_URL -f scripts/check-embedding-coverage.sql
+npm run embeddings:check
 ```
 
 ---

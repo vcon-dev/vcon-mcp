@@ -1,29 +1,45 @@
 #!/bin/bash
 
 # Backfill Embeddings Script
-# Continuously calls the embed-vcons function until all text units are embedded
+# Continuously calls the embed-vcons npm tool until all text units are embedded
 # Usage: ./scripts/backfill-embeddings.sh [batch_size] [delay_seconds]
 
 set -e
 
+# Load .env file if it exists (safer method)
+if [ -f .env ]; then
+  echo "📝 Loading environment from .env file..."
+  set -a
+  source .env
+  set +a
+fi
+
 # Configuration
 BATCH_SIZE=${1:-500}  # Default 500 items per batch
 DELAY=${2:-2}         # Default 2 seconds between batches
-SUPABASE_URL="${SUPABASE_URL:-http://127.0.0.1:54321}"
-ENDPOINT="${SUPABASE_URL}/functions/v1/embed-vcons"
-ANON_KEY="${SUPABASE_ANON_KEY}"
 
-# Check if ANON_KEY is set
-if [ -z "$ANON_KEY" ]; then
-  echo "❌ Error: SUPABASE_ANON_KEY environment variable is required"
-  echo "Usage: SUPABASE_ANON_KEY=your_key ./scripts/backfill-embeddings.sh [batch_size] [delay_seconds]"
+# Check required environment variables
+if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+  echo "❌ Error: Required environment variables not set"
+  echo "   SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required"
+  echo "   Create a .env file or export these variables"
+  exit 1
+fi
+
+if [ -z "$OPENAI_API_KEY" ] && [ -z "$HF_API_TOKEN" ]; then
+  echo "❌ Error: No embedding provider configured"
+  echo "   Set either OPENAI_API_KEY or HF_API_TOKEN"
   exit 1
 fi
 
 echo "🚀 Starting embedding backfill..."
 echo "   Batch size: $BATCH_SIZE"
 echo "   Delay between batches: ${DELAY}s"
-echo "   Endpoint: $ENDPOINT"
+if [ -n "$OPENAI_API_KEY" ]; then
+  echo "   Provider: OpenAI (text-embedding-3-small)"
+else
+  echo "   Provider: Hugging Face (all-MiniLM-L6-v2)"
+fi
 echo ""
 
 TOTAL_EMBEDDED=0
@@ -34,19 +50,28 @@ while true; do
   
   echo "📦 Batch $BATCH_COUNT: Processing up to $BATCH_SIZE text units..."
   
-  # Call the function
-  RESPONSE=$(curl -sS "$ENDPOINT?mode=backfill&limit=$BATCH_SIZE" \
-    -H "Authorization: Bearer $ANON_KEY")
+  # Run the npm embedding tool and capture output
+  OUTPUT=$(npx tsx scripts/embed-vcons.ts --mode=backfill --limit=$BATCH_SIZE 2>&1)
+  EXIT_CODE=$?
   
-  # Parse the response
-  EMBEDDED=$(echo "$RESPONSE" | jq -r '.embedded // 0')
-  ERRORS=$(echo "$RESPONSE" | jq -r '.errors // 0')
-  ERROR_MSG=$(echo "$RESPONSE" | jq -r '.error // ""')
-  
-  if [ -n "$ERROR_MSG" ]; then
-    echo "❌ Error: $ERROR_MSG"
+  # Check if the command succeeded
+  if [ $EXIT_CODE -ne 0 ]; then
+    echo "❌ Error running embedding tool:"
+    echo "$OUTPUT"
     exit 1
   fi
+  
+  # Show abbreviated output (skip the verbose initialization logs)
+  echo "$OUTPUT" | grep -E "(Finding text units|Found [0-9]+ text units|Generating embeddings|Processing batch|RESULTS|Embedded|Errors)" | sed 's/^/   /' || true
+  
+  # Extract the embedded count from the output
+  # Look for the line that says "✅ Embedded:  N"
+  EMBEDDED=$(echo "$OUTPUT" | grep "✅ Embedded:" | awk '{print $3}' || echo "0")
+  ERRORS=$(echo "$OUTPUT" | grep "❌ Errors:" | awk '{print $3}' || echo "0")
+  
+  # Default to 0 if parsing failed
+  EMBEDDED=${EMBEDDED:-0}
+  ERRORS=${ERRORS:-0}
   
   TOTAL_EMBEDDED=$((TOTAL_EMBEDDED + EMBEDDED))
   
