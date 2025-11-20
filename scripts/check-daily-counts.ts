@@ -4,6 +4,7 @@
  * Analyzes vCon counts per day to identify gaps or anomalies in data collection
  */
 
+import 'dotenv/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 // ANSI color codes

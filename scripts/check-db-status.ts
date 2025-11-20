@@ -11,6 +11,7 @@
  * - Distribution of types
  */
 
+import 'dotenv/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 // ANSI color codes
