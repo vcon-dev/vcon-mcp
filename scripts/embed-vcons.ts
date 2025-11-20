@@ -25,6 +25,7 @@
  *   --provider=PROVIDER  Embedding provider: 'openai' or 'hf' (auto-detected from env)
  *   --continuous, -c     Run continuously until all embeddings complete
  *   --delay=N            Delay in seconds between batches in continuous mode (default: 2)
+ *   --oldest-first       Process oldest vCons first (for backfilling old data)
  * 
  * Environment Variables:
  *   SUPABASE_URL              Supabase project URL
@@ -92,6 +93,7 @@ function parseArgs(): {
   provider?: EmbeddingProvider;
   continuous: boolean;
   delay: number;
+  oldestFirst: boolean;
 } {
   const args = process.argv.slice(2);
   let mode: 'backfill' | 'embed' = 'backfill';
@@ -100,6 +102,7 @@ function parseArgs(): {
   let provider: EmbeddingProvider | undefined;
   let continuous = false;
   let delay = 2;
+  let oldestFirst = false;
 
   for (const arg of args) {
     if (arg.startsWith('--mode=')) {
@@ -120,10 +123,12 @@ function parseArgs(): {
       continuous = true;
     } else if (arg.startsWith('--delay=')) {
       delay = Math.max(0, parseInt(arg.split('=')[1], 10));
+    } else if (arg === '--oldest-first') {
+      oldestFirst = true;
     }
   }
 
-  return { mode, vconId, limit, provider, continuous, delay };
+  return { mode, vconId, limit, provider, continuous, delay, oldestFirst };
 }
 
 /**
@@ -142,18 +147,20 @@ function detectProvider(preferredProvider?: EmbeddingProvider): EmbeddingProvide
 async function listMissingTextUnits(
   supabase: any,
   limit: number,
-  vconId?: string
+  vconId?: string,
+  oldestFirst: boolean = false
 ): Promise<TextUnit[]> {
   const textUnits: TextUnit[] = [];
 
   // Build efficient SQL queries with LEFT JOIN to find missing embeddings
   const vconFilter = vconId ? `AND v.id = '${vconId}'` : '';
+  const orderDirection = oldestFirst ? 'ASC' : 'DESC';
 
   try {
-    // Use subqueries to efficiently find missing embeddings ordered by newest first
+    // Use subqueries to efficiently find missing embeddings
     // Use NOT EXISTS for better performance on large datasets
     
-    // Query for missing subject embeddings (newest first)
+    // Query for missing subject embeddings
     const { data: subjects, error: subError } = await supabase.rpc('exec_sql', {
       q: `
         SELECT v.id as vcon_id,
@@ -170,7 +177,7 @@ async function listMissingTextUnits(
               AND e.content_type = 'subject' 
               AND e.content_reference IS NULL
           )
-        ORDER BY v.created_at DESC
+        ORDER BY v.created_at ${orderDirection}
         LIMIT ${limit}
       `,
       params: {}
@@ -182,26 +189,36 @@ async function listMissingTextUnits(
       textUnits.push(...subjects);
     }
 
-    // Query for missing dialog embeddings (newest first)
+    // Query for missing dialog embeddings (optimized with CTE)
     if (textUnits.length < limit) {
       const { data: dialogs, error: dialogError } = await supabase.rpc('exec_sql', {
         q: `
-          SELECT d.vcon_id,
+          WITH candidate_vcons AS (
+            SELECT id, created_at
+            FROM vcons
+            ${vconFilter ? 'WHERE ' + vconFilter.replace('AND ', '') : ''}
+            ORDER BY created_at ${orderDirection}
+            LIMIT ${(limit - textUnits.length) * 5}
+          ),
+          candidate_dialogs AS (
+            SELECT d.vcon_id, d.dialog_index, d.body, cv.created_at
+            FROM dialog d
+            INNER JOIN candidate_vcons cv ON cv.id = d.vcon_id
+            WHERE d.body IS NOT NULL AND d.body <> ''
+          )
+          SELECT cd.vcon_id,
                  'dialog'::text as content_type,
-                 d.dialog_index::text as content_reference,
-                 d.body as content_text,
-                 v.created_at
-          FROM dialog d
-          INNER JOIN vcons v ON v.id = d.vcon_id
-          WHERE d.body IS NOT NULL AND d.body <> ''
-            ${vconFilter}
-            AND NOT EXISTS (
-              SELECT 1 FROM vcon_embeddings e
-              WHERE e.vcon_id = d.vcon_id 
-                AND e.content_type = 'dialog' 
-                AND e.content_reference = d.dialog_index::text
-            )
-          ORDER BY v.created_at DESC
+                 cd.dialog_index::text as content_reference,
+                 cd.body as content_text,
+                 cd.created_at
+          FROM candidate_dialogs cd
+          WHERE NOT EXISTS (
+            SELECT 1 FROM vcon_embeddings e
+            WHERE e.vcon_id = cd.vcon_id 
+              AND e.content_type = 'dialog' 
+              AND e.content_reference = cd.dialog_index::text
+          )
+          ORDER BY cd.created_at ${orderDirection}
           LIMIT ${limit - textUnits.length}
         `,
         params: {}
@@ -214,35 +231,35 @@ async function listMissingTextUnits(
       }
     }
 
-    // Query for missing analysis embeddings from recent vCons
+    // Query for missing analysis embeddings
     // Use smaller limit multiplier since analysis table is very large
     if (textUnits.length < limit) {
       const { data: analyses, error: analysisError } = await supabase.rpc('exec_sql', {
         q: `
-          WITH recent_vcons_for_analysis AS (
+          WITH candidate_vcons_for_analysis AS (
             SELECT id, created_at
             FROM vcons
             ${vconFilter ? 'WHERE ' + vconFilter.replace('AND ', '') : ''}
-            ORDER BY created_at DESC
+            ORDER BY created_at ${orderDirection}
             LIMIT ${limit * 3}
           ),
-          recent_analyses AS (
-            SELECT a.vcon_id, a.analysis_index, a.body, rv.created_at
+          candidate_analyses AS (
+            SELECT a.vcon_id, a.analysis_index, a.body, cv.created_at
             FROM analysis a
-            INNER JOIN recent_vcons_for_analysis rv ON rv.id = a.vcon_id
+            INNER JOIN candidate_vcons_for_analysis cv ON cv.id = a.vcon_id
             WHERE a.body IS NOT NULL AND a.body <> ''
               AND (a.encoding = 'none' OR a.encoding IS NULL)
           )
-          SELECT ra.vcon_id,
+          SELECT ca.vcon_id,
                  'analysis'::text as content_type,
-                 ra.analysis_index::text as content_reference,
-                 ra.body as content_text,
-                 ra.created_at
-          FROM recent_analyses ra
+                 ca.analysis_index::text as content_reference,
+                 ca.body as content_text,
+                 ca.created_at
+          FROM candidate_analyses ca
           LEFT JOIN vcon_embeddings e
-            ON e.vcon_id = ra.vcon_id AND e.content_type = 'analysis' AND e.content_reference = ra.analysis_index::text
+            ON e.vcon_id = ca.vcon_id AND e.content_type = 'analysis' AND e.content_reference = ca.analysis_index::text
           WHERE e.id IS NULL
-          ORDER BY ra.created_at DESC
+          ORDER BY ca.created_at ${orderDirection}
           LIMIT ${limit - textUnits.length}
         `,
         params: {}
@@ -271,11 +288,12 @@ function estimateTokens(text: string): number {
 
 /**
  * Truncate text to fit within token limit
+ * Using conservative estimate: 1 token ≈ 3 characters for safety margin
  */
 function truncateToTokens(text: string, maxTokens: number): string {
-  const maxChars = maxTokens * 4;
+  const maxChars = maxTokens * 3; // Conservative estimate
   if (text.length <= maxChars) return text;
-  return text.substring(0, maxChars) + '...';
+  return text.substring(0, maxChars);
 }
 
 /**
@@ -557,7 +575,7 @@ async function main() {
   console.log('='.repeat(60));
 
   // Parse arguments
-  const { mode, vconId, limit, provider: preferredProvider, continuous, delay } = parseArgs();
+  const { mode, vconId, limit, provider: preferredProvider, continuous, delay, oldestFirst } = parseArgs();
   const provider = detectProvider(preferredProvider);
 
   // Validate environment
@@ -592,6 +610,7 @@ async function main() {
   console.log(`  Mode:          ${continuous ? 'continuous' : mode}`);
   console.log(`  Provider:      ${provider === 'openai' ? 'OpenAI (text-embedding-3-small)' : 'Hugging Face (all-MiniLM-L6-v2)'}`);
   console.log(`  Batch Limit:   ${limit}`);
+  console.log(`  Order:         ${oldestFirst ? 'oldest-first' : 'newest-first'}`);
   if (continuous) {
     console.log(`  Delay:         ${delay}s between batches`);
   }
@@ -623,7 +642,7 @@ async function main() {
 
         // Find text units needing embeddings
         console.log('🔍 Finding text units needing embeddings...');
-        const units = await listMissingTextUnits(supabase, limit, mode === 'embed' ? vconId : undefined);
+        const units = await listMissingTextUnits(supabase, limit, mode === 'embed' ? vconId : undefined, oldestFirst);
 
         if (units.length === 0) {
           console.log('✅ No more text units need embeddings. All caught up!');
@@ -705,7 +724,7 @@ async function main() {
     } else {
       // Single batch mode (original behavior)
       console.log('🔍 Finding text units needing embeddings...');
-      const units = await listMissingTextUnits(supabase, limit, mode === 'embed' ? vconId : undefined);
+      const units = await listMissingTextUnits(supabase, limit, mode === 'embed' ? vconId : undefined, oldestFirst);
 
       if (units.length === 0) {
         console.log('✅ No text units need embeddings. All caught up!');

@@ -38,6 +38,7 @@
     "embeddings:generate:fast": "tsx scripts/embed-vcons.ts --limit=500 --provider=openai",
     "embeddings:generate:small": "tsx scripts/embed-vcons.ts --limit=50 --provider=openai",
     "embeddings:generate:continuous": "tsx scripts/embed-vcons.ts --continuous --limit=500 --provider=openai --delay=2",
+    "embeddings:generate:backfill": "tsx scripts/embed-vcons.ts --continuous --limit=500 --provider=openai --delay=2 --oldest-first",
     "embeddings:backfill": "bash scripts/backfill-embeddings.sh",
     "embeddings:check": "tsx scripts/check-embedding-coverage.ts",
     "embeddings:check:sql": "psql $DATABASE_URL -f scripts/check-embedding-coverage.sql",
