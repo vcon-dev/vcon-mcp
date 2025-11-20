@@ -21,8 +21,10 @@
  * Options:
  *   --mode=MODE          Mode: 'backfill' (default) or 'embed'
  *   --vcon-id=UUID       Specific vCon UUID to embed (required for embed mode)
- *   --limit=N            Max text units to process (default: 100, max: 500)
+ *   --limit=N            Max text units to process per batch (default: 100, max: 500)
  *   --provider=PROVIDER  Embedding provider: 'openai' or 'hf' (auto-detected from env)
+ *   --continuous, -c     Run continuously until all embeddings complete
+ *   --delay=N            Delay in seconds between batches in continuous mode (default: 2)
  * 
  * Environment Variables:
  *   SUPABASE_URL              Supabase project URL
@@ -37,6 +39,12 @@
  *   # Backfill with larger batch
  *   npx tsx scripts/embed-vcons.ts --limit=500
  * 
+ *   # Run continuously until all embeddings complete
+ *   npx tsx scripts/embed-vcons.ts --continuous --limit=500
+ * 
+ *   # Continuous mode with custom delay
+ *   npx tsx scripts/embed-vcons.ts -c --limit=500 --delay=5
+ * 
  *   # Embed specific vCon
  *   npx tsx scripts/embed-vcons.ts --mode=embed --vcon-id=abc123...
  * 
@@ -48,8 +56,9 @@
  * @since 2024-11-20
  */
 
-import dotenv from 'dotenv';
+import * as dotenv from 'dotenv';
 import { getSupabaseClient } from '../dist/db/client.js';
+import pLimit from 'p-limit';
 
 // Load environment variables
 dotenv.config();
@@ -67,6 +76,10 @@ interface EmbeddingStats {
   embedded: number;
   skipped: number;
   errors: number;
+  startTime?: number;
+  endTime?: number;
+  newestVconDate?: string;
+  oldestVconDate?: string;
 }
 
 /**
@@ -77,12 +90,16 @@ function parseArgs(): {
   vconId?: string;
   limit: number;
   provider?: EmbeddingProvider;
+  continuous: boolean;
+  delay: number;
 } {
   const args = process.argv.slice(2);
   let mode: 'backfill' | 'embed' = 'backfill';
   let vconId: string | undefined;
   let limit = 100;
   let provider: EmbeddingProvider | undefined;
+  let continuous = false;
+  let delay = 2;
 
   for (const arg of args) {
     if (arg.startsWith('--mode=')) {
@@ -99,10 +116,14 @@ function parseArgs(): {
       if (value === 'openai' || value === 'hf') {
         provider = value;
       }
+    } else if (arg === '--continuous' || arg === '-c') {
+      continuous = true;
+    } else if (arg.startsWith('--delay=')) {
+      delay = Math.max(0, parseInt(arg.split('=')[1], 10));
     }
   }
 
-  return { mode, vconId, limit, provider };
+  return { mode, vconId, limit, provider, continuous, delay };
 }
 
 /**
@@ -116,7 +137,7 @@ function detectProvider(preferredProvider?: EmbeddingProvider): EmbeddingProvide
 }
 
 /**
- * List text units that need embeddings
+ * List text units that need embeddings using efficient RPC queries
  */
 async function listMissingTextUnits(
   supabase: any,
@@ -125,79 +146,113 @@ async function listMissingTextUnits(
 ): Promise<TextUnit[]> {
   const textUnits: TextUnit[] = [];
 
-  // Query for missing subject embeddings
-  const subjectSql = `
-    SELECT v.id as vcon_id,
-           'subject'::text as content_type,
-           NULL::text as content_reference,
-           v.subject as content_text
-    FROM vcons v
-    LEFT JOIN vcon_embeddings e
-      ON e.vcon_id = v.id AND e.content_type = 'subject' AND e.content_reference IS NULL
-    WHERE v.subject IS NOT NULL AND v.subject <> ''
-      AND e.id IS NULL
-      ${vconId ? "AND v.id = '" + vconId + "'" : ''}
-    LIMIT ${limit}
-  `;
+  // Build efficient SQL queries with LEFT JOIN to find missing embeddings
+  const vconFilter = vconId ? `AND v.id = '${vconId}'` : '';
 
-  // Query for missing dialog embeddings
-  const dialogSql = `
-    SELECT d.vcon_id,
-           'dialog'::text as content_type,
-           d.dialog_index::text as content_reference,
-           d.body as content_text
-    FROM dialog d
-    LEFT JOIN vcon_embeddings e
-      ON e.vcon_id = d.vcon_id AND e.content_type = 'dialog' AND e.content_reference = d.dialog_index::text
-    WHERE d.body IS NOT NULL AND d.body <> ''
-      AND e.id IS NULL
-      ${vconId ? "AND d.vcon_id = '" + vconId + "'" : ''}
-    LIMIT ${limit}
-  `;
-
-  // Query for missing analysis embeddings (prioritize encoding='none')
-  const analysisSql = `
-    SELECT a.vcon_id,
-           'analysis'::text as content_type,
-           a.analysis_index::text as content_reference,
-           a.body as content_text
-    FROM analysis a
-    LEFT JOIN vcon_embeddings e
-      ON e.vcon_id = a.vcon_id AND e.content_type = 'analysis' AND e.content_reference = a.analysis_index::text
-    WHERE a.body IS NOT NULL AND a.body <> ''
-      AND (a.encoding = 'none' OR a.encoding IS NULL)
-      AND e.id IS NULL
-      ${vconId ? "AND a.vcon_id = '" + vconId + "'" : ''}
-    ORDER BY 
-      CASE WHEN a.encoding = 'none' THEN 0 ELSE 1 END,
-      a.vcon_id
-    LIMIT ${limit}
-  `;
-
-  // Execute queries using exec_sql RPC
   try {
-    const { data: subjects, error: errSub } = await supabase.rpc('exec_sql', {
-      q: subjectSql,
+    // Use subqueries to efficiently find missing embeddings ordered by newest first
+    // Use NOT EXISTS for better performance on large datasets
+    
+    // Query for missing subject embeddings (newest first)
+    const { data: subjects, error: subError } = await supabase.rpc('exec_sql', {
+      q: `
+        SELECT v.id as vcon_id,
+               'subject'::text as content_type,
+               NULL::text as content_reference,
+               v.subject as content_text,
+               v.created_at
+        FROM vcons v
+        WHERE v.subject IS NOT NULL AND v.subject <> ''
+          ${vconFilter}
+          AND NOT EXISTS (
+            SELECT 1 FROM vcon_embeddings e
+            WHERE e.vcon_id = v.id 
+              AND e.content_type = 'subject' 
+              AND e.content_reference IS NULL
+          )
+        ORDER BY v.created_at DESC
+        LIMIT ${limit}
+      `,
       params: {}
     });
-    if (!errSub && Array.isArray(subjects)) {
+
+    if (subError) {
+      console.warn('Subject query error:', subError.message);
+    } else if (subjects && Array.isArray(subjects)) {
       textUnits.push(...subjects);
     }
 
-    const { data: dialogs, error: errDlg } = await supabase.rpc('exec_sql', {
-      q: dialogSql,
-      params: {}
-    });
-    if (!errDlg && Array.isArray(dialogs)) {
-      textUnits.push(...dialogs);
+    // Query for missing dialog embeddings (newest first)
+    if (textUnits.length < limit) {
+      const { data: dialogs, error: dialogError } = await supabase.rpc('exec_sql', {
+        q: `
+          SELECT d.vcon_id,
+                 'dialog'::text as content_type,
+                 d.dialog_index::text as content_reference,
+                 d.body as content_text,
+                 v.created_at
+          FROM dialog d
+          INNER JOIN vcons v ON v.id = d.vcon_id
+          WHERE d.body IS NOT NULL AND d.body <> ''
+            ${vconFilter}
+            AND NOT EXISTS (
+              SELECT 1 FROM vcon_embeddings e
+              WHERE e.vcon_id = d.vcon_id 
+                AND e.content_type = 'dialog' 
+                AND e.content_reference = d.dialog_index::text
+            )
+          ORDER BY v.created_at DESC
+          LIMIT ${limit - textUnits.length}
+        `,
+        params: {}
+      });
+
+      if (dialogError) {
+        console.warn('Dialog query error:', dialogError.message);
+      } else if (dialogs && Array.isArray(dialogs)) {
+        textUnits.push(...dialogs);
+      }
     }
 
-    const { data: analyses, error: errAna } = await supabase.rpc('exec_sql', {
-      q: analysisSql,
-      params: {}
-    });
-    if (!errAna && Array.isArray(analyses)) {
-      textUnits.push(...analyses);
+    // Query for missing analysis embeddings from recent vCons
+    // Use smaller limit multiplier since analysis table is very large
+    if (textUnits.length < limit) {
+      const { data: analyses, error: analysisError } = await supabase.rpc('exec_sql', {
+        q: `
+          WITH recent_vcons_for_analysis AS (
+            SELECT id, created_at
+            FROM vcons
+            ${vconFilter ? 'WHERE ' + vconFilter.replace('AND ', '') : ''}
+            ORDER BY created_at DESC
+            LIMIT ${limit * 3}
+          ),
+          recent_analyses AS (
+            SELECT a.vcon_id, a.analysis_index, a.body, rv.created_at
+            FROM analysis a
+            INNER JOIN recent_vcons_for_analysis rv ON rv.id = a.vcon_id
+            WHERE a.body IS NOT NULL AND a.body <> ''
+              AND (a.encoding = 'none' OR a.encoding IS NULL)
+          )
+          SELECT ra.vcon_id,
+                 'analysis'::text as content_type,
+                 ra.analysis_index::text as content_reference,
+                 ra.body as content_text,
+                 ra.created_at
+          FROM recent_analyses ra
+          LEFT JOIN vcon_embeddings e
+            ON e.vcon_id = ra.vcon_id AND e.content_type = 'analysis' AND e.content_reference = ra.analysis_index::text
+          WHERE e.id IS NULL
+          ORDER BY ra.created_at DESC
+          LIMIT ${limit - textUnits.length}
+        `,
+        params: {}
+      });
+
+      if (analysisError) {
+        console.warn('Analysis query error:', analysisError.message);
+      } else if (analyses && Array.isArray(analyses)) {
+        textUnits.push(...analyses);
+      }
     }
   } catch (error) {
     console.error('Error querying for missing text units:', error);
@@ -232,26 +287,40 @@ async function embedOpenAI(texts: string[]): Promise<number[][]> {
     throw new Error('OPENAI_API_KEY not set');
   }
 
-  const response = await fetch('https://api.openai.com/v1/embeddings', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model: 'text-embedding-3-small',
-      input: texts,
-      dimensions: 384
-    })
-  });
+  try {
+    const response = await fetch('https://api.openai.com/v1/embeddings', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'text-embedding-3-small',
+        input: texts,
+        dimensions: 384
+      })
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`OpenAI embeddings failed: ${response.status} ${errorText}`);
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorDetails = '';
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorDetails = JSON.stringify(errorJson, null, 2);
+      } catch {
+        errorDetails = errorText;
+      }
+      throw new Error(`OpenAI API error ${response.status}: ${errorDetails}`);
+    }
+
+    const json = await response.json();
+    return json.data.map((d: any) => d.embedding as number[]);
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error(`OpenAI embeddings failed: ${JSON.stringify(error)}`);
   }
-
-  const json = await response.json();
-  return json.data.map((d: any) => d.embedding as number[]);
 }
 
 /**
@@ -324,7 +393,7 @@ async function upsertEmbeddings(
 }
 
 /**
- * Process embeddings with token-aware batching for OpenAI
+ * Process embeddings with parallel batching for OpenAI
  */
 async function processEmbeddings(
   supabase: any,
@@ -334,15 +403,24 @@ async function processEmbeddings(
   const stats: EmbeddingStats = {
     embedded: 0,
     skipped: 0,
-    errors: 0
+    errors: 0,
+    startTime: Date.now()
   };
 
   if (units.length === 0) {
     return stats;
   }
 
+  // Track date range of vCons being processed
+  const vconDates = units.map((u: any) => u.created_at).filter(Boolean);
+  if (vconDates.length > 0) {
+    stats.newestVconDate = vconDates[0];
+    stats.oldestVconDate = vconDates[vconDates.length - 1];
+  }
+
   const MAX_TOKENS_PER_BATCH = 250000;
   const MAX_TOKENS_PER_ITEM = 8000;
+  const CONCURRENCY_LIMIT = 15; // Process 15 batches concurrently
 
   if (provider === 'openai') {
     // Group units into token-aware batches
@@ -368,19 +446,88 @@ async function processEmbeddings(
       batches.push(currentBatch);
     }
 
-    // Process each batch
-    for (let i = 0; i < batches.length; i++) {
-      const batch = batches[i];
+    console.log(`  Split into ${batches.length} batches, processing ${CONCURRENCY_LIMIT} concurrently...`);
+
+    // Process batches in parallel with concurrency limit
+    const limit = pLimit(CONCURRENCY_LIMIT);
+    let completed = 0;
+    const startTime = Date.now();
+
+    const processBatch = async (batch: TextUnit[], batchIndex: number) => {
       try {
-        console.log(`  Processing batch ${i + 1}/${batches.length} (${batch.length} items)...`);
         const texts = batch.map((u) => u.content_text);
         const vectors = await embedOpenAI(texts);
         await upsertEmbeddings(supabase, batch, vectors, provider);
+        
+        completed++;
+        const elapsed = (Date.now() - startTime) / 1000;
+        const rate = (stats.embedded + batch.length) / elapsed;
+        const remaining = batches.length - completed;
+        const eta = remaining > 0 ? Math.ceil(remaining / (completed / elapsed)) : 0;
+        
+        console.log(
+          `  ✓ Batch ${completed}/${batches.length} (${batch.length} items) | ` +
+          `Rate: ${rate.toFixed(1)}/s | ETA: ${eta}s`
+        );
+        
         stats.embedded += batch.length;
+        return { success: true, count: batch.length };
       } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        console.error(`  Batch ${i + 1} failed: ${errorMsg}`);
+        let errorMsg = 'Unknown error';
+        if (error instanceof Error) {
+          errorMsg = error.message;
+        } else if (typeof error === 'object' && error !== null) {
+          errorMsg = JSON.stringify(error);
+        } else {
+          errorMsg = String(error);
+        }
+        console.error(`  ✗ Batch ${batchIndex + 1} failed: ${errorMsg.substring(0, 200)}`);
         stats.errors += batch.length;
+        return { success: false, count: 0, error: errorMsg };
+      }
+    };
+
+    // Execute all batches with concurrency control
+    const results = await Promise.allSettled(
+      batches.map((batch, i) => limit(() => processBatch(batch, i)))
+    );
+
+    // Handle any retry logic for failed batches with rate limit errors
+    const failedIndices = results
+      .map((result, i) => ({ result, index: i }))
+      .filter(({ result }) => result.status === 'rejected' || 
+        (result.status === 'fulfilled' && !result.value.success))
+      .map(({ index }) => index);
+
+    if (failedIndices.length > 0) {
+      console.log(`\n  Retrying ${failedIndices.length} failed batches with exponential backoff...`);
+      
+      for (const index of failedIndices) {
+        const batch = batches[index];
+        let retries = 0;
+        const maxRetries = 3;
+        
+        while (retries < maxRetries) {
+          try {
+            const backoffMs = Math.pow(2, retries) * 1000;
+            await new Promise(resolve => setTimeout(resolve, backoffMs));
+            
+            const texts = batch.map((u) => u.content_text);
+            const vectors = await embedOpenAI(texts);
+            await upsertEmbeddings(supabase, batch, vectors, provider);
+            
+            // Success - adjust stats
+            stats.embedded += batch.length;
+            stats.errors -= batch.length;
+            console.log(`  ✓ Retry successful for batch ${index + 1}`);
+            break;
+          } catch (error) {
+            retries++;
+            if (retries >= maxRetries) {
+              console.error(`  ✗ Batch ${index + 1} failed after ${maxRetries} retries`);
+            }
+          }
+        }
       }
     }
   } else {
@@ -398,6 +545,7 @@ async function processEmbeddings(
     }
   }
 
+  stats.endTime = Date.now();
   return stats;
 }
 
@@ -409,7 +557,7 @@ async function main() {
   console.log('='.repeat(60));
 
   // Parse arguments
-  const { mode, vconId, limit, provider: preferredProvider } = parseArgs();
+  const { mode, vconId, limit, provider: preferredProvider, continuous, delay } = parseArgs();
   const provider = detectProvider(preferredProvider);
 
   // Validate environment
@@ -441,9 +589,12 @@ async function main() {
 
   // Display configuration
   console.log('Configuration:');
-  console.log(`  Mode:          ${mode}`);
+  console.log(`  Mode:          ${continuous ? 'continuous' : mode}`);
   console.log(`  Provider:      ${provider === 'openai' ? 'OpenAI (text-embedding-3-small)' : 'Hugging Face (all-MiniLM-L6-v2)'}`);
-  console.log(`  Limit:         ${limit}`);
+  console.log(`  Batch Limit:   ${limit}`);
+  if (continuous) {
+    console.log(`  Delay:         ${delay}s between batches`);
+  }
   if (vconId) {
     console.log(`  vCon ID:       ${vconId}`);
   }
@@ -455,44 +606,163 @@ async function main() {
     // Initialize Supabase client
     const supabase = getSupabaseClient();
 
-    // Find text units needing embeddings
-    console.log('🔍 Finding text units needing embeddings...');
-    const units = await listMissingTextUnits(supabase, limit, mode === 'embed' ? vconId : undefined);
+    // Continuous mode: loop until no more embeddings
+    if (continuous) {
+      let batchNumber = 0;
+      let totalEmbedded = 0;
+      let totalErrors = 0;
+      const overallStartTime = Date.now();
 
-    if (units.length === 0) {
-      console.log('✅ No text units need embeddings. All caught up!');
-      return;
+      console.log('🔄 Running in continuous mode (Ctrl+C to stop)\n');
+
+      while (true) {
+        batchNumber++;
+        console.log(`\n${'='.repeat(60)}`);
+        console.log(`📦 BATCH ${batchNumber}`);
+        console.log('='.repeat(60));
+
+        // Find text units needing embeddings
+        console.log('🔍 Finding text units needing embeddings...');
+        const units = await listMissingTextUnits(supabase, limit, mode === 'embed' ? vconId : undefined);
+
+        if (units.length === 0) {
+          console.log('✅ No more text units need embeddings. All caught up!');
+          break;
+        }
+
+        console.log(`📝 Found ${units.length} text units to embed:`);
+        const subjectCount = units.filter(u => u.content_type === 'subject').length;
+        const dialogCount = units.filter(u => u.content_type === 'dialog').length;
+        const analysisCount = units.filter(u => u.content_type === 'analysis').length;
+        console.log(`   - ${subjectCount} subjects`);
+        console.log(`   - ${dialogCount} dialogs`);
+        console.log(`   - ${analysisCount} analyses`);
+        
+        // Show date range of vCons being processed
+        const vconDates = units.map((u: any) => u.created_at).filter(Boolean);
+        if (vconDates.length > 0) {
+          console.log(`\n📅 vCon Date Range:`);
+          console.log(`   Newest: ${new Date(vconDates[0]).toLocaleString()}`);
+          console.log(`   Oldest: ${new Date(vconDates[vconDates.length - 1]).toLocaleString()}`);
+        }
+        console.log();
+
+        // Process embeddings
+        console.log('🚀 Generating embeddings with parallel processing...');
+        const stats = await processEmbeddings(supabase, units, provider);
+
+        totalEmbedded += stats.embedded;
+        totalErrors += stats.errors;
+
+        // Display batch results
+        console.log();
+        console.log('📊 Batch Results:');
+        console.log(`   Embedded: ${stats.embedded}`);
+        console.log(`   Errors:   ${stats.errors}`);
+        
+        if (stats.startTime && stats.endTime) {
+          const durationSec = (stats.endTime - stats.startTime) / 1000;
+          const rate = stats.embedded / durationSec;
+          console.log(`   Duration: ${durationSec.toFixed(1)}s`);
+          console.log(`   Rate:     ${rate.toFixed(1)} items/sec`);
+        }
+
+        // Display cumulative stats
+        const overallDurationSec = (Date.now() - overallStartTime) / 1000;
+        const overallRate = totalEmbedded / overallDurationSec;
+        console.log(`\n📈 Cumulative Stats:`);
+        console.log(`   Batches:       ${batchNumber}`);
+        console.log(`   Total Embedded: ${totalEmbedded}`);
+        console.log(`   Total Errors:   ${totalErrors}`);
+        console.log(`   Overall Rate:   ${overallRate.toFixed(1)} items/sec`);
+        console.log(`   Runtime:        ${Math.floor(overallDurationSec / 60)}m ${Math.floor(overallDurationSec % 60)}s`);
+
+        if (stats.errors > 0) {
+          console.log('\n⚠️  Some embeddings failed in this batch.');
+        }
+
+        // Delay before next batch
+        if (delay > 0) {
+          console.log(`\n⏸️  Waiting ${delay}s before next batch...`);
+          await new Promise(resolve => setTimeout(resolve, delay * 1000));
+        }
+      }
+
+      // Final summary
+      console.log();
+      console.log('='.repeat(60));
+      console.log('🎉 CONTINUOUS MODE COMPLETE');
+      console.log('='.repeat(60));
+      const overallDurationSec = (Date.now() - overallStartTime) / 1000;
+      console.log(`✅ Total Embedded:  ${totalEmbedded}`);
+      console.log(`❌ Total Errors:    ${totalErrors}`);
+      console.log(`📦 Total Batches:   ${batchNumber}`);
+      console.log(`⚡ Total Runtime:   ${Math.floor(overallDurationSec / 60)}m ${Math.floor(overallDurationSec % 60)}s`);
+      console.log(`📈 Average Rate:    ${(totalEmbedded / overallDurationSec).toFixed(1)} items/sec`);
+      console.log('='.repeat(60));
+      console.log('\n✅ All embeddings complete!\n');
+
+    } else {
+      // Single batch mode (original behavior)
+      console.log('🔍 Finding text units needing embeddings...');
+      const units = await listMissingTextUnits(supabase, limit, mode === 'embed' ? vconId : undefined);
+
+      if (units.length === 0) {
+        console.log('✅ No text units need embeddings. All caught up!');
+        return;
+      }
+
+      console.log(`📝 Found ${units.length} text units to embed:`);
+      const subjectCount = units.filter(u => u.content_type === 'subject').length;
+      const dialogCount = units.filter(u => u.content_type === 'dialog').length;
+      const analysisCount = units.filter(u => u.content_type === 'analysis').length;
+      console.log(`   - ${subjectCount} subjects`);
+      console.log(`   - ${dialogCount} dialogs`);
+      console.log(`   - ${analysisCount} analyses`);
+      
+      // Show date range of vCons being processed
+      const vconDates = units.map((u: any) => u.created_at).filter(Boolean);
+      if (vconDates.length > 0) {
+        console.log(`\n📅 vCon Date Range:`);
+        console.log(`   Newest: ${new Date(vconDates[0]).toLocaleString()}`);
+        console.log(`   Oldest: ${new Date(vconDates[vconDates.length - 1]).toLocaleString()}`);
+      }
+      console.log();
+
+      // Process embeddings
+      console.log('🚀 Generating embeddings with parallel processing...');
+      const stats = await processEmbeddings(supabase, units, provider);
+
+      // Display results
+      console.log();
+      console.log('='.repeat(60));
+      console.log('📊 RESULTS');
+      console.log('='.repeat(60));
+      console.log(`✅ Embedded:  ${stats.embedded}`);
+      console.log(`⏭️  Skipped:   ${stats.skipped}`);
+      console.log(`❌ Errors:    ${stats.errors}`);
+      
+      if (stats.startTime && stats.endTime) {
+        const durationSec = (stats.endTime - stats.startTime) / 1000;
+        const rate = stats.embedded / durationSec;
+        console.log(`⚡ Duration:  ${durationSec.toFixed(1)}s`);
+        console.log(`📈 Rate:      ${rate.toFixed(1)} items/sec`);
+      }
+      
+      if (stats.newestVconDate && stats.oldestVconDate) {
+        console.log(`\n📅 Processed vCon Range:`);
+        console.log(`   Newest: ${new Date(stats.newestVconDate).toLocaleString()}`);
+        console.log(`   Oldest: ${new Date(stats.oldestVconDate).toLocaleString()}`);
+      }
+      console.log('='.repeat(60));
+
+      if (stats.errors > 0) {
+        console.log('\n⚠️  Some embeddings failed. Review errors above.');
+        process.exit(1);
+      }
+
+      console.log('\n✅ Embedding generation complete!\n');
     }
-
-    console.log(`📝 Found ${units.length} text units to embed:`);
-    const subjectCount = units.filter(u => u.content_type === 'subject').length;
-    const dialogCount = units.filter(u => u.content_type === 'dialog').length;
-    const analysisCount = units.filter(u => u.content_type === 'analysis').length;
-    console.log(`   - ${subjectCount} subjects`);
-    console.log(`   - ${dialogCount} dialogs`);
-    console.log(`   - ${analysisCount} analyses`);
-    console.log();
-
-    // Process embeddings
-    console.log('🚀 Generating embeddings...');
-    const stats = await processEmbeddings(supabase, units, provider);
-
-    // Display results
-    console.log();
-    console.log('='.repeat(60));
-    console.log('📊 RESULTS');
-    console.log('='.repeat(60));
-    console.log(`✅ Embedded:  ${stats.embedded}`);
-    console.log(`⏭️  Skipped:   ${stats.skipped}`);
-    console.log(`❌ Errors:    ${stats.errors}`);
-    console.log('='.repeat(60));
-
-    if (stats.errors > 0) {
-      console.log('\n⚠️  Some embeddings failed. Review errors above.');
-      process.exit(1);
-    }
-
-    console.log('\n✅ Embedding generation complete!\n');
   } catch (error) {
     console.error('\n❌ Fatal error:', error);
     process.exit(1);
