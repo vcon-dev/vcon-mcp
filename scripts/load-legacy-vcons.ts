@@ -254,33 +254,63 @@ function migrateVCon(vcon: any): VCon {
     vcon.vcon = '0.3.0';
   }
 
-  // Normalize encoding values for attachments
+  // Normalize encoding values for attachments and serialize body if needed
   if (vcon.attachments) {
     vcon.attachments = vcon.attachments.map((att: any) => {
       if (att.encoding === 'text') {
         // Convert 'text' to 'none' (plain text, no encoding)
         att.encoding = 'none';
       }
+      
+      // Serialize body if it's an object or array (database expects string)
+      if (att.body !== undefined && att.body !== null && typeof att.body !== 'string') {
+        att.body = JSON.stringify(att.body);
+        // Set encoding to 'json' if not already set
+        if (!att.encoding) {
+          att.encoding = 'json';
+        }
+      }
+      
       return att;
     });
   }
 
-  // Normalize encoding values for dialog
+  // Normalize encoding values for dialog and serialize body if needed
   if (vcon.dialog) {
     vcon.dialog = vcon.dialog.map((dlg: any) => {
       if (dlg.encoding === 'text') {
         dlg.encoding = 'none';
       }
+      
+      // Serialize body if it's an object or array
+      if (dlg.body !== undefined && dlg.body !== null && typeof dlg.body !== 'string') {
+        dlg.body = JSON.stringify(dlg.body);
+        if (!dlg.encoding) {
+          dlg.encoding = 'json';
+        }
+      }
+      
       return dlg;
     });
   }
 
-  // Normalize encoding values for analysis
+  // Normalize encoding values for analysis and serialize body if needed
   if (vcon.analysis) {
     vcon.analysis = vcon.analysis.map((ana: any) => {
       if (ana.encoding === 'text') {
         ana.encoding = 'none';
       }
+      
+      // Serialize body if it's an object or array
+      if (ana.body !== undefined && ana.body !== null && typeof ana.body !== 'string') {
+        ana.body = JSON.stringify(ana.body);
+        // Set encoding to 'json' if not already set, but preserve 'none' if explicitly set
+        // Some legacy vCons may have encoding='none' with object bodies
+        if (!ana.encoding || ana.encoding === 'none') {
+          ana.encoding = 'json';
+        }
+      }
+      
       return ana;
     });
   }

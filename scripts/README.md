@@ -2,16 +2,45 @@
 
 This directory contains utility scripts for managing vCon data, database migrations, backups, and testing.
 
-## Quick Reference
+## Quick Start (npm scripts)
 
-**Most Common Tasks:**
-- **Load vCons from S3:** `npx tsx scripts/load-legacy-vcons.ts --hours=168` (last 7 days)
-- **Check database status:** `npx tsx scripts/check-vcons.ts`
-- **Backup from remote:** `./scripts/backup-remote-cli.sh` or `npx tsx scripts/backup-from-remote.ts`
-- **Backfill embeddings:** `./scripts/backfill-embeddings.sh`
-- **Enable RLS:** `npx tsx scripts/migrate-to-rls.ts`
+Most common operations are available as npm scripts for easier execution:
 
-**All 26 scripts are documented below.** No orphaned or deprecated scripts found.
+```bash
+# Database Status & Analysis
+npm run db:status          # Comprehensive database status with all tables
+npm run db:check           # Quick vCon count check
+npm run db:analyze         # Daily count analysis to identify gaps
+
+# Data Loading
+npm run load:s3:recent     # Load last 24 hours from S3
+npm run load:s3            # Load from S3 (default settings)
+npm run load:local         # Load from local directory
+
+# Backup & Restore
+npm run db:backup          # Backup database
+npm run db:restore         # Restore from backup
+
+# Embeddings
+npm run embeddings:backfill   # Backfill missing embeddings
+npm run embeddings:generate   # Generate embeddings locally
+npm run embeddings:check      # Check embedding coverage
+
+# Testing
+npm run test:db            # Test database tools
+npm run test:search        # Test search functionality
+npm run test:tags          # Test tag system
+npm run test:mcp           # Test MCP tools
+
+# Migrations
+npm run migrate:rls        # Enable Row Level Security
+npm run migrate:remote     # Migrate data to remote database
+
+# Utilities
+npm run util:s3-sync       # Backfill S3 sync
+```
+
+For detailed documentation on each script and advanced options, see the sections below.
 
 ## Table of Contents
 
@@ -58,17 +87,16 @@ Advanced script for loading vCon files from S3 or local directory. Handles both 
 
 **Usage:**
 ```bash
-# Load from S3 (default - last 24 hours)
-npx tsx scripts/load-legacy-vcons.ts
+# Using npm scripts (recommended)
+npm run load:s3:recent     # Load last 24 hours from S3
+npm run load:s3            # Load from S3 with default settings
+npm run sync:vcons         # Continuous sync mode (last 48 hours)
 
-# Load from local directory
-npx tsx scripts/load-legacy-vcons.ts /path/to/vcons
-
-# Load with custom settings
-npx tsx scripts/load-legacy-vcons.ts /path/to/vcons --batch-size=100 --concurrency=5
-
-# Continuous sync mode
-npx tsx scripts/load-legacy-vcons.ts --sync
+# Direct command examples
+npx tsx scripts/load-legacy-vcons.ts                  # Load from S3 (last 24 hours)
+npx tsx scripts/load-legacy-vcons.ts /path/to/vcons   # Load from local directory
+npx tsx scripts/load-legacy-vcons.ts --hours=168      # Load last 7 days
+npx tsx scripts/load-legacy-vcons.ts --sync           # Continuous sync mode
 ```
 
 **Options:**
@@ -149,6 +177,8 @@ TypeScript script that exports all vCons from a remote Supabase database and imp
 
 **Usage:**
 ```bash
+npm run db:backup
+# or with environment variables
 LOCAL_SUPABASE_URL=http://127.0.0.1:54321 \
 LOCAL_SUPABASE_KEY=your_local_key \
 REMOTE_SUPABASE_URL=https://your-project.supabase.co \
@@ -211,6 +241,8 @@ Migrates database to enable Row Level Security (RLS) for multi-tenant support. A
 
 **Usage:**
 ```bash
+npm run migrate:rls
+# or with environment variables
 SUPABASE_URL=https://your-project.supabase.co \
 SUPABASE_SERVICE_ROLE_KEY=your_key \
 RLS_ENABLED=true \
@@ -521,12 +553,69 @@ psql -f scripts/cleanup-non-text-embeddings.sql
 
 ## Other Utilities
 
-### `check-vcons.ts`
+### `check-db-status.ts` ⭐ **Recommended**
 
-Checks vCon loading status. Verifies how many vCons are in the database and shows recent activity.
+Comprehensive database status check that provides detailed reporting on all tables including vcons, parties, dialog, attachments, and analysis.
+
+**When to use:** When you need a complete overview of database health and data population status.
+
+**Features:**
+- Total counts for all tables
+- Most recent vCon information with timestamps
+- Last 24 hours activity summary
+- Data population status (YES/NO indicators)
+- Average counts per vCon
+- Sample data from each table
+- Distribution of types (dialog types, attachment types, analysis types/vendors)
 
 **Usage:**
 ```bash
+npm run db:status
+# or
+npx tsx scripts/check-db-status.ts
+```
+
+**Environment Variables:**
+- `SUPABASE_URL` - Supabase project URL
+- `SUPABASE_SERVICE_ROLE_KEY` - Service role key for admin operations
+
+### `check-daily-counts.ts`
+
+Analyzes vCon counts per day to identify gaps, anomalies, and trends in data collection.
+
+**When to use:** When you need to verify data completeness over time or identify missing data.
+
+**Features:**
+- Daily vCon count aggregation
+- Gap identification (consecutive days with no data)
+- Low count anomaly detection
+- Monthly summary with coverage percentages
+- Visual graph of recent 30 days
+- Statistics on data collection (avg/day, max, min)
+
+**Usage:**
+```bash
+npm run db:analyze
+# or
+npx tsx scripts/check-daily-counts.ts
+```
+
+**Environment Variables:**
+- `SUPABASE_URL` - Supabase project URL
+- `SUPABASE_SERVICE_ROLE_KEY` - Service role key for admin operations
+
+**Note:** This script queries day-by-day which can take several minutes for databases with long date ranges.
+
+### `check-vcons.ts`
+
+Quick vCon count check. Verifies how many vCons are in the database and shows recent activity.
+
+**When to use:** When you need a quick status check without detailed information.
+
+**Usage:**
+```bash
+npm run db:check
+# or
 npx tsx scripts/check-vcons.ts
 ```
 
@@ -571,31 +660,43 @@ Scripts that use S3 also require:
 - `AWS_REGION` - AWS region (default: us-east-1)
 - AWS credentials (auto-detected from environment, credentials file, or IAM roles)
 
+## Archived Scripts
+
+Some scripts have been archived to `archive/scripts/` as they were one-time fixes or have been superseded by better approaches:
+
+- **One-time fix scripts** (fix-attachment-bodies.ts, fix-all-vcons-incremental.ts, etc.)
+- **Deprecated sync scripts** (sync-vcons-hourly.sh, install-hourly-sync.sh)
+- **Historical diagnostic tools** (diagnose-tenant-ids.ts, test-tenant-setup.ts)
+
+See `archive/scripts/README.md` and `archive/MIGRATION_FROM_OLD_SCRIPTS.md` for details on what to use instead.
+
 ## Script Status
 
 ### Active / Recommended Scripts
 - ⭐ `load-legacy-vcons.ts` - **Primary loader** - handles both legacy and current vCons, S3 support, RLS management
+- ⭐ `check-db-status.ts` - **Comprehensive database status** - detailed reporting on all tables
+- ⭐ `check-daily-counts.ts` - **Daily analysis** - identify data gaps and anomalies
 - ✅ `backup-from-remote.ts` - Active backup solution
 - ✅ `backup-remote-cli.sh` - Active backup solution (CLI-based)
 - ✅ `migrate-to-rls.ts` - Active RLS migration tool
-- ✅ `check-vcons.ts` - Active status checker
+- ✅ `check-vcons.ts` - Quick status checker
 - ✅ `backfill-s3-sync.sh` - Active S3 sync backfill
 - ✅ `backfill-embeddings.sh` - Active embedding backfill
 
 ### Utility Scripts
-- 🔧 `load-vcons.ts` - Simple loader for small batches (use `load-legacy-vcons.ts` for most cases)
+- 🔧 `load-vcons.ts` - Simple loader for small batches
 - 🔧 `load-existing-uuids.ts` - Utility for UUID pre-loading
 - 🔧 `migrate-tags-encoding.ts` - One-time migration utility
 - 🔧 `migrate-to-remote.ts` - Data migration utility
 - 🔧 `sync-remote-schema.ts` - Schema inspection utility
 - 🔧 `pull-remote-migrations.ts` - Migration sync utility
-- 🔧 `generate-embeddings-v2.ts` - Local embedding generation (use Edge Function for production)
+- 🔧 `generate-embeddings-v2.ts` - Local embedding generation
 
 ### Test Scripts
 - 🧪 All `test-*.ts` and `verify-*.ts` scripts are for development and debugging
 
 ### SQL Utility Scripts
-- 📄 `apply-s3-sync-migration.sql` - Manual migration (duplicate of migration file)
+- 📄 `apply-s3-sync-migration.sql` - Manual migration
 - 📄 `backfill-s3-sync.sql` - SQL utility for S3 backfill
 - 📄 `check-embedding-coverage.sql` - Analysis query
 - 📄 `cleanup-non-text-embeddings.sql` - Cleanup utility

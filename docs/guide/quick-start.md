@@ -274,6 +274,8 @@ Find all high priority support vCons
 
 ## Quick Command Reference
 
+### Core Commands
+
 | Command | Purpose |
 |---------|---------|
 | `npm install` | Install dependencies |
@@ -281,6 +283,26 @@ Find all high priority support vCons
 | `npm test` | Run tests |
 | `npm run dev` | Start dev server (watch mode) |
 | `npm run docs:dev` | Preview documentation |
+
+### Database Operations
+
+| Command | Purpose |
+|---------|---------|
+| `npm run db:status` | Check comprehensive database status |
+| `npm run db:check` | Quick vCon count check |
+| `npm run db:analyze` | Analyze daily counts for gaps |
+| `npm run db:backup` | Backup database |
+| `npm run db:restore` | Restore from backup |
+
+### Data Loading
+
+| Command | Purpose |
+|---------|---------|
+| `npm run load:s3:recent` | Load last 24 hours from S3 |
+| `npm run load:s3` | Load from S3 (default) |
+| `npm run load:local` | Load from local directory |
+
+For complete script documentation, see [scripts/README.md](../../scripts/README.md).
 
 ---
 

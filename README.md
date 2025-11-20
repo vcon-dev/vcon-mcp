@@ -107,6 +107,74 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 Restart Claude Desktop and start using vCon tools!
 
+## Common Operations
+
+The project includes npm scripts for common database and data management operations:
+
+### Database Status & Analysis
+
+```bash
+# Comprehensive database status (recommended)
+npm run db:status
+
+# Quick vCon count check
+npm run db:check
+
+# Daily count analysis to identify gaps
+npm run db:analyze
+```
+
+### Data Loading
+
+```bash
+# Load recent vCons from S3
+npm run load:s3:recent
+
+# Load from S3 with default settings
+npm run load:s3
+
+# Load from local directory
+npm run load:local
+```
+
+### Backup & Restore
+
+```bash
+# Backup database
+npm run db:backup
+
+# Restore from backup
+npm run db:restore
+```
+
+### Embeddings Management
+
+```bash
+# Backfill missing embeddings
+npm run embeddings:backfill
+
+# Generate embeddings locally
+npm run embeddings:generate
+
+# Check embedding coverage
+npm run embeddings:check
+```
+
+### Testing
+
+```bash
+# Test database tools
+npm run test:db
+
+# Test search functionality
+npm run test:search
+
+# Test tag system
+npm run test:tags
+```
+
+For more details on scripts and advanced options, see [scripts/README.md](scripts/README.md).
+
 ## Transport Options
 
 The vCon MCP Server supports multiple transport mechanisms for connecting AI assistants:
@@ -630,6 +698,13 @@ vcon-mcp/
 - **[Build Guide](BUILD_GUIDE.md)** - Step-by-step implementation from scratch
 - **[Supabase Semantic Search](SUPABASE_SEMANTIC_SEARCH_GUIDE.md)** - Vector search setup
 - **[Plugin Development](docs/development/plugins.md)** - Creating custom plugins
+
+### For LLMs and AI Systems
+
+- **[Database Documentation Index](DATABASE_DOCUMENTATION_INDEX.md)** - Start here - Overview of all LLM documentation
+- **[Database Architecture for LLMs](DATABASE_ARCHITECTURE_FOR_LLMS.md)** - Complete database design and structure
+- **[Database Quick Start for LLMs](DATABASE_QUICKSTART_FOR_LLMS.md)** - Practical code examples and patterns
+- **[Database Schema Visual Reference](DATABASE_SCHEMA_VISUAL.md)** - Visual entity relationship diagrams
 
 ### API Reference
 
