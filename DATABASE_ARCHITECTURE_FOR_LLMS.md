@@ -1292,3 +1292,4 @@ The database is designed for:
 *This document provides the complete database architecture and design patterns necessary for building robust applications on top of the vCon MCP Server database. For specific API usage, refer to the TypeScript query implementation in `src/db/queries.ts`.*
 
 
+
