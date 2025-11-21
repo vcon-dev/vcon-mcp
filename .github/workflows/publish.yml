@@ -33,10 +33,7 @@ jobs:
         run: npm run build
       
       - name: Publish to npm
-        uses: actions/setup-node@v4
-        with:
-          registry-url: 'https://registry.npmjs.org'
-        run: npm publish --access public
+        run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
