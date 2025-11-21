@@ -7,11 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [1.0.1] - 2025-01-XX
+
 ### Added
-- Comprehensive API documentation (tools, resources, prompts, types, schema)
-- Complete developer guides (architecture, contributing, code style, custom tools, documentation standards)
-- Reference documentation (vCon spec, glossary, changelog, CLI reference)
-- VitePress documentation site with GitHub Pages deployment
+- Comprehensive database documentation for LLMs (architecture, quickstart, schema visual)
+- Row Level Security (RLS) support for multi-tenant isolation
+- Enhanced database status and analytics scripts
+- S3 sync functionality and backfill scripts
+- Tenant debugging support
+- Versioned resource URIs (vcon://v1/...)
+- Backup and restore functionality
+- Enhanced embedding generation with backfill options
+- Improved database inspection tools
+
+### Changed
+- Updated package dependencies
+- Enhanced embedding scripts with continuous and backfill modes
+- Improved database status reporting with time-ago formatting
+- Enhanced dialog, attachment, and analysis type distribution logging
+
+### Fixed
+- Removed obsolete test scripts and temporary files
+- Improved environment variable management in scripts
 
 ---
 

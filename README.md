@@ -2,7 +2,7 @@
 
 > A Model Context Protocol (MCP) server for storing, managing, and analyzing IETF vCon (Virtual Conversation) data with AI assistants.
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Version](https://img.shields.io/badge/version-1.0.1-blue)
 ![IETF Spec](https://img.shields.io/badge/IETF%20vCon-draft--00-green)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
