@@ -43,6 +43,7 @@ describe('Database Client', () => {
     it('should throw error when SUPABASE_ANON_KEY is missing', () => {
       process.env.SUPABASE_URL = 'https://example.supabase.co';
       delete process.env.SUPABASE_ANON_KEY;
+      delete process.env.SUPABASE_SERVICE_ROLE_KEY;
 
       expect(() => getSupabaseClient()).toThrow('Missing Supabase credentials');
       expect(() => getSupabaseClient()).toThrow('SUPABASE_ANON_KEY');

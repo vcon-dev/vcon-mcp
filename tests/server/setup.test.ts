@@ -57,8 +57,8 @@ describe('Server Setup', () => {
   });
 
   describe('initializeDatabase', () => {
-    it('should initialize database clients', () => {
-      const result = initializeDatabase();
+    it('should initialize database clients', async () => {
+      const result = await initializeDatabase();
 
       expect(result).toHaveProperty('queries');
       expect(result).toHaveProperty('dbInspector');
@@ -68,8 +68,8 @@ describe('Server Setup', () => {
       expect(result).toHaveProperty('redis');
     });
 
-    it('should initialize all required database components', () => {
-      const result = initializeDatabase();
+    it('should initialize all required database components', async () => {
+      const result = await initializeDatabase();
 
       expect(result.queries).toBeDefined();
       expect(result.dbInspector).toBeDefined();

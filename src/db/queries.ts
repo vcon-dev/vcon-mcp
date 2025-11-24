@@ -1087,16 +1087,29 @@ export class VConQueries {
    * Search vCons by tags
    */
   async searchByTags(tags: Record<string, string>, limit: number = 50): Promise<string[]> {
-    // Use the database RPC to search by tags
-    const { data, error } = await this.supabase.rpc('search_vcons_by_tags', {
+    // Use the database RPC to search by tags with timeout to prevent hanging
+    const rpcPromise = this.supabase.rpc('search_vcons_by_tags', {
       tag_filter: tags,
       max_results: limit,
     });
+    
+    // Add a 10 second timeout to prevent indefinite hangs
+    const timeoutPromise = new Promise<{ data: null; error: Error }>((resolve) => {
+      setTimeout(() => {
+        resolve({ data: null, error: new Error('RPC call timed out') });
+      }, 10000);
+    });
+    
+    const { data, error } = await Promise.race([rpcPromise, timeoutPromise]);
 
     // Helper function for manual search fallback
     const performManualSearch = async (): Promise<string[]> => {
       // Get all vCons with tags attachments (use pagination to bypass Supabase's 1000 row default limit)
       // Note: We look for type='tags' regardless of encoding to handle legacy data
+      
+      // Add overall timeout to prevent indefinite execution
+      const searchTimeout = 45000; // 45 seconds max for manual search
+      const startTime = Date.now();
       
       // First, get the total count
       const { count, error: countError } = await this.supabase
@@ -1105,14 +1118,26 @@ export class VConQueries {
         .eq('type', 'tags');
 
       if (countError) throw countError;
+      
+      // Check timeout before proceeding
+      if (Date.now() - startTime > searchTimeout) {
+        return [];
+      }
 
       // Fetch all attachments in batches (Supabase defaults to 1000 rows per query)
       // Stop early if we've found enough matches
+      // Limit to max 200 batches (200,000 records) to prevent timeout on large databases
       const batchSize = 1000;
-      const totalBatches = Math.ceil((count || 0) / batchSize);
+      const maxBatches = 200;
+      const totalBatches = Math.min(Math.ceil((count || 0) / batchSize), maxBatches);
       const matchingVconIds = new Set<number>();
 
       for (let i = 0; i < totalBatches; i++) {
+        // Check timeout before processing next batch
+        if (Date.now() - startTime > searchTimeout) {
+          break;
+        }
+        
         // Stop fetching if we have enough matches
         if (matchingVconIds.size >= limit) {
           break;
