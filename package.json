@@ -46,6 +46,7 @@
     "test:mcp": "tsx scripts/test-mcp-tools.ts",
     "test:search": "tsx scripts/test-search-tools.ts",
     "test:tags": "tsx scripts/test-tags.ts",
+    "test:tenant": "tsx scripts/test-tenant-isolation.ts",
     "migrate:rls": "tsx scripts/migrate-to-rls.ts",
     "migrate:remote": "tsx scripts/migrate-to-remote.ts",
     "util:s3-sync": "./scripts/backfill-s3-sync.sh"

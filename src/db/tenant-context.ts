@@ -12,7 +12,11 @@ import { logWithContext } from '../observability/instrumentation.js';
  * Set tenant context in PostgreSQL session for RLS policies
  * 
  * This sets the app.current_tenant_id session variable that
- * get_current_tenant_id() function reads in RLS policies
+ * get_current_tenant_id() function reads in RLS policies.
+ * 
+ * Note: The database function get_current_tenant_id() checks JWT claims first
+ * (auth.jwt()->>'tenant_id'), then falls back to this session variable.
+ * This provides flexibility for both authenticated users (JWT) and service role (session variable).
  */
 export async function setTenantContext(
   supabase: SupabaseClient

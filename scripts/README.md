@@ -497,6 +497,22 @@ Tests tag functionality.
 npx tsx scripts/test-tags.ts
 ```
 
+### `test-tenant-isolation.ts`
+
+Comprehensive test script to verify tenant isolation and RLS policies work correctly. Tests:
+- Tenant isolation - users can only see their own tenant's data
+- Cross-tenant access is blocked
+- NULL tenant_id allows shared access
+- RLS policies are working on all tables
+- Child table triggers set tenant_id correctly
+
+**Usage:**
+```bash
+npx tsx scripts/test-tenant-isolation.ts
+# Or via npm script:
+npm run test:tenant
+```
+
 ### `verify-search-by-tags.ts`
 
 Verifies search by tags functionality.

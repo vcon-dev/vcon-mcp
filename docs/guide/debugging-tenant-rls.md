@@ -241,53 +241,25 @@ FROM vcons
 LIMIT 5;
 ```
 
-### Test 3: Query from Node
+### Test 3: Comprehensive Tenant Isolation Test
 
-Create a test script `test-tenant.ts`:
+Run the comprehensive test script to verify all tenant isolation features:
 
-```typescript
-import { createClient } from '@supabase/supabase-js';
-import dotenv from 'dotenv';
-
-dotenv.config();
-
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-async function test() {
-  console.log('Setting tenant context...');
-  const { error: setError } = await supabase.rpc('set_tenant_context', {
-    p_tenant_id: process.env.CURRENT_TENANT_ID!
-  });
-  
-  if (setError) {
-    console.error('Failed to set:', setError);
-    return;
-  }
-  
-  console.log('Verifying tenant context...');
-  const { data: tenantId, error: getError } = await supabase.rpc('get_current_tenant_id');
-  console.log('Current tenant:', tenantId);
-  
-  console.log('Querying vCons...');
-  const { data: vcons, error: queryError } = await supabase
-    .from('vcons')
-    .select('uuid, tenant_id, subject')
-    .limit(5);
-  
-  console.log('Visible vCons:', vcons?.length || 0);
-  console.log(vcons);
-}
-
-test();
-```
-
-Run it:
 ```bash
-npx tsx test-tenant.ts
+npm run test:tenant
+# Or directly:
+npx tsx scripts/test-tenant-isolation.ts
 ```
+
+This script tests:
+- Tenant context setting and retrieval
+- Tenant isolation (users can only see their own tenant's data)
+- Cross-tenant access blocking
+- NULL tenant_id shared access
+- RLS policies on all tables
+- Child table triggers setting tenant_id correctly
+
+For a simple manual test, you can also create a minimal `test-tenant.ts` script (see the scripts directory for examples).
 
 ## Verification Checklist
 
@@ -341,6 +313,7 @@ If you've checked everything and it's still not working:
 - **Claude Desktop (Windows):** `%APPDATA%\Claude\logs\mcp*.log`
 - **Claude Desktop (Linux):** `~/.local/share/Claude/logs/mcp*.log`
 - **STDIO stderr:** All server logs go to stderr, never stdout
+
 
 
 
