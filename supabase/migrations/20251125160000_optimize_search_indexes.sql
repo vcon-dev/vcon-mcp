@@ -175,35 +175,89 @@ CREATE TRIGGER trigger_parties_party_tsvector
   EXECUTE FUNCTION update_parties_party_tsvector();
 
 -- ============================================================================
--- 5. Backfill Existing Data
+-- 5. Backfill Helper Function
 -- ============================================================================
--- Populate tsvector columns for existing rows
+-- Helper RPC to backfill data in batches via external script
 
-UPDATE vcons 
-SET subject_tsvector = setweight(to_tsvector('english', coalesce(subject, '')), 'A')
-WHERE subject_tsvector IS NULL;
+CREATE OR REPLACE FUNCTION backfill_search_vector_batch(
+  p_table_name text,
+  p_batch_size int
+) RETURNS bigint
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_count bigint;
+BEGIN
+  IF p_table_name = 'vcons' THEN
+    WITH batch AS (
+      SELECT id
+      FROM vcons
+      WHERE subject_tsvector IS NULL
+      LIMIT p_batch_size
+      FOR UPDATE SKIP LOCKED
+    )
+    UPDATE vcons
+    SET subject_tsvector = setweight(to_tsvector('english', coalesce(subject, '')), 'A')
+    WHERE id IN (SELECT id FROM batch);
+    GET DIAGNOSTICS v_count = ROW_COUNT;
 
-UPDATE dialog 
-SET body_tsvector = setweight(to_tsvector('english', coalesce(body, '')), 'C')
-WHERE body_tsvector IS NULL;
+  ELSIF p_table_name = 'dialog' THEN
+    WITH batch AS (
+      SELECT id
+      FROM dialog
+      WHERE body_tsvector IS NULL
+      LIMIT p_batch_size
+      FOR UPDATE SKIP LOCKED
+    )
+    UPDATE dialog
+    SET body_tsvector = setweight(to_tsvector('english', coalesce(body, '')), 'C')
+    WHERE id IN (SELECT id FROM batch);
+    GET DIAGNOSTICS v_count = ROW_COUNT;
 
-UPDATE analysis 
-SET body_tsvector = setweight(to_tsvector('english', coalesce(body, '')), 'B')
-WHERE body_tsvector IS NULL;
+  ELSIF p_table_name = 'analysis' THEN
+    WITH batch AS (
+      SELECT id
+      FROM analysis
+      WHERE body_tsvector IS NULL
+      LIMIT p_batch_size
+      FOR UPDATE SKIP LOCKED
+    )
+    UPDATE analysis
+    SET body_tsvector = setweight(to_tsvector('english', coalesce(body, '')), 'B')
+    WHERE id IN (SELECT id FROM batch);
+    GET DIAGNOSTICS v_count = ROW_COUNT;
 
-UPDATE parties 
-SET party_tsvector = setweight(to_tsvector('simple',
-  coalesce(name, '') || ' ' || 
-  coalesce(mailto, '') || ' ' || 
-  coalesce(tel, '')), 'B')
-WHERE party_tsvector IS NULL;
+  ELSIF p_table_name = 'parties' THEN
+    WITH batch AS (
+      SELECT id
+      FROM parties
+      WHERE party_tsvector IS NULL
+      LIMIT p_batch_size
+      FOR UPDATE SKIP LOCKED
+    )
+    UPDATE parties
+    SET party_tsvector = setweight(to_tsvector('simple',
+      coalesce(name, '') || ' ' || 
+      coalesce(mailto, '') || ' ' || 
+      coalesce(tel, '')), 'B')
+    WHERE id IN (SELECT id FROM batch);
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+
+  ELSE
+    RAISE EXCEPTION 'Unknown table name: %', p_table_name;
+  END IF;
+
+  RETURN v_count;
+END;
+$$;
 
 -- ============================================================================
--- 6. Partial Indexes for Recent Data (Optional Optimization)
+-- 6. Partial Indexes for Recent Data (Optional Optimization) - REMOVED
 -- ============================================================================
--- These indexes cover the most common query pattern: searching recent vCons
+-- Cannot use NOW() in index predicate as it is not IMMUTABLE.
+-- We rely on idx_vcons_created_at_btree + GIN index for performance.
 
--- Index for vCons from last 30 days (adjust as needed)
+/*
 CREATE INDEX IF NOT EXISTS idx_vcons_recent_subject_tsvector
   ON vcons USING GIN (subject_tsvector)
   WHERE created_at >= NOW() - INTERVAL '30 days'
@@ -215,6 +269,7 @@ CREATE INDEX IF NOT EXISTS idx_dialog_recent_body_tsvector
     SELECT id FROM vcons WHERE created_at >= NOW() - INTERVAL '30 days'
   )
   AND body_tsvector IS NOT NULL;
+*/
 
 -- ============================================================================
 -- 7. Optimized Search Function (Alternative Implementation)
@@ -234,4 +289,3 @@ COMMENT ON COLUMN analysis.body_tsvector IS
 
 COMMENT ON COLUMN parties.party_tsvector IS 
   'Materialized tsvector for party information (name, email, tel) full-text search. Updated automatically via trigger.';
-
