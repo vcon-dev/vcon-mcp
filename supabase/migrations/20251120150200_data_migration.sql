@@ -17,7 +17,12 @@ CREATE TEMP TABLE migration_preview AS
 SELECT 
   'must_support → critical' as migration_type,
   COUNT(*) as records_to_migrate,
-  jsonb_agg(uuid ORDER BY created_at LIMIT 5) as sample_uuids
+  (SELECT jsonb_agg(uuid) FROM (
+    SELECT uuid FROM vcons 
+    WHERE must_support IS NOT NULL AND critical IS NULL
+    ORDER BY created_at 
+    LIMIT 5
+  ) sub) as sample_uuids
 FROM vcons 
 WHERE must_support IS NOT NULL AND critical IS NULL
 
@@ -26,7 +31,13 @@ UNION ALL
 SELECT 
   'appended → amended' as migration_type,
   COUNT(*) as records_to_migrate,
-  jsonb_agg(uuid ORDER BY created_at LIMIT 5) as sample_uuids
+  (SELECT jsonb_agg(uuid) FROM (
+    SELECT uuid FROM vcons 
+    WHERE appended IS NOT NULL AND appended != '{}'::jsonb 
+      AND (amended IS NULL OR amended = '{}'::jsonb)
+    ORDER BY created_at 
+    LIMIT 5
+  ) sub) as sample_uuids
 FROM vcons 
 WHERE appended IS NOT NULL AND appended != '{}'::jsonb 
   AND (amended IS NULL OR amended = '{}'::jsonb)
@@ -36,7 +47,14 @@ UNION ALL
 SELECT 
   'session_id TEXT → JSONB' as migration_type,
   COUNT(*) as records_to_migrate,
-  jsonb_agg(uuid ORDER BY created_at LIMIT 5) as sample_uuids
+  (SELECT jsonb_agg(sub.uuid) FROM (
+    SELECT DISTINCT ON (v.uuid) v.uuid, v.created_at
+    FROM vcons v
+    JOIN dialog d ON v.id = d.vcon_id
+    WHERE d.session_id_legacy IS NOT NULL
+    ORDER BY v.uuid, v.created_at 
+    LIMIT 5
+  ) sub) as sample_uuids
 FROM vcons v
 JOIN dialog d ON v.id = d.vcon_id
 WHERE d.session_id_legacy IS NOT NULL;
