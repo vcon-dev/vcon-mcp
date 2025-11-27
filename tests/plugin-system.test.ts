@@ -4,6 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { randomUUID } from 'crypto';
 import { PluginManager } from '../src/hooks/plugin-manager.js';
 import { VConPlugin, RequestContext } from '../src/hooks/plugin-interface.js';
 import { VCon } from '../src/types/vcon.js';
@@ -175,7 +176,7 @@ describe('PluginManager', () => {
       
       const vcon: VCon = {
         vcon: '0.3.0',
-        uuid: crypto.randomUUID(),
+        uuid: randomUUID(),
         created_at: new Date().toISOString(),
         subject: 'Test',
         parties: []
@@ -206,7 +207,7 @@ describe('PluginManager', () => {
       
       const vcon: VCon = {
         vcon: '0.3.0',
-        uuid: crypto.randomUUID(),
+        uuid: randomUUID(),
         created_at: new Date().toISOString(),
         subject: 'Test',
         parties: []
@@ -226,7 +227,7 @@ describe('PluginManager', () => {
       
       const vcon: VCon = {
         vcon: '0.3.0',
-        uuid: crypto.randomUUID(),
+        uuid: randomUUID(),
         created_at: new Date().toISOString(),
         subject: 'blocked',
         parties: []
@@ -241,7 +242,7 @@ describe('PluginManager', () => {
       const plugin = new LoggingPlugin();
       pluginManager.registerPlugin(plugin);
       
-      const uuid = crypto.randomUUID();
+      const uuid = randomUUID();
       const vcon: VCon = {
         vcon: '0.3.0',
         uuid,

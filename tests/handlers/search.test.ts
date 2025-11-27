@@ -5,6 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { randomUUID } from 'crypto';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import {
   SearchVConsHandler,
@@ -71,7 +72,7 @@ describe('Search Handlers', () => {
       const mockResults: VCon[] = [
         {
           vcon: '0.3.0',
-          uuid: crypto.randomUUID(),
+          uuid: randomUUID(),
           created_at: new Date().toISOString(),
           parties: [{ name: 'Test' }],
         },
@@ -93,8 +94,8 @@ describe('Search Handlers', () => {
 
     it('should format results as ids_only when requested', async () => {
       const handler = new SearchVConsHandler();
-      const uuid1 = crypto.randomUUID();
-      const uuid2 = crypto.randomUUID();
+      const uuid1 = randomUUID();
+      const uuid2 = randomUUID();
       const mockResults: VCon[] = [
         { vcon: '0.3.0', uuid: uuid1, created_at: new Date().toISOString(), parties: [{ name: 'Test' }] },
         { vcon: '0.3.0', uuid: uuid2, created_at: new Date().toISOString(), parties: [{ name: 'Test' }] },
@@ -114,7 +115,7 @@ describe('Search Handlers', () => {
     it('should include total count when requested', async () => {
       const handler = new SearchVConsHandler();
       const mockResults: VCon[] = [
-        { vcon: '0.3.0', uuid: crypto.randomUUID(), created_at: new Date().toISOString(), parties: [{ name: 'Test' }] },
+        { vcon: '0.3.0', uuid: randomUUID(), created_at: new Date().toISOString(), parties: [{ name: 'Test' }] },
       ];
 
       mockQueries.searchVCons.mockResolvedValue(mockResults);

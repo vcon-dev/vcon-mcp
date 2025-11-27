@@ -9,6 +9,7 @@
  */
 
 import dotenv from 'dotenv';
+import { randomUUID } from 'crypto';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 dotenv.config();
@@ -101,7 +102,7 @@ async function main() {
     const { data: vcon1, error: e1 } = await serviceRoleClient
       .from('vcons')
       .insert({
-        uuid: crypto.randomUUID(),
+        uuid: randomUUID(),
         vcon_version: '0.3.0',
         subject: 'Test vCon for Tenant 1',
         tenant_id: 'tenant-1',
@@ -116,7 +117,7 @@ async function main() {
     const { data: vcon2, error: e2 } = await serviceRoleClient
       .from('vcons')
       .insert({
-        uuid: crypto.randomUUID(),
+        uuid: randomUUID(),
         vcon_version: '0.3.0',
         subject: 'Test vCon for Tenant 2',
         tenant_id: 'tenant-2',
@@ -131,7 +132,7 @@ async function main() {
     const { data: vcon3, error: e3 } = await serviceRoleClient
       .from('vcons')
       .insert({
-        uuid: crypto.randomUUID(),
+        uuid: randomUUID(),
         vcon_version: '0.3.0',
         subject: 'Shared vCon (NULL tenant)',
         tenant_id: null,

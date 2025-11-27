@@ -4,7 +4,7 @@
  * Provides common interfaces and base classes for tool handlers
  */
 
-import crypto from 'crypto';
+import { randomUUID } from 'crypto';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { VConQueries } from '../../db/queries.js';
 import { PluginManager } from '../../hooks/plugin-manager.js';
@@ -69,7 +69,7 @@ export abstract class BaseToolHandler implements ToolHandler {
    * Execute the handler with observability and error handling
    */
   async handle(args: any, context: ToolHandlerContext): Promise<ToolResponse> {
-    const requestId = crypto.randomUUID();
+    const requestId = randomUUID();
     const startTime = Date.now();
 
     return withSpan(`mcp.tool.${this.toolName}`, async (span) => {

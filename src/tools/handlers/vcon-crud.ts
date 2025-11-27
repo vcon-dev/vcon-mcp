@@ -2,7 +2,7 @@
  * vCon CRUD Tool Handlers
  */
 
-import crypto from 'crypto';
+import { randomUUID } from 'crypto';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { BaseToolHandler, ToolHandlerContext, ToolResponse } from './base.js';
 import { VCon, Analysis, Dialog, Attachment } from '../../types/vcon.js';
@@ -30,7 +30,7 @@ export class CreateVConHandler extends BaseToolHandler {
     
     let vcon: VCon = {
       vcon: '0.3.0',
-      uuid: crypto.randomUUID(),
+      uuid: randomUUID(),
       created_at: new Date().toISOString(),
       subject: args?.subject as string | undefined,
       parties: (args?.parties as any[]) || [],

@@ -4,6 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { randomUUID } from 'crypto';
 import {
   AnalysisSchema,
   DialogSchema,
@@ -256,7 +257,7 @@ describe('CRUD Schema Validation', () => {
     it('should validate party with uuid field', () => {
       const party = {
         name: 'Alice',
-        uuid: crypto.randomUUID()  // ✅ UUID field
+        uuid: randomUUID()  // ✅ UUID field
       };
 
       const result = PartySchema.safeParse(party);
@@ -308,7 +309,7 @@ describe('CRUD Schema Validation', () => {
         mailto: 'alice@example.com',
         name: 'Alice',
         did: 'did:example:123456',
-        uuid: crypto.randomUUID(),
+        uuid: randomUUID(),
         validation: 'verified',
         timezone: 'America/New_York'
       };

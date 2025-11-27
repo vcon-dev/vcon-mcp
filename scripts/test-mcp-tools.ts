@@ -7,6 +7,7 @@
  */
 
 import dotenv from 'dotenv';
+import { randomUUID } from 'crypto';
 import { getSupabaseClient } from '../dist/db/client.js';
 import { VConQueries } from '../dist/db/queries.js';
 
@@ -74,19 +75,19 @@ async function runTests() {
     
     const newVcon = {
       vcon: '0.3.0',
-      uuid: crypto.randomUUID(),
+      uuid: randomUUID(),
       created_at: new Date().toISOString(),
       subject: 'Test vCon - MCP Server Validation',
       parties: [
         {
           name: 'Test Agent',
           mailto: 'agent@test.example.com',
-          uuid: crypto.randomUUID()
+          uuid: randomUUID()
         },
         {
           name: 'Test Customer',
           tel: '+1-555-TEST',
-          uuid: crypto.randomUUID()
+          uuid: randomUUID()
         }
       ]
     };

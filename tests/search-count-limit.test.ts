@@ -7,6 +7,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { randomUUID } from 'crypto';
 import { VConQueries } from '../src/db/queries.js';
 
 describe('Search Count Limit Validation', () => {
@@ -203,15 +204,15 @@ describe('Search Count Limit Validation', () => {
     });
 
     it('should handle tag filters', async () => {
-      const testUuid1 = crypto.randomUUID();
-      const testUuid2 = crypto.randomUUID();
+      const testUuid1 = randomUUID();
+      const testUuid2 = randomUUID();
       
       // Mock searchByTags to return matching UUIDs
       vi.spyOn(queries, 'searchByTags').mockResolvedValue([testUuid1, testUuid2]);
       
       // Mock the base query to return UUIDs
       mockSupabase.setResult({
-        data: [{ uuid: testUuid1 }, { uuid: testUuid2 }, { uuid: crypto.randomUUID() }],
+        data: [{ uuid: testUuid1 }, { uuid: testUuid2 }, { uuid: randomUUID() }],
         error: null
       });
 
@@ -224,10 +225,10 @@ describe('Search Count Limit Validation', () => {
     });
 
     it('should combine tag filters with other filters', async () => {
-      const testUuid = crypto.randomUUID();
+      const testUuid = randomUUID();
       
       // Mock searchByTags
-      vi.spyOn(queries, 'searchByTags').mockResolvedValue([testUuid, crypto.randomUUID()]);
+      vi.spyOn(queries, 'searchByTags').mockResolvedValue([testUuid, randomUUID()]);
       
       // Mock sequential queries: party query, then UUID query
       const mockPartyData = [{ vcon_id: 1 }, { vcon_id: 2 }];
@@ -252,7 +253,7 @@ describe('Search Count Limit Validation', () => {
       
       // Mock the base query
       mockSupabase.setResult({
-        data: [{ uuid: crypto.randomUUID() }],
+        data: [{ uuid: randomUUID() }],
         error: null
       });
 

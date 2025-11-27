@@ -5,6 +5,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { randomUUID } from 'crypto';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import {
   requireUUID,
@@ -51,7 +52,7 @@ describe('Validation Utilities', () => {
     it('should not throw for valid vCon', () => {
       const vcon: VCon = {
         vcon: '0.3.0',
-        uuid: crypto.randomUUID(),
+        uuid: randomUUID(),
         created_at: new Date().toISOString(),
         parties: [{ name: 'Test' }],
       };

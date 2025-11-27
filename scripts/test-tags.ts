@@ -5,6 +5,7 @@
  */
 
 import { getSupabaseClient } from '../dist/db/client.js';
+import { randomUUID } from 'crypto';
 import { VConQueries } from '../dist/db/queries.js';
 import { VCon } from '../dist/types/vcon.js';
 
@@ -19,7 +20,7 @@ async function main() {
     console.log('1. Creating test vCon...');
     const testVCon: VCon = {
       vcon: '0.3.0',
-      uuid: crypto.randomUUID(),
+      uuid: randomUUID(),
       created_at: new Date().toISOString(),
       subject: 'Tag Test vCon',
       parties: [{ name: 'Test User' }]

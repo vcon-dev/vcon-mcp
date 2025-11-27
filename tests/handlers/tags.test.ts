@@ -5,6 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { randomUUID } from 'crypto';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import {
   ManageTagHandler,
@@ -70,7 +71,7 @@ describe('Tag Handlers', () => {
   describe('ManageTagHandler', () => {
     it('should set a tag', async () => {
       const handler = new ManageTagHandler();
-      const uuid = crypto.randomUUID();
+      const uuid = randomUUID();
 
       mockQueries.addTag.mockResolvedValue(undefined);
 
@@ -90,7 +91,7 @@ describe('Tag Handlers', () => {
 
     it('should remove a tag', async () => {
       const handler = new ManageTagHandler();
-      const uuid = crypto.randomUUID();
+      const uuid = randomUUID();
 
       mockQueries.removeTag.mockResolvedValue(undefined);
 
@@ -108,7 +109,7 @@ describe('Tag Handlers', () => {
     it('should throw error if action is invalid', async () => {
       const handler = new ManageTagHandler();
       await expect(handler.handle({
-        vcon_uuid: crypto.randomUUID(),
+        vcon_uuid: randomUUID(),
         action: 'invalid',
         key: 'test',
       }, mockContext)).rejects.toThrow(McpError);
@@ -117,7 +118,7 @@ describe('Tag Handlers', () => {
     it('should throw error if value is missing for set action', async () => {
       const handler = new ManageTagHandler();
       await expect(handler.handle({
-        vcon_uuid: crypto.randomUUID(),
+        vcon_uuid: randomUUID(),
         action: 'set',
         key: 'test',
       }, mockContext)).rejects.toThrow(McpError);
@@ -127,7 +128,7 @@ describe('Tag Handlers', () => {
   describe('GetTagsHandler', () => {
     it('should get all tags', async () => {
       const handler = new GetTagsHandler();
-      const uuid = crypto.randomUUID();
+      const uuid = randomUUID();
       const tags = { department: 'sales', priority: 'high' };
 
       mockQueries.getTags.mockResolvedValue(tags);
@@ -145,7 +146,7 @@ describe('Tag Handlers', () => {
 
     it('should get a single tag', async () => {
       const handler = new GetTagsHandler();
-      const uuid = crypto.randomUUID();
+      const uuid = randomUUID();
 
       mockQueries.getTag.mockResolvedValue('sales');
 
@@ -162,7 +163,7 @@ describe('Tag Handlers', () => {
 
     it('should use default value when tag does not exist', async () => {
       const handler = new GetTagsHandler();
-      const uuid = crypto.randomUUID();
+      const uuid = randomUUID();
 
       mockQueries.getTag.mockResolvedValue('default');
 
@@ -182,7 +183,7 @@ describe('Tag Handlers', () => {
   describe('RemoveAllTagsHandler', () => {
     it('should remove all tags', async () => {
       const handler = new RemoveAllTagsHandler();
-      const uuid = crypto.randomUUID();
+      const uuid = randomUUID();
 
       mockQueries.removeAllTags.mockResolvedValue(undefined);
 
@@ -200,8 +201,8 @@ describe('Tag Handlers', () => {
   describe('SearchByTagsHandler', () => {
     it('should search vCons by tags', async () => {
       const handler = new SearchByTagsHandler();
-      const uuid1 = crypto.randomUUID();
-      const uuid2 = crypto.randomUUID();
+      const uuid1 = randomUUID();
+      const uuid2 = randomUUID();
 
       mockQueries.searchByTags.mockResolvedValue([uuid1, uuid2]);
 
@@ -219,7 +220,7 @@ describe('Tag Handlers', () => {
 
     it('should return full vCons when requested', async () => {
       const handler = new SearchByTagsHandler();
-      const uuid = crypto.randomUUID();
+      const uuid = randomUUID();
       const vcon = {
         vcon: '0.3.0',
         uuid,

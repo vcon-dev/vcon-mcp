@@ -5,6 +5,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { randomUUID } from 'crypto';
 import { VCon, Analysis, Dialog, Party } from '../src/types/vcon.js';
 import { validateVCon, validateAnalysis } from '../src/utils/validation.js';
 
@@ -128,11 +129,11 @@ describe('IETF vCon Spec Compliance', () => {
     it('should include uuid in vCon party', () => {
       const vcon: VCon = {
         vcon: '0.3.0',
-        uuid: crypto.randomUUID(),
+        uuid: randomUUID(),
         created_at: new Date().toISOString(),
         parties: [{
           name: 'Alice',
-          uuid: crypto.randomUUID()  // ✅ uuid field
+          uuid: randomUUID()  // ✅ uuid field
         }]
       };
 
@@ -205,7 +206,7 @@ describe('IETF vCon Spec Compliance', () => {
 
         const vcon: VCon = {
           vcon: '0.3.0',
-          uuid: crypto.randomUUID(),
+          uuid: randomUUID(),
           created_at: new Date().toISOString(),
           parties: [{ name: 'Test' }],
           dialog: [dialog]
@@ -219,7 +220,7 @@ describe('IETF vCon Spec Compliance', () => {
     it('should reject invalid dialog types', () => {
       const vcon = {
         vcon: '0.3.0',
-        uuid: crypto.randomUUID(),
+        uuid: randomUUID(),
         created_at: new Date().toISOString(),
         parties: [{ name: 'Test' }],
         dialog: [{
@@ -275,7 +276,7 @@ describe('IETF vCon Spec Compliance', () => {
     it('should include all new fields in complete vCon', () => {
       const vcon: VCon = {
         vcon: '0.3.0',
-        uuid: crypto.randomUUID(),
+        uuid: randomUUID(),
         created_at: new Date().toISOString(),
         parties: [{ name: 'Test' }],
         dialog: [{
@@ -301,7 +302,7 @@ describe('IETF vCon Spec Compliance', () => {
     it('should validate a complete spec-compliant vCon', () => {
       const vcon: VCon = {
         vcon: '0.3.0',
-        uuid: crypto.randomUUID(),
+        uuid: randomUUID(),
         created_at: new Date().toISOString(),
         subject: 'Test Conversation',
         extensions: ['https://example.com/ext'],
@@ -310,12 +311,12 @@ describe('IETF vCon Spec Compliance', () => {
           {
             name: 'Alice',
             mailto: 'alice@example.com',
-            uuid: crypto.randomUUID()
+            uuid: randomUUID()
           },
           {
             name: 'Bob',
             tel: '+1234567890',
-            uuid: crypto.randomUUID()
+            uuid: randomUUID()
           }
         ],
         dialog: [

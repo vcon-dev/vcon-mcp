@@ -4,6 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { randomUUID } from 'crypto';
 import { VConQueries } from '../src/db/queries.js';
 import { VCon, Analysis, Dialog, Attachment } from '../src/types/vcon.js';
 
@@ -49,7 +50,7 @@ describe('VConQueries', () => {
     it('should create a basic vCon with parties', async () => {
       const testVCon: VCon = {
         vcon: '0.3.0',
-        uuid: crypto.randomUUID(),
+        uuid: randomUUID(),
         created_at: new Date().toISOString(),
         subject: 'Test Call',
         parties: [
@@ -74,7 +75,7 @@ describe('VConQueries', () => {
     it('should create vCon with all components (dialog, analysis, attachments)', async () => {
       const testVCon: VCon = {
         vcon: '0.3.0',
-        uuid: crypto.randomUUID(),
+        uuid: randomUUID(),
         created_at: new Date().toISOString(),
         parties: [{ name: 'Test' }],
         dialog: [{
@@ -109,7 +110,7 @@ describe('VConQueries', () => {
     it('should handle database errors on vCon creation', async () => {
       const testVCon: VCon = {
         vcon: '0.3.0',
-        uuid: crypto.randomUUID(),
+        uuid: randomUUID(),
         created_at: new Date().toISOString(),
         parties: [{ name: 'Test' }]
       };
@@ -125,7 +126,7 @@ describe('VConQueries', () => {
 
   describe('getVCon', () => {
     it('should retrieve a vCon by UUID', async () => {
-      const uuid = crypto.randomUUID();
+      const uuid = randomUUID();
 
       // Mock main vcon query
       mockSupabase.single.mockResolvedValueOnce({
@@ -152,7 +153,7 @@ describe('VConQueries', () => {
     });
 
     it('should throw when vCon not found', async () => {
-      const uuid = crypto.randomUUID();
+      const uuid = randomUUID();
 
       mockSupabase.single.mockResolvedValueOnce({
         data: null,
@@ -163,7 +164,7 @@ describe('VConQueries', () => {
     });
 
     it('should throw on database errors', async () => {
-      const uuid = crypto.randomUUID();
+      const uuid = randomUUID();
 
       mockSupabase.single.mockResolvedValueOnce({
         data: null,
@@ -176,7 +177,7 @@ describe('VConQueries', () => {
 
   describe('updateVCon', () => {
     it('should update vCon subject', async () => {
-      const uuid = crypto.randomUUID();
+      const uuid = randomUUID();
       const updates = { subject: 'Updated Subject' };
 
       mockSupabase.eq.mockResolvedValueOnce({
@@ -190,7 +191,7 @@ describe('VConQueries', () => {
     });
 
     it('should throw on database error', async () => {
-      const uuid = crypto.randomUUID();
+      const uuid = randomUUID();
       const updates = { subject: 'Updated' };
 
       mockSupabase.eq.mockResolvedValueOnce({
@@ -203,7 +204,7 @@ describe('VConQueries', () => {
 
   describe('deleteVCon', () => {
     it('should delete a vCon', async () => {
-      const uuid = crypto.randomUUID();
+      const uuid = randomUUID();
 
       mockSupabase.eq.mockResolvedValueOnce({
         error: null
@@ -216,7 +217,7 @@ describe('VConQueries', () => {
     });
 
     it('should throw on database error', async () => {
-      const uuid = crypto.randomUUID();
+      const uuid = randomUUID();
 
       mockSupabase.eq.mockResolvedValueOnce({
         error: new Error('Delete failed')
@@ -229,7 +230,7 @@ describe('VConQueries', () => {
   describe('searchVCons', () => {
     it('should search by subject', async () => {
       const criteria = { subject: 'Test' };
-      const testUuid = crypto.randomUUID();
+      const testUuid = randomUUID();
 
       // Mock the initial query (returns promise-like with data/error)
       mockSupabase.order.mockResolvedValueOnce({
@@ -287,15 +288,15 @@ describe('VConQueries', () => {
 
     it('should filter by tags', async () => {
       const criteria = { tags: { department: 'sales', priority: 'high' } };
-      const testUuid1 = crypto.randomUUID();
-      const testUuid2 = crypto.randomUUID();
+      const testUuid1 = randomUUID();
+      const testUuid2 = randomUUID();
 
       // Mock searchByTags to return matching UUIDs
       vi.spyOn(queries, 'searchByTags').mockResolvedValue([testUuid1, testUuid2]);
 
       // Mock the initial query
       mockSupabase.order.mockResolvedValueOnce({
-        data: [{ uuid: testUuid1 }, { uuid: testUuid2 }, { uuid: crypto.randomUUID() }],
+        data: [{ uuid: testUuid1 }, { uuid: testUuid2 }, { uuid: randomUUID() }],
         error: null
       });
 
@@ -351,14 +352,14 @@ describe('VConQueries', () => {
         startDate: '2024-01-01',
         limit: 10
       };
-      const testUuid = crypto.randomUUID();
+      const testUuid = randomUUID();
 
       // Mock searchByTags
       vi.spyOn(queries, 'searchByTags').mockResolvedValue([testUuid]);
 
       // Mock the initial query with subject and date filters
       mockSupabase.order.mockResolvedValueOnce({
-        data: [{ uuid: testUuid }, { uuid: crypto.randomUUID() }],
+        data: [{ uuid: testUuid }, { uuid: randomUUID() }],
         error: null
       });
 
@@ -390,7 +391,7 @@ describe('VConQueries', () => {
 
       // Mock the initial query
       mockSupabase.order.mockResolvedValueOnce({
-        data: [{ uuid: crypto.randomUUID() }],
+        data: [{ uuid: randomUUID() }],
         error: null
       });
 
@@ -403,7 +404,7 @@ describe('VConQueries', () => {
 
   describe('addAnalysis', () => {
     it('should add analysis with correct field names', async () => {
-      const uuid = crypto.randomUUID();
+      const uuid = randomUUID();
       const analysis: Analysis = {
         type: 'transcript',
         vendor: 'TestVendor',  // ✅ Required field
@@ -433,7 +434,7 @@ describe('VConQueries', () => {
 
   describe('addDialog', () => {
     it('should add dialog with new fields', async () => {
-      const uuid = crypto.randomUUID();
+      const uuid = randomUUID();
       const dialog: Dialog = {
         type: 'text',
         body: 'Hello',
@@ -632,7 +633,7 @@ describe('VConQueries', () => {
 
   describe('addAttachment', () => {
     it('should add attachment', async () => {
-      const uuid = crypto.randomUUID();
+      const uuid = randomUUID();
       const attachment: Attachment = {
         type: 'document',
         body: 'content',
@@ -654,7 +655,7 @@ describe('VConQueries', () => {
     });
 
     it('should calculate next attachment index correctly', async () => {
-      const uuid = crypto.randomUUID();
+      const uuid = randomUUID();
       const attachment: Attachment = {
         type: 'document',
         body: 'content',
@@ -689,7 +690,7 @@ describe('VConQueries', () => {
     });
 
     it('should use index 0 when no existing attachments', async () => {
-      const uuid = crypto.randomUUID();
+      const uuid = randomUUID();
       const attachment: Attachment = {
         type: 'document',
         body: 'content',

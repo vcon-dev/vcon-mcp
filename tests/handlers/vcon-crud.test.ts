@@ -5,6 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { randomUUID } from 'crypto';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import {
   CreateVConHandler,
@@ -45,7 +46,7 @@ vi.mock('../../src/observability/attributes.js', () => ({
 vi.mock('../../src/tools/templates.js', () => ({
   buildTemplateVCon: vi.fn((template, subject, parties) => ({
     vcon: '0.3.0',
-    uuid: crypto.randomUUID(),
+    uuid: randomUUID(),
     created_at: new Date().toISOString(),
     subject: subject || `Template: ${template}`,
     parties: parties,
@@ -87,7 +88,7 @@ describe('vCon CRUD Handlers', () => {
       const handler = new CreateVConHandler();
       const testVCon: VCon = {
         vcon: '0.3.0',
-        uuid: crypto.randomUUID(),
+        uuid: randomUUID(),
         created_at: new Date().toISOString(),
         parties: [{ name: 'Test User' }],
       };
@@ -112,7 +113,7 @@ describe('vCon CRUD Handlers', () => {
       const handler = new CreateVConHandler();
       const modifiedVCon: VCon = {
         vcon: '0.3.0',
-        uuid: crypto.randomUUID(),
+        uuid: randomUUID(),
         created_at: new Date().toISOString(),
         subject: 'Modified Subject',
         parties: [{ name: 'Test User' }],
@@ -147,7 +148,7 @@ describe('vCon CRUD Handlers', () => {
   describe('CreateVConFromTemplateHandler', () => {
     it('should create vCon from template', async () => {
       const handler = new CreateVConFromTemplateHandler();
-      const uuid = crypto.randomUUID();
+      const uuid = randomUUID();
       mockQueries.createVCon.mockResolvedValue({ uuid });
       mockPluginManager.executeHook.mockResolvedValue(undefined);
 
@@ -183,7 +184,7 @@ describe('vCon CRUD Handlers', () => {
       const handler = new GetVConHandler();
       const testVCon: VCon = {
         vcon: '0.3.0',
-        uuid: crypto.randomUUID(),
+        uuid: randomUUID(),
         created_at: new Date().toISOString(),
         parties: [{ name: 'Test User' }],
       };
@@ -208,7 +209,7 @@ describe('vCon CRUD Handlers', () => {
       const handler = new GetVConHandler();
       const testVCon: VCon = {
         vcon: '0.3.0',
-        uuid: crypto.randomUUID(),
+        uuid: randomUUID(),
         created_at: new Date().toISOString(),
         parties: [{ name: 'Test User' }],
       };
@@ -239,7 +240,7 @@ describe('vCon CRUD Handlers', () => {
   describe('UpdateVConHandler', () => {
     it('should update vCon successfully', async () => {
       const handler = new UpdateVConHandler();
-      const uuid = crypto.randomUUID();
+      const uuid = randomUUID();
       const updatedVCon: VCon = {
         vcon: '0.3.0',
         uuid,
@@ -266,7 +267,7 @@ describe('vCon CRUD Handlers', () => {
 
     it('should not return updated vCon if return_updated is false', async () => {
       const handler = new UpdateVConHandler();
-      const uuid = crypto.randomUUID();
+      const uuid = randomUUID();
 
       mockQueries.updateVCon.mockResolvedValue(undefined);
       mockQueries.getVCon.mockResolvedValue({} as VCon);
@@ -286,7 +287,7 @@ describe('vCon CRUD Handlers', () => {
     it('should throw error if updates is not an object', async () => {
       const handler = new UpdateVConHandler();
       await expect(handler.handle({
-        uuid: crypto.randomUUID(),
+        uuid: randomUUID(),
         updates: 'not-an-object',
       }, mockContext)).rejects.toThrow(McpError);
     });
@@ -295,7 +296,7 @@ describe('vCon CRUD Handlers', () => {
   describe('DeleteVConHandler', () => {
     it('should delete a vCon successfully', async () => {
       const handler = new DeleteVConHandler();
-      const uuid = crypto.randomUUID();
+      const uuid = randomUUID();
 
       mockQueries.deleteVCon.mockResolvedValue(undefined);
       mockPluginManager.executeHook.mockResolvedValue(undefined);
@@ -324,7 +325,7 @@ describe('vCon CRUD Handlers', () => {
   describe('AddAnalysisHandler', () => {
     it('should add analysis to vCon', async () => {
       const handler = new AddAnalysisHandler();
-      const uuid = crypto.randomUUID();
+      const uuid = randomUUID();
       const analysis: Analysis = {
         type: 'transcript',
         vendor: 'TestVendor',
@@ -352,7 +353,7 @@ describe('vCon CRUD Handlers', () => {
     it('should throw error if vendor is missing', async () => {
       const handler = new AddAnalysisHandler();
       await expect(handler.handle({
-        vcon_uuid: crypto.randomUUID(),
+        vcon_uuid: randomUUID(),
         analysis: { type: 'transcript' },
       }, mockContext)).rejects.toThrow(McpError);
     });
@@ -360,7 +361,7 @@ describe('vCon CRUD Handlers', () => {
     it('should throw error if analysis is missing', async () => {
       const handler = new AddAnalysisHandler();
       await expect(handler.handle({
-        vcon_uuid: crypto.randomUUID(),
+        vcon_uuid: randomUUID(),
       }, mockContext)).rejects.toThrow(McpError);
     });
   });
@@ -368,7 +369,7 @@ describe('vCon CRUD Handlers', () => {
   describe('AddDialogHandler', () => {
     it('should add dialog to vCon', async () => {
       const handler = new AddDialogHandler();
-      const uuid = crypto.randomUUID();
+      const uuid = randomUUID();
       const dialog: Dialog = {
         type: 'text',
         body: 'Hello',
@@ -393,7 +394,7 @@ describe('vCon CRUD Handlers', () => {
     it('should throw error if dialog is missing', async () => {
       const handler = new AddDialogHandler();
       await expect(handler.handle({
-        vcon_uuid: crypto.randomUUID(),
+        vcon_uuid: randomUUID(),
       }, mockContext)).rejects.toThrow(McpError);
     });
   });
@@ -401,7 +402,7 @@ describe('vCon CRUD Handlers', () => {
   describe('AddAttachmentHandler', () => {
     it('should add attachment to vCon', async () => {
       const handler = new AddAttachmentHandler();
-      const uuid = crypto.randomUUID();
+      const uuid = randomUUID();
       const attachment: Attachment = {
         body: 'attachment content',
         encoding: 'none',
@@ -425,7 +426,7 @@ describe('vCon CRUD Handlers', () => {
     it('should throw error if attachment is missing', async () => {
       const handler = new AddAttachmentHandler();
       await expect(handler.handle({
-        vcon_uuid: crypto.randomUUID(),
+        vcon_uuid: randomUUID(),
       }, mockContext)).rejects.toThrow(McpError);
     });
   });

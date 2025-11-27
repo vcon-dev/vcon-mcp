@@ -2,7 +2,7 @@
  * Schema and Example Tool Handlers
  */
 
-import crypto from 'crypto';
+import { randomUUID } from 'crypto';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { BaseToolHandler, ToolHandlerContext, ToolResponse } from './base.js';
 
@@ -44,52 +44,52 @@ export class GetExamplesHandler extends BaseToolHandler {
     const format = (args?.format as string | undefined) ?? 'json';
     
     const examples: Record<string, any> = {
-      minimal: { 
-        vcon: '0.3.0', 
-        uuid: crypto.randomUUID(), 
-        created_at: new Date().toISOString(), 
-        parties: [{ name: 'Agent' }] 
+      minimal: {
+        vcon: '0.3.0',
+        uuid: randomUUID(),
+        created_at: new Date().toISOString(),
+        parties: [{ name: 'Agent' }]
       },
-      phone_call: { 
-        vcon: '0.3.0', 
-        uuid: crypto.randomUUID(), 
-        created_at: new Date().toISOString(), 
-        subject: 'Phone Call', 
-        parties: [{ name: 'Caller' }, { name: 'Agent' }], 
-        dialog: [] 
+      phone_call: {
+        vcon: '0.3.0',
+        uuid: randomUUID(),
+        created_at: new Date().toISOString(),
+        subject: 'Phone Call',
+        parties: [{ name: 'Caller' }, { name: 'Agent' }],
+        dialog: []
       },
-      chat: { 
-        vcon: '0.3.0', 
-        uuid: crypto.randomUUID(), 
-        created_at: new Date().toISOString(), 
-        subject: 'Chat', 
-        parties: [{ name: 'User' }, { name: 'Support' }], 
-        dialog: [] 
+      chat: {
+        vcon: '0.3.0',
+        uuid: randomUUID(),
+        created_at: new Date().toISOString(),
+        subject: 'Chat',
+        parties: [{ name: 'User' }, { name: 'Support' }],
+        dialog: []
       },
-      email: { 
-        vcon: '0.3.0', 
-        uuid: crypto.randomUUID(), 
-        created_at: new Date().toISOString(), 
-        subject: 'Email Thread', 
-        parties: [{ mailto: 'a@example.com' }, { mailto: 'b@example.com' }], 
-        attachments: [] 
+      email: {
+        vcon: '0.3.0',
+        uuid: randomUUID(),
+        created_at: new Date().toISOString(),
+        subject: 'Email Thread',
+        parties: [{ mailto: 'a@example.com' }, { mailto: 'b@example.com' }],
+        attachments: []
       },
-      video: { 
-        vcon: '0.3.0', 
-        uuid: crypto.randomUUID(), 
-        created_at: new Date().toISOString(), 
-        subject: 'Video Meeting', 
-        parties: [{ name: 'Host' }], 
-        dialog: [] 
+      video: {
+        vcon: '0.3.0',
+        uuid: randomUUID(),
+        created_at: new Date().toISOString(),
+        subject: 'Video Meeting',
+        parties: [{ name: 'Host' }],
+        dialog: []
       },
       full_featured: {
-        vcon: '0.3.0', 
-        uuid: crypto.randomUUID(), 
-        created_at: new Date().toISOString(), 
+        vcon: '0.3.0',
+        uuid: randomUUID(),
+        created_at: new Date().toISOString(),
         subject: 'Full Example',
-        parties: [{ name: 'Alice' }, { name: 'Bob' }], 
-        dialog: [], 
-        analysis: [], 
+        parties: [{ name: 'Alice' }, { name: 'Bob' }],
+        dialog: [],
+        analysis: [],
         attachments: []
       }
     };

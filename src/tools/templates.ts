@@ -1,4 +1,4 @@
-import crypto from 'crypto';
+import { randomUUID } from 'crypto';
 import { VCon } from '../types/vcon.js';
 
 export const createFromTemplateTool = {
@@ -27,7 +27,7 @@ export function buildTemplateVCon(template: string, subject: string | undefined,
   const now = new Date().toISOString();
   const base: VCon = {
     vcon: '0.3.0',
-    uuid: crypto.randomUUID(),
+    uuid: randomUUID(),
     created_at: now,
     subject,
     parties,

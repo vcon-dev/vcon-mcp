@@ -4,6 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { randomUUID } from 'crypto';
 import { VConQueries } from '../src/db/queries.js';
 import { validateVCon, validateAnalysis, validateDialog } from '../src/utils/validation.js';
 import { VCon, Analysis, Dialog, Party } from '../src/types/vcon.js';
@@ -20,19 +21,19 @@ describe('Integration Tests', () => {
     it('should create, validate, and structure a complete vCon', () => {
       const vcon: VCon = {
         vcon: '0.3.0',
-        uuid: crypto.randomUUID(),
+        uuid: randomUUID(),
         created_at: new Date().toISOString(),
         subject: 'Customer Support Call',
         parties: [
           {
             name: 'Alice',
             mailto: 'alice@example.com',
-            uuid: crypto.randomUUID()
+            uuid: randomUUID()
           },
           {
             name: 'Bob',
             tel: '+1234567890',
-            uuid: crypto.randomUUID()
+            uuid: randomUUID()
           }
         ],
         dialog: [
@@ -73,7 +74,7 @@ describe('Integration Tests', () => {
       const party: Party = {
         name: 'Alice',
         mailto: 'alice@example.com',
-        uuid: crypto.randomUUID()
+        uuid: randomUUID()
       };
 
       const dialog: Dialog = {
@@ -129,7 +130,7 @@ describe('Integration Tests', () => {
 
       const vcon: VCon = {
         vcon: '0.3.0',
-        uuid: crypto.randomUUID(),
+        uuid: randomUUID(),
         created_at: new Date().toISOString(),
         subject: 'Test Call',
         parties: [{ name: 'Test' }]
@@ -170,7 +171,7 @@ describe('Integration Tests', () => {
 
       const invalidVCon: VCon = {
         vcon: '0.3.0',
-        uuid: crypto.randomUUID(),
+        uuid: randomUUID(),
         created_at: new Date().toISOString(),
         subject: 'Bad',  // Too short
         parties: [{ name: 'Test' }]
@@ -190,7 +191,7 @@ describe('Integration Tests', () => {
     it('should prepare vCon for database insertion with validation', async () => {
       const vcon: VCon = {
         vcon: '0.3.0',
-        uuid: crypto.randomUUID(),
+        uuid: randomUUID(),
         created_at: new Date().toISOString(),
         subject: 'Test Call',
         parties: [
@@ -241,14 +242,14 @@ describe('Integration Tests', () => {
     it('should handle vCon with all field corrections', () => {
       const vcon: VCon = {
         vcon: '0.3.0',
-        uuid: crypto.randomUUID(),
+        uuid: randomUUID(),
         created_at: new Date().toISOString(),
         extensions: ['https://example.com/ext'],
         must_support: ['https://example.com/ext'],
         parties: [
           {
             name: 'Alice',
-            uuid: crypto.randomUUID(),  // ✅ Correction #4
+            uuid: randomUUID(),  // ✅ Correction #4
             did: 'did:example:123'
           }
         ],
@@ -368,10 +369,10 @@ describe('Integration Tests', () => {
       // Step 2: Create a vCon
       const vcon: VCon = {
         vcon: '0.3.0',
-        uuid: crypto.randomUUID(),
+        uuid: randomUUID(),
         created_at: new Date().toISOString(),
         subject: 'Integration Test Call',
-        parties: [{ name: 'Test User', uuid: crypto.randomUUID() }],
+        parties: [{ name: 'Test User', uuid: randomUUID() }],
         dialog: [{
           type: 'text',
           body: 'Test message',
