@@ -3,12 +3,12 @@
 -- Changes from original marked with -- CORRECTED comments
 
 -- Enable necessary extensions
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA extensions;
+CREATE EXTENSION IF NOT EXISTS "pg_trgm" WITH SCHEMA extensions;
 
 -- Main vCons table
 CREATE TABLE vcons (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     uuid UUID UNIQUE NOT NULL, -- The vCon UUID from the original document
     vcon_version VARCHAR(10) NOT NULL DEFAULT '0.3.0',  -- CORRECTED: Updated to latest spec version
     subject TEXT,
@@ -38,7 +38,7 @@ CREATE TABLE vcons (
 
 -- Parties table (normalized for efficient searching)
 CREATE TABLE parties (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     vcon_id UUID NOT NULL REFERENCES vcons(id) ON DELETE CASCADE,
     party_index INTEGER NOT NULL, -- Index in the original parties array
     
@@ -67,7 +67,7 @@ CREATE TABLE parties (
 
 -- Dialog table for conversations/recordings
 CREATE TABLE dialog (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     vcon_id UUID NOT NULL REFERENCES vcons(id) ON DELETE CASCADE,
     dialog_index INTEGER NOT NULL, -- Index in the original dialog array
     
@@ -102,7 +102,7 @@ CREATE TABLE dialog (
 
 -- Party history table (Section 4.3.11)
 CREATE TABLE party_history (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     dialog_id UUID NOT NULL REFERENCES dialog(id) ON DELETE CASCADE,
     party_index INTEGER NOT NULL,
     time TIMESTAMPTZ NOT NULL,
@@ -111,7 +111,7 @@ CREATE TABLE party_history (
 
 -- Attachments table (normalized for efficient searching)
 CREATE TABLE attachments (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     vcon_id UUID NOT NULL REFERENCES vcons(id) ON DELETE CASCADE,
     attachment_index INTEGER NOT NULL, -- Index in the original attachments array
     
@@ -139,7 +139,7 @@ CREATE TABLE attachments (
 
 -- Analysis table (normalized for efficient searching by analysis type)
 CREATE TABLE analysis (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     vcon_id UUID NOT NULL REFERENCES vcons(id) ON DELETE CASCADE,
     analysis_index INTEGER NOT NULL, -- Index in the original analysis array
     
@@ -168,7 +168,7 @@ CREATE TABLE analysis (
 
 -- Group table for aggregated vCons (Section 4.6)
 CREATE TABLE groups (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     vcon_id UUID NOT NULL REFERENCES vcons(id) ON DELETE CASCADE,
     group_index INTEGER NOT NULL,
     
@@ -186,7 +186,7 @@ CREATE TABLE groups (
 
 -- Privacy requests tracking table
 CREATE TABLE privacy_requests (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     request_id TEXT UNIQUE NOT NULL,
     party_identifier TEXT NOT NULL,
     party_name TEXT,
