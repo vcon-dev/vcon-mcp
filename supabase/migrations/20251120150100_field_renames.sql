@@ -32,7 +32,7 @@ DROP VIEW IF EXISTS vcons_legacy;
 
 -- Create read-only view with old field names for backward compatibility
 CREATE OR REPLACE VIEW vcons_legacy AS
-SELECT 
+SELECT
   -- Core fields (unchanged)
   id,
   uuid,
@@ -50,12 +50,11 @@ SELECT
   processed_by,
   privacy_processed,
   redaction_rules,
-  tenant_id,
-  
+
   -- New fields with old names (for backward compatibility)
   critical as must_support,     -- Maps new 'critical' to old 'must_support'
   amended as appended,          -- Maps new 'amended' to old 'appended'
-  
+
   -- Keep new fields visible too
   critical,
   amended

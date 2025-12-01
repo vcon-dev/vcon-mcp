@@ -1,8 +1,11 @@
--- Add tenant_id column to all child tables for fast multi-tenant RLS
+-- Add tenant_id column to vcons and all child tables for fast multi-tenant RLS
 -- This denormalizes tenant_id to avoid expensive EXISTS subqueries in RLS policies
 
 -- Suppress NOTICE messages for cleaner output
 SET client_min_messages TO WARNING;
+
+-- Add tenant_id to vcons table (the parent table for multi-tenancy)
+ALTER TABLE vcons ADD COLUMN IF NOT EXISTS tenant_id TEXT;
 
 -- Add tenant_id to parties table
 ALTER TABLE parties ADD COLUMN IF NOT EXISTS tenant_id TEXT;
@@ -32,6 +35,7 @@ ALTER TABLE embedding_queue ADD COLUMN IF NOT EXISTS tenant_id TEXT;
 ALTER TABLE s3_sync_tracking ADD COLUMN IF NOT EXISTS tenant_id TEXT;
 
 -- Add comments
+COMMENT ON COLUMN vcons.tenant_id IS 'Tenant identifier for multi-tenancy support';
 COMMENT ON COLUMN parties.tenant_id IS 'Tenant identifier denormalized from parent vcons table for fast RLS evaluation';
 COMMENT ON COLUMN dialog.tenant_id IS 'Tenant identifier denormalized from parent vcons table for fast RLS evaluation';
 COMMENT ON COLUMN attachments.tenant_id IS 'Tenant identifier denormalized from parent vcons table for fast RLS evaluation';

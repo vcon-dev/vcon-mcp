@@ -4,23 +4,23 @@
 -- - RPCs: search_vcons_keyword, search_vcons_semantic, search_vcons_hybrid
 
 -- Ensure required extensions
-CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+CREATE EXTENSION IF NOT EXISTS "pg_trgm" WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- -----------------------------------------------------------------------------
 -- Trigram indexes (for partial/typo-tolerant keyword search)
 -- -----------------------------------------------------------------------------
-CREATE INDEX IF NOT EXISTS idx_parties_name_trgm  ON parties  USING gin (name   gin_trgm_ops);
-CREATE INDEX IF NOT EXISTS idx_parties_mail_trgm  ON parties  USING gin (mailto gin_trgm_ops);
-CREATE INDEX IF NOT EXISTS idx_parties_tel_trgm   ON parties  USING gin (tel    gin_trgm_ops);
-CREATE INDEX IF NOT EXISTS idx_dialog_body_trgm   ON dialog   USING gin (body   gin_trgm_ops);
-CREATE INDEX IF NOT EXISTS idx_analysis_body_trgm ON analysis USING gin (body   gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_parties_name_trgm  ON parties  USING gin (name   extensions.gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_parties_mail_trgm  ON parties  USING gin (mailto extensions.gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_parties_tel_trgm   ON parties  USING gin (tel    extensions.gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_dialog_body_trgm   ON dialog   USING gin (body   extensions.gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_analysis_body_trgm ON analysis USING gin (body   extensions.gin_trgm_ops);
 
 -- -----------------------------------------------------------------------------
 -- Embeddings storage (semantic search)
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS vcon_embeddings (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     vcon_id UUID NOT NULL REFERENCES vcons(id) ON DELETE CASCADE,
     content_type TEXT NOT NULL,              -- 'subject' | 'dialog' | 'analysis'
     content_reference TEXT,                  -- e.g., dialog_index or analysis_index

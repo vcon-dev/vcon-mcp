@@ -5,6 +5,7 @@ CREATE INDEX IF NOT EXISTS idx_parties_vcon_id ON public.parties (vcon_id);
 CREATE INDEX IF NOT EXISTS idx_analysis_vcon_id ON public.analysis (vcon_id);
 CREATE INDEX IF NOT EXISTS idx_attachments_vcon_id ON public.attachments (vcon_id);
 
--- Parent filters: created_at and tenant_id used in WHERE clauses
+-- Parent filters: created_at used in WHERE clauses
 CREATE INDEX IF NOT EXISTS idx_vcons_created_at ON public.vcons (created_at);
-CREATE INDEX IF NOT EXISTS idx_vcons_tenant_created_at ON public.vcons (tenant_id, created_at);
+-- Note: idx_vcons_tenant_created_at is created later in 20251122175915_create_tenant_id_indexes.sql
+-- after tenant_id column is added to the vcons table

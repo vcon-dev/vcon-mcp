@@ -1,10 +1,15 @@
 -- Create exec_sql RPC function for Edge Functions
 -- This function allows the embed-vcons Edge Function to execute dynamic SQL queries
 -- with parameter substitution for finding text units that need embeddings
+-- NOTE: Parameters are named alphabetically (query_params, query_text) to work correctly
+-- with Supabase client which passes parameters in alphabetical order
+
+-- Drop old function if it exists (different signature)
+DROP FUNCTION IF EXISTS exec_sql(text, jsonb);
 
 CREATE OR REPLACE FUNCTION exec_sql(
-  q text,
-  params jsonb DEFAULT '{}'::jsonb
+  query_params jsonb DEFAULT '{}'::jsonb,
+  query_text text DEFAULT ''
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -12,40 +17,40 @@ SECURITY DEFINER
 AS $$
 DECLARE
   result jsonb;
-  query_text text;
+  processed_query text;
 BEGIN
   -- Replace named parameters in the query
-  query_text := q;
-  
+  processed_query := query_text;
+
   -- Replace :vcon_id with the actual value
-  IF params ? 'vcon_id' AND params->>'vcon_id' IS NOT NULL THEN
-    query_text := replace(query_text, ':vcon_id', quote_literal(params->>'vcon_id'));
+  IF query_params ? 'vcon_id' AND query_params->>'vcon_id' IS NOT NULL THEN
+    processed_query := replace(processed_query, ':vcon_id', quote_literal(query_params->>'vcon_id'));
   ELSE
     -- If vcon_id is null, replace with a condition that's always false to skip the filter
-    query_text := replace(query_text, 'AND v.id = :vcon_id', '');
-    query_text := replace(query_text, 'AND d.vcon_id = :vcon_id', '');
-    query_text := replace(query_text, 'AND a.vcon_id = :vcon_id', '');
+    processed_query := replace(processed_query, 'AND v.id = :vcon_id', '');
+    processed_query := replace(processed_query, 'AND d.vcon_id = :vcon_id', '');
+    processed_query := replace(processed_query, 'AND a.vcon_id = :vcon_id', '');
   END IF;
-  
+
   -- Replace :limit with the actual value
-  IF params ? 'limit' THEN
-    query_text := replace(query_text, ':limit', (params->>'limit')::text);
+  IF query_params ? 'limit' THEN
+    processed_query := replace(processed_query, ':limit', (query_params->>'limit')::text);
   END IF;
-  
+
   -- Execute the query and return as JSONB
-  EXECUTE format('SELECT jsonb_agg(row_to_json(t)) FROM (%s) t', query_text) INTO result;
-  
+  EXECUTE format('SELECT jsonb_agg(row_to_json(t)) FROM (%s) t', processed_query) INTO result;
+
   -- Return empty array if no results
   IF result IS NULL THEN
     result := '[]'::jsonb;
   END IF;
-  
+
   RETURN result;
 END;
 $$;
 
 -- Grant execute permission to authenticated and service role
-GRANT EXECUTE ON FUNCTION exec_sql(text, jsonb) TO authenticated, service_role, anon;
+GRANT EXECUTE ON FUNCTION exec_sql(jsonb, text) TO authenticated, service_role, anon;
 
 COMMENT ON FUNCTION exec_sql IS 'Execute dynamic SQL queries with parameter substitution for Edge Functions';
 

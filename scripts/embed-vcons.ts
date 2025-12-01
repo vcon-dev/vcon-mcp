@@ -162,7 +162,7 @@ async function listMissingTextUnits(
     
     // Query for missing subject embeddings
     const { data: subjects, error: subError } = await supabase.rpc('exec_sql', {
-      q: `
+      query_text: `
         SELECT v.id as vcon_id,
                'subject'::text as content_type,
                NULL::text as content_reference,
@@ -173,14 +173,14 @@ async function listMissingTextUnits(
           ${vconFilter}
           AND NOT EXISTS (
             SELECT 1 FROM vcon_embeddings e
-            WHERE e.vcon_id = v.id 
-              AND e.content_type = 'subject' 
+            WHERE e.vcon_id = v.id
+              AND e.content_type = 'subject'
               AND e.content_reference IS NULL
           )
         ORDER BY v.created_at ${orderDirection}
         LIMIT ${limit}
       `,
-      params: {}
+      query_params: {}
     });
 
     if (subError) {
@@ -192,7 +192,7 @@ async function listMissingTextUnits(
     // Query for missing dialog embeddings (optimized with CTE)
     if (textUnits.length < limit) {
       const { data: dialogs, error: dialogError } = await supabase.rpc('exec_sql', {
-        q: `
+        query_text: `
           WITH candidate_vcons AS (
             SELECT id, created_at
             FROM vcons
@@ -214,14 +214,14 @@ async function listMissingTextUnits(
           FROM candidate_dialogs cd
           WHERE NOT EXISTS (
             SELECT 1 FROM vcon_embeddings e
-            WHERE e.vcon_id = cd.vcon_id 
-              AND e.content_type = 'dialog' 
+            WHERE e.vcon_id = cd.vcon_id
+              AND e.content_type = 'dialog'
               AND e.content_reference = cd.dialog_index::text
           )
           ORDER BY cd.created_at ${orderDirection}
           LIMIT ${limit - textUnits.length}
         `,
-        params: {}
+        query_params: {}
       });
 
       if (dialogError) {
@@ -235,7 +235,7 @@ async function listMissingTextUnits(
     // Use smaller limit multiplier since analysis table is very large
     if (textUnits.length < limit) {
       const { data: analyses, error: analysisError } = await supabase.rpc('exec_sql', {
-        q: `
+        query_text: `
           WITH candidate_vcons_for_analysis AS (
             SELECT id, created_at
             FROM vcons
@@ -262,7 +262,7 @@ async function listMissingTextUnits(
           ORDER BY ca.created_at ${orderDirection}
           LIMIT ${limit - textUnits.length}
         `,
-        params: {}
+        query_params: {}
       });
 
       if (analysisError) {
