@@ -976,13 +976,12 @@ export class VConQueries {
 
     if (vconError) throw vconError;
 
-    // Get tags attachment with encoding='json' (since body is JSON.stringify'd)
+    // Get tags attachment (tags may have encoding='json' or no encoding)
     const { data: attachments, error: attachmentError } = await this.supabase
       .from('attachments')
       .select('body')
       .eq('vcon_id', vcon.id)
-      .eq('type', 'tags')
-      .eq('encoding', 'json');
+      .eq('type', 'tags');
 
     if (attachmentError) throw attachmentError;
 
@@ -1415,19 +1414,18 @@ export class VConQueries {
     const tagsArray = Object.entries(tags).map(([key, value]) => `${key}:${value}`);
     const tagsBody = JSON.stringify(tagsArray);
 
-    // Check if tags attachment exists
+    // Check if tags attachment exists (don't filter by encoding to handle legacy data)
     const { data: existingAttachments } = await this.supabase
       .from('attachments')
-      .select('id')
+      .select('id, encoding')
       .eq('vcon_id', vcon.id)
-      .eq('type', 'tags')
-      .eq('encoding', 'json');
+      .eq('type', 'tags');
 
     if (existingAttachments && existingAttachments.length > 0) {
-      // Update existing tags attachment
+      // Update existing tags attachment (also fix encoding if needed)
       const { error: updateError } = await this.supabase
         .from('attachments')
-        .update({ body: tagsBody })
+        .update({ body: tagsBody, encoding: 'json' })
         .eq('id', existingAttachments[0].id);
 
       if (updateError) throw updateError;
