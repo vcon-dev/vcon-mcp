@@ -1,8 +1,9 @@
 ## vCon import from filesystem and embeddings generation
 
 This guide shows how to:
-- Import vCons from your local filesystem into Supabase using the existing loader scripts
-- Generate and maintain 384‑dim embeddings via npm tool, with optional Cron scheduling and DB triggers
+- Import vCons from S3 or local filesystem into Supabase
+- Generate and maintain 384‑dim embeddings
+- Run continuous sync for production environments
 
 ---
 
@@ -14,34 +15,48 @@ This guide shows how to:
 npm install
 ```
 
-- Environment variables available to the Node loader scripts (e.g. in a `.env` file at repo root):
+- Environment variables (in `.env` file):
   - `SUPABASE_URL`
   - `SUPABASE_SERVICE_ROLE_KEY`
-
-The loaders print the database URL at startup so you can verify connectivity.
+  - `VCON_S3_BUCKET` (optional, for S3 loading)
+  - `OPENAI_API_KEY` or `HF_API_TOKEN` (for embeddings)
 
 ---
 
-### Import vCons from a directory
+### Quick Start: Full Sync
 
-Two scripts are available. Both are idempotent and will skip vCons already in the database.
-
-1) Standard vCon import
+The simplest way to sync everything (vCons, embeddings, and tags):
 
 ```bash
-npx tsx scripts/load-vcons.ts /absolute/path/to/vcons
+# One-time sync
+npm run sync
+
+# Continuous sync (every 5 minutes)
+npm run sync:continuous
 ```
 
-2) Legacy vCon import with migration to spec 0.3.0
+---
+
+### Import vCons
+
+Use the unified sync:vcons command for both S3 and local sources:
 
 ```bash
-npx tsx scripts/load-legacy-vcons.ts /absolute/path/to/legacy
+# From S3 (default, last 24 hours)
+npm run sync:vcons
+
+# From S3 with custom time window
+npm run sync:vcons -- --hours=48      # Last 48 hours
+npm run sync:vcons -- --hours=168     # Last 7 days
+
+# From local directory
+npm run sync:vcons -- /absolute/path/to/vcons
 ```
 
 Notes:
-- Use an absolute directory path. Files must end with the `.vcon` extension.
-- The scripts validate the vCon JSON and print a summary of successes, skips, and failures.
-- Default path if none is provided is visible in each script; pass your directory explicitly to avoid surprises.
+- Use absolute directory paths. Files must end with `.vcon` extension.
+- The script is idempotent and skips vCons already in the database.
+- Handles both legacy (0.0.1-0.2.0) and current (0.3.0) vCon specs.
 
 ---
 
@@ -67,55 +82,36 @@ Environment variables (set in `.env` file or exported):
 
 #### Generate Embeddings
 
-Using npm script:
+The recommended way to generate embeddings:
 
 ```bash
-# Default: backfill mode, 100 items
-npm run embeddings:generate
+# Continuous embedding generation (recommended)
+npm run sync:embeddings
 
-# Custom batch size
-npm run embeddings:generate -- --limit=500
-
-# Embed specific vCon
-npm run embeddings:generate -- --mode=embed --vcon-id=<uuid>
-
-# Force specific provider
-npm run embeddings:generate -- --provider=openai
+# Or as part of full sync
+npm run sync
 ```
 
-Or using tsx directly:
+For more control, use the script directly:
 
 ```bash
-# Backfill mode (default)
+# Process 100 units (default)
 npx tsx scripts/embed-vcons.ts
 
-# With options
-npx tsx scripts/embed-vcons.ts --mode=backfill --limit=200
+# Process 500 units with OpenAI
+npx tsx scripts/embed-vcons.ts --limit=500 --provider=openai
 
-# Single vCon
+# Run continuously until all done
+npx tsx scripts/embed-vcons.ts --continuous --delay=2
+
+# Backfill oldest first
+npx tsx scripts/embed-vcons.ts --continuous --oldest-first
+
+# Embed specific vCon
 npx tsx scripts/embed-vcons.ts --mode=embed --vcon-id=<uuid>
 ```
 
 The tool displays progress and a summary of embedded, skipped, and error counts.
-
-#### Backfill all unembedded conversations with rate limiting
-
-Use the provided script to process all conversations in batches:
-
-```bash
-# Default: 500 per batch, 2 second delay
-npm run embeddings:backfill
-
-# Or directly with custom settings
-./scripts/backfill-embeddings.sh 200 5  # 200 per batch, 5 second delay
-./scripts/backfill-embeddings.sh 500 0.5  # Aggressive: 500 per batch, 0.5 second delay
-```
-
-The script will:
-- Loop through all unembedded text units in batches
-- Respect rate limits with configurable delays between batches
-- Show progress and totals
-- Stop automatically when all embeddings are complete
 
 **OpenAI Rate Limits:**
 - `text-embedding-3-small`: 5,000 requests/min, 5,000,000 tokens/min (Tier 1)

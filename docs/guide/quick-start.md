@@ -294,13 +294,21 @@ Find all high priority support vCons
 | `npm run db:backup` | Backup database |
 | `npm run db:restore` | Restore from backup |
 
-### Data Loading
+### Data Sync
 
 | Command | Purpose |
 |---------|---------|
-| `npm run load:s3:recent` | Load last 24 hours from S3 |
-| `npm run load:s3` | Load from S3 (default) |
-| `npm run load:local` | Load from local directory |
+| `npm run sync` | Full sync: vCons + embeddings + tags |
+| `npm run sync:continuous` | Run sync continuously (every 5 min) |
+| `npm run sync:vcons` | Load vCons from S3 or local directory |
+| `npm run sync:embeddings` | Generate embeddings continuously |
+| `npm run sync:tags` | Refresh tags view only |
+
+**Examples:**
+```bash
+npm run sync:vcons -- --hours=48      # Load last 48 hours
+npm run sync:vcons -- /path/to/vcons  # Load from local directory
+```
 
 For complete script documentation, see [scripts/README.md](../../scripts/README.md).
 

@@ -18,23 +18,25 @@ The embeddings functionality has been migrated from a Supabase Edge Function to 
 - Uses Supabase client library directly
 - Uses SUPABASE_SERVICE_ROLE_KEY (already in .env)
 
-## New npm Commands
+## npm Commands
 
 ```bash
-# Generate embeddings (default: 100 items)
-npm run embeddings:generate
+# Recommended: continuous embedding generation
+npm run sync:embeddings
 
-# Generate with custom batch size
-npm run embeddings:generate -- --limit=500
-
-# Embed specific vCon
-npm run embeddings:generate -- --mode=embed --vcon-id=<uuid>
-
-# Continuous backfill (processes all missing embeddings)
-npm run embeddings:backfill
+# Full sync (vCons + embeddings + tags)
+npm run sync
 
 # Check embedding coverage
 npm run embeddings:check
+```
+
+For more control, use the script directly:
+
+```bash
+npx tsx scripts/embed-vcons.ts --limit=500 --provider=openai
+npx tsx scripts/embed-vcons.ts --continuous --delay=2
+npx tsx scripts/embed-vcons.ts --mode=embed --vcon-id=<uuid>
 ```
 
 ## Benefits
@@ -50,34 +52,32 @@ npm run embeddings:check
 ### Quick Start
 
 ```bash
-# Load some vCons
-npm run load:local /path/to/vcons
+# Full sync: load vCons + generate embeddings + refresh tags
+npm run sync
 
-# Generate embeddings for all vCons
-npm run embeddings:backfill
+# Or step by step:
+npm run sync:vcons -- /path/to/vcons    # Load vCons
+npm run sync:embeddings                  # Generate embeddings
 ```
 
-### Backfill with Custom Settings
+### Continuous Sync (Production)
 
 ```bash
-# 200 items per batch, 5 second delay (for stricter rate limits)
-bash scripts/backfill-embeddings.sh 200 5
-
-# Aggressive: 500 items per batch, 0.5 second delay
-bash scripts/backfill-embeddings.sh 500 0.5
+# Run sync continuously (every 5 minutes)
+npm run sync:continuous
 ```
 
 ### Single vCon Embedding
 
 ```bash
-npm run embeddings:generate -- --mode=embed --vcon-id=abc123...
+npx tsx scripts/embed-vcons.ts --mode=embed --vcon-id=abc123...
 ```
 
 ### Force Specific Provider
 
 ```bash
 # Use Hugging Face instead of OpenAI
-npm run embeddings:generate -- --provider=hf
+npx tsx scripts/embed-vcons.ts --provider=hf
 ```
 
 ## Environment Variables
@@ -114,10 +114,10 @@ Create a service that runs the backfill script periodically.
 
 ```bash
 # Load data
-npm run load:s3:recent
+npm run sync:vcons -- --hours=24
 
 # Generate embeddings
-npm run embeddings:backfill
+npm run sync:embeddings
 ```
 
 ## Migration Notes

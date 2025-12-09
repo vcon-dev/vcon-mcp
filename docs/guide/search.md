@@ -292,11 +292,11 @@ See the following guides:
 
 **Quick start:**
 ```bash
-# Generate embeddings for all vCons (default: 500 per batch, 2 second delay)
-npm run embeddings:backfill
+# Generate embeddings continuously
+npm run sync:embeddings
 
-# Or with custom settings
-./scripts/backfill-embeddings.sh 200 5
+# Or as part of full sync
+npm run sync
 
 # Check embedding coverage
 npm run embeddings:check
