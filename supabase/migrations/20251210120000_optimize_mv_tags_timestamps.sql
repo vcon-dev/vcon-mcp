@@ -87,9 +87,9 @@ CREATE INDEX idx_vcon_tags_mv_tenant
 
 -- CRITICAL: Composite index for multi-tenant tag searches
 -- This is the primary search pattern: filter by tenant, then by tags
+-- Composite GIN index for multi-tenant tag searches (tenant_id, tags)
 CREATE INDEX idx_vcon_tags_mv_tenant_tags
-  ON vcon_tags_mv USING GIN (tags)
-  WHERE tenant_id IS NOT NULL;
+  ON vcon_tags_mv USING GIN (tenant_id, tags);
 
 -- Index for sorting by tag modification time (recent tags first)
 CREATE INDEX idx_vcon_tags_mv_updated
