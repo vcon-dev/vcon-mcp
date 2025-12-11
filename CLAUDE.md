@@ -69,7 +69,7 @@ Must be one of: `'recording'`, `'text'`, `'transfer'`, `'incomplete'`
 | `attachments` | Related files (type, party, dialog, body, encoding) |
 | `groups` | Aggregated vCons |
 | `party_history` | Join/drop/mute events |
-| `embeddings_queue` | Semantic search embeddings |
+| `vcon_embeddings` | Semantic search embeddings |
 
 ### Key Relationships
 
