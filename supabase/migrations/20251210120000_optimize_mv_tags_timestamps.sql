@@ -186,20 +186,17 @@ CREATE OR REPLACE FUNCTION vcon_has_tags(
 RETURNS boolean AS $$
 DECLARE
   current_tenant TEXT;
-  has_match boolean;
 BEGIN
   current_tenant := get_current_tenant_id();
 
-  SELECT EXISTS (
+  RETURN EXISTS (
     SELECT 1
     FROM vcons v
     JOIN vcon_tags_mv ta ON ta.vcon_id = v.id
     WHERE v.uuid = p_vcon_uuid
       AND (current_tenant IS NULL OR v.tenant_id IS NULL OR v.tenant_id = current_tenant)
       AND ta.tags @> tag_filter
-  ) INTO has_match;
-
-  RETURN has_match;
+  );
 END;
 $$ LANGUAGE plpgsql STABLE;
 
