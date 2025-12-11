@@ -133,8 +133,8 @@ BEGIN
     -- Tag filtering (uses GIN index)
     AND (tag_filter = '{}'::jsonb OR (ta.tags IS NOT NULL AND ta.tags @> tag_filter))
     -- Timestamp filtering
-    AND (tags_modified_after IS NULL OR ta.tag_updated_at >= tags_modified_after)
-    AND (tags_modified_before IS NULL OR ta.tag_updated_at <= tags_modified_before)
+    AND (tags_modified_after IS NULL OR ta.tag_updated_at >= tags_modified_after OR ta.tag_updated_at IS NULL)
+    AND (tags_modified_before IS NULL OR ta.tag_updated_at <= tags_modified_before OR ta.tag_updated_at IS NULL)
   ORDER BY COALESCE(ta.tag_updated_at, v.created_at) DESC
   LIMIT max_results;
 END;
