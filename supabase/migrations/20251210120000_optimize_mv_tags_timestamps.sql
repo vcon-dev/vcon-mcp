@@ -104,8 +104,8 @@ CREATE INDEX idx_vcon_tags_mv_tenant_updated
 -- ============================================================================
 -- Add optional parameters for filtering by tag modification time
 
--- Drop existing function (different return type)
-DROP FUNCTION IF EXISTS search_vcons_by_tags(jsonb, int);
+-- Drop all existing overloads of the function (different return type)
+DROP FUNCTION IF EXISTS search_vcons_by_tags CASCADE;
 
 CREATE OR REPLACE FUNCTION search_vcons_by_tags(
   tag_filter jsonb DEFAULT '{}'::jsonb,
