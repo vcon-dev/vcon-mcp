@@ -165,7 +165,7 @@ BEGIN
   RETURN QUERY
   SELECT ta.tags, ta.tag_updated_at, ta.tag_created_at
   FROM vcons v
-  JOIN vcon_tags_mv ta ON ta.vcon_id = v.id
+  LEFT JOIN vcon_tags_mv ta ON ta.vcon_id = v.id
   WHERE v.uuid = p_vcon_uuid
     AND (current_tenant IS NULL OR v.tenant_id IS NULL OR v.tenant_id = current_tenant);
 END;
