@@ -455,9 +455,6 @@ async function migrateVConWithMedia(
     };
 
     // Create S3 client for externalization
-    if (mediaHandling === 'externalize' && mediaStorage) {
-      mediaOptions.s3Client = undefined; // MediaStorage has its own client
-    }
 
     const { dialogs, stats } = await processDialogsForMedia(
       migratedVCon.dialog,
