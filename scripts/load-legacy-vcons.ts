@@ -852,9 +852,7 @@ async function processVConFile(
                              (rawVcon.analysis && rawVcon.analysis.some((a: any) => a.encoding === 'text'));
 
       // Check if media handling is needed
-      const hasMedia = rawVcon.dialog && rawVcon.dialog.some((d: any) =>
-        d.type === 'recording' && d.body && d.encoding === 'base64url'
-      );
+      const hasMedia = rawVcon.dialog && hasEmbeddedMedia(rawVcon.dialog);
       const mediaHandling = options.mediaHandling || 'strip';
 
       let vcon: VCon;
