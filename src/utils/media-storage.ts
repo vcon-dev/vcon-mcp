@@ -78,11 +78,8 @@ export interface MediaProcessingOptions {
  * Check if a dialog contains embedded media that should be externalized
  */
 export function hasEmbeddedMedia(dialog: Dialog): boolean {
-  // Must have body and base64/base64url encoding
-  if (
-    !dialog.body ||
-    (dialog.encoding !== 'base64' && dialog.encoding !== 'base64url')
-  ) {
+  // Must have body and base64url encoding (per IETF vCon spec)
+  if (!dialog.body || dialog.encoding !== 'base64url') {
     return false;
   }
 
