@@ -2,41 +2,43 @@
 
 /**
  * Legacy vCon Loader Script
- * 
- * Loads production vCon files from S3 bucket (default) or local directory and migrates them 
- * from older spec versions to current spec (0.3.0). This script is designed for bulk loading 
+ *
+ * Loads production vCon files from S3 bucket (default) or local directory and migrates them
+ * from older spec versions to current spec (0.3.0). This script is designed for bulk loading
  * of legacy vCon files with automatic migration and performance optimizations for large datasets.
- * 
+ *
  * Key Features:
  * - S3 bucket import (default) - loads recent vCons from AWS S3
  * - Local directory import - fallback option for local files
  * - Automatic migration from legacy spec versions (0.0.1, 0.1.0, 0.2.0) to 0.3.0
  * - Encoding normalization (converts 'text' encoding to 'none' for plain text)
+ * - Embedded media handling (strip, keep, or externalize to S3)
  * - Redis-based UUID tracking for fast duplicate detection
  * - Parallel processing with configurable concurrency
  * - Retry logic with exponential backoff
  * - Comprehensive error reporting and statistics
  * - Dry-run mode for testing
- * 
+ *
  * Migration Strategy:
  * - Updates vcon version field to '0.3.0'
  * - Normalizes encoding values in attachments, dialog, and analysis
+ * - Optionally externalizes embedded media to S3 with presigned URLs
  * - Preserves all other vCon data unchanged
- * 
+ *
  * Performance Features:
  * - Uses Redis for fast UUID duplicate checking
  * - Falls back to temporary file if Redis unavailable
  * - Configurable batch processing and concurrency
  * - Progress reporting with ETA calculations
- * 
+ *
  * Usage:
  *   npx tsx scripts/load-legacy-vcons.ts [directory] [options]
- * 
+ *
  * Arguments:
  *   directory  Path to directory containing .vcon files (optional)
  *              If S3 env vars are set, uses S3 by default
  *              If directory provided, uses local directory instead
- * 
+ *
  * Options:
  *   --batch-size=N        Number of files per batch (default: 50)
  *   --concurrency=N       Number of concurrent batches (default: 3)
@@ -47,6 +49,15 @@
  *   --prefix=PREFIX       For S3: filter objects by prefix (optional)
  *   --sync                Enable continuous sync mode (checks for new vCons periodically)
  *   --sync-interval=N     Minutes between sync checks in sync mode (default: 5)
+ *
+ * Media Handling Options:
+ *   --media=MODE          How to handle embedded media in dialogs (default: strip)
+ *                         - keep: Preserve embedded base64 media (large DB size)
+ *                         - strip: Remove embedded media, keep metadata only
+ *                         - externalize: Upload media to S3, replace with presigned URLs
+ *   --media-bucket=NAME   S3 bucket for externalized media (required if --media=externalize)
+ *   --media-prefix=PATH   S3 prefix for media files (default: 'media/')
+ *   --presigned-expiry=N  Presigned URL expiration in days (default: 7)
  * 
  * Environment Variables (S3 - Default):
  *   VCON_S3_BUCKET            S3 bucket name containing vCons (required for S3 mode)
@@ -94,10 +105,23 @@
  * 
  *   # Enable continuous sync mode (checks every 5 minutes for new vCons)
  *   npx tsx scripts/load-legacy-vcons.ts --sync
- * 
+ *
  *   # Sync mode with custom interval (check every 10 minutes)
  *   npx tsx scripts/load-legacy-vcons.ts --sync --sync-interval=10
- * 
+ *
+ *   # Strip embedded media from recordings (default behavior)
+ *   npx tsx scripts/load-legacy-vcons.ts --media=strip
+ *
+ *   # Keep embedded media in database (warning: large DB size)
+ *   npx tsx scripts/load-legacy-vcons.ts --media=keep
+ *
+ *   # Externalize media to S3 with presigned URLs
+ *   npx tsx scripts/load-legacy-vcons.ts --media=externalize --media-bucket=my-media-bucket
+ *
+ *   # Externalize with custom prefix and URL expiration
+ *   npx tsx scripts/load-legacy-vcons.ts --media=externalize --media-bucket=my-media-bucket \
+ *     --media-prefix=recordings/ --presigned-expiry=30
+ *
  * @author vCon MCP Team
  * @version 3.0.0
  * @since 2024-10-01
@@ -111,10 +135,18 @@ import { S3Client, ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/clien
 import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
 import { getSupabaseClient } from '../dist/db/client.js';
 import { VConQueries } from '../dist/db/queries.js';
-import { VCon } from '../dist/types/vcon.js';
+import { VCon, Dialog } from '../dist/types/vcon.js';
 import { createClient } from 'redis';
 import { getTenantConfig, extractTenantFromVCon } from '../src/config/tenant-config.js';
 import { createClient as createSupabaseClient, SupabaseClient } from '@supabase/supabase-js';
+import {
+  MediaStorage,
+  MediaStorageConfig,
+  MediaProcessingOptions,
+  processDialogsForMedia,
+  hasEmbeddedMedia,
+  estimateBase64Size
+} from '../src/utils/media-storage.js';
 
 /**
  * Test database connection and provide helpful error messages
@@ -186,7 +218,21 @@ interface LoadStats {
   withoutTenant: number;
   /** Array of error details for failed loads */
   errors: Array<{ file: string; error: string }>;
+  /** Media handling statistics */
+  media: {
+    /** Dialogs with embedded media found */
+    withEmbeddedMedia: number;
+    /** Dialogs stripped of media */
+    stripped: number;
+    /** Dialogs externalized to S3 */
+    externalized: number;
+    /** Total bytes externalized to S3 */
+    externalizedBytes: number;
+  };
 }
+
+/** Media handling mode */
+type MediaHandlingMode = 'keep' | 'strip' | 'externalize';
 
 /**
  * Configuration options for processing vCon files
@@ -210,6 +256,14 @@ interface ProcessingOptions {
   sync?: boolean;
   /** Interval in minutes between sync checks (default: 5) */
   syncInterval?: number;
+  /** How to handle embedded media in dialogs (default: 'strip') */
+  mediaHandling?: MediaHandlingMode;
+  /** S3 bucket for externalized media (required if mediaHandling is 'externalize') */
+  mediaBucket?: string;
+  /** S3 prefix for media files (default: 'media/') */
+  mediaPrefix?: string;
+  /** Presigned URL expiration in days (default: 7) */
+  presignedExpiryDays?: number;
 }
 
 /**
@@ -237,14 +291,33 @@ interface UUIDTracker {
 }
 
 /**
+ * Result of media processing during migration
+ */
+interface MediaMigrationResult {
+  /** Number of dialogs with embedded media */
+  withEmbeddedMedia: number;
+  /** Number of dialogs stripped */
+  stripped: number;
+  /** Number of dialogs externalized */
+  externalized: number;
+  /** Total bytes externalized */
+  externalizedBytes: number;
+  /** Errors encountered */
+  errors: string[];
+}
+
+/**
  * Migrate a legacy vCon to current spec (0.3.0)
- * 
+ *
  * This function performs the following migrations:
  * - Updates vcon version field from legacy versions (0.0.1, 0.1.0, 0.2.0) to 0.3.0
  * - Normalizes encoding values: converts 'text' to 'none' for plain text content
  * - Applies normalization to attachments, dialog, and analysis arrays
  * - Preserves all other vCon data unchanged
- * 
+ *
+ * Note: This is the synchronous version that does not handle media processing.
+ * Use migrateVConWithMedia for async media externalization.
+ *
  * @param vcon - The legacy vCon object to migrate
  * @returns The migrated vCon conforming to spec 0.3.0
  */
@@ -261,7 +334,7 @@ function migrateVCon(vcon: any): VCon {
         // Convert 'text' to 'none' (plain text, no encoding)
         att.encoding = 'none';
       }
-      
+
       // Serialize body if it's an object or array (database expects string)
       if (att.body !== undefined && att.body !== null && typeof att.body !== 'string') {
         att.body = JSON.stringify(att.body);
@@ -270,7 +343,7 @@ function migrateVCon(vcon: any): VCon {
           att.encoding = 'json';
         }
       }
-      
+
       return att;
     });
   }
@@ -281,7 +354,7 @@ function migrateVCon(vcon: any): VCon {
       if (dlg.encoding === 'text') {
         dlg.encoding = 'none';
       }
-      
+
       // Serialize body if it's an object or array
       if (dlg.body !== undefined && dlg.body !== null && typeof dlg.body !== 'string') {
         dlg.body = JSON.stringify(dlg.body);
@@ -289,7 +362,7 @@ function migrateVCon(vcon: any): VCon {
           dlg.encoding = 'json';
         }
       }
-      
+
       return dlg;
     });
   }
@@ -300,7 +373,7 @@ function migrateVCon(vcon: any): VCon {
       if (ana.encoding === 'text') {
         ana.encoding = 'none';
       }
-      
+
       // Serialize body if it's an object or array
       if (ana.body !== undefined && ana.body !== null && typeof ana.body !== 'string') {
         ana.body = JSON.stringify(ana.body);
@@ -310,12 +383,97 @@ function migrateVCon(vcon: any): VCon {
           ana.encoding = 'json';
         }
       }
-      
+
       return ana;
     });
   }
 
   return vcon as VCon;
+}
+
+/**
+ * Migrate a legacy vCon with media handling
+ *
+ * This async function extends migrateVCon to also handle embedded media:
+ * - strip: Remove embedded media from dialogs, keep metadata
+ * - keep: Preserve embedded media (no change)
+ * - externalize: Upload media to S3 and replace with presigned URLs
+ *
+ * Per IETF vcon-core-01:
+ * - External content uses url + content_hash fields
+ * - HTTPS MUST be used for retrieval (presigned URLs use HTTPS)
+ *
+ * @param vcon - The legacy vCon object to migrate
+ * @param options - Media processing options
+ * @param mediaStorage - MediaStorage instance (required for externalize mode)
+ * @returns The migrated vCon and media processing statistics
+ */
+async function migrateVConWithMedia(
+  vcon: any,
+  options: ProcessingOptions,
+  mediaStorage?: MediaStorage
+): Promise<{ vcon: VCon; mediaResult: MediaMigrationResult }> {
+  // First apply standard migrations
+  const migratedVCon = migrateVCon(vcon);
+
+  // Initialize media result
+  const mediaResult: MediaMigrationResult = {
+    withEmbeddedMedia: 0,
+    stripped: 0,
+    externalized: 0,
+    externalizedBytes: 0,
+    errors: [],
+  };
+
+  // Handle media processing based on options
+  const mediaHandling = options.mediaHandling || 'strip';
+
+  if (mediaHandling === 'keep') {
+    // Count embedded media but don't modify
+    if (migratedVCon.dialog) {
+      for (const dialog of migratedVCon.dialog) {
+        if (hasEmbeddedMedia(dialog)) {
+          mediaResult.withEmbeddedMedia++;
+        }
+      }
+    }
+    return { vcon: migratedVCon, mediaResult };
+  }
+
+  // Process dialogs for media handling (strip or externalize)
+  if (migratedVCon.dialog && migratedVCon.dialog.length > 0) {
+    const mediaOptions: MediaProcessingOptions = {
+      mediaHandling: mediaHandling,
+      s3Config: mediaHandling === 'externalize' && options.mediaBucket
+        ? {
+            bucket: options.mediaBucket,
+            prefix: options.mediaPrefix || 'media/',
+            presignedUrlExpiration: (options.presignedExpiryDays || 7) * 24 * 60 * 60,
+            usePresignedUrls: true,
+          }
+        : undefined,
+    };
+
+    // Create S3 client for externalization
+    if (mediaHandling === 'externalize' && mediaStorage) {
+      mediaOptions.s3Client = undefined; // MediaStorage has its own client
+    }
+
+    const { dialogs, stats } = await processDialogsForMedia(
+      migratedVCon.dialog,
+      migratedVCon.uuid,
+      mediaOptions
+    );
+
+    migratedVCon.dialog = dialogs;
+    mediaResult.withEmbeddedMedia = stats.withEmbeddedMedia;
+    mediaResult.stripped = stats.stripped;
+    mediaResult.externalized = stats.externalized;
+    mediaResult.externalizedBytes = stats.externalizedBytes;
+    mediaResult.errors = stats.errors;
+  }
+
+  return { vcon: migratedVCon, mediaResult };
 }
 
 /**
@@ -626,16 +784,35 @@ async function findVConFiles(directoryPath: string): Promise<string[]> {
 }
 
 /**
+ * Result of processing a single vCon file
+ */
+interface ProcessVConResult {
+  success: boolean;
+  migrated: boolean;
+  skipped: boolean;
+  hasTenant: boolean;
+  error?: string;
+  /** Media processing statistics */
+  media?: {
+    withEmbeddedMedia: number;
+    stripped: number;
+    externalized: number;
+    externalizedBytes: number;
+  };
+}
+
+/**
  * Process a single vCon file with retry logic and better error handling
- * 
+ *
  * This function handles the complete lifecycle of processing a vCon file:
  * - Reads and parses the JSON file
  * - Validates required fields (UUID)
  * - Checks for duplicates using UUID tracker
  * - Migrates legacy spec versions to 0.3.0
+ * - Handles embedded media (strip, keep, or externalize)
  * - Loads into database (unless dry run)
  * - Implements retry logic for transient failures
- * 
+ *
  * @param filepath - Path to the vCon file to process
  * @param queries - Database query interface
  * @param options - Processing configuration options
@@ -643,15 +820,15 @@ async function findVConFiles(directoryPath: string): Promise<string[]> {
  * @returns Promise resolving to processing result with success status and details
  */
 async function processVConFile(
-  filepath: string, 
-  queries: VConQueries, 
+  filepath: string,
+  queries: VConQueries,
   options: ProcessingOptions,
   uuidTracker: UUIDTracker
-): Promise<{ success: boolean; migrated: boolean; skipped: boolean; hasTenant: boolean; error?: string }> {
+): Promise<ProcessVConResult> {
   const filename = filepath.split('/').pop() || filepath;
   const retryAttempts = options.retryAttempts || 3;
   const retryDelay = options.retryDelay || 1000;
-  
+
   for (let attempt = 1; attempt <= retryAttempts; attempt++) {
     try {
       // Read and parse vCon file
@@ -671,15 +848,28 @@ async function processVConFile(
         }
       }
 
-      // Migrate vCon to current spec
-      const needsMigration = rawVcon.vcon !== '0.3.0' || 
+      // Migrate vCon to current spec (including media handling)
+      const needsMigration = rawVcon.vcon !== '0.3.0' ||
                              (rawVcon.attachments && rawVcon.attachments.some((a: any) => a.encoding === 'text')) ||
                              (rawVcon.dialog && rawVcon.dialog.some((d: any) => d.encoding === 'text')) ||
                              (rawVcon.analysis && rawVcon.analysis.some((a: any) => a.encoding === 'text'));
 
-      let vcon = rawVcon;
-      if (needsMigration) {
-        vcon = migrateVCon(rawVcon);
+      // Check if media handling is needed
+      const hasMedia = rawVcon.dialog && rawVcon.dialog.some((d: any) =>
+        d.type === 'recording' && d.body && d.encoding === 'base64url'
+      );
+      const mediaHandling = options.mediaHandling || 'strip';
+
+      let vcon: VCon;
+      let mediaResult: MediaMigrationResult | undefined;
+
+      if (needsMigration || (hasMedia && mediaHandling !== 'keep')) {
+        // Use async migration with media handling
+        const result = await migrateVConWithMedia(rawVcon, options);
+        vcon = result.vcon;
+        mediaResult = result.mediaResult;
+      } else {
+        vcon = rawVcon;
       }
 
       // Check tenant_id extraction (for RLS) before loading
@@ -693,7 +883,18 @@ async function processVConFile(
         await uuidTracker.addUUID(vcon.uuid);
       }
 
-      return { success: true, migrated: needsMigration, skipped: false, hasTenant };
+      return {
+        success: true,
+        migrated: needsMigration || (hasMedia && mediaHandling !== 'keep'),
+        skipped: false,
+        hasTenant,
+        media: mediaResult ? {
+          withEmbeddedMedia: mediaResult.withEmbeddedMedia,
+          stripped: mediaResult.stripped,
+          externalized: mediaResult.externalized,
+          externalizedBytes: mediaResult.externalizedBytes,
+        } : undefined,
+      };
     } catch (error) {
       // Improved error message extraction for Supabase errors
       let errorMsg: string;
@@ -740,15 +941,15 @@ async function processVConFile(
  * Process files in parallel batches
  */
 async function processBatch(
-  files: string[], 
-  queries: VConQueries, 
+  files: string[],
+  queries: VConQueries,
   options: ProcessingOptions,
   stats: LoadStats,
   uuidTracker: UUIDTracker
 ): Promise<void> {
   const promises = files.map(async (filepath) => {
     const result = await processVConFile(filepath, queries, options, uuidTracker);
-    
+
     if (result.success) {
       if (result.skipped) {
         stats.skipped++;
@@ -762,6 +963,13 @@ async function processBatch(
           stats.withTenant++;
         } else {
           stats.withoutTenant++;
+        }
+        // Track media processing stats
+        if (result.media) {
+          stats.media.withEmbeddedMedia += result.media.withEmbeddedMedia;
+          stats.media.stripped += result.media.stripped;
+          stats.media.externalized += result.media.externalized;
+          stats.media.externalizedBytes += result.media.externalizedBytes;
         }
       }
     } else {
@@ -810,7 +1018,13 @@ async function loadVConsFromDirectory(directoryPath: string | undefined, options
     migrated: 0,
     withTenant: 0,
     withoutTenant: 0,
-    errors: []
+    errors: [],
+    media: {
+      withEmbeddedMedia: 0,
+      stripped: 0,
+      externalized: 0,
+      externalizedBytes: 0,
+    },
   };
 
   let uuidTracker: UUIDTracker | null = null;
@@ -948,6 +1162,21 @@ async function loadVConsFromDirectory(directoryPath: string | undefined, options
     console.log(`⏭️  Skipped:       ${stats.skipped} (already in database)`);
     console.log(`❌ Failed:        ${stats.failed}`);
     
+    // Media handling statistics
+    const mediaHandling = options.mediaHandling || 'strip';
+    if (stats.media.withEmbeddedMedia > 0 || mediaHandling !== 'keep') {
+      console.log('\n🎬 Media Handling Statistics:');
+      console.log(`   Mode: ${mediaHandling}`);
+      console.log(`   📹 Dialogs with embedded media: ${stats.media.withEmbeddedMedia}`);
+      if (mediaHandling === 'strip') {
+        console.log(`   🗑️  Media stripped: ${stats.media.stripped}`);
+      } else if (mediaHandling === 'externalize') {
+        console.log(`   ☁️  Media externalized: ${stats.media.externalized}`);
+        const mbExternalized = (stats.media.externalizedBytes / 1024 / 1024).toFixed(2);
+        console.log(`   📦 Bytes externalized: ${mbExternalized} MB`);
+      }
+    }
+
     // RLS/Tenant statistics
     if (tenantConfig.enabled) {
       console.log('\n🔐 RLS / Tenant Statistics:');
@@ -960,7 +1189,7 @@ async function loadVConsFromDirectory(directoryPath: string | undefined, options
         console.log(`      Tenant config: type='${tenantConfig.attachmentType}', path='${tenantConfig.jsonPath}'`);
       }
     }
-    
+
     console.log('='.repeat(60));
 
     if (stats.errors.length > 0) {
@@ -1044,7 +1273,23 @@ async function main() {
   const prefix = args.find(arg => arg.startsWith('--prefix='))?.split('=')[1] || undefined;
   const sync = args.includes('--sync');
   const syncInterval = parseInt(args.find(arg => arg.startsWith('--sync-interval='))?.split('=')[1] || '5');
-  
+
+  // Parse media handling options
+  const mediaHandlingArg = args.find(arg => arg.startsWith('--media='))?.split('=')[1] || 'strip';
+  const mediaHandling = (['keep', 'strip', 'externalize'].includes(mediaHandlingArg)
+    ? mediaHandlingArg
+    : 'strip') as MediaHandlingMode;
+  const mediaBucket = args.find(arg => arg.startsWith('--media-bucket='))?.split('=')[1] || undefined;
+  const mediaPrefix = args.find(arg => arg.startsWith('--media-prefix='))?.split('=')[1] || 'media/';
+  const presignedExpiryDays = parseInt(args.find(arg => arg.startsWith('--presigned-expiry='))?.split('=')[1] || '7');
+
+  // Validate media externalization options
+  if (mediaHandling === 'externalize' && !mediaBucket) {
+    console.error('❌ Error: --media-bucket is required when --media=externalize\n');
+    console.error('   Example: --media=externalize --media-bucket=my-media-bucket\n');
+    process.exit(1);
+  }
+
   const options: ProcessingOptions = {
     batchSize,
     concurrency,
@@ -1054,7 +1299,11 @@ async function main() {
     hours,
     prefix,
     sync,
-    syncInterval
+    syncInterval,
+    mediaHandling,
+    mediaBucket,
+    mediaPrefix,
+    presignedExpiryDays,
   };
 
   console.log('🚀 Legacy vCon Loader Starting...\n');
@@ -1097,8 +1346,21 @@ async function main() {
   }
   
   console.log(`\nOptions: batchSize=${batchSize}, concurrency=${concurrency}, retryAttempts=${retryAttempts}, retryDelay=${retryDelay}ms, dryRun=${dryRun}`);
+
+  // Display media handling settings
+  console.log(`\n🎬 Media Handling: ${mediaHandling}`);
+  if (mediaHandling === 'strip') {
+    console.log('   Embedded recordings will be removed, metadata preserved');
+  } else if (mediaHandling === 'keep') {
+    console.log('   ⚠️  WARNING: Embedded recordings will be stored in database (may be large)');
+  } else if (mediaHandling === 'externalize') {
+    console.log(`   📦 Media bucket: ${mediaBucket}`);
+    console.log(`   📁 Media prefix: ${mediaPrefix}`);
+    console.log(`   🔗 Presigned URL expiry: ${presignedExpiryDays} days`);
+  }
+
   if (sync) {
-    console.log(`Sync mode: Enabled (checking every ${syncInterval} minutes)\n`);
+    console.log(`\nSync mode: Enabled (checking every ${syncInterval} minutes)\n`);
   } else {
     console.log();
   }
