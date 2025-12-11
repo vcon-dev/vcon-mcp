@@ -398,6 +398,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Grant execute permission to service_role (or adjust as needed)
+GRANT EXECUTE ON FUNCTION refresh_vcon_tags_mv() TO service_role;
 -- ============================================================================
 -- 10. Analyze tables for query planner optimization
 -- ============================================================================
