@@ -1,14 +1,16 @@
 /**
- * IETF vCon Core Types - Compliant with draft-ietf-vcon-vcon-core-00
- * 
- * ⚠️ CRITICAL CORRECTIONS APPLIED:
- * 1. Analysis: 'schema' field (not 'schema_version')
- * 2. Analysis: 'vendor' is REQUIRED (not optional)
- * 3. Analysis: 'body' is string (not object)
- * 4. Party: 'uuid' field added
- * 5. Dialog: New fields added (session_id, application, message_id)
- * 6. No default values for 'encoding' fields
- * 7. Dialog type constraints enforced
+ * IETF vCon Core Types - Compliant with draft-ietf-vcon-vcon-core-01
+ *
+ * Updated from vcon-core-00 to vcon-core-01 (2025-10-15)
+ *
+ * Key spec requirements:
+ * 1. Dialog content can be inline (body + encoding) or external (url + content_hash)
+ * 2. body and url are mutually exclusive for content storage
+ * 3. HTTPS MUST be used for external content retrieval
+ * 4. encoding: 'base64url' | 'json' | 'none'
+ * 5. Analysis: vendor is REQUIRED, schema (not schema_version), body is string
+ * 6. Dialog types: 'recording' | 'text' | 'transfer' | 'incomplete'
+ * 7. transfer and incomplete types MUST NOT have Dialog Content parameters
  */
 
 // ============================================================================
@@ -79,10 +81,13 @@ export interface PartyHistory {
 }
 
 /**
- * Dialog Object - Section 4.3
- * ✅ CORRECTED: Added session_id per spec Section 4.3.10
- * ✅ CORRECTED: Added application per spec Section 4.3.13
- * ✅ CORRECTED: Added message_id per spec Section 4.3.14
+ * Dialog Object - Section 4.3 (vcon-core-01)
+ *
+ * Content can be stored in two mutually exclusive ways:
+ * 1. Inline: body + encoding fields
+ * 2. External: url + content_hash fields (HTTPS MUST be used)
+ *
+ * Note: 'transfer' and 'incomplete' types MUST NOT have content parameters
  */
 export interface Dialog {
   type: DialogType;
@@ -90,18 +95,23 @@ export interface Dialog {
   duration?: number;        // Duration in seconds
   parties?: number | number[] | (number | number[])[];
   originator?: number;
-  mediatype?: string;
+  mediatype?: string;       // MIME type (e.g., 'audio/x-wav', 'video/x-mp4')
   filename?: string;
-  body?: string;
-  encoding?: Encoding;
-  url?: string;
-  content_hash?: string | string[];
+
+  // Inline content (mutually exclusive with url)
+  body?: string;            // Content data (base64url encoded for binary)
+  encoding?: Encoding;      // How body is encoded: 'base64url' | 'json' | 'none'
+
+  // External content (mutually exclusive with body)
+  url?: string;             // HTTPS URL to external content
+  content_hash?: string | string[];  // SHA-256 hash for integrity verification
+
   disposition?: DialogDisposition;
-  session_id?: string;      // ✅ Section 4.3.10
+  session_id?: string;      // Section 4.3.10 - Session identifier
   party_history?: PartyHistory[];  // Section 4.3.11
-  application?: string;     // ✅ Section 4.3.13
-  message_id?: string;      // ✅ Section 4.3.14
-  
+  application?: string;     // Section 4.3.13 - Application identifier
+  message_id?: string;      // Section 4.3.14 - Message identifier
+
   // Transfer-specific fields (only for type='transfer')
   transferee?: number;
   transferor?: number;
