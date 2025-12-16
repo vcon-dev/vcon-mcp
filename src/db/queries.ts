@@ -337,10 +337,10 @@ export class VConQueries {
    * ✅ CRITICAL: 'body' is TEXT type
    */
   async addAnalysis(vconUuid: string, analysis: Analysis): Promise<void> {
-    // Get vcon_id
+    // Get vcon_id and created_at
     const { data: vcon, error: vconError } = await this.supabase
       .from('vcons')
-      .select('id')
+      .select('id, created_at')
       .eq('uuid', vconUuid)
       .single();
 
@@ -380,6 +380,7 @@ export class VConQueries {
         encoding: analysis.encoding,
         url: analysis.url,
         content_hash: analysis.content_hash,
+        created_at: vcon.created_at,
       });
 
     if (analysisError) throw analysisError;
@@ -468,7 +469,7 @@ export class VConQueries {
   async addAttachment(vconUuid: string, attachment: Attachment): Promise<void> {
     const { data: vcon, error: vconError } = await this.supabase
       .from('vcons')
-      .select('id')
+      .select('id, created_at')
       .eq('uuid', vconUuid)
       .single();
 
@@ -501,6 +502,7 @@ export class VConQueries {
         encoding: attachment.encoding,
         url: attachment.url,
         content_hash: attachment.content_hash,
+        created_at: vcon.created_at,
       });
 
     if (attachmentError) throw attachmentError;
