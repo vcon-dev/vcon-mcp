@@ -3,10 +3,10 @@
  */
 
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
-import { BaseToolHandler, ToolHandlerContext, ToolResponse } from './base.js';
+import { ATTR_SEARCH_TYPE } from '../../observability/attributes.js';
+import { logWithContext, recordCounter } from '../../observability/instrumentation.js';
 import { VCon } from '../../types/vcon.js';
-import { recordCounter, logWithContext } from '../../observability/instrumentation.js';
-import { ATTR_SEARCH_TYPE, ATTR_SEARCH_RESULTS_COUNT } from '../../observability/attributes.js';
+import { BaseToolHandler, ToolHandlerContext, ToolResponse } from './base.js';
 import { normalizeDateString, requireNonEmptyString } from './validation.js';
 
 /**
@@ -17,10 +17,10 @@ export class SearchVConsHandler extends BaseToolHandler {
 
   protected async execute(args: any, context: ToolHandlerContext): Promise<ToolResponse> {
     const requestContext = this.createRequestContext(args);
-    
+
     const responseFormat = (args?.response_format as string | undefined) || 'metadata';
     const includeCount = (args?.include_count as boolean | undefined) || false;
-    
+
     let filters = {
       subject: args?.subject as string | undefined,
       partyName: args?.party_name as string | undefined,
@@ -51,11 +51,11 @@ export class SearchVConsHandler extends BaseToolHandler {
       }
       throw dbError;
     }
-    
+
     // Hook: afterSearch (can filter or modify results)
     const filteredResults = await context.pluginManager.executeHook<VCon[]>('afterSearch', results, requestContext);
     if (filteredResults) results = filteredResults;
-    
+
     // Format response based on requested format
     let formattedResults;
     if (responseFormat === 'ids_only') {
@@ -94,22 +94,22 @@ export class SearchVConsHandler extends BaseToolHandler {
         });
       }
     }
-    
+
     recordCounter('vcon.search.count', 1, {
       [ATTR_SEARCH_TYPE]: 'basic',
     }, 'vCon search count');
-    
+
     const response: any = {
       success: true,
       count: results.length,
       response_format: responseFormat,
       results: formattedResults
     };
-    
+
     if (totalCount !== undefined) {
       response.total_count = totalCount;
     }
-    
+
     return this.createTextResponse(response);
   }
 }
@@ -182,18 +182,18 @@ export class SearchVConsContentHandler extends BaseToolHandler {
     recordCounter('vcon.search.count', 1, {
       [ATTR_SEARCH_TYPE]: 'keyword',
     }, 'vCon search count');
-    
+
     const response: any = {
       success: true,
       count: results.length,
       response_format: responseFormat,
       results: formattedResults
     };
-    
+
     if (totalCount !== undefined) {
       response.total_count = totalCount;
     }
-    
+
     return this.createTextResponse(response);
   }
 }
@@ -270,7 +270,10 @@ export class SearchVConsHybridHandler extends BaseToolHandler {
 
     // If no embedding provided, use keyword-only search
     if (!embedding) {
-      console.error('⚠️  No embedding provided for hybrid search, falling back to keyword-only');
+      logWithContext('warn', 'No embedding provided for hybrid search, falling back to keyword-only', {
+        tool_name: this.toolName,
+        query
+      });
     }
 
     const results = await context.queries.hybridSearch({
@@ -296,4 +299,3 @@ export class SearchVConsHybridHandler extends BaseToolHandler {
     });
   }
 }
-
