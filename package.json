@@ -14,6 +14,7 @@
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
     "test": "vitest",
+    "test:e2e": "vitest run --config vitest.config.e2e.ts",
     "test:compliance": "vitest run tests/vcon-compliance.test.ts",
     "test:console": "npx @modelcontextprotocol/inspector tsx src/index.ts",
     "lint": "eslint src/**/*.ts",
@@ -42,6 +43,7 @@
     "test:tenant": "tsx scripts/test-tenant-isolation.ts",
     "migrate:rls": "tsx scripts/migrate-to-rls.ts",
     "migrate:remote": "tsx scripts/migrate-to-remote.ts",
+    "db:setup:e2e": "tsx scripts/setup-e2e-database.ts",
     "util:s3-sync": "./scripts/backfill-s3-sync.sh"
   },
   "files": [

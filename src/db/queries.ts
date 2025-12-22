@@ -717,53 +717,11 @@ export class VConQueries {
     tags?: Record<string, string>;
     limit?: number;
   }): Promise<VCon[]> {
-    let query = this.supabase
-      .from('vcons')
-      .select('uuid');
+    const limit = filters.limit || 10;
 
-    if (filters.subject) {
-      query = query.ilike('subject', `%${filters.subject}%`);
-    }
-
-    if (filters.startDate) {
-      query = query.gte('created_at', filters.startDate);
-    }
-
-    if (filters.endDate) {
-      query = query.lte('created_at', filters.endDate);
-    }
-
-    if (filters.limit) {
-      query = query.limit(filters.limit);
-    }
-
-    query = query.order('created_at', { ascending: false });
-
-    let data, error;
-    try {
-      const result = await query;
-      data = result.data;
-      error = result.error;
-    } catch (fetchError: any) {
-      // Handle network/connection errors
-      if (fetchError instanceof TypeError && fetchError.message.includes('fetch failed')) {
-        throw new Error(
-          `Database connection failed: Unable to reach Supabase. ` +
-          `Check your network connection and SUPABASE_URL configuration. ` +
-          `Original error: ${fetchError.message}`
-        );
-      }
-      throw fetchError;
-    }
-    
-    if (error) throw error;
-    if (!data) {
-      // This shouldn't happen if error is null, but TypeScript needs this check
-      return [];
-    }
-
-    // If party filters, need to join with parties table
-    let vconUuids = data.map(v => v.uuid);
+    // Start with party filters if present - these constrain which vCons to consider
+    // Party filters must be applied FIRST to avoid missing results due to limit
+    let candidateVconIds: Set<number> | null = null;
 
     if (filters.partyName || filters.partyEmail || filters.partyTel) {
       let partyQuery = this.supabase
@@ -783,25 +741,78 @@ export class VConQueries {
       const { data: partyData, error: partyError } = await partyQuery;
       if (partyError) throw partyError;
 
-      const partyVconIds = new Set(partyData.map(p => p.vcon_id));
-      
-      // Get UUIDs for matching vcon_ids
-      const { data: matchingVcons } = await this.supabase
-        .from('vcons')
-        .select('uuid, id')
-        .in('id', Array.from(partyVconIds));
+      if (!partyData || partyData.length === 0) {
+        // No parties match - return empty result
+        return [];
+      }
 
-      vconUuids = vconUuids.filter(uuid => 
-        matchingVcons?.some(v => v.uuid === uuid)
-      );
+      candidateVconIds = new Set(partyData.map(p => p.vcon_id));
     }
+
+    // Build the main vcons query
+    let query = this.supabase
+      .from('vcons')
+      .select('uuid, id');
+
+    // If we have party-filtered candidates, constrain to those vcon IDs
+    if (candidateVconIds !== null) {
+      query = query.in('id', Array.from(candidateVconIds));
+    }
+
+    if (filters.subject) {
+      query = query.ilike('subject', `%${filters.subject}%`);
+    }
+
+    if (filters.startDate) {
+      query = query.gte('created_at', filters.startDate);
+    }
+
+    if (filters.endDate) {
+      query = query.lte('created_at', filters.endDate);
+    }
+
+    query = query.order('created_at', { ascending: false });
+
+    // Apply limit after all filters (tag filter may reduce further)
+    // If we have tag filters, fetch more initially to allow for filtering
+    const initialLimit = (filters.tags && Object.keys(filters.tags).length > 0)
+      ? Math.max(limit * 10, 1000)  // Fetch more to account for tag filtering
+      : limit;
+    query = query.limit(initialLimit);
+
+    let data, error;
+    try {
+      const result = await query;
+      data = result.data;
+      error = result.error;
+    } catch (fetchError: any) {
+      // Handle network/connection errors
+      if (fetchError instanceof TypeError && fetchError.message.includes('fetch failed')) {
+        throw new Error(
+          `Database connection failed: Unable to reach Supabase. ` +
+          `Check your network connection and SUPABASE_URL configuration. ` +
+          `Original error: ${fetchError.message}`
+        );
+      }
+      throw fetchError;
+    }
+
+    if (error) throw error;
+    if (!data || data.length === 0) {
+      return [];
+    }
+
+    let vconUuids = data.map(v => v.uuid);
 
     // If tag filters, get matching UUIDs and intersect with current results
     if (filters.tags && Object.keys(filters.tags).length > 0) {
-      const tagMatchingUuids = await this.searchByTags(filters.tags, filters.limit || 1000);
+      const tagMatchingUuids = await this.searchByTags(filters.tags, 10000);
       const tagMatchingSet = new Set(tagMatchingUuids);
       vconUuids = vconUuids.filter(uuid => tagMatchingSet.has(uuid));
     }
+
+    // Apply final limit after all filtering
+    vconUuids = vconUuids.slice(0, limit);
 
     // Fetch full vCons
     return Promise.all(
