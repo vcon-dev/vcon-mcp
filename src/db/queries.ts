@@ -1,6 +1,6 @@
 /**
  * Database Queries for vCon Operations
- * 
+ *
  * ⚠️ CRITICAL: Uses corrected field names per IETF spec
  * - analysis.schema (NOT schema_version)
  * - analysis.vendor (REQUIRED)
@@ -11,10 +11,13 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 import Redis from 'ioredis';
-import { VCon, Analysis, Dialog, Party, Attachment } from '../types/vcon.js';
-import { withSpan, recordCounter, recordHistogram, logWithContext } from '../observability/instrumentation.js';
-import { ATTR_VCON_UUID, ATTR_DB_OPERATION, ATTR_CACHE_HIT, ATTR_SEARCH_TYPE, ATTR_SEARCH_RESULTS_COUNT, ATTR_SEARCH_THRESHOLD } from '../observability/attributes.js';
-import { getTenantConfig, extractTenantFromVCon } from '../config/tenant-config.js';
+import { extractTenantFromVCon, getTenantConfig } from '../config/tenant-config.js';
+import { ATTR_CACHE_HIT, ATTR_DB_OPERATION, ATTR_SEARCH_RESULTS_COUNT, ATTR_SEARCH_THRESHOLD, ATTR_SEARCH_TYPE, ATTR_VCON_UUID } from '../observability/attributes.js';
+import { logWithContext, recordCounter, withSpan } from '../observability/instrumentation.js';
+import { createLogger } from '../observability/logger.js';
+import { Analysis, Attachment, Dialog, VCon } from '../types/vcon.js';
+
+const logger = createLogger('queries');
 
 export class VConQueries {
   private redis: Redis | null = null;
@@ -51,11 +54,11 @@ export class VConQueries {
         [ATTR_VCON_UUID]: vcon.uuid,
         [ATTR_DB_OPERATION]: 'insert',
       });
-      
+
       recordCounter('db.query.count', 1, {
         operation: 'createVCon',
       }, 'Database query count');
-      
+
       // Extract tenant_id from vCon attachments if RLS is enabled
       const tenantConfig = getTenantConfig();
       let tenantId: string | null = null;
@@ -65,7 +68,7 @@ export class VConQueries {
           span.setAttributes({ 'tenant_id': tenantId });
         }
       }
-      
+
       // Insert main vcon
       const { data: vconData, error: vconError } = await this.supabase
         .from('vcons')
@@ -169,11 +172,11 @@ export class VConQueries {
         [ATTR_SEARCH_TYPE]: 'keyword',
         [ATTR_DB_OPERATION]: 'search',
       });
-      
+
       recordCounter('db.query.count', 1, {
         operation: 'keywordSearch',
       }, 'Database query count');
-      
+
       const { data, error } = await this.supabase.rpc('search_vcons_keyword', {
         query_text: params.query,
         start_date: params.startDate ?? null,
@@ -181,7 +184,7 @@ export class VConQueries {
         tag_filter: params.tags ?? {},
         max_results: params.limit ?? 50,
       });
-      
+
       if (error) {
         recordCounter('db.query.errors', 1, {
           operation: 'keywordSearch',
@@ -189,23 +192,23 @@ export class VConQueries {
         }, 'Database query errors');
         throw error;
       }
-      
+
       const results = data as any;
       span.setAttributes({
         [ATTR_SEARCH_RESULTS_COUNT]: results?.length || 0,
       });
-      
+
       return results;
     });
   }
 
   /**
    * Get count of distinct vCons matching keyword search criteria
-   * 
+   *
    * NOTE: This method has a limitation - it fetches results and counts distinct vcon_ids,
    * which means it's still subject to Supabase's 1000 row limit. For accurate counts
    * exceeding 1000, a database RPC function that returns count directly would be needed.
-   * 
+   *
    * @param params - Search parameters
    * @returns Count of distinct vCons matching the search
    */
@@ -221,7 +224,7 @@ export class VConQueries {
       ...params,
       limit: 1000, // Maximum allowed by Supabase
     });
-    
+
     // Count distinct vcon_ids (since one vcon can match multiple times)
     const distinctVconIds = new Set(results.map(r => r.vcon_id));
     return distinctVconIds.size;
@@ -249,18 +252,18 @@ export class VConQueries {
         [ATTR_DB_OPERATION]: 'search',
         [ATTR_SEARCH_THRESHOLD]: params.threshold || 0.7,
       });
-      
+
       recordCounter('db.query.count', 1, {
         operation: 'semanticSearch',
       }, 'Database query count');
-      
+
       const { data, error } = await this.supabase.rpc('search_vcons_semantic', {
         query_embedding: params.embedding,
         tag_filter: params.tags ?? {},
         match_threshold: params.threshold ?? 0.7,
         match_count: params.limit ?? 50,
       });
-      
+
       if (error) {
         recordCounter('db.query.errors', 1, {
           operation: 'semanticSearch',
@@ -268,12 +271,12 @@ export class VConQueries {
         }, 'Database query errors');
         throw error;
       }
-      
+
       const results = data as any;
       span.setAttributes({
         [ATTR_SEARCH_RESULTS_COUNT]: results?.length || 0,
       });
-      
+
       return results;
     });
   }
@@ -300,11 +303,11 @@ export class VConQueries {
         [ATTR_DB_OPERATION]: 'search',
         'search.semantic_weight': params.semanticWeight || 0.6,
       });
-      
+
       recordCounter('db.query.count', 1, {
         operation: 'hybridSearch',
       }, 'Database query count');
-      
+
       const { data, error } = await this.supabase.rpc('search_vcons_hybrid', {
         keyword_query: params.keywordQuery ?? null,
         query_embedding: params.embedding ?? null,
@@ -312,7 +315,7 @@ export class VConQueries {
         semantic_weight: params.semanticWeight ?? 0.6,
         limit_results: params.limit ?? 50,
       });
-      
+
       if (error) {
         recordCounter('db.query.errors', 1, {
           operation: 'hybridSearch',
@@ -320,12 +323,12 @@ export class VConQueries {
         }, 'Database query errors');
         throw error;
       }
-      
+
       const results = data as any;
       span.setAttributes({
         [ATTR_SEARCH_RESULTS_COUNT]: results?.length || 0,
       });
-      
+
       return results;
     });
   }
@@ -354,8 +357,8 @@ export class VConQueries {
       .order('analysis_index', { ascending: false })
       .limit(1);
 
-    const nextIndex = existingAnalysis && existingAnalysis.length > 0 
-      ? existingAnalysis[0].analysis_index + 1 
+    const nextIndex = existingAnalysis && existingAnalysis.length > 0
+      ? existingAnalysis[0].analysis_index + 1
       : 0;
 
     // ✅ CRITICAL CORRECTIONS:
@@ -368,8 +371,8 @@ export class VConQueries {
         vcon_id: vcon.id,
         analysis_index: nextIndex,
         type: analysis.type,
-        dialog_indices: Array.isArray(analysis.dialog) 
-          ? analysis.dialog 
+        dialog_indices: Array.isArray(analysis.dialog)
+          ? analysis.dialog
           : (analysis.dialog !== undefined ? [analysis.dialog] : null),
         mediatype: analysis.mediatype,
         filename: analysis.filename,
@@ -407,8 +410,8 @@ export class VConQueries {
       .order('dialog_index', { ascending: false })
       .limit(1);
 
-    const nextIndex = existingDialog && existingDialog.length > 0 
-      ? existingDialog[0].dialog_index + 1 
+    const nextIndex = existingDialog && existingDialog.length > 0
+      ? existingDialog[0].dialog_index + 1
       : 0;
 
     // Normalize parties array
@@ -483,8 +486,8 @@ export class VConQueries {
       .order('attachment_index', { ascending: false })
       .limit(1);
 
-    const nextIndex = existingAttachments && existingAttachments.length > 0 
-      ? existingAttachments[0].attachment_index + 1 
+    const nextIndex = existingAttachments && existingAttachments.length > 0
+      ? existingAttachments[0].attachment_index + 1
       : 0;
 
     const { error: attachmentError } = await this.supabase
@@ -518,13 +521,17 @@ export class VConQueries {
     try {
       const cached = await this.redis.get(`vcon:${uuid}`);
       if (cached) {
-        console.error(`✅ Cache HIT for vCon ${uuid}`);
+        logger.debug({ vcon_uuid: uuid, cache_hit: true }, 'Cache hit');
         return JSON.parse(cached) as VCon;
       }
-      console.error(`ℹ️  Cache MISS for vCon ${uuid}`);
+      logger.debug({ vcon_uuid: uuid, cache_hit: false }, 'Cache miss');
       return null;
     } catch (error) {
-      console.error(`⚠️  Cache read error for ${uuid}:`, error);
+      logger.warn({
+        vcon_uuid: uuid,
+        err: error,
+        error_message: error instanceof Error ? error.message : String(error)
+      }, 'Cache read error');
       return null; // Fall through to database
     }
   }
@@ -542,9 +549,16 @@ export class VConQueries {
         this.cacheTTL,
         JSON.stringify(vcon)
       );
-      console.error(`✅ Cached vCon ${uuid} (TTL: ${this.cacheTTL}s)`);
+      logger.debug({
+        vcon_uuid: uuid,
+        ttl_seconds: this.cacheTTL
+      }, 'Cached vCon');
     } catch (error) {
-      console.error(`⚠️  Cache write error for ${uuid}:`, error);
+      logger.warn({
+        vcon_uuid: uuid,
+        err: error,
+        error_message: error instanceof Error ? error.message : String(error)
+      }, 'Cache write error');
       // Non-fatal: continue without caching
     }
   }
@@ -558,9 +572,13 @@ export class VConQueries {
 
     try {
       await this.redis.del(`vcon:${uuid}`);
-      console.error(`✅ Invalidated cache for vCon ${uuid}`);
+      logger.debug({ vcon_uuid: uuid }, 'Invalidated cache');
     } catch (error) {
-      console.error(`⚠️  Cache invalidation error for ${uuid}:`, error);
+      logger.warn({
+        vcon_uuid: uuid,
+        err: error,
+        error_message: error instanceof Error ? error.message : String(error)
+      }, 'Cache invalidation error');
     }
   }
 
@@ -575,7 +593,7 @@ export class VConQueries {
         [ATTR_VCON_UUID]: uuid,
         [ATTR_DB_OPERATION]: 'select',
       });
-      
+
       // Try cache first
       const cached = await this.getCachedVCon(uuid);
       if (cached) {
@@ -587,7 +605,7 @@ export class VConQueries {
       // Cache miss
       recordCounter('cache.miss', 1, { operation: 'getVCon' }, 'Cache misses');
       span.setAttributes({ [ATTR_CACHE_HIT]: false });
-      
+
       recordCounter('db.query.count', 1, {
         operation: 'getVCon',
       }, 'Database query count');
@@ -804,6 +822,37 @@ export class VConQueries {
 
     let vconUuids = data.map(v => v.uuid);
 
+    if (filters.partyName || filters.partyEmail || filters.partyTel) {
+      let partyQuery = this.supabase
+        .from('parties')
+        .select('vcon_id');
+
+      if (filters.partyName) {
+        partyQuery = partyQuery.ilike('name', `%${filters.partyName}%`);
+      }
+      if (filters.partyEmail) {
+        partyQuery = partyQuery.ilike('mailto', `%${filters.partyEmail}%`);
+      }
+      if (filters.partyTel) {
+        partyQuery = partyQuery.ilike('tel', `%${filters.partyTel}%`);
+      }
+
+      const { data: partyData, error: partyError } = await partyQuery;
+      if (partyError) throw partyError;
+
+      const partyVconIds = new Set(partyData.map(p => p.vcon_id));
+
+      // Get UUIDs for matching vcon_ids
+      const { data: matchingVcons } = await this.supabase
+        .from('vcons')
+        .select('uuid, id')
+        .in('id', Array.from(partyVconIds));
+
+      vconUuids = vconUuids.filter(uuid =>
+        matchingVcons?.some(v => v.uuid === uuid)
+      );
+    }
+
     // If tag filters, get matching UUIDs and intersect with current results
     if (filters.tags && Object.keys(filters.tags).length > 0) {
       const tagMatchingUuids = await this.searchByTags(filters.tags, 10000);
@@ -877,7 +926,7 @@ export class VConQueries {
       }
 
       const partyVconIds = new Set(partyData.map(p => p.vcon_id));
-      
+
       // Apply date/subject filters and count only matching vcons
       let vconQuery = this.supabase
         .from('vcons')
@@ -896,22 +945,22 @@ export class VConQueries {
 
       const { count, error: countError } = await vconQuery;
       if (countError) throw countError;
-      
+
       // If tag filters, intersect with tag matching UUIDs
       if (filters.tags && Object.keys(filters.tags).length > 0) {
         const tagMatchingUuids = await this.searchByTags(filters.tags, 10000);
         const tagMatchingSet = new Set(tagMatchingUuids);
-        
+
         // Get UUIDs for the party-filtered vcons and count intersection
         const { data: vconData } = await this.supabase
           .from('vcons')
           .select('uuid')
           .in('id', Array.from(partyVconIds));
-        
+
         const matchingUuids = vconData?.filter(v => tagMatchingSet.has(v.uuid)).map(v => v.uuid) || [];
         return matchingUuids.length;
       }
-      
+
       return count || 0;
     }
 
@@ -919,11 +968,11 @@ export class VConQueries {
     if (filters.tags && Object.keys(filters.tags).length > 0) {
       const tagMatchingUuids = await this.searchByTags(filters.tags, 10000);
       const tagMatchingSet = new Set(tagMatchingUuids);
-      
+
       // Get all UUIDs from the base query (with subject/date filters)
       const { data: vconData } = await query.select('uuid');
       if (!vconData) return 0;
-      
+
       const matchingUuids = vconData.filter(v => tagMatchingSet.has(v.uuid));
       return matchingUuids.length;
     }
@@ -1005,7 +1054,7 @@ export class VConQueries {
     // Parse tags from body (array of "key:value" strings)
     const tagsArray = JSON.parse(attachments[0].body || '[]');
     const tagsObject: Record<string, string> = {};
-    
+
     for (const tagString of tagsArray) {
       const colonIndex = tagString.indexOf(':');
       if (colonIndex > 0) {
@@ -1053,7 +1102,7 @@ export class VConQueries {
    */
   async removeTag(vconUuid: string, key: string): Promise<void> {
     const currentTags = await this.getTags(vconUuid);
-    
+
     if (currentTags[key] === undefined) {
       return; // Tag doesn't exist, nothing to do
     }
@@ -1072,7 +1121,7 @@ export class VConQueries {
       // Merge with existing tags
       const currentTags = await this.getTags(vconUuid);
       finalTags = { ...currentTags };
-      
+
       // Add/update new tags
       for (const [key, value] of Object.entries(tags)) {
         finalTags[key] = String(value);
@@ -1104,25 +1153,25 @@ export class VConQueries {
       tag_filter: tags,
       max_results: limit,
     });
-    
+
     // Add a 10 second timeout to prevent indefinite hangs
     const timeoutPromise = new Promise<{ data: null; error: Error }>((resolve) => {
       setTimeout(() => {
         resolve({ data: null, error: new Error('RPC call timed out') });
       }, 10000);
     });
-    
+
     const { data, error } = await Promise.race([rpcPromise, timeoutPromise]);
 
     // Helper function for manual search fallback
     const performManualSearch = async (): Promise<string[]> => {
       // Get all vCons with tags attachments (use pagination to bypass Supabase's 1000 row default limit)
       // Note: We look for type='tags' regardless of encoding to handle legacy data
-      
+
       // Add overall timeout to prevent indefinite execution
       const searchTimeout = 45000; // 45 seconds max for manual search
       const startTime = Date.now();
-      
+
       // First, get the total count
       const { count, error: countError } = await this.supabase
         .from('attachments')
@@ -1130,7 +1179,7 @@ export class VConQueries {
         .eq('type', 'tags');
 
       if (countError) throw countError;
-      
+
       // Check timeout before proceeding
       if (Date.now() - startTime > searchTimeout) {
         return [];
@@ -1149,7 +1198,7 @@ export class VConQueries {
         if (Date.now() - startTime > searchTimeout) {
           break;
         }
-        
+
         // Stop fetching if we have enough matches
         if (matchingVconIds.size >= limit) {
           break;
@@ -1157,7 +1206,7 @@ export class VConQueries {
 
         const from = i * batchSize;
         const to = Math.min(from + batchSize - 1, (count || 0) - 1);
-        
+
         const { data: batch, error: attachmentError } = await this.supabase
           .from('attachments')
           .select('vcon_id, body')
@@ -1171,7 +1220,7 @@ export class VConQueries {
           try {
             const tagsArray = JSON.parse(attachment.body || '[]');
             const tagsObject: Record<string, string> = {};
-            
+
             for (const tagString of tagsArray) {
               if (typeof tagString !== 'string') continue;
               const colonIndex = tagString.indexOf(':');
@@ -1266,7 +1315,7 @@ export class VConQueries {
     // Get all tags attachments (use pagination to bypass Supabase's 1000 row default limit)
     // Note: We look for type='tags' regardless of encoding to handle legacy data
     // Tags should have encoding='json', but we're lenient to find tags that may have wrong encoding
-    
+
     // First, get the total count
     const { count, error: countError } = await this.supabase
       .from('attachments')
@@ -1283,7 +1332,7 @@ export class VConQueries {
     for (let i = 0; i < totalBatches; i++) {
       const from = i * batchSize;
       const to = Math.min(from + batchSize - 1, (count || 0) - 1);
-      
+
       const { data: batch, error } = await this.supabase
         .from('attachments')
         .select('vcon_id, body, encoding')
@@ -1302,7 +1351,7 @@ export class VConQueries {
     let tagsWithWrongEncoding = 0;
     for (const attachment of attachments || []) {
       vconIds.add(attachment.vcon_id);
-      
+
       // Warn if encoding is not 'json' (tags should have encoding='json')
       if (attachment.encoding !== 'json') {
         tagsWithWrongEncoding++;
@@ -1314,10 +1363,10 @@ export class VConQueries {
           });
         }
       }
-      
+
       try {
         const tagsArray = JSON.parse(attachment.body || '[]');
-        
+
         if (!Array.isArray(tagsArray)) {
           logWithContext('warn', 'Tags attachment body is not an array', {
             vcon_id: attachment.vcon_id,
@@ -1325,12 +1374,12 @@ export class VConQueries {
           });
           continue;
         }
-        
+
         for (const tagString of tagsArray) {
           if (typeof tagString !== 'string') {
             continue;
           }
-          
+
           const colonIndex = tagString.indexOf(':');
           if (colonIndex > 0) {
             const key = tagString.substring(0, colonIndex);
@@ -1364,7 +1413,7 @@ export class VConQueries {
         // Continue processing other attachments
       }
     }
-    
+
     if (tagsWithWrongEncoding > 0) {
       logWithContext('info', `Processed ${tagsWithWrongEncoding} tags attachments with incorrect encoding`, {
         total_tags: attachments?.length || 0,
@@ -1378,7 +1427,7 @@ export class VConQueries {
 
     for (const [key, valuesSet] of Object.entries(allTags)) {
       const values: string[] = [];
-      
+
       for (const value of valuesSet) {
         const count = tagCounts[key]?.[value] ?? 1;
         if (count >= minCount) {
@@ -1451,8 +1500,8 @@ export class VConQueries {
         .order('attachment_index', { ascending: false })
         .limit(1);
 
-      const nextIndex = nextIndexData && nextIndexData.length > 0 
-        ? nextIndexData[0].attachment_index + 1 
+      const nextIndex = nextIndexData && nextIndexData.length > 0
+        ? nextIndexData[0].attachment_index + 1
         : 0;
 
       const { error: insertError } = await this.supabase
@@ -1475,4 +1524,3 @@ export class VConQueries {
       .eq('uuid', vconUuid);
   }
 }
-
