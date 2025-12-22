@@ -1,11 +1,11 @@
--- Fix vcon_tags_mv to handle body stored as native jsonb (not as a JSON string)
--- The original view used a.body::jsonb which fails when body is already jsonb type
--- Also removes the encoding='json' filter since native jsonb doesn't need encoding specified
+-- Fix vcon_tags_mv to handle body column properly
+-- Note: body column is TEXT type containing JSON strings like '["key:value"]'
+-- We must cast it to jsonb before using jsonb_array_elements_text()
 
 -- Drop the existing materialized view and its index
 DROP MATERIALIZED VIEW IF EXISTS vcon_tags_mv CASCADE;
 
--- Recreate with correct handling for native jsonb body
+-- Recreate with correct TEXT to JSONB cast
 CREATE MATERIALIZED VIEW vcon_tags_mv AS
 SELECT ta.vcon_id, jsonb_object_agg(ta.key, ta.value) AS tags
 FROM (
@@ -13,8 +13,8 @@ FROM (
          split_part(elem, ':', 1) AS key,
          split_part(elem, ':', 2) AS value
   FROM attachments a
-  CROSS JOIN LATERAL jsonb_array_elements_text(a.body) AS elem
-  WHERE a.type = 'tags'
+  CROSS JOIN LATERAL jsonb_array_elements_text(a.body::jsonb) AS elem
+  WHERE a.type = 'tags' AND a.encoding = 'json'
 ) ta
 GROUP BY ta.vcon_id;
 

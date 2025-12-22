@@ -85,11 +85,11 @@ CREATE INDEX idx_vcon_tags_mv_tags_gin
 CREATE INDEX idx_vcon_tags_mv_tenant
   ON vcon_tags_mv(tenant_id);
 
--- CRITICAL: Composite index for multi-tenant tag searches
--- This is the primary search pattern: filter by tenant, then by tags
--- Composite GIN index for multi-tenant tag searches (tenant_id, tags)
-CREATE INDEX idx_vcon_tags_mv_tenant_tags
-  ON vcon_tags_mv USING GIN (tenant_id, tags);
+-- Note: For multi-tenant tag searches, PostgreSQL will combine the
+-- idx_vcon_tags_mv_tenant (B-tree on tenant_id) and
+-- idx_vcon_tags_mv_tags_gin (GIN on tags) indexes using a BitmapAnd.
+-- A composite GIN index on (tenant_id, tags) is not possible because
+-- TEXT columns cannot be used with GIN without a special operator class.
 
 -- Index for sorting by tag modification time (recent tags first)
 CREATE INDEX idx_vcon_tags_mv_updated

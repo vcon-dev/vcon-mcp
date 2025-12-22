@@ -735,9 +735,47 @@ export class VConQueries {
     tags?: Record<string, string>;
     limit?: number;
   }): Promise<VCon[]> {
+    const limit = filters.limit || 10;
+
+    // Start with party filters if present - these constrain which vCons to consider
+    // Party filters must be applied FIRST to avoid missing results due to limit
+    let candidateVconIds: Set<number> | null = null;
+
+    if (filters.partyName || filters.partyEmail || filters.partyTel) {
+      let partyQuery = this.supabase
+        .from('parties')
+        .select('vcon_id');
+
+      if (filters.partyName) {
+        partyQuery = partyQuery.ilike('name', `%${filters.partyName}%`);
+      }
+      if (filters.partyEmail) {
+        partyQuery = partyQuery.ilike('mailto', `%${filters.partyEmail}%`);
+      }
+      if (filters.partyTel) {
+        partyQuery = partyQuery.ilike('tel', `%${filters.partyTel}%`);
+      }
+
+      const { data: partyData, error: partyError } = await partyQuery;
+      if (partyError) throw partyError;
+
+      if (!partyData || partyData.length === 0) {
+        // No parties match - return empty result
+        return [];
+      }
+
+      candidateVconIds = new Set(partyData.map(p => p.vcon_id));
+    }
+
+    // Build the main vcons query
     let query = this.supabase
       .from('vcons')
-      .select('uuid');
+      .select('uuid, id');
+
+    // If we have party-filtered candidates, constrain to those vcon IDs
+    if (candidateVconIds !== null) {
+      query = query.in('id', Array.from(candidateVconIds));
+    }
 
     if (filters.subject) {
       query = query.ilike('subject', `%${filters.subject}%`);
@@ -751,11 +789,14 @@ export class VConQueries {
       query = query.lte('created_at', filters.endDate);
     }
 
-    if (filters.limit) {
-      query = query.limit(filters.limit);
-    }
-
     query = query.order('created_at', { ascending: false });
+
+    // Apply limit after all filters (tag filter may reduce further)
+    // If we have tag filters, fetch more initially to allow for filtering
+    const initialLimit = (filters.tags && Object.keys(filters.tags).length > 0)
+      ? Math.max(limit * 10, 1000)  // Fetch more to account for tag filtering
+      : limit;
+    query = query.limit(initialLimit);
 
     let data, error;
     try {
@@ -775,12 +816,10 @@ export class VConQueries {
     }
 
     if (error) throw error;
-    if (!data) {
-      // This shouldn't happen if error is null, but TypeScript needs this check
+    if (!data || data.length === 0) {
       return [];
     }
 
-    // If party filters, need to join with parties table
     let vconUuids = data.map(v => v.uuid);
 
     if (filters.partyName || filters.partyEmail || filters.partyTel) {
@@ -816,10 +855,13 @@ export class VConQueries {
 
     // If tag filters, get matching UUIDs and intersect with current results
     if (filters.tags && Object.keys(filters.tags).length > 0) {
-      const tagMatchingUuids = await this.searchByTags(filters.tags, filters.limit || 1000);
+      const tagMatchingUuids = await this.searchByTags(filters.tags, 10000);
       const tagMatchingSet = new Set(tagMatchingUuids);
       vconUuids = vconUuids.filter(uuid => tagMatchingSet.has(uuid));
     }
+
+    // Apply final limit after all filtering
+    vconUuids = vconUuids.slice(0, limit);
 
     // Fetch full vCons
     return Promise.all(
