@@ -1,28 +1,31 @@
 /**
  * OpenTelemetry Configuration
- * 
+ *
  * Initializes and configures OpenTelemetry instrumentation for the vCon MCP server
  * Supports both console (JSON) and OTLP collector exports
  */
 
-import { NodeSDK } from '@opentelemetry/sdk-node';
-import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
-import { Resource } from '@opentelemetry/resources';
-import { SEMRESATTRS_SERVICE_NAME, SEMRESATTRS_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
-import { 
-  trace, 
-  metrics, 
-  Tracer, 
-  Meter,
+import {
+  diag,
   DiagConsoleLogger,
   DiagLogLevel,
-  diag
+  Meter,
+  metrics,
+  trace,
+  Tracer
 } from '@opentelemetry/api';
-import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
+import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
 import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http';
-import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
+import { Resource } from '@opentelemetry/resources';
+import { ConsoleMetricExporter, PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
+import { NodeSDK } from '@opentelemetry/sdk-node';
 import { ConsoleSpanExporter } from '@opentelemetry/sdk-trace-node';
-import { ConsoleMetricExporter } from '@opentelemetry/sdk-metrics';
+import { SEMRESATTRS_SERVICE_NAME, SEMRESATTRS_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
+import { logger as pinoLogger } from './logger.js';
+
+// Use a child logger for observability config
+const logger = pinoLogger.child({ component: 'observability-config' });
 
 /**
  * Observability configuration from environment variables
@@ -48,7 +51,7 @@ function getConfig(): ObservabilityConfig {
   const endpoint = process.env.OTEL_ENDPOINT || 'http://localhost:4318';
   const serviceName = process.env.OTEL_SERVICE_NAME || 'vcon-mcp-server';
   const serviceVersion = process.env.OTEL_SERVICE_VERSION || '1.0.0';
-  
+
   // Parse log level
   const logLevelStr = process.env.OTEL_LOG_LEVEL?.toLowerCase() || 'info';
   const logLevelMap: Record<string, DiagLogLevel> = {
@@ -61,7 +64,7 @@ function getConfig(): ObservabilityConfig {
     'all': DiagLogLevel.ALL,
   };
   const logLevel = logLevelMap[logLevelStr] || DiagLogLevel.INFO;
-  
+
   return {
     enabled,
     exporterType,
@@ -77,40 +80,43 @@ function getConfig(): ObservabilityConfig {
  */
 export async function initializeObservability(): Promise<void> {
   if (isInitialized) {
-    console.error('⚠️  Observability already initialized');
+    logger.warn('Observability already initialized');
     return;
   }
-  
+
   const config = getConfig();
-  
+
   if (!config.enabled) {
-    console.error('ℹ️  OpenTelemetry observability disabled');
+    logger.info('OpenTelemetry observability disabled');
     isInitialized = true;
     return;
   }
-  
+
   try {
     // Set up diagnostic logging
     diag.setLogger(new DiagConsoleLogger(), config.logLevel);
-    
+
     // Create resource with service information
     const resource = new Resource({
       [SEMRESATTRS_SERVICE_NAME]: config.serviceName,
       [SEMRESATTRS_SERVICE_VERSION]: config.serviceVersion,
     });
-    
+
     // Configure trace exporter
     let traceExporter;
     if (config.exporterType === 'otlp') {
       traceExporter = new OTLPTraceExporter({
         url: `${config.endpoint}/v1/traces`,
       });
-      console.error(`✅ OpenTelemetry traces: OTLP export to ${config.endpoint}`);
+      logger.info({
+        exporter: 'otlp',
+        endpoint: config.endpoint
+      }, 'OpenTelemetry traces configured');
     } else {
       traceExporter = new ConsoleSpanExporter();
-      console.error('✅ OpenTelemetry traces: Console export (JSON)');
+      logger.info({ exporter: 'console' }, 'OpenTelemetry traces configured');
     }
-    
+
     // Configure metric exporter
     let metricReader;
     if (config.exporterType === 'otlp') {
@@ -121,16 +127,23 @@ export async function initializeObservability(): Promise<void> {
         exporter: metricExporter,
         exportIntervalMillis: 60000, // Export every 60 seconds
       });
-      console.error(`✅ OpenTelemetry metrics: OTLP export to ${config.endpoint}`);
+      logger.info({
+        exporter: 'otlp',
+        endpoint: config.endpoint,
+        interval_ms: 60000
+      }, 'OpenTelemetry metrics configured');
     } else {
       const metricExporter = new ConsoleMetricExporter();
       metricReader = new PeriodicExportingMetricReader({
         exporter: metricExporter,
         exportIntervalMillis: 60000,
       });
-      console.error('✅ OpenTelemetry metrics: Console export (JSON)');
+      logger.info({
+        exporter: 'console',
+        interval_ms: 60000
+      }, 'OpenTelemetry metrics configured');
     }
-    
+
     // Initialize SDK
     sdk = new NodeSDK({
       resource,
@@ -145,16 +158,23 @@ export async function initializeObservability(): Promise<void> {
         }),
       ],
     });
-    
+
     // Start the SDK
     await sdk.start();
-    
+
     isInitialized = true;
-    console.error('✅ OpenTelemetry SDK initialized');
-    
+    logger.info({
+      service_name: config.serviceName,
+      service_version: config.serviceVersion,
+      exporter_type: config.exporterType
+    }, 'OpenTelemetry SDK initialized');
+
   } catch (error) {
-    console.error('❌ Failed to initialize OpenTelemetry:', error);
-    console.error('⚠️  Continuing without observability...');
+    logger.error({
+      err: error,
+      error_message: error instanceof Error ? error.message : String(error)
+    }, 'Failed to initialize OpenTelemetry');
+    logger.warn('Continuing without observability');
     isInitialized = true; // Set to true to prevent retry loops
   }
 }
@@ -166,13 +186,16 @@ export async function shutdownObservability(): Promise<void> {
   if (!isInitialized || !sdk) {
     return;
   }
-  
+
   try {
-    console.error('🔄 Flushing OpenTelemetry data...');
+    logger.info('Flushing OpenTelemetry data');
     await sdk.shutdown();
-    console.error('✅ OpenTelemetry shutdown complete');
+    logger.info('OpenTelemetry shutdown complete');
   } catch (error) {
-    console.error('❌ Error during OpenTelemetry shutdown:', error);
+    logger.error({
+      err: error,
+      error_message: error instanceof Error ? error.message : String(error)
+    }, 'Error during OpenTelemetry shutdown');
   }
 }
 
@@ -203,4 +226,3 @@ export function isObservabilityEnabled(): boolean {
 // Export singleton instances
 export const tracer = getTracer();
 export const meter = getMeter();
-

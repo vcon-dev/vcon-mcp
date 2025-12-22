@@ -2,7 +2,7 @@
 
 /**
  * vCon MCP Server
- * 
+ *
  * Model Context Protocol server for IETF vCon operations
  * ✅ Fully compliant with draft-ietf-vcon-vcon-core-00
  * ✅ All 7 critical corrections implemented
@@ -12,10 +12,10 @@ import dotenv from 'dotenv';
 import http from 'http';
 import { initializeObservability, shutdownObservability } from './observability/config.js';
 import { logWithContext } from './observability/instrumentation.js';
-import { closeAllConnections } from './db/client.js';
-import { setupServer, type ServerContext } from './server/setup.js';
+import { logger } from './observability/logger.js';
 import { registerHandlers } from './server/handlers.js';
-import { startHttpServer, createHttpTransport, getHttpTransportConfig } from './transport/http.js';
+import { setupServer, type ServerContext } from './server/setup.js';
+import { createHttpTransport, getHttpTransportConfig, startHttpServer } from './transport/http.js';
 import { startStdioTransport } from './transport/stdio.js';
 
 // Load environment variables
@@ -29,7 +29,10 @@ let serverContext: ServerContext;
 try {
   serverContext = await setupServer();
 } catch (error) {
-  console.error('❌ Failed to initialize server:', error);
+  logger.fatal({
+    err: error,
+    error_message: error instanceof Error ? error.message : String(error)
+  }, 'Failed to initialize server');
   process.exit(1);
 }
 
@@ -76,31 +79,31 @@ async function main() {
 // Graceful shutdown
 process.on('SIGINT', async () => {
   logWithContext('info', 'Received SIGINT, shutting down gracefully...');
-  
+
   if (httpServerInstance) {
     httpServerInstance.close(() => {
       logWithContext('info', 'HTTP server closed');
     });
   }
-  
+
   await shutdownObservability();
   await serverContext.pluginManager.shutdown();
-  
+
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
   logWithContext('info', 'Received SIGTERM, shutting down gracefully...');
-  
+
   if (httpServerInstance) {
     httpServerInstance.close(() => {
       logWithContext('info', 'HTTP server closed');
     });
   }
-  
+
   await shutdownObservability();
   await serverContext.pluginManager.shutdown();
-  
+
   process.exit(0);
 });
 
@@ -112,4 +115,3 @@ main().catch((error) => {
   });
   process.exit(1);
 });
-

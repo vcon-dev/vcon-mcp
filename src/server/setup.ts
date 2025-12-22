@@ -1,18 +1,21 @@
 /**
  * Server Setup
- * 
+ *
  * Initializes database, plugins, and handler registry
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { VConQueries } from '../db/queries.js';
-import { DatabaseInspector } from '../db/database-inspector.js';
+import { getRedisClient, getSupabaseClient } from '../db/client.js';
 import { DatabaseAnalytics } from '../db/database-analytics.js';
+import { DatabaseInspector } from '../db/database-inspector.js';
 import { DatabaseSizeAnalyzer } from '../db/database-size-analyzer.js';
+import { VConQueries } from '../db/queries.js';
+import { debugTenantVisibility, setTenantContext, verifyTenantContext } from '../db/tenant-context.js';
 import { PluginManager } from '../hooks/plugin-manager.js';
-import { getSupabaseClient, getRedisClient } from '../db/client.js';
+import { createLogger } from '../observability/logger.js';
 import { createHandlerRegistry, type ToolHandlerRegistry } from '../tools/handlers/index.js';
-import { setTenantContext, verifyTenantContext, debugTenantVisibility } from '../db/tenant-context.js';
+
+const logger = createLogger('server-setup');
 
 export interface ServerContext {
   server: Server;
@@ -63,19 +66,25 @@ export async function initializeDatabase(): Promise<{
   const dbAnalytics = new DatabaseAnalytics(supabase);
   const dbSizeAnalyzer = new DatabaseSizeAnalyzer(supabase);
 
-  console.error('✅ Database client initialized');
-  
+  logger.info({
+    has_redis: !!redis,
+    cache_enabled: !!redis
+  }, 'Database client initialized');
+
   // Set tenant context for RLS if enabled
   try {
     await setTenantContext(supabase);
     await verifyTenantContext(supabase);
-    
+
     // Debug tenant visibility
     if (process.env.MCP_DEBUG === 'true' || process.env.RLS_DEBUG === 'true') {
       await debugTenantVisibility(supabase);
     }
   } catch (error) {
-    console.error('⚠️  Warning: Failed to set tenant context:', error);
+    logger.warn({
+      err: error,
+      error_message: error instanceof Error ? error.message : String(error)
+    }, 'Failed to set tenant context');
     // Continue anyway - the server should still work for non-RLS scenarios
   }
 
@@ -104,7 +113,7 @@ export async function loadPlugins(
   for (const path of pluginPaths) {
     try {
       const trimmedPath = path.trim();
-      console.error(`🔌 Loading plugin from: ${trimmedPath}`);
+      logger.info({ plugin_path: trimmedPath }, 'Loading plugin');
 
       // Resolve plugin path - if it starts with ./ or ../, resolve relative to cwd
       let resolvedPath = trimmedPath;
@@ -129,7 +138,11 @@ export async function loadPlugins(
       const plugin = new PluginClass(pluginConfig);
       pluginManager.registerPlugin(plugin);
     } catch (error) {
-      console.error(`❌ Failed to load plugin from ${path}:`, error);
+      logger.error({
+        err: error,
+        plugin_path: path,
+        error_message: error instanceof Error ? error.message : String(error)
+      }, 'Failed to load plugin');
       // Continue without the plugin
     }
   }
@@ -176,4 +189,3 @@ export async function setupServer(): Promise<ServerContext> {
     handlerRegistry,
   };
 }
-
