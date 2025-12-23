@@ -127,7 +127,7 @@
  * @since 2024-10-01
  */
 
-import { readdir, readFile, stat, writeFile, readFile as readFileSync, mkdtemp } from 'fs/promises';
+import { readdir, readFile, stat, writeFile, readFile as readFileSync, mkdtemp, rm, unlink } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import dotenv from 'dotenv';
@@ -569,9 +569,18 @@ class UUIDTrackerImpl implements UUIDTracker {
   async close(): Promise<void> {
     if (this.isRedisAvailable && this.redisClient) {
       await this.redisClient.quit();
-    } else if (this.tempFile) {
-      // Save final state to temp file
-      await this.saveToTempFile();
+    }
+    // Clean up temp file if it was used
+    if (this.tempFile) {
+      try {
+        await unlink(this.tempFile);
+        console.log(`🧹 Cleaned up UUID tracker temp file: ${this.tempFile}`);
+      } catch (cleanupError: any) {
+        // Ignore error if file doesn't exist
+        if (cleanupError.code !== 'ENOENT') {
+          console.warn(`⚠️  Failed to clean up UUID tracker temp file: ${cleanupError.message}`);
+        }
+      }
     }
   }
 }
@@ -613,24 +622,24 @@ function generateDatePrefixes(hours: number, basePrefix?: string): string[] {
 
 /**
  * List recent vCons from S3 bucket using date-based prefixes for efficiency
- * 
+ *
  * Lists objects from S3 bucket that match the .vcon extension and were
  * modified within the specified time window. Uses YYYY/MM/DD directory
  * structure to optimize the search by only scanning relevant date directories.
  * Downloads them to a temporary directory for processing.
- * 
+ *
  * @param bucket - S3 bucket name
  * @param prefix - Optional base S3 prefix/folder path (will have date appended)
  * @param hours - Hours to look back for recent vCons
  * @param s3Client - Initialized S3 client
- * @returns Promise resolving to array of downloaded vCon file paths
+ * @returns Promise resolving to object with downloaded vCon file paths and temp directory path
  */
 async function listAndDownloadVConsFromS3(
   bucket: string,
   prefix: string | undefined,
   hours: number,
   s3Client: S3Client
-): Promise<string[]> {
+): Promise<{ files: string[]; tempDir: string }> {
   const vconFiles: string[] = [];
   const tempDir = await mkdtemp(join(tmpdir(), 'vcon-import-'));
   const cutoffTime = new Date(Date.now() - hours * 60 * 60 * 1000);
@@ -739,8 +748,8 @@ async function listAndDownloadVConsFromS3(
   process.stdout.write('\r' + ' '.repeat(80) + '\r');
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   console.log(`\n📊 Summary: ${totalObjects} total objects checked, ${recentObjects} recent .vcon files found, ${downloadedCount} downloaded (${elapsed}s)\n`);
-  
-  return vconFiles;
+
+  return { files: vconFiles, tempDir };
 }
 
 /**
@@ -1023,6 +1032,7 @@ async function loadVConsFromDirectory(directoryPath: string | undefined, options
   };
 
   let uuidTracker: UUIDTracker | null = null;
+  let s3TempDir: string | null = null;
 
   try {
     // Initialize database
@@ -1072,8 +1082,10 @@ async function loadVConsFromDirectory(directoryPath: string | undefined, options
       
       const prefix = options.prefix || process.env.VCON_S3_PREFIX;
       const hours = options.hours || 24;
-      
-      vconFiles = await listAndDownloadVConsFromS3(s3Bucket, prefix, hours, s3Client);
+
+      const s3Result = await listAndDownloadVConsFromS3(s3Bucket, prefix, hours, s3Client);
+      vconFiles = s3Result.files;
+      s3TempDir = s3Result.tempDir;
     } else if (directoryPath) {
       // Use local directory
       console.log(`📂 Recursively searching for vCon files in: ${directoryPath}\n`);
@@ -1238,6 +1250,16 @@ async function loadVConsFromDirectory(directoryPath: string | undefined, options
     // Clean up UUID tracker
     if (uuidTracker) {
       await uuidTracker.close();
+    }
+
+    // Clean up S3 temp directory
+    if (s3TempDir) {
+      try {
+        await rm(s3TempDir, { recursive: true, force: true });
+        console.log(`🧹 Cleaned up temp directory: ${s3TempDir}`);
+      } catch (cleanupError) {
+        console.warn(`⚠️  Failed to clean up temp directory ${s3TempDir}: ${cleanupError}`);
+      }
     }
   }
 
