@@ -45,3 +45,7 @@ temp/
 temp_loaded_uuids.json
 backups/
 
+# VitePress
+docs/.vitepress/cache/
+docs/.vitepress/dist/
+
