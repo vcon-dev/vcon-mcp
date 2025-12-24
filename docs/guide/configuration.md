@@ -430,7 +430,7 @@ redis-cli ping
 
 Need help with configuration?
 
-- GitHub Issues: [vcon-mcp/issues](https://github.com/yourusername/vcon-mcp/issues)
+- GitHub Issues: [vcon-mcp/issues](https://github.com/vcon-dev/vcon-mcp/issues)
 - Documentation: [Full docs](../)
 - Email: support@example.com
 
