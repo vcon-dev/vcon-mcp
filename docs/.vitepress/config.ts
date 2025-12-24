@@ -173,7 +173,7 @@ export default defineConfig({
     },
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/yourusername/vcon-mcp' },
+      { icon: 'github', link: 'https://github.com/vcon-dev/vcon-mcp' },
       { icon: 'npm', link: 'https://www.npmjs.com/package/@vcon/mcp-server' }
     ],
 
@@ -190,7 +190,7 @@ export default defineConfig({
     },
 
     editLink: {
-      pattern: 'https://github.com/yourusername/vcon-mcp/edit/main/docs/:path',
+      pattern: 'https://github.com/vcon-dev/vcon-mcp/edit/main/docs/:path',
       text: 'Edit this page on GitHub'
     },
 

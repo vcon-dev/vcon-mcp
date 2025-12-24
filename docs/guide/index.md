@@ -157,8 +157,8 @@ Ready to get started? Follow our guides:
 ## Getting Help
 
 - 📖 Check the [Troubleshooting Guide](./troubleshooting.md)
-- 💬 Ask in [GitHub Discussions](https://github.com/yourusername/vcon-mcp/discussions)
-- 🐛 Report bugs in [GitHub Issues](https://github.com/yourusername/vcon-mcp/issues)
+- 💬 Ask in [GitHub Discussions](https://github.com/vcon-dev/vcon-mcp/discussions)
+- 🐛 Report bugs in [GitHub Issues](https://github.com/vcon-dev/vcon-mcp/issues)
 - 📧 Contact the team at support@example.com
 
 ## Contributing
@@ -172,5 +172,5 @@ We welcome contributions! See our [Contributing Guide](../development/contributi
 
 ## License
 
-This project is released under the MIT License. See the [LICENSE](https://github.com/yourusername/vcon-mcp/blob/main/LICENSE) file for details.
+This project is released under the MIT License. See the [LICENSE](https://github.com/vcon-dev/vcon-mcp/blob/main/LICENSE) file for details.
 

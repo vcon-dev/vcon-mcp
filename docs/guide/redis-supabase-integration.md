@@ -472,7 +472,7 @@ Typical performance with Redis caching enabled:
 
 For issues or questions:
 
-- GitHub Issues: [vcon-mcp/issues](https://github.com/yourusername/vcon-mcp/issues)
+- GitHub Issues: [vcon-mcp/issues](https://github.com/vcon-dev/vcon-mcp/issues)
 - Email: support@example.com
 - Documentation: [Full docs](https://docs.example.com)
 

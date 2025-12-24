@@ -242,8 +242,8 @@ docker-compose restart
 ## Support
 
 - 📖 [Full Documentation](docs/guide/redis-supabase-integration.md)
-- 🐛 [Report Issues](https://github.com/yourusername/vcon-mcp/issues)
-- 💬 [Discussions](https://github.com/yourusername/vcon-mcp/discussions)
+- 🐛 [Report Issues](https://github.com/vcon-dev/vcon-mcp/issues)
+- 💬 [Discussions](https://github.com/vcon-dev/vcon-mcp/discussions)
 
 ## Summary
 

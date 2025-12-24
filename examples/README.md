@@ -201,7 +201,7 @@ Have a useful example or integration? Submit a pull request!
 
 For questions about examples:
 
-- GitHub Issues: [vcon-mcp/issues](https://github.com/yourusername/vcon-mcp/issues)
+- GitHub Issues: [vcon-mcp/issues](https://github.com/vcon-dev/vcon-mcp/issues)
 - Documentation: [Full docs](../docs/)
 - Email: support@example.com
 

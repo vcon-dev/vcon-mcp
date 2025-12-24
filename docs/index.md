@@ -14,7 +14,7 @@ hero:
       link: /guide/getting-started
     - theme: alt
       text: View on GitHub
-      link: https://github.com/yourusername/vcon-mcp
+      link: https://github.com/vcon-dev/vcon-mcp
     - theme: alt
       text: API Reference
       link: /api/

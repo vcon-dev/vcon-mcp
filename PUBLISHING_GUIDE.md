@@ -114,7 +114,7 @@ The main README.md serves as the npm package documentation.
   "homepage": "https://yourusername.github.io/vcon-mcp",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/vcon-mcp"
+    "url": "https://github.com/vcon-dev/vcon-mcp"
   },
   "keywords": [
     "vcon", "mcp", "ietf", "conversation", "supabase"
@@ -274,7 +274,7 @@ Add badges for quick info:
 ```markdown
 ![Version](https://img.shields.io/npm/v/@vcon/mcp-server)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![GitHub Stars](https://img.shields.io/github/stars/yourusername/vcon-mcp)
+![GitHub Stars](https://img.shields.io/github/stars/vcon-dev/vcon-mcp)
 ![Downloads](https://img.shields.io/npm/dm/@vcon/mcp-server)
 ```
 
