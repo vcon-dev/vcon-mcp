@@ -1017,9 +1017,9 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 ### Project Links
 
-- **GitHub**: [vcon-mcp](https://github.com/yourusername/vcon-mcp)
-- **Issues**: [Bug reports &amp; feature requests](https://github.com/yourusername/vcon-mcp/issues)
-- **Discussions**: [Community discussions](https://github.com/yourusername/vcon-mcp/discussions)
+- **GitHub**: [vcon-mcp](https://github.com/vcon-dev/vcon-mcp)
+- **Issues**: [Bug reports &amp; feature requests](https://github.com/vcon-dev/vcon-mcp/issues)
+- **Discussions**: [Community discussions](https://github.com/vcon-dev/vcon-mcp/discussions)
 
 ### External Links
 
@@ -1033,7 +1033,7 @@ MIT License - see [LICENSE](LICENSE) file for details
 - 📧 **Email**: ohjesus@doesanyoneemail.anymore
 - 💬 **Discord**: [Join our community](https://discord.gg/example)
 - 📖 **Documentation**: [Full docs](https://docs.example.com)
-- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/yourusername/vcon-mcp/issues)
+- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/vcon-dev/vcon-mcp/issues)
 
 ## Acknowledgments
 
