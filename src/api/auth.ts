@@ -40,9 +40,28 @@ export function createAuthMiddleware(config?: Partial<AuthConfig>) {
   const authConfig: AuthConfig = { ...getAuthConfig(), ...config };
 
   return async (ctx: Context, next: Next) => {
-    // If auth not required and no keys configured, allow all
-    if (!authConfig.required && authConfig.apiKeys.length === 0) {
+    // If auth not required, skip validation entirely
+    if (!authConfig.required) {
       await next();
+      return;
+    }
+
+    // Auth is required but no API keys are configured - this is a misconfiguration
+    // Block requests with a clear error rather than silently allowing access
+    if (authConfig.apiKeys.length === 0) {
+      logWithContext('error', 'API auth required but no API keys configured - blocking request', {
+        path: ctx.path,
+        hint: 'Set VCON_API_KEYS or API_KEYS environment variable, or set API_AUTH_REQUIRED=false to disable auth',
+      });
+
+      ctx.status = 503;
+      ctx.body = {
+        error: 'Service Unavailable',
+        message: 'API authentication is required but not configured. Please contact the administrator.',
+        hint: process.env.NODE_ENV !== 'production' 
+          ? 'Set VCON_API_KEYS or API_KEYS env var, or set API_AUTH_REQUIRED=false' 
+          : undefined,
+      };
       return;
     }
 
