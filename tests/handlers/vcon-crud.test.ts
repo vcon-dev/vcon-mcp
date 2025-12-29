@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { randomUUID } from 'crypto';
-import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
+import { McpError } from '@modelcontextprotocol/sdk/types.js';
 import {
   CreateVConHandler,
   CreateVConFromTemplateHandler,
@@ -19,8 +19,6 @@ import {
 } from '../../src/tools/handlers/vcon-crud.js';
 import { ToolHandlerContext } from '../../src/tools/handlers/base.js';
 import { VCon, Analysis, Dialog, Attachment } from '../../src/types/vcon.js';
-import { VConQueries } from '../../src/db/queries.js';
-import { PluginManager } from '../../src/hooks/plugin-manager.js';
 import { DatabaseInspector } from '../../src/db/database-inspector.js';
 import { DatabaseAnalytics } from '../../src/db/database-analytics.js';
 import { DatabaseSizeAnalyzer } from '../../src/db/database-size-analyzer.js';
@@ -57,6 +55,7 @@ describe('vCon CRUD Handlers', () => {
   let mockContext: ToolHandlerContext;
   let mockQueries: any;
   let mockPluginManager: any;
+  let mockVConService: any;
 
   beforeEach(() => {
     mockQueries = {
@@ -73,6 +72,14 @@ describe('vCon CRUD Handlers', () => {
       executeHook: vi.fn(),
     };
 
+    mockVConService = {
+      create: vi.fn(),
+      get: vi.fn(),
+      delete: vi.fn(),
+      createBatch: vi.fn(),
+      search: vi.fn(),
+    };
+
     mockContext = {
       queries: mockQueries as any,
       pluginManager: mockPluginManager as any,
@@ -80,64 +87,73 @@ describe('vCon CRUD Handlers', () => {
       dbAnalytics: {} as DatabaseAnalytics,
       dbSizeAnalyzer: {} as DatabaseSizeAnalyzer,
       supabase: {},
+      vconService: mockVConService as any,
     };
   });
 
   describe('CreateVConHandler', () => {
     it('should create a vCon successfully', async () => {
       const handler = new CreateVConHandler();
+      const testUuid = randomUUID();
       const testVCon: VCon = {
         vcon: '0.3.0',
-        uuid: randomUUID(),
+        uuid: testUuid,
         created_at: new Date().toISOString(),
         parties: [{ name: 'Test User' }],
       };
 
-      mockQueries.createVCon.mockResolvedValue({ uuid: testVCon.uuid });
-      mockPluginManager.executeHook.mockResolvedValue(undefined);
-
-      const result = await handler.handle({
-        parties: [{ name: 'Test User' }],
-      }, mockContext);
-
-      expect(mockQueries.createVCon).toHaveBeenCalled();
-      expect(mockPluginManager.executeHook).toHaveBeenCalledWith('beforeCreate', expect.any(Object), expect.any(Object));
-      expect(mockPluginManager.executeHook).toHaveBeenCalledWith('afterCreate', expect.any(Object), expect.any(Object));
-
-      const response = JSON.parse(result.content[0].text);
-      expect(response.success).toBe(true);
-      expect(response.uuid).toBe(testVCon.uuid);
-    });
-
-    it('should apply plugin modifications from beforeCreate hook', async () => {
-      const handler = new CreateVConHandler();
-      const modifiedVCon: VCon = {
-        vcon: '0.3.0',
-        uuid: randomUUID(),
-        created_at: new Date().toISOString(),
-        subject: 'Modified Subject',
-        parties: [{ name: 'Test User' }],
-      };
-
-      mockQueries.createVCon.mockResolvedValue({ uuid: modifiedVCon.uuid });
-      mockPluginManager.executeHook.mockImplementation((hook: string) => {
-        if (hook === 'beforeCreate') return Promise.resolve(modifiedVCon);
-        return Promise.resolve(undefined);
+      // Mock vconService.create to return the result
+      mockVConService.create.mockResolvedValue({
+        uuid: testUuid,
+        id: '1',
+        vcon: testVCon,
       });
 
       const result = await handler.handle({
         parties: [{ name: 'Test User' }],
       }, mockContext);
 
-      expect(mockQueries.createVCon).toHaveBeenCalledWith(modifiedVCon);
+      expect(mockVConService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ parties: [{ name: 'Test User' }] }),
+        expect.objectContaining({ source: 'mcp-tool' })
+      );
+
+      const response = JSON.parse(result.content[0].text);
+      expect(response.success).toBe(true);
+      expect(response.uuid).toBe(testUuid);
+    });
+
+    it('should apply plugin modifications from beforeCreate hook', async () => {
+      const handler = new CreateVConHandler();
+      const testUuid = randomUUID();
+      const modifiedVCon: VCon = {
+        vcon: '0.3.0',
+        uuid: testUuid,
+        created_at: new Date().toISOString(),
+        subject: 'Modified Subject',
+        parties: [{ name: 'Test User' }],
+      };
+
+      // VConService handles hooks internally, so we just mock the result
+      mockVConService.create.mockResolvedValue({
+        uuid: testUuid,
+        id: '1',
+        vcon: modifiedVCon,
+      });
+
+      const result = await handler.handle({
+        parties: [{ name: 'Test User' }],
+      }, mockContext);
+
       const response = JSON.parse(result.content[0].text);
       expect(response.vcon.subject).toBe('Modified Subject');
     });
 
     it('should throw error if vCon validation fails', async () => {
       const handler = new CreateVConHandler();
-      mockPluginManager.executeHook.mockResolvedValue(undefined);
-      mockQueries.createVCon.mockRejectedValue(new Error('Validation failed'));
+      // VConService throws VConValidationError for validation failures
+      const { VConValidationError } = await import('../../src/services/vcon-service.js');
+      mockVConService.create.mockRejectedValue(new VConValidationError(['parties is required']));
 
       await expect(handler.handle({
         parties: [], // Invalid - no parties
@@ -149,8 +165,19 @@ describe('vCon CRUD Handlers', () => {
     it('should create vCon from template', async () => {
       const handler = new CreateVConFromTemplateHandler();
       const uuid = randomUUID();
-      mockQueries.createVCon.mockResolvedValue({ uuid });
-      mockPluginManager.executeHook.mockResolvedValue(undefined);
+      const templateVCon: VCon = {
+        vcon: '0.3.0',
+        uuid,
+        created_at: new Date().toISOString(),
+        subject: 'Test Call',
+        parties: [{ name: 'Caller' }, { name: 'Agent' }],
+      };
+
+      mockVConService.create.mockResolvedValue({
+        uuid,
+        id: '1',
+        vcon: templateVCon,
+      });
 
       const result = await handler.handle({
         template_name: 'phone_call',
@@ -158,7 +185,7 @@ describe('vCon CRUD Handlers', () => {
         subject: 'Test Call',
       }, mockContext);
 
-      expect(mockQueries.createVCon).toHaveBeenCalled();
+      expect(mockVConService.create).toHaveBeenCalled();
       const response = JSON.parse(result.content[0].text);
       expect(response.success).toBe(true);
       expect(response.uuid).toBe(uuid);
@@ -189,16 +216,14 @@ describe('vCon CRUD Handlers', () => {
         parties: [{ name: 'Test User' }],
       };
 
-      mockQueries.getVCon.mockResolvedValue(testVCon);
-      mockPluginManager.executeHook.mockResolvedValue(undefined);
+      // VConService.get handles hooks internally
+      mockVConService.get.mockResolvedValue(testVCon);
 
       const result = await handler.handle({
         uuid: testVCon.uuid,
       }, mockContext);
 
-      expect(mockQueries.getVCon).toHaveBeenCalledWith(testVCon.uuid);
-      expect(mockPluginManager.executeHook).toHaveBeenCalledWith('beforeRead', testVCon.uuid, expect.any(Object));
-      expect(mockPluginManager.executeHook).toHaveBeenCalledWith('afterRead', testVCon, expect.any(Object));
+      expect(mockVConService.get).toHaveBeenCalledWith(testVCon.uuid, expect.any(Object));
 
       const response = JSON.parse(result.content[0].text);
       expect(response.success).toBe(true);
@@ -215,11 +240,8 @@ describe('vCon CRUD Handlers', () => {
       };
       const filteredVCon = { ...testVCon, subject: 'Filtered' };
 
-      mockQueries.getVCon.mockResolvedValue(testVCon);
-      mockPluginManager.executeHook.mockImplementation((hook: string) => {
-        if (hook === 'afterRead') return Promise.resolve(filteredVCon);
-        return Promise.resolve(undefined);
-      });
+      // VConService handles hooks internally, so mock returns the filtered result
+      mockVConService.get.mockResolvedValue(filteredVCon);
 
       const result = await handler.handle({
         uuid: testVCon.uuid,
@@ -298,16 +320,14 @@ describe('vCon CRUD Handlers', () => {
       const handler = new DeleteVConHandler();
       const uuid = randomUUID();
 
-      mockQueries.deleteVCon.mockResolvedValue(undefined);
-      mockPluginManager.executeHook.mockResolvedValue(undefined);
+      // VConService.delete returns true on success
+      mockVConService.delete.mockResolvedValue(true);
 
       const result = await handler.handle({
         uuid,
       }, mockContext);
 
-      expect(mockQueries.deleteVCon).toHaveBeenCalledWith(uuid);
-      expect(mockPluginManager.executeHook).toHaveBeenCalledWith('beforeDelete', uuid, expect.any(Object));
-      expect(mockPluginManager.executeHook).toHaveBeenCalledWith('afterDelete', uuid, expect.any(Object));
+      expect(mockVConService.delete).toHaveBeenCalledWith(uuid, expect.any(Object));
 
       const response = JSON.parse(result.content[0].text);
       expect(response.success).toBe(true);

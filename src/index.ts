@@ -37,15 +37,7 @@ try {
 }
 
 // Register all MCP request handlers
-registerHandlers(serverContext.server, {
-  queries: serverContext.queries,
-  pluginManager: serverContext.pluginManager,
-  dbInspector: serverContext.dbInspector,
-  dbAnalytics: serverContext.dbAnalytics,
-  dbSizeAnalyzer: serverContext.dbSizeAnalyzer,
-  supabase: serverContext.supabase,
-  handlerRegistry: serverContext.handlerRegistry,
-});
+registerHandlers(serverContext);
 
 // ============================================================================
 // Start Server
@@ -59,10 +51,31 @@ async function main() {
     const transportType = process.env.MCP_TRANSPORT || 'stdio';
 
     if (transportType === 'http') {
-      // HTTP/Streamable HTTP transport
+      // HTTP/Streamable HTTP transport with REST API
       const config = getHttpTransportConfig();
+      
+      // Add REST API context for vCon ingestion endpoints
+      config.restApiContext = {
+        queries: serverContext.queries,
+        pluginManager: serverContext.pluginManager,
+        supabase: serverContext.supabase,
+        vconService: serverContext.vconService,
+      };
+      
       const transport = createHttpTransport(config);
       httpServerInstance = await startHttpServer(serverContext.server, transport, config);
+      
+      // Log REST API availability
+      const restBasePath = process.env.REST_API_BASE_PATH || '/api/v1';
+      const httpHost = process.env.MCP_HTTP_HOST || '127.0.0.1';
+      const httpPort = process.env.MCP_HTTP_PORT || '3000';
+      logWithContext('info', 'REST API endpoints available', {
+        create_vcon: `POST http://${httpHost}:${httpPort}${restBasePath}/vcons`,
+        batch_create: `POST http://${httpHost}:${httpPort}${restBasePath}/vcons/batch`,
+        get_vcon: `GET http://${httpHost}:${httpPort}${restBasePath}/vcons/{uuid}`,
+        list_vcons: `GET http://${httpHost}:${httpPort}${restBasePath}/vcons`,
+        health: `GET http://${httpHost}:${httpPort}${restBasePath}/health`,
+      });
     } else {
       // STDIO transport
       await startStdioTransport(serverContext.server);

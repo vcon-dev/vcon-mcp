@@ -6,28 +6,21 @@
 
 import { randomUUID } from 'crypto';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
-import { VConQueries } from '../../db/queries.js';
-import { PluginManager } from '../../hooks/plugin-manager.js';
 import { RequestContext } from '../../hooks/plugin-interface.js';
-import { DatabaseInspector } from '../../db/database-inspector.js';
-import { DatabaseAnalytics } from '../../db/database-analytics.js';
-import { DatabaseSizeAnalyzer } from '../../db/database-size-analyzer.js';
+import type { ServerContext } from '../../server/setup.js';
 import { withSpan, recordCounter, recordHistogram, logWithContext, attachErrorToSpan } from '../../observability/instrumentation.js';
 import { ATTR_TOOL_NAME, ATTR_TOOL_SUCCESS } from '../../observability/attributes.js';
 import { createTextResponse, createSuccessResponse } from '../../utils/responses.js';
 import { extractErrorMessage, createMcpError } from '../../utils/errors.js';
 
 /**
- * Context passed to all tool handlers containing dependencies
+ * Context passed to tool handlers - subset of ServerContext
+ * Excludes server/redis/handlerRegistry which handlers don't need
  */
-export interface ToolHandlerContext {
-  queries: VConQueries;
-  pluginManager: PluginManager;
-  dbInspector: DatabaseInspector;
-  dbAnalytics: DatabaseAnalytics;
-  dbSizeAnalyzer: DatabaseSizeAnalyzer;
-  supabase: any;
-}
+export type ToolHandlerContext = Pick<
+  ServerContext,
+  'queries' | 'pluginManager' | 'dbInspector' | 'dbAnalytics' | 'dbSizeAnalyzer' | 'supabase' | 'vconService'
+>;
 
 /**
  * Tool response format

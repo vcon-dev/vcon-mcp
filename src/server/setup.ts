@@ -13,6 +13,7 @@ import { VConQueries } from '../db/queries.js';
 import { debugTenantVisibility, setTenantContext, verifyTenantContext } from '../db/tenant-context.js';
 import { PluginManager } from '../hooks/plugin-manager.js';
 import { createLogger } from '../observability/logger.js';
+import { VConService } from '../services/vcon-service.js';
 import { createHandlerRegistry, type ToolHandlerRegistry } from '../tools/handlers/index.js';
 
 const logger = createLogger('server-setup');
@@ -27,6 +28,7 @@ export interface ServerContext {
   redis: any;
   pluginManager: PluginManager;
   handlerRegistry: ToolHandlerRegistry;
+  vconService: VConService;
 }
 
 /**
@@ -177,6 +179,12 @@ export async function setupServer(): Promise<ServerContext> {
   // Initialize tool handler registry
   const handlerRegistry = createHandlerRegistry();
 
+  // Initialize vCon service (single source of truth for vCon lifecycle)
+  const vconService = new VConService({
+    queries,
+    pluginManager,
+  });
+
   return {
     server,
     queries,
@@ -187,5 +195,6 @@ export async function setupServer(): Promise<ServerContext> {
     redis,
     pluginManager,
     handlerRegistry,
+    vconService,
   };
 }
