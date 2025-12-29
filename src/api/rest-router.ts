@@ -189,8 +189,11 @@ async function getVCon(ctx: Context, apiContext: RestApiContext) {
 async function listVCons(ctx: Context, apiContext: RestApiContext) {
   const limit = Math.min(100, parseInt(ctx.query.limit as string) || 10);
 
-  // Use searchVCons with empty filters to get recent vCons
-  const vcons = await apiContext.queries.searchVCons({ limit });
+  // Use VConService for consistent lifecycle handling (beforeSearch/afterSearch hooks)
+  const vcons = await apiContext.vconService.search(
+    { limit },
+    { requestContext: { purpose: 'rest-api-list' } }
+  );
 
   ctx.body = {
     success: true,
