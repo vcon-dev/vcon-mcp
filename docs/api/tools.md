@@ -4,7 +4,7 @@ Complete reference for all Model Context Protocol (MCP) tools provided by the vC
 
 ## Overview
 
-The vCon MCP Server provides 25+ tools organized into these categories:
+The vCon MCP Server provides 30 tools organized into these functional groups:
 
 - **[Core Operations](#core-operations)** - Create, read, update, delete vCons
 - **[Component Management](#component-management)** - Add dialog, analysis, attachments
@@ -14,6 +14,50 @@ The vCon MCP Server provides 25+ tools organized into these categories:
 - **[Database Analytics](#database-analytics)** - Comprehensive database analytics and insights
 - **[Database Size Tools](#database-size-tools)** - Smart limits and size awareness for large databases
 - **[Schema & Examples](#schema--examples)** - Get schemas and example vCons
+
+---
+
+## Tool Categories
+
+Tools are organized into **5 categories** that can be enabled or disabled for different deployment scenarios. By default, all categories are enabled.
+
+| Category | Tools | Description |
+|----------|-------|-------------|
+| `read` | `get_vcon`, `search_vcons`, `search_vcons_content`, `search_vcons_semantic`, `search_vcons_hybrid`, `get_tags`, `search_by_tags`, `get_unique_tags` | All read operations |
+| `write` | `create_vcon`, `update_vcon`, `delete_vcon`, `add_analysis`, `add_dialog`, `add_attachment`, `create_vcon_from_template`, `manage_tag`, `remove_all_tags` | All mutating operations |
+| `schema` | `get_schema`, `get_examples` | Documentation helpers |
+| `analytics` | `get_database_analytics`, `get_monthly_growth_analytics`, `get_attachment_analytics`, `get_tag_analytics`, `get_content_analytics`, `get_database_health_metrics` | Business intelligence |
+| `infra` | `get_database_shape`, `get_database_stats`, `analyze_query`, `get_database_size_info`, `get_smart_search_limits` | Admin/debugging |
+
+### Enabling/Disabling Categories
+
+Configure via environment variables:
+
+```bash
+# Use a preset profile
+MCP_TOOLS_PROFILE=readonly   # Options: full, readonly, user, admin, minimal
+
+# Or enable specific categories only
+MCP_ENABLED_CATEGORIES=read,write,schema
+
+# Or disable specific categories (starts with all enabled)
+MCP_DISABLED_CATEGORIES=analytics,infra
+
+# Disable individual tools
+MCP_DISABLED_TOOLS=delete_vcon,analyze_query
+```
+
+### Deployment Profiles
+
+| Profile | Categories | Use Case |
+|---------|------------|----------|
+| `full` | All | Development, full access |
+| `readonly` | read, schema | Read-only deployments |
+| `user` | read, write, schema | End-user facing |
+| `admin` | read, analytics, infra, schema | Admin dashboards |
+| `minimal` | read, write | Basic CRUD only |
+
+See the [Configuration Guide](../guide/configuration.md) for more details.
 
 ---
 

@@ -99,11 +99,14 @@ export const AttachmentSchema = z.object({
 // MCP Tool Definitions
 // ============================================================================
 
+import type { ToolCategory } from '../config/tools.js';
+
 /**
  * Tool: Create vCon
  */
 export const createVConTool = {
   name: 'create_vcon',
+  category: 'write' as ToolCategory,
   description: 'Create a new vCon compliant with IETF draft-ietf-vcon-vcon-core-00. ' +
     'A vCon (virtual conversation) captures conversation data including parties, dialog, analysis, and attachments.',
   inputSchema: {
@@ -148,6 +151,7 @@ export const createVConTool = {
  */
 export const getVConTool = {
   name: 'get_vcon',
+  category: 'read' as ToolCategory,
   description: 'Retrieve a complete vCon by its UUID. Returns the full vCon object with all parties, dialog, analysis, and attachments.',
   inputSchema: {
     type: 'object' as const,
@@ -167,6 +171,7 @@ export const getVConTool = {
  */
 export const searchVConsTool = {
   name: 'search_vcons',
+  category: 'read' as ToolCategory,
   description: 'Search for vCons using various criteria including tags. Returns an array of matching vCons. ' +
     'For full-text or semantic search of conversation content, use search_vcons_content instead. ' +
     '⚠️ LARGE DATABASE WARNING: Use response_format="metadata" for large result sets to avoid memory issues.',
@@ -230,6 +235,7 @@ export const searchVConsTool = {
  */
 export const searchVConsContentTool = {
   name: 'search_vcons_content',
+  category: 'read' as ToolCategory,
   description: 'Full-text keyword search across vCon content including subject, dialog, analysis, and party info. ' +
     'Searches through conversation text, analysis bodies, and participant details. Returns ranked results with snippets. ' +
     '⚠️ LARGE DATABASE WARNING: Use response_format="snippets" for large result sets to avoid memory issues.',
@@ -282,6 +288,7 @@ export const searchVConsContentTool = {
  */
 export const searchVConsSemanticTool = {
   name: 'search_vcons_semantic',
+  category: 'read' as ToolCategory,
   description: 'Semantic search using AI embeddings to find conversations by meaning, not just keywords. ' +
     'Searches through subject, dialog, and analysis content. Returns similar conversations based on semantic similarity. ' +
     'Note: Requires embeddings to be generated for vCons (see embedding documentation). ' +
@@ -338,6 +345,7 @@ export const searchVConsSemanticTool = {
  */
 export const searchVConsHybridTool = {
   name: 'search_vcons_hybrid',
+  category: 'read' as ToolCategory,
   description: 'Hybrid search combining keyword and semantic search for comprehensive results. ' +
     'Uses both full-text matching and AI embeddings to find relevant conversations. ' +
     'Ideal for complex queries where you want both exact matches and conceptually similar content. ' +
@@ -396,6 +404,7 @@ export const searchVConsHybridTool = {
  */
 export const addAnalysisTool = {
   name: 'add_analysis',
+  category: 'write' as ToolCategory,
   description: 'Add analysis to an existing vCon. Analysis represents AI/ML processing results like transcripts, summaries, or sentiment. ' +
     'IMPORTANT: vendor field is REQUIRED per IETF spec.',
   inputSchema: {
@@ -460,6 +469,7 @@ export const addAnalysisTool = {
  */
 export const addDialogTool = {
   name: 'add_dialog',
+  category: 'write' as ToolCategory,
   description: 'Add a dialog (conversation segment) to an existing vCon. Dialog can be a recording, text, transfer, or incomplete.',
   inputSchema: {
     type: 'object' as const,
@@ -529,6 +539,7 @@ export const addDialogTool = {
  */
 export const addAttachmentTool = {
   name: 'add_attachment',
+  category: 'write' as ToolCategory,
   description: 'Add an attachment to an existing vCon. Attachments can be files, documents, or other data related to the conversation.',
   inputSchema: {
     type: 'object' as const,
@@ -573,6 +584,7 @@ export const addAttachmentTool = {
  */
 export const deleteVConTool = {
   name: 'delete_vcon',
+  category: 'write' as ToolCategory,
   description: 'Delete a vCon and all its related data (parties, dialog, analysis, attachments). This operation cannot be undone.',
   inputSchema: {
     type: 'object' as const,
@@ -593,6 +605,7 @@ export const deleteVConTool = {
  */
 export const updateVConTool = {
   name: 'update_vcon',
+  category: 'write' as ToolCategory,
   description: 'Update top-level vCon metadata (subject, extensions, must_support). For dialog, analysis, attachments use their specific tools.',
   inputSchema: {
     type: 'object' as const,

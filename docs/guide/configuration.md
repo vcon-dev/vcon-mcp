@@ -128,6 +128,44 @@ CURRENT_TENANT_ID=1124
 
 See [RLS Multi-Tenant Guide](rls-multi-tenant.md) for complete setup instructions.
 
+#### Tool Categories
+
+Control which tools are available in your deployment:
+
+```bash
+# Option 1: Use a preset profile
+MCP_TOOLS_PROFILE=readonly   # Options: full, readonly, user, admin, minimal
+
+# Option 2: Enable specific categories only
+MCP_ENABLED_CATEGORIES=read,write,schema
+
+# Option 3: Disable specific categories (starts with all enabled)
+MCP_DISABLED_CATEGORIES=analytics,infra
+
+# Option 4: Disable individual tools
+MCP_DISABLED_TOOLS=delete_vcon,analyze_query
+```
+
+**Available Categories:**
+
+| Category | Description |
+|----------|-------------|
+| `read` | Read operations: get_vcon, search_*, get_tags, search_by_tags, get_unique_tags |
+| `write` | Mutating operations: create_vcon, update_vcon, delete_vcon, add_*, manage_tag, remove_all_tags |
+| `schema` | Documentation: get_schema, get_examples |
+| `analytics` | Business intelligence: get_database_analytics, get_*_analytics |
+| `infra` | Admin/debugging: get_database_shape, get_database_stats, analyze_query, get_*_size_* |
+
+**Deployment Profiles:**
+
+| Profile | Categories | Use Case |
+|---------|------------|----------|
+| `full` | All | Development, full access |
+| `readonly` | read, schema | Read-only deployments |
+| `user` | read, write, schema | End-user facing |
+| `admin` | read, analytics, infra, schema | Admin dashboards |
+| `minimal` | read, write | Basic CRUD only |
+
 #### Logging and Debugging
 
 ```bash
