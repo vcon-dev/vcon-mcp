@@ -70,9 +70,11 @@ export class VConQueries {
       }
 
       // Insert main vcon
+      // Set id = uuid so they match (id is the PK, uuid is the vCon document UUID)
       const { data: vconData, error: vconError } = await this.supabase
         .from('vcons')
         .insert({
+          id: vcon.uuid,     // Explicitly set id to match uuid
           uuid: vcon.uuid,
           vcon_version: vcon.vcon,
           subject: vcon.subject,
@@ -618,7 +620,13 @@ export class VConQueries {
       .eq('uuid', uuid)
       .single();
 
-    if (vconError) throw vconError;
+    if (vconError) {
+      // Handle "not found" case (PGRST116: no rows returned)
+      if (vconError.code === 'PGRST116') {
+        throw new Error(`vCon not found: ${uuid}`);
+      }
+      throw vconError;
+    }
 
     // Get parties
     const { data: parties } = await this.supabase

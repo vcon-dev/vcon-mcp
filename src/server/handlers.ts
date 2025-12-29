@@ -4,7 +4,6 @@
  * Registers all MCP request handlers (tools, resources, prompts)
  */
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -17,13 +16,8 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { randomUUID } from 'crypto';
 import { logWithContext } from '../observability/instrumentation.js';
-import { PluginManager } from '../hooks/plugin-manager.js';
 import { RequestContext } from '../hooks/plugin-interface.js';
-import { VConQueries } from '../db/queries.js';
-import { DatabaseInspector } from '../db/database-inspector.js';
-import { DatabaseAnalytics } from '../db/database-analytics.js';
-import { DatabaseSizeAnalyzer } from '../db/database-size-analyzer.js';
-import { ToolHandlerRegistry, type ToolHandlerContext } from '../tools/handlers/index.js';
+import type { ToolHandlerContext } from '../tools/handlers/index.js';
 import { allTools } from '../tools/vcon-crud.js';
 import { createFromTemplateTool } from '../tools/templates.js';
 import { getSchemaTool, getExamplesTool } from '../tools/schema-tools.js';
@@ -33,39 +27,25 @@ import { allDatabaseSizeTools } from '../tools/database-size-tools.js';
 import { allTagTools } from '../tools/tag-tools.js';
 import { getCoreResources, resolveCoreResource } from '../resources/index.js';
 import { allPrompts, generatePromptMessage } from '../prompts/index.js';
-
-export interface HandlersContext {
-  queries: VConQueries;
-  pluginManager: PluginManager;
-  dbInspector: DatabaseInspector;
-  dbAnalytics: DatabaseAnalytics;
-  dbSizeAnalyzer: DatabaseSizeAnalyzer;
-  supabase: any;
-  handlerRegistry: ToolHandlerRegistry;
-}
+import type { ServerContext } from './setup.js';
 
 /**
  * Register all MCP request handlers
+ * 
+ * @param context - Full server context (uses subset for tool handlers)
  */
-export function registerHandlers(server: Server, context: HandlersContext): void {
-  const {
-    queries,
-    pluginManager,
-    dbInspector,
-    dbAnalytics,
-    dbSizeAnalyzer,
-    supabase,
-    handlerRegistry,
-  } = context;
+export function registerHandlers(context: ServerContext): void {
+  const { server, queries, pluginManager, handlerRegistry } = context;
 
-  // Tool handler context
+  // Tool handler context - subset of ServerContext that handlers need
   const handlerContext: ToolHandlerContext = {
-    queries,
-    pluginManager,
-    dbInspector,
-    dbAnalytics,
-    dbSizeAnalyzer,
-    supabase,
+    queries: context.queries,
+    pluginManager: context.pluginManager,
+    dbInspector: context.dbInspector,
+    dbAnalytics: context.dbAnalytics,
+    dbSizeAnalyzer: context.dbSizeAnalyzer,
+    supabase: context.supabase,
+    vconService: context.vconService,
   };
 
   // List tools

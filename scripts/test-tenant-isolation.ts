@@ -99,10 +99,12 @@ async function main() {
 
   await test('Create test vCons with different tenants', async () => {
     // Create vCon for tenant1
+    const uuid1 = randomUUID();
     const { data: vcon1, error: e1 } = await serviceRoleClient
       .from('vcons')
       .insert({
-        uuid: randomUUID(),
+        id: uuid1,  // Set id = uuid
+        uuid: uuid1,
         vcon_version: '0.3.0',
         subject: 'Test vCon for Tenant 1',
         tenant_id: 'tenant-1',
@@ -114,10 +116,12 @@ async function main() {
     tenant1VconId = vcon1.id;
 
     // Create vCon for tenant2
+    const uuid2 = randomUUID();
     const { data: vcon2, error: e2 } = await serviceRoleClient
       .from('vcons')
       .insert({
-        uuid: randomUUID(),
+        id: uuid2,  // Set id = uuid
+        uuid: uuid2,
         vcon_version: '0.3.0',
         subject: 'Test vCon for Tenant 2',
         tenant_id: 'tenant-2',
@@ -129,10 +133,12 @@ async function main() {
     tenant2VconId = vcon2.id;
 
     // Create shared vCon (NULL tenant_id)
+    const uuid3 = randomUUID();
     const { data: vcon3, error: e3 } = await serviceRoleClient
       .from('vcons')
       .insert({
-        uuid: randomUUID(),
+        id: uuid3,  // Set id = uuid
+        uuid: uuid3,
         vcon_version: '0.3.0',
         subject: 'Shared vCon (NULL tenant)',
         tenant_id: null,

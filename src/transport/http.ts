@@ -2,12 +2,15 @@
  * HTTP Transport Setup
  * 
  * Configures and starts HTTP/Streamable HTTP transport for MCP server
+ * Integrates Koa REST API for vCon ingestion when enabled
  */
 
 import http from 'http';
+import Koa from 'koa';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { randomUUID } from 'crypto';
+import { createRestApi, getRestApiConfig, isRestApiPath, type RestApiContext } from '../api/index.js';
 import { logWithContext } from '../observability/instrumentation.js';
 import { setupHttpMiddleware } from './middleware.js';
 
@@ -19,6 +22,8 @@ export interface HttpTransportConfig {
   allowedHosts?: string[];
   allowedOrigins?: string[];
   dnsProtection?: boolean;
+  /** REST API context (required to enable REST endpoints) */
+  restApiContext?: RestApiContext;
 }
 
 /**
@@ -45,7 +50,7 @@ export function createHttpTransport(config: HttpTransportConfig = {}) {
 }
 
 /**
- * Start HTTP server with MCP transport
+ * Start HTTP server with MCP transport and Koa REST API
  */
 export async function startHttpServer(
   server: Server,
@@ -57,8 +62,32 @@ export async function startHttpServer(
 
   await server.connect(transport);
 
-  // Create HTTP server with middleware
+  // Create Koa REST API if context provided
+  let koaApp: Koa | null = null;
+  let koaCallback: ReturnType<Koa['callback']> | null = null;
+  const restConfig = getRestApiConfig();
+
+  if (config.restApiContext && restConfig.enabled) {
+    koaApp = createRestApi(config.restApiContext);
+    koaCallback = koaApp.callback();
+    
+    logWithContext('info', 'REST API enabled (Koa)', {
+      base_path: restConfig.basePath,
+      auth_required: process.env.API_AUTH_REQUIRED !== 'false',
+    });
+  }
+
+  // Create HTTP server that routes between REST API and MCP
   const httpServer = http.createServer((req, res) => {
+    const path = req.url?.split('?')[0] || '';
+
+    // Route to Koa REST API if path matches
+    if (koaCallback && isRestApiPath(path, restConfig.basePath)) {
+      koaCallback(req, res);
+      return;
+    }
+
+    // Fall through to MCP transport
     setupHttpMiddleware(req, res, transport);
   });
 
@@ -77,6 +106,7 @@ export async function startHttpServer(
         host,
         port,
         transport: 'http',
+        rest_api: koaApp ? 'enabled' : 'disabled',
       });
       resolve(httpServer);
     });
@@ -99,4 +129,3 @@ export function getHttpTransportConfig(): HttpTransportConfig {
     dnsProtection: process.env.MCP_HTTP_DNS_PROTECTION === 'true',
   };
 }
-

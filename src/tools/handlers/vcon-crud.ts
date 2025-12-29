@@ -1,18 +1,17 @@
 /**
  * vCon CRUD Tool Handlers
+ * 
+ * Uses VConService for unified lifecycle handling with hooks, validation, and metrics.
  */
 
-import { randomUUID } from 'crypto';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { BaseToolHandler, ToolHandlerContext, ToolResponse } from './base.js';
 import { VCon, Analysis, Dialog, Attachment } from '../../types/vcon.js';
 import { AnalysisSchema, DialogSchema, AttachmentSchema } from '../vcon-crud.js';
 import { buildTemplateVCon } from '../templates.js';
-import { recordCounter } from '../../observability/instrumentation.js';
-import { ATTR_VCON_UUID } from '../../observability/attributes.js';
+import { VConValidationError } from '../../services/vcon-service.js';
 import {
   requireUUID,
-  requireValidVCon,
   requireValidAnalysis,
   requireValidDialog,
   requireValidAttachment,
@@ -28,38 +27,31 @@ export class CreateVConHandler extends BaseToolHandler {
   protected async execute(args: any, context: ToolHandlerContext): Promise<ToolResponse> {
     const requestContext = this.createRequestContext(args);
     
-    let vcon: VCon = {
-      vcon: '0.3.0',
-      uuid: randomUUID(),
-      created_at: new Date().toISOString(),
-      subject: args?.subject as string | undefined,
-      parties: (args?.parties as any[]) || [],
-      extensions: args?.extensions as string[] | undefined,
-      must_support: args?.must_support as string[] | undefined,
-    };
+    try {
+      const result = await context.vconService.create(
+        {
+          subject: args?.subject as string | undefined,
+          parties: (args?.parties as any[]) || [],
+          extensions: args?.extensions as string[] | undefined,
+          must_support: args?.must_support as string[] | undefined,
+        },
+        {
+          requestContext,
+          source: 'mcp-tool',
+        }
+      );
 
-    // Hook: beforeCreate
-    const modifiedVCon = await context.pluginManager.executeHook<VCon>('beforeCreate', vcon, requestContext);
-    if (modifiedVCon) vcon = modifiedVCon;
-
-    // Validate before saving
-    requireValidVCon(vcon);
-
-    const createResult = await context.queries.createVCon(vcon);
-    
-    // Hook: afterCreate
-    await context.pluginManager.executeHook('afterCreate', vcon, requestContext);
-    
-    // Record vCon creation metric
-    recordCounter('vcon.created.count', 1, {
-      [ATTR_VCON_UUID]: createResult.uuid,
-    }, 'vCon creation count');
-
-    return this.createSuccessResponse({
-      uuid: createResult.uuid,
-      message: `Created vCon with UUID: ${createResult.uuid}`,
-      vcon: vcon
-    });
+      return this.createSuccessResponse({
+        uuid: result.uuid,
+        message: `Created vCon with UUID: ${result.uuid}`,
+        vcon: result.vcon,
+      });
+    } catch (error) {
+      if (error instanceof VConValidationError) {
+        throw new McpError(ErrorCode.InvalidParams, error.message);
+      }
+      throw error;
+    }
   }
 }
 
@@ -78,27 +70,26 @@ export class CreateVConFromTemplateHandler extends BaseToolHandler {
       throw new McpError(ErrorCode.InvalidParams, 'template_name and parties are required');
     }
 
-    let vcon = buildTemplateVCon(template, subject, parties);
-
+    // Build vCon from template
+    const templateVCon = buildTemplateVCon(template, subject, parties);
     const requestContext = this.createRequestContext(args);
 
-    const modifiedVCon = await context.pluginManager.executeHook<VCon>('beforeCreate', vcon, requestContext);
-    if (modifiedVCon) vcon = modifiedVCon;
+    try {
+      const result = await context.vconService.create(templateVCon, {
+        requestContext,
+        source: 'mcp-tool-template',
+      });
 
-    // Validate before saving
-    requireValidVCon(vcon);
-
-    const templateResult = await context.queries.createVCon(vcon);
-    await context.pluginManager.executeHook('afterCreate', vcon, requestContext);
-
-    recordCounter('vcon.created.count', 1, {
-      [ATTR_VCON_UUID]: templateResult.uuid,
-    }, 'vCon creation count');
-
-    return this.createSuccessResponse({
-      uuid: templateResult.uuid,
-      vcon: vcon
-    });
+      return this.createSuccessResponse({
+        uuid: result.uuid,
+        vcon: result.vcon,
+      });
+    } catch (error) {
+      if (error instanceof VConValidationError) {
+        throw new McpError(ErrorCode.InvalidParams, error.message);
+      }
+      throw error;
+    }
   }
 }
 
@@ -112,17 +103,10 @@ export class GetVConHandler extends BaseToolHandler {
     const uuid = requireUUID(args?.uuid as string, 'uuid');
     const requestContext = this.createRequestContext(args);
 
-    // Hook: beforeRead (can throw to block access)
-    await context.pluginManager.executeHook('beforeRead', uuid, requestContext);
-
-    let vcon = await context.queries.getVCon(uuid);
-    
-    // Hook: afterRead (can modify returned data)
-    const filteredVCon = await context.pluginManager.executeHook<VCon>('afterRead', vcon, requestContext);
-    if (filteredVCon) vcon = filteredVCon;
+    const vcon = await context.vconService.get(uuid, { requestContext });
     
     return this.createSuccessResponse({
-      vcon: vcon
+      vcon,
     });
   }
 }
@@ -183,20 +167,17 @@ export class DeleteVConHandler extends BaseToolHandler {
     const uuid = requireUUID(args?.uuid as string, 'uuid');
     const requestContext = this.createRequestContext(args);
 
-    // Hook: beforeDelete (can throw to prevent deletion)
-    await context.pluginManager.executeHook('beforeDelete', uuid, requestContext);
+    const deleted = await context.vconService.delete(uuid, {
+      requestContext,
+      source: 'mcp-tool',
+    });
 
-    await context.queries.deleteVCon(uuid);
-    
-    // Hook: afterDelete
-    await context.pluginManager.executeHook('afterDelete', uuid, requestContext);
-    
-    recordCounter('vcon.deleted.count', 1, {
-      [ATTR_VCON_UUID]: uuid,
-    }, 'vCon deletion count');
+    if (!deleted) {
+      throw new McpError(ErrorCode.InvalidRequest, `vCon with UUID ${uuid} not found`);
+    }
 
     return this.createSuccessResponse({
-      message: `Deleted vCon ${uuid}`
+      message: `Deleted vCon ${uuid}`,
     });
   }
 }
