@@ -111,6 +111,62 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-key
 VCON_PLUGINS_PATH=./plugins
 VCON_LICENSE_KEY=your-license-key
 NODE_ENV=production
+
+# Tool Categories (see below)
+MCP_TOOLS_PROFILE=full
+```
+
+## Tool Categories for Deployment
+
+Control which tools are available based on deployment type:
+
+### Deployment Profiles
+
+| Profile | Categories | Use Case |
+|---------|------------|----------|
+| `full` | All | Development, full access |
+| `readonly` | read, schema | Read-only API, dashboards |
+| `user` | read, write, schema | End-user facing applications |
+| `admin` | read, analytics, infra, schema | Admin/monitoring dashboards |
+| `minimal` | read, write | Basic CRUD microservice |
+
+### Configuration Options
+
+```bash
+# Option 1: Use a preset profile
+MCP_TOOLS_PROFILE=readonly
+
+# Option 2: Enable specific categories
+MCP_ENABLED_CATEGORIES=read,write,schema
+
+# Option 3: Disable specific categories
+MCP_DISABLED_CATEGORIES=analytics,infra
+
+# Option 4: Disable individual tools
+MCP_DISABLED_TOOLS=delete_vcon,analyze_query
+```
+
+### Example: Read-Only Deployment
+
+```bash
+# Docker run with read-only profile
+docker run -d \
+  -e SUPABASE_URL=your-url \
+  -e SUPABASE_ANON_KEY=your-key \
+  -e MCP_TOOLS_PROFILE=readonly \
+  vcon-mcp
+```
+
+### Example: User-Facing with Restricted Delete
+
+```bash
+# Allow CRUD but prevent deletion
+docker run -d \
+  -e SUPABASE_URL=your-url \
+  -e SUPABASE_ANON_KEY=your-key \
+  -e MCP_TOOLS_PROFILE=user \
+  -e MCP_DISABLED_TOOLS=delete_vcon \
+  vcon-mcp
 ```
 
 ## Health Checks

@@ -1,5 +1,8 @@
+import type { ToolCategory } from '../config/tools.js';
+
 export const getSchemaTool = {
   name: 'get_schema',
+  category: 'schema' as ToolCategory,
   description: 'Get vCon schema definition in the requested format (json_schema or typescript).',
   inputSchema: {
     type: 'object' as const,
@@ -12,6 +15,7 @@ export const getSchemaTool = {
 
 export const getExamplesTool = {
   name: 'get_examples',
+  category: 'schema' as ToolCategory,
   description: 'Get example vCons (minimal, phone_call, chat, email, video, full_featured) as JSON or YAML.',
   inputSchema: {
     type: 'object' as const,

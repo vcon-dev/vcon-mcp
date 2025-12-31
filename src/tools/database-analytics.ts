@@ -4,12 +4,15 @@
  * Comprehensive tools for analyzing database shape, size, growth, and content patterns
  */
 
+import type { ToolCategory } from '../config/tools.js';
+
 /**
  * Tool: Get Database Analytics
  * Returns comprehensive database analytics including size, growth, content distribution
  */
 export const getDatabaseAnalyticsTool = {
   name: 'get_database_analytics',
+  category: 'analytics' as ToolCategory,
   description: 'Get comprehensive database analytics including total size, monthly growth trends, ' +
     'content distribution, attachment statistics, tag usage patterns, and database health metrics. ' +
     'Provides a complete overview of the vCon database state and usage patterns.',
@@ -58,6 +61,7 @@ export const getDatabaseAnalyticsTool = {
  */
 export const getMonthlyGrowthTool = {
   name: 'get_monthly_growth_analytics',
+  category: 'analytics' as ToolCategory,
   description: 'Get detailed monthly growth analytics including vCon creation trends, ' +
     'size growth patterns, content volume changes, and growth projections. ' +
     'Useful for capacity planning and understanding usage patterns.',
@@ -92,6 +96,7 @@ export const getMonthlyGrowthTool = {
  */
 export const getAttachmentAnalyticsTool = {
   name: 'get_attachment_analytics',
+  category: 'analytics' as ToolCategory,
   description: 'Get comprehensive attachment analytics including file type distribution, ' +
     'size statistics, attachment frequency, and storage usage patterns. ' +
     'Helps understand what types of files are being stored and their impact on storage.',
@@ -130,6 +135,7 @@ export const getAttachmentAnalyticsTool = {
  */
 export const getTagAnalyticsTool = {
   name: 'get_tag_analytics',
+  category: 'analytics' as ToolCategory,
   description: 'Get comprehensive tag analytics including usage patterns, ' +
     'key-value distribution, tag frequency, and tagging trends over time. ' +
     'Helps understand how vCons are being categorized and organized.',
@@ -174,6 +180,7 @@ export const getTagAnalyticsTool = {
  */
 export const getContentAnalyticsTool = {
   name: 'get_content_analytics',
+  category: 'analytics' as ToolCategory,
   description: 'Get comprehensive content analytics including dialog types, ' +
     'analysis distribution, party patterns, and conversation characteristics. ' +
     'Provides insights into the types of conversations being stored.',
@@ -215,6 +222,7 @@ export const getContentAnalyticsTool = {
  */
 export const getDatabaseHealthTool = {
   name: 'get_database_health_metrics',
+  category: 'analytics' as ToolCategory,
   description: 'Get database health metrics including performance indicators, ' +
     'storage efficiency, index usage, query performance, and optimization recommendations. ' +
     'Helps identify potential issues and optimization opportunities.',

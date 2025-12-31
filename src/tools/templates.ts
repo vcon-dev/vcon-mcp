@@ -1,8 +1,10 @@
 import { randomUUID } from 'crypto';
+import type { ToolCategory } from '../config/tools.js';
 import { VCon } from '../types/vcon.js';
 
 export const createFromTemplateTool = {
   name: 'create_vcon_from_template',
+  category: 'write' as ToolCategory,
   description: 'Create a new vCon from a predefined template (phone_call, chat_conversation, email_thread, video_meeting, custom).',
   inputSchema: {
     type: 'object' as const,

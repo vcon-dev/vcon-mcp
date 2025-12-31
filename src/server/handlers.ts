@@ -15,6 +15,7 @@ import {
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
 import { randomUUID } from 'crypto';
+import { loadToolsConfig, filterEnabledTools, stripCategories, type ToolDefinition } from '../config/tools.js';
 import { logWithContext } from '../observability/instrumentation.js';
 import { RequestContext } from '../hooks/plugin-interface.js';
 import type { ToolHandlerContext } from '../tools/handlers/index.js';
@@ -48,6 +49,9 @@ export function registerHandlers(context: ServerContext): void {
     vconService: context.vconService,
   };
 
+  // Load tools configuration once at startup
+  const toolsConfig = loadToolsConfig();
+
   // List tools
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     const transportType = process.env.MCP_TRANSPORT || 'stdio';
@@ -58,34 +62,80 @@ export function registerHandlers(context: ServerContext): void {
       transport: transportType,
     });
 
-    const coreTools = allTools;
-    const pluginTools = await pluginManager.getAdditionalTools();
-    const extras = [createFromTemplateTool, getSchemaTool, getExamplesTool];
-
-    const tools = [
-      ...coreTools,
-      ...extras,
+    // Combine all tools with their categories
+    const allToolsWithCategories: ToolDefinition[] = [
+      ...allTools,
+      createFromTemplateTool,
+      getSchemaTool,
+      getExamplesTool,
       ...allDatabaseTools,
       ...allDatabaseAnalyticsTools,
       ...allDatabaseSizeTools,
       ...allTagTools,
+    ] as ToolDefinition[];
+
+    // Filter based on configuration
+    const enabledTools = filterEnabledTools(allToolsWithCategories, toolsConfig);
+
+    // Get plugin tools (plugins don't have categories, always included if available)
+    const pluginTools = await pluginManager.getAdditionalTools();
+
+    // Strip category field for MCP response (MCP doesn't need it)
+    const toolsForResponse = [
+      ...stripCategories(enabledTools),
       ...pluginTools,
     ];
 
     logWithContext('debug', 'MCP tools listed', {
       request_id: requestId,
       transport: transportType,
-      total_tools: tools.length,
-      core_tools: coreTools.length,
+      total_tools: toolsForResponse.length,
+      enabled_categories: toolsConfig.enabledCategories,
+      disabled_tools: toolsConfig.disabledTools || [],
+      all_tools_count: allToolsWithCategories.length,
+      filtered_tools_count: enabledTools.length,
       plugin_tools: pluginTools.length,
     });
 
-    return { tools };
+    return { tools: toolsForResponse };
   });
 
   // Call tool
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
+
+    // Check if tool is disabled by configuration
+    const allToolsWithCategories: ToolDefinition[] = [
+      ...allTools,
+      createFromTemplateTool,
+      getSchemaTool,
+      getExamplesTool,
+      ...allDatabaseTools,
+      ...allDatabaseAnalyticsTools,
+      ...allDatabaseSizeTools,
+      ...allTagTools,
+    ] as ToolDefinition[];
+
+    const toolDef = allToolsWithCategories.find(t => t.name === name);
+    if (toolDef) {
+      const enabledTools = filterEnabledTools([toolDef], toolsConfig);
+      if (enabledTools.length === 0) {
+        // Determine the actual reason the tool is disabled for accurate error message
+        const isExplicitlyDisabled = toolsConfig.disabledTools?.includes(name);
+        const isCategoryDisabled = !toolsConfig.enabledCategories.includes(toolDef.category);
+        
+        let errorMessage: string;
+        if (isExplicitlyDisabled) {
+          errorMessage = `Tool '${name}' is explicitly disabled via MCP_DISABLED_TOOLS configuration.`;
+        } else if (isCategoryDisabled) {
+          errorMessage = `Tool '${name}' is disabled. Category '${toolDef.category}' is not enabled in current configuration.`;
+        } else {
+          errorMessage = `Tool '${name}' is disabled by configuration.`;
+        }
+        
+        throw new McpError(ErrorCode.MethodNotFound, errorMessage);
+      }
+    }
 
     // Try to get handler from registry
     const handler = handlerRegistry.get(name);

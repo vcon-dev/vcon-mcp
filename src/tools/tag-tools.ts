@@ -11,11 +11,14 @@
  * Consolidated from 8 tools to 5 tools for simpler API.
  */
 
+import type { ToolCategory } from '../config/tools.js';
+
 /**
  * Tool: Manage Tag (replaces add_tag, update_tags, remove_tag)
  */
 export const manageTagTool = {
   name: 'manage_tag',
+  category: 'write' as ToolCategory,
   description: 'Add, update, or remove a single tag on a vCon. Tags are key-value pairs for categorization and filtering. ' +
     'Use action "set" to add/update a tag, or "remove" to delete it.',
   inputSchema: {
@@ -53,6 +56,7 @@ export const manageTagTool = {
  */
 export const getTagsTool = {
   name: 'get_tags',
+  category: 'read' as ToolCategory,
   description: 'Retrieve tags from a vCon. Provide a specific key to get one tag value, or omit key to get all tags as an object.',
   inputSchema: {
     type: 'object' as const,
@@ -86,6 +90,7 @@ export const getTagsTool = {
  */
 export const removeAllTagsTool = {
   name: 'remove_all_tags',
+  category: 'write' as ToolCategory,
   description: 'Remove all tags from a vCon.',
   inputSchema: {
     type: 'object' as const,
@@ -105,6 +110,7 @@ export const removeAllTagsTool = {
  */
 export const searchByTagsTool = {
   name: 'search_by_tags',
+  category: 'read' as ToolCategory,
   description: 'Search for vCons that have specific tag values. All specified tags must match (AND logic).',
   inputSchema: {
     type: 'object' as const,
@@ -143,6 +149,7 @@ export const searchByTagsTool = {
  */
 export const getUniqueTagsTool = {
   name: 'get_unique_tags',
+  category: 'read' as ToolCategory,
   description: 'Get a list of all unique tag keys and their possible values across all vCons. ' +
     'Useful for discovering available tags, building tag selection UIs, and analytics.',
   inputSchema: {
