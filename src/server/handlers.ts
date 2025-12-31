@@ -120,10 +120,20 @@ export function registerHandlers(context: ServerContext): void {
     if (toolDef) {
       const enabledTools = filterEnabledTools([toolDef], toolsConfig);
       if (enabledTools.length === 0) {
-        throw new McpError(
-          ErrorCode.MethodNotFound,
-          `Tool '${name}' is disabled. Category '${toolDef.category}' is not enabled in current configuration.`
-        );
+        // Determine the actual reason the tool is disabled for accurate error message
+        const isExplicitlyDisabled = toolsConfig.disabledTools?.includes(name);
+        const isCategoryDisabled = !toolsConfig.enabledCategories.includes(toolDef.category);
+        
+        let errorMessage: string;
+        if (isExplicitlyDisabled) {
+          errorMessage = `Tool '${name}' is explicitly disabled via MCP_DISABLED_TOOLS configuration.`;
+        } else if (isCategoryDisabled) {
+          errorMessage = `Tool '${name}' is disabled. Category '${toolDef.category}' is not enabled in current configuration.`;
+        } else {
+          errorMessage = `Tool '${name}' is disabled by configuration.`;
+        }
+        
+        throw new McpError(ErrorCode.MethodNotFound, errorMessage);
       }
     }
 
