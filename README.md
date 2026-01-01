@@ -151,13 +151,22 @@ docker run --rm \
   -e SUPABASE_ANON_KEY=your-anon-key \
   public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp:main script check-db-status
 
-# Run embeddings
+# Run embeddings with OpenAI
 docker run --rm \
   -e SUPABASE_URL=your-url \
   -e SUPABASE_SERVICE_ROLE_KEY=your-service-role-key \
   -e SUPABASE_ANON_KEY=your-anon-key \
   -e OPENAI_API_KEY=your-openai-key \
   public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp:main script embed-vcons --provider=openai
+
+# Run embeddings with Azure OpenAI
+docker run --rm \
+  -e SUPABASE_URL=your-url \
+  -e SUPABASE_SERVICE_ROLE_KEY=your-service-role-key \
+  -e SUPABASE_ANON_KEY=your-anon-key \
+  -e AZURE_OPENAI_EMBEDDING_ENDPOINT=https://your-resource.openai.azure.com \
+  -e AZURE_OPENAI_EMBEDDING_API_KEY=your-azure-key \
+  public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp:main script embed-vcons --provider=azure
 ```
 
 ### Docker Compose

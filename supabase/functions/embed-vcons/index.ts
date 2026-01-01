@@ -2,18 +2,24 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-type EmbeddingProvider = "openai" | "hf";
+type EmbeddingProvider = "openai" | "azure" | "hf";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+const AZURE_OPENAI_EMBEDDING_ENDPOINT = Deno.env.get("AZURE_OPENAI_EMBEDDING_ENDPOINT");
+const AZURE_OPENAI_EMBEDDING_API_KEY = Deno.env.get("AZURE_OPENAI_EMBEDDING_API_KEY");
+const AZURE_OPENAI_EMBEDDING_API_VERSION = Deno.env.get("AZURE_OPENAI_EMBEDDING_API_VERSION") || "2024-02-01";
 const HF_API_TOKEN = Deno.env.get("HF_API_TOKEN");
 
-const PROVIDER: EmbeddingProvider = OPENAI_API_KEY
-  ? "openai"
-  : HF_API_TOKEN
-    ? "hf"
-    : "openai";
+// Provider priority: Azure OpenAI > OpenAI > Hugging Face
+const PROVIDER: EmbeddingProvider = (AZURE_OPENAI_EMBEDDING_ENDPOINT && AZURE_OPENAI_EMBEDDING_API_KEY)
+  ? "azure"
+  : OPENAI_API_KEY
+    ? "openai"
+    : HF_API_TOKEN
+      ? "hf"
+      : "openai";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false }
@@ -126,6 +132,29 @@ async function embedOpenAI(texts: string[]): Promise<number[][]> {
   return json.data.map((d: any) => d.embedding as number[]);
 }
 
+async function embedAzureOpenAI(texts: string[]): Promise<number[][]> {
+  if (!AZURE_OPENAI_EMBEDDING_ENDPOINT || !AZURE_OPENAI_EMBEDDING_API_KEY) {
+    throw new Error("AZURE_OPENAI_EMBEDDING_ENDPOINT and AZURE_OPENAI_EMBEDDING_API_KEY are required");
+  }
+
+  // Construct the full URL: {endpoint}/openai/deployments/{deployment}/embeddings?api-version={version}
+  const normalizedEndpoint = AZURE_OPENAI_EMBEDDING_ENDPOINT.replace(/\/$/, "");
+  const deployment = "text-embedding-3-small";
+  const url = `${normalizedEndpoint}/openai/deployments/${deployment}/embeddings?api-version=${AZURE_OPENAI_EMBEDDING_API_VERSION}`;
+
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "api-key": AZURE_OPENAI_EMBEDDING_API_KEY
+    },
+    body: JSON.stringify({ input: texts, dimensions: 384 })
+  });
+  if (!resp.ok) throw new Error(`Azure OpenAI embeddings failed: ${resp.status} ${await resp.text()}`);
+  const json = await resp.json();
+  return json.data.map((d: any) => d.embedding as number[]);
+}
+
 async function embedHF(texts: string[]): Promise<number[][]> {
   // Hugging Face Inference API batched: one by one fallback for simplicity
   const result: number[][] = [];
@@ -150,6 +179,17 @@ async function embedHF(texts: string[]): Promise<number[][]> {
   return result;
 }
 
+function getModelName(provider: EmbeddingProvider): string {
+  switch (provider) {
+    case "openai":
+    case "azure":
+      // Both use the same underlying model
+      return "text-embedding-3-small";
+    case "hf":
+      return "sentence-transformers/all-MiniLM-L6-v2";
+  }
+}
+
 async function upsertEmbeddings(units: TextUnit[], vectors: number[][]) {
   const rows = units.map((u, i) => ({
     vcon_id: u.vcon_id,
@@ -157,8 +197,7 @@ async function upsertEmbeddings(units: TextUnit[], vectors: number[][]) {
     content_reference: u.content_reference,
     content_text: u.content_text,
     embedding: vectors[i],
-    embedding_model:
-      PROVIDER === "openai" ? "text-embedding-3-small" : "sentence-transformers/all-MiniLM-L6-v2",
+    embedding_model: getModelName(PROVIDER),
     embedding_dimension: 384
   }));
 
@@ -178,6 +217,9 @@ serve(async (req) => {
     if (PROVIDER === "openai" && !OPENAI_API_KEY) {
       return new Response(JSON.stringify({ error: "OPENAI_API_KEY missing" }), { status: 400 });
     }
+    if (PROVIDER === "azure" && (!AZURE_OPENAI_EMBEDDING_ENDPOINT || !AZURE_OPENAI_EMBEDDING_API_KEY)) {
+      return new Response(JSON.stringify({ error: "AZURE_OPENAI_EMBEDDING_ENDPOINT and AZURE_OPENAI_EMBEDDING_API_KEY missing" }), { status: 400 });
+    }
     if (PROVIDER === "hf" && !HF_API_TOKEN) {
       return new Response(JSON.stringify({ error: "HF_API_TOKEN missing" }), { status: 400 });
     }
@@ -196,7 +238,7 @@ serve(async (req) => {
     let totalEmbedded = 0;
     let totalErrors = 0;
     
-    if (PROVIDER === "openai") {
+    if (PROVIDER === "openai" || PROVIDER === "azure") {
       // Group units into token-aware batches
       const batches: TextUnit[][] = [];
       let currentBatch: TextUnit[] = [];
@@ -223,11 +265,14 @@ serve(async (req) => {
         batches.push(currentBatch);
       }
       
+      // Choose the appropriate embedding function
+      const embedFn = PROVIDER === "azure" ? embedAzureOpenAI : embedOpenAI;
+      
       // Process each batch
       for (const batch of batches) {
         try {
           const texts = batch.map((u) => u.content_text);
-          const vectors = await embedOpenAI(texts);
+          const vectors = await embedFn(texts);
           await upsertEmbeddings(batch, vectors);
           totalEmbedded += batch.length;
         } catch (e) {

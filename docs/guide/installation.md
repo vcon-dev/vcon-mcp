@@ -538,6 +538,8 @@ Complete list of supported environment variables:
 | `SUPABASE_ANON_KEY` | ✅ Yes | Supabase anon public key | - |
 | `SUPABASE_SERVICE_ROLE_KEY` | ❌ No | Service role key (admin operations) | - |
 | `OPENAI_API_KEY` | ❌ No | OpenAI API key for embeddings | - |
+| `AZURE_OPENAI_EMBEDDING_ENDPOINT` | ❌ No | Azure OpenAI base endpoint (e.g., https://your-resource.openai.azure.com) | - |
+| `AZURE_OPENAI_EMBEDDING_API_KEY` | ❌ No | Azure OpenAI API key | - |
 | `VCON_PLUGINS_PATH` | ❌ No | Comma-separated plugin paths | - |
 | `VCON_LICENSE_KEY` | ❌ No | Enterprise license key | - |
 | `MCP_SERVER_NAME` | ❌ No | Server name for MCP | `vcon-mcp-server` |

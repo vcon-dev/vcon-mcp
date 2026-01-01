@@ -78,6 +78,9 @@ Environment variables (set in `.env` file or exported):
 - `SUPABASE_SERVICE_ROLE_KEY`
 - One provider (choose one):
   - `OPENAI_API_KEY` (uses `text-embedding-3-small` with `dimensions=384`)
+  - or Azure OpenAI:
+    - `AZURE_OPENAI_EMBEDDING_ENDPOINT` (e.g., `https://your-resource.openai.azure.com`)
+    - `AZURE_OPENAI_EMBEDDING_API_KEY`
   - or `HF_API_TOKEN` (Hugging Face Inference API with `sentence-transformers/all-MiniLM-L6-v2`)
 
 #### Generate Embeddings
@@ -100,6 +103,9 @@ npx tsx scripts/embed-vcons.ts
 
 # Process 500 units with OpenAI
 npx tsx scripts/embed-vcons.ts --limit=500 --provider=openai
+
+# Process with Azure OpenAI
+npx tsx scripts/embed-vcons.ts --limit=500 --provider=azure
 
 # Run continuously until all done
 npx tsx scripts/embed-vcons.ts --continuous --delay=2
