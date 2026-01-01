@@ -90,7 +90,14 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 
 # Embedding provider (choose one)
+# Option 1: OpenAI
 OPENAI_API_KEY=sk-...          # For OpenAI text-embedding-3-small
+
+# Option 2: Azure OpenAI
+AZURE_OPENAI_EMBEDDING_ENDPOINT=https://your-resource.openai.azure.com
+AZURE_OPENAI_EMBEDDING_API_KEY=your-azure-api-key
+
+# Option 3: Hugging Face
 HF_API_TOKEN=hf_...             # For Hugging Face sentence-transformers
 ```
 

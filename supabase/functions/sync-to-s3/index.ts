@@ -12,6 +12,9 @@ const AWS_REGION = Deno.env.get("AWS_REGION") ?? "us-east-1";
 const AWS_ACCESS_KEY_ID = Deno.env.get("AWS_ACCESS_KEY_ID") ?? "";
 const AWS_SECRET_ACCESS_KEY = Deno.env.get("AWS_SECRET_ACCESS_KEY") ?? "";
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+const AZURE_OPENAI_EMBEDDING_ENDPOINT = Deno.env.get("AZURE_OPENAI_EMBEDDING_ENDPOINT");
+const AZURE_OPENAI_EMBEDDING_API_KEY = Deno.env.get("AZURE_OPENAI_EMBEDDING_API_KEY");
+const AZURE_OPENAI_EMBEDDING_API_VERSION = Deno.env.get("AZURE_OPENAI_EMBEDDING_API_VERSION") || "2024-02-01";
 const HF_API_TOKEN = Deno.env.get("HF_API_TOKEN");
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: {
@@ -96,7 +99,14 @@ async function uploadToS3(key, jsonStr) {
 // ---------------------------------------------------------------------------
 // Embedding helpers (unchanged except for safety fixes)
 // ---------------------------------------------------------------------------
-const PROVIDER = OPENAI_API_KEY ? "openai" : HF_API_TOKEN ? "hf" : "openai";
+// Provider priority: Azure OpenAI > OpenAI > Hugging Face
+const PROVIDER = (AZURE_OPENAI_EMBEDDING_ENDPOINT && AZURE_OPENAI_EMBEDDING_API_KEY)
+  ? "azure"
+  : OPENAI_API_KEY
+    ? "openai"
+    : HF_API_TOKEN
+      ? "hf"
+      : "openai";
 function estimateTokens(text) {
   return Math.ceil(text.length / 3.5);
 }

@@ -3,14 +3,14 @@
 /**
  * vCon Embeddings Generator
  * 
- * Generates 384-dimensional embeddings for vCon content using OpenAI or Hugging Face.
+ * Generates 384-dimensional embeddings for vCon content using OpenAI, Azure OpenAI, or Hugging Face.
  * This script processes vCon subjects, dialog entries, and analysis text to create
  * semantic search vectors stored in the vcon_embeddings table.
  * 
  * Features:
  * - Automatic detection of missing embeddings
- * - Token-aware batching for OpenAI API
- * - Support for both OpenAI and Hugging Face providers
+ * - Token-aware batching for OpenAI and Azure OpenAI APIs
+ * - Support for OpenAI, Azure OpenAI, and Hugging Face providers
  * - Backfill mode for batch processing
  * - Single vCon mode for targeted embedding
  * - Rate limit friendly with configurable batch sizes
@@ -22,16 +22,19 @@
  *   --mode=MODE          Mode: 'backfill' (default) or 'embed'
  *   --vcon-id=UUID       Specific vCon UUID to embed (required for embed mode)
  *   --limit=N            Max text units to process per batch (default: 100, max: 500)
- *   --provider=PROVIDER  Embedding provider: 'openai' or 'hf' (auto-detected from env)
+ *   --provider=PROVIDER  Embedding provider: 'openai', 'azure', or 'hf' (auto-detected from env)
  *   --continuous, -c     Run continuously until all embeddings complete
  *   --delay=N            Delay in seconds between batches in continuous mode (default: 2)
  *   --oldest-first       Process oldest vCons first (for backfilling old data)
  * 
  * Environment Variables:
- *   SUPABASE_URL              Supabase project URL
- *   SUPABASE_SERVICE_ROLE_KEY Service role key for admin operations
- *   OPENAI_API_KEY            OpenAI API key (for text-embedding-3-small)
- *   HF_API_TOKEN              Hugging Face API token (for sentence-transformers)
+ *   SUPABASE_URL                       Supabase project URL
+ *   SUPABASE_SERVICE_ROLE_KEY          Service role key for admin operations
+ *   OPENAI_API_KEY                     OpenAI API key (for text-embedding-3-small)
+ *   AZURE_OPENAI_EMBEDDING_ENDPOINT    Azure OpenAI base endpoint (e.g., https://your-resource.openai.azure.com)
+ *   AZURE_OPENAI_EMBEDDING_API_KEY     Azure OpenAI API key
+ *   AZURE_OPENAI_EMBEDDING_API_VERSION Azure OpenAI API version (default: 2024-02-01)
+ *   HF_API_TOKEN                       Hugging Face API token (for sentence-transformers)
  * 
  * Examples:
  *   # Backfill all missing embeddings (default 100 units)
@@ -64,7 +67,7 @@ import pLimit from 'p-limit';
 // Load environment variables
 dotenv.config();
 
-type EmbeddingProvider = 'openai' | 'hf';
+type EmbeddingProvider = 'openai' | 'azure' | 'hf';
 
 interface TextUnit {
   vcon_id: string;
@@ -116,7 +119,7 @@ function parseArgs(): {
       limit = Math.max(1, Math.min(500, parseInt(arg.split('=')[1], 10)));
     } else if (arg.startsWith('--provider=')) {
       const value = arg.split('=')[1] as EmbeddingProvider;
-      if (value === 'openai' || value === 'hf') {
+      if (value === 'openai' || value === 'azure' || value === 'hf') {
         provider = value;
       }
     } else if (arg === '--continuous' || arg === '-c') {
@@ -133,10 +136,16 @@ function parseArgs(): {
 
 /**
  * Detect embedding provider from environment variables
+ * Priority: Azure OpenAI > OpenAI > Hugging Face
  */
 function detectProvider(preferredProvider?: EmbeddingProvider): EmbeddingProvider {
   if (preferredProvider) {
     return preferredProvider;
+  }
+  // Azure OpenAI takes priority if endpoint and API key are set
+  if (process.env.AZURE_OPENAI_EMBEDDING_ENDPOINT && 
+      process.env.AZURE_OPENAI_EMBEDDING_API_KEY) {
+    return 'azure';
   }
   return process.env.OPENAI_API_KEY ? 'openai' : 'hf';
 }
@@ -342,6 +351,58 @@ async function embedOpenAI(texts: string[]): Promise<number[][]> {
 }
 
 /**
+ * Generate embeddings using Azure OpenAI API
+ */
+async function embedAzureOpenAI(texts: string[]): Promise<number[][]> {
+  const baseEndpoint = process.env.AZURE_OPENAI_EMBEDDING_ENDPOINT;
+  const apiKey = process.env.AZURE_OPENAI_EMBEDDING_API_KEY;
+  const deployment = 'text-embedding-3-small';
+  const apiVersion = process.env.AZURE_OPENAI_EMBEDDING_API_VERSION || '2024-02-01';
+
+  if (!baseEndpoint || !apiKey) {
+    throw new Error('AZURE_OPENAI_EMBEDDING_ENDPOINT and AZURE_OPENAI_EMBEDDING_API_KEY are required');
+  }
+
+  // Construct the full URL: {endpoint}/openai/deployments/{deployment}/embeddings?api-version={version}
+  const normalizedEndpoint = baseEndpoint.replace(/\/$/, ''); // Remove trailing slash if present
+  const url = `${normalizedEndpoint}/openai/deployments/${deployment}/embeddings?api-version=${apiVersion}`;
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': apiKey
+      },
+      body: JSON.stringify({
+        input: texts,
+        dimensions: 384
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorDetails = '';
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorDetails = JSON.stringify(errorJson, null, 2);
+      } catch {
+        errorDetails = errorText;
+      }
+      throw new Error(`Azure OpenAI API error ${response.status}: ${errorDetails}`);
+    }
+
+    const json = await response.json();
+    return json.data.map((d: any) => d.embedding as number[]);
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error(`Azure OpenAI embeddings failed: ${JSON.stringify(error)}`);
+  }
+}
+
+/**
  * Generate embeddings using Hugging Face API
  */
 async function embedHF(texts: string[]): Promise<number[][]> {
@@ -390,14 +451,24 @@ async function upsertEmbeddings(
   vectors: number[][],
   provider: EmbeddingProvider
 ): Promise<void> {
+  const getModelName = (provider: EmbeddingProvider): string => {
+    switch (provider) {
+      case 'openai':
+      case 'azure':
+        // Both use the same underlying model
+        return 'text-embedding-3-small';
+      case 'hf':
+        return 'sentence-transformers/all-MiniLM-L6-v2';
+    }
+  };
+
   const rows = units.map((u, i) => ({
     vcon_id: u.vcon_id,
     content_type: u.content_type,
     content_reference: u.content_reference,
     content_text: u.content_text,
     embedding: vectors[i],
-    embedding_model:
-      provider === 'openai' ? 'text-embedding-3-small' : 'sentence-transformers/all-MiniLM-L6-v2',
+    embedding_model: getModelName(provider),
     embedding_dimension: 384
   }));
 
@@ -440,7 +511,7 @@ async function processEmbeddings(
   const MAX_TOKENS_PER_ITEM = 8000;
   const CONCURRENCY_LIMIT = 15; // Process 15 batches concurrently
 
-  if (provider === 'openai') {
+  if (provider === 'openai' || provider === 'azure') {
     // Group units into token-aware batches
     const batches: TextUnit[][] = [];
     let currentBatch: TextUnit[] = [];
@@ -471,10 +542,13 @@ async function processEmbeddings(
     let completed = 0;
     const startTime = Date.now();
 
+    // Choose the appropriate embedding function
+    const embedFn = provider === 'azure' ? embedAzureOpenAI : embedOpenAI;
+
     const processBatch = async (batch: TextUnit[], batchIndex: number) => {
       try {
         const texts = batch.map((u) => u.content_text);
-        const vectors = await embedOpenAI(texts);
+        const vectors = await embedFn(texts);
         await upsertEmbeddings(supabase, batch, vectors, provider);
         
         completed++;
@@ -531,7 +605,7 @@ async function processEmbeddings(
             await new Promise(resolve => setTimeout(resolve, backoffMs));
             
             const texts = batch.map((u) => u.content_text);
-            const vectors = await embedOpenAI(texts);
+            const vectors = await embedFn(texts);
             await upsertEmbeddings(supabase, batch, vectors, provider);
             
             // Success - adjust stats
@@ -590,8 +664,21 @@ async function main() {
 
   if (provider === 'openai' && !process.env.OPENAI_API_KEY) {
     console.error('❌ OPENAI_API_KEY not set (required for OpenAI provider)');
-    console.error('   Set OPENAI_API_KEY or use --provider=hf for Hugging Face');
+    console.error('   Set OPENAI_API_KEY or use --provider=azure for Azure OpenAI');
     process.exit(1);
+  }
+
+  if (provider === 'azure') {
+    if (!process.env.AZURE_OPENAI_EMBEDDING_ENDPOINT) {
+      console.error('❌ AZURE_OPENAI_EMBEDDING_ENDPOINT not set (required for Azure OpenAI provider)');
+      console.error('   Set AZURE_OPENAI_EMBEDDING_ENDPOINT (e.g., https://your-resource.openai.azure.com)');
+      process.exit(1);
+    }
+    if (!process.env.AZURE_OPENAI_EMBEDDING_API_KEY) {
+      console.error('❌ AZURE_OPENAI_EMBEDDING_API_KEY not set (required for Azure OpenAI provider)');
+      console.error('   Set AZURE_OPENAI_EMBEDDING_API_KEY');
+      process.exit(1);
+    }
   }
 
   if (provider === 'hf' && !process.env.HF_API_TOKEN) {
@@ -606,9 +693,20 @@ async function main() {
   }
 
   // Display configuration
+  const getProviderDisplayName = (p: EmbeddingProvider): string => {
+    switch (p) {
+      case 'openai':
+        return 'OpenAI (text-embedding-3-small)';
+      case 'azure':
+        return 'Azure OpenAI (text-embedding-3-small)';
+      case 'hf':
+        return 'Hugging Face (all-MiniLM-L6-v2)';
+    }
+  };
+
   console.log('Configuration:');
   console.log(`  Mode:          ${continuous ? 'continuous' : mode}`);
-  console.log(`  Provider:      ${provider === 'openai' ? 'OpenAI (text-embedding-3-small)' : 'Hugging Face (all-MiniLM-L6-v2)'}`);
+  console.log(`  Provider:      ${getProviderDisplayName(provider)}`);
   console.log(`  Batch Limit:   ${limit}`);
   console.log(`  Order:         ${oldestFirst ? 'oldest-first' : 'newest-first'}`);
   if (continuous) {
