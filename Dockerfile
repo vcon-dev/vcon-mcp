@@ -4,7 +4,6 @@
 # This Dockerfile creates an optimized production image that supports:
 # - Running the MCP server (default)
 # - Running scripts via `docker run <image> script <script-name>`
-# - Development with hot reload
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -35,10 +34,9 @@ RUN npm run build
 # -----------------------------------------------------------------------------
 FROM node:20-alpine AS production
 
-# Set working directory
 WORKDIR /app
 
-# Install runtime dependencies only
+# Install runtime dependencies
 RUN apk add --no-cache dumb-init
 
 # Create non-root user for security
@@ -51,14 +49,14 @@ COPY package.json package-lock.json ./
 # Install production dependencies only
 RUN npm ci --omit=dev && npm cache clean --force
 
+# Install tsx globally for running scripts
+RUN npm install -g tsx
+
 # Copy built artifacts from builder stage
 COPY --from=builder /app/dist ./dist
 
 # Copy scripts directory for running utility scripts
 COPY scripts/ ./scripts/
-
-# Install tsx for running TypeScript scripts directly
-RUN npm install -g tsx
 
 # Set ownership
 RUN chown -R vcon:nodejs /app
@@ -84,11 +82,8 @@ COPY --chown=vcon:nodejs <<'EOF' /app/docker-entrypoint.sh
 #!/bin/sh
 set -e
 
-# Handle different commands
 case "$1" in
     script)
-        # Run a script from the scripts directory
-        # Usage: docker run <image> script <script-name> [args...]
         shift
         SCRIPT_NAME="$1"
         shift
@@ -104,12 +99,10 @@ case "$1" in
         fi
         ;;
     tsx)
-        # Run tsx directly with provided arguments
         shift
         exec tsx "$@"
         ;;
     node)
-        # Run node directly with provided arguments
         shift
         exec node "$@"
         ;;
@@ -138,7 +131,6 @@ case "$1" in
         exit 0
         ;;
     *)
-        # Default: start the MCP server
         exec dumb-init node /app/dist/index.js "$@"
         ;;
 esac
@@ -148,4 +140,3 @@ RUN chmod +x /app/docker-entrypoint.sh
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD []
-
