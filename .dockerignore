@@ -56,10 +56,14 @@ backups/
 logs/
 *.log
 
-# Supabase local
+# Supabase local development files
 .branches/
 .temp/
-supabase/
+# Include supabase/ for migrations, but exclude unnecessary files
+supabase/functions/
+supabase/migrations_backup/
+supabase/.branches/
+supabase/.temp/
 
 # GitHub
 .github/
