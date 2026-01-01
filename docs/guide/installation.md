@@ -39,7 +39,7 @@ Choose the installation method that best fits your needs:
 - [Method 1: Quick Install (Recommended)](#method-1-quick-install-recommended)
 - [Method 2: Development Install](#method-2-development-install)
 - [Method 3: npm Global Install](#method-3-npm-global-install)
-- [Method 4: Docker Install](#method-4-docker-install-coming-soon)
+- [Method 4: Docker Install](#method-4-docker-install)
 
 ---
 
@@ -223,21 +223,102 @@ vcon-mcp-server
 
 ---
 
-## Method 4: Docker Install (Coming Soon)
+## Method 4: Docker Install
 
-Use Docker for containerized deployment.
+Use Docker for containerized deployment. The vCon MCP Server is available on ECR Public.
+
+### Quick Start
 
 ```bash
 # Pull the image
-docker pull vcon/mcp-server:latest
+docker pull public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp:main
 
-# Run with environment variables
-docker run -d \
+# Run the server
+docker run -d -p 3000:3000 \
   -e SUPABASE_URL=https://your-project.supabase.co \
-  -e SUPABASE_ANON_KEY=your-key \
-  -p 3000:3000 \
-  vcon/mcp-server:latest
+  -e SUPABASE_SERVICE_ROLE_KEY=your-service-role-key \
+  -e SUPABASE_ANON_KEY=your-anon-key \
+  -e MCP_HTTP_STATELESS=true \
+  public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp:main
 ```
+
+### Available Image Tags
+
+| Tag | Description |
+|-----|-------------|
+| `main` | Latest stable build from main branch |
+| `main-<sha>` | Specific commit (e.g., `main-abc1234`) |
+| `1.2.3`, `1.2`, `1` | Semantic version releases |
+
+### Running Scripts
+
+The Docker image includes utility scripts:
+
+```bash
+# Show help and available commands
+docker run --rm public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp:main help
+
+# Check database status
+docker run --rm \
+  -e SUPABASE_URL=your-url \
+  -e SUPABASE_SERVICE_ROLE_KEY=your-service-role-key \
+  -e SUPABASE_ANON_KEY=your-anon-key \
+  public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp:main script check-db-status
+
+# Run embeddings
+docker run --rm \
+  -e SUPABASE_URL=your-url \
+  -e SUPABASE_SERVICE_ROLE_KEY=your-service-role-key \
+  -e SUPABASE_ANON_KEY=your-anon-key \
+  -e OPENAI_API_KEY=your-openai-key \
+  public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp:main script embed-vcons --provider=openai
+```
+
+### Docker Compose
+
+```yaml
+version: '3.8'
+services:
+  vcon-mcp:
+    image: public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp:main
+    ports:
+      - "3000:3000"
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - MCP_HTTP_STATELESS=true
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+```
+
+### Connecting to Local Services
+
+When connecting to services running on your host machine (like local Supabase):
+
+```bash
+docker run -d -p 3000:3000 \
+  -e SUPABASE_URL=http://host.docker.internal:54321 \
+  -e SUPABASE_SERVICE_ROLE_KEY=your-service-role-key \
+  -e SUPABASE_ANON_KEY=your-anon-key \
+  -e MCP_HTTP_STATELESS=true \
+  public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp:main
+```
+
+### Build Locally (Optional)
+
+```bash
+# Build from source
+docker build -t vcon-mcp .
+
+# Run local build
+docker run -d -p 3000:3000 --env-file .env vcon-mcp
+```
+
+For complete Docker documentation, see the [Docker Deployment Guide](../deployment/docker.md).
 
 ---
 

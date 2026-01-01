@@ -14,14 +14,22 @@ This guide covers:
 
 ### Option 1: Docker (Recommended)
 ```bash
-# Build image
-docker build -t vcon-mcp .
+# Pull from ECR Public
+docker pull public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp:main
 
 # Run container
-docker run -d \
+docker run -d -p 3000:3000 \
   -e SUPABASE_URL=your-url \
-  -e SUPABASE_ANON_KEY=your-key \
-  vcon-mcp
+  -e SUPABASE_SERVICE_ROLE_KEY=your-service-role-key \
+  -e SUPABASE_ANON_KEY=your-anon-key \
+  -e MCP_HTTP_STATELESS=true \
+  public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp:main
+```
+
+Or build locally:
+```bash
+docker build -t vcon-mcp .
+docker run -d -p 3000:3000 --env-file .env vcon-mcp
 ```
 
 ### Option 2: Node.js Direct
@@ -150,23 +158,27 @@ MCP_DISABLED_TOOLS=delete_vcon,analyze_query
 
 ```bash
 # Docker run with read-only profile
-docker run -d \
+docker run -d -p 3000:3000 \
   -e SUPABASE_URL=your-url \
-  -e SUPABASE_ANON_KEY=your-key \
+  -e SUPABASE_SERVICE_ROLE_KEY=your-service-role-key \
+  -e SUPABASE_ANON_KEY=your-anon-key \
   -e MCP_TOOLS_PROFILE=readonly \
-  vcon-mcp
+  -e MCP_HTTP_STATELESS=true \
+  public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp:main
 ```
 
 ### Example: User-Facing with Restricted Delete
 
 ```bash
 # Allow CRUD but prevent deletion
-docker run -d \
+docker run -d -p 3000:3000 \
   -e SUPABASE_URL=your-url \
-  -e SUPABASE_ANON_KEY=your-key \
+  -e SUPABASE_SERVICE_ROLE_KEY=your-service-role-key \
+  -e SUPABASE_ANON_KEY=your-anon-key \
   -e MCP_TOOLS_PROFILE=user \
   -e MCP_DISABLED_TOOLS=delete_vcon \
-  vcon-mcp
+  -e MCP_HTTP_STATELESS=true \
+  public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp:main
 ```
 
 ## Health Checks
@@ -174,11 +186,8 @@ docker run -d \
 The server provides health check endpoints:
 
 ```bash
-# Basic health check
-curl http://localhost:3000/health
-
-# Database connectivity check
-curl http://localhost:3000/health/database
+# Basic health check (REST API)
+curl http://localhost:3000/api/v1/health
 ```
 
 ## Monitoring

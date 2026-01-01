@@ -26,7 +26,9 @@ export default defineConfig({
       { text: 'Guide', link: '/guide/' },
       { text: 'API', link: '/api/' },
       { text: 'Development', link: '/development/' },
+      { text: 'Deployment', link: '/deployment/' },
       { text: 'Reference', link: '/reference/vcon-spec' },
+      { text: 'Examples', link: '/examples/' },
       {
         text: 'v1.0.0',
         items: [

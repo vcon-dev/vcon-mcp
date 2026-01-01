@@ -127,12 +127,14 @@ case "$1" in
         ls -1 /app/scripts/*.ts 2>/dev/null | xargs -I{} basename {} .ts || echo "No .ts scripts found"
         echo ""
         echo "Environment Variables:"
-        echo "  SUPABASE_URL          - Supabase project URL (required)"
-        echo "  SUPABASE_SERVICE_KEY  - Supabase service key (required)"
-        echo "  MCP_TRANSPORT         - Transport type: http or stdio (default: http)"
-        echo "  MCP_HTTP_HOST         - HTTP host to bind (default: 0.0.0.0)"
-        echo "  MCP_HTTP_PORT         - HTTP port to listen on (default: 3000)"
-        echo "  OPENAI_API_KEY        - OpenAI API key (for embeddings)"
+        echo "  SUPABASE_URL              - Supabase project URL (required)"
+        echo "  SUPABASE_SERVICE_ROLE_KEY - Supabase service role key (recommended)"
+        echo "  SUPABASE_ANON_KEY         - Supabase anonymous key (alternative)"
+        echo "  MCP_TRANSPORT             - Transport type: http or stdio (default: http)"
+        echo "  MCP_HTTP_HOST             - HTTP host to bind (default: 0.0.0.0)"
+        echo "  MCP_HTTP_PORT             - HTTP port to listen on (default: 3000)"
+        echo "  MCP_HTTP_STATELESS        - Enable multi-client support (default: false)"
+        echo "  OPENAI_API_KEY            - OpenAI API key (for embeddings)"
         exit 0
         ;;
     *)
