@@ -107,6 +107,93 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 Restart Claude Desktop and start using vCon tools!
 
+## Docker Deployment
+
+The vCon MCP Server is available as a Docker image for easy deployment.
+
+### Quick Start with Docker
+
+```bash
+# Pull the image
+docker pull public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp:main
+
+# Run the server (using service role key for full access)
+docker run -p 3000:3000 \
+  -e SUPABASE_URL=https://your-project.supabase.co \
+  -e SUPABASE_SERVICE_ROLE_KEY=your-service-role-key \
+  -e SUPABASE_ANON_KEY=your-anon-key \
+  -e MCP_HTTP_STATELESS=true \
+  public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp:main
+```
+
+> **Note:** You need either `SUPABASE_SERVICE_ROLE_KEY` (recommended for full access) or `SUPABASE_ANON_KEY` (for restricted access). The service role key bypasses Row Level Security.
+
+### Image Tags
+
+| Tag | Description |
+|-----|-------------|
+| `main` | Latest stable build from main branch |
+| `main-<sha>` | Specific commit (e.g., `main-abc1234`) |
+| `1.2.3` | Semantic version release |
+
+### Running Scripts
+
+The Docker image includes all utility scripts:
+
+```bash
+# Show available commands
+docker run --rm public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp:main help
+
+# Check database status
+docker run --rm \
+  -e SUPABASE_URL=your-url \
+  -e SUPABASE_SERVICE_ROLE_KEY=your-service-role-key \
+  -e SUPABASE_ANON_KEY=your-anon-key \
+  public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp:main script check-db-status
+
+# Run embeddings
+docker run --rm \
+  -e SUPABASE_URL=your-url \
+  -e SUPABASE_SERVICE_ROLE_KEY=your-service-role-key \
+  -e SUPABASE_ANON_KEY=your-anon-key \
+  -e OPENAI_API_KEY=your-openai-key \
+  public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp:main script embed-vcons --provider=openai
+```
+
+### Docker Compose
+
+```yaml
+version: '3.8'
+services:
+  vcon-mcp:
+    image: public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp:main
+    ports:
+      - "3000:3000"
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - MCP_HTTP_STATELESS=true
+```
+
+### Multi-Client Support
+
+Enable stateless mode for multiple simultaneous client connections:
+
+```bash
+-e MCP_HTTP_STATELESS=true
+```
+
+### Connecting to Local Services
+
+When connecting to services on your host machine (like local Supabase), use `host.docker.internal`:
+
+```bash
+-e SUPABASE_URL=http://host.docker.internal:54321
+```
+
+See [Docker Deployment Guide](docs/deployment/docker.md) for complete documentation.
+
 ## Common Operations
 
 The project includes npm scripts for common database and data management operations:
@@ -746,6 +833,7 @@ vcon-mcp/
 ### For Users
 
 - **[Getting Started](GETTING_STARTED.md)** - Quick start guide for using the server
+- **[Docker Deployment](docs/deployment/docker.md)** - Complete Docker deployment guide
 - **[Query Prompts Guide](docs/guide/prompts.md)** - How to use search and retrieval prompts
 - **[Search Tools Guide](docs/guide/search.md)** - Search strategies and tools
 - **[Tag Management Guide](docs/guide/tags.md)** - Tagging and organization

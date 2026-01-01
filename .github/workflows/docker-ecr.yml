@@ -1,0 +1,147 @@
+name: Build and Push to ECR Public
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag to use (defaults to branch name or git tag)'
+        required: false
+        default: ''
+
+env:
+  ECR_REGISTRY: public.ecr.aws/r4g1k2s3
+  ECR_REPOSITORY: vcon-dev/vcon-mcp
+  IMAGE_NAME: public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # Required for OIDC authentication
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET }}
+          aws-region: us-east-1  # ECR Public is always in us-east-1
+
+      - name: Login to Amazon ECR Public
+        id: login-ecr-public
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            # Use manual tag if provided
+            type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event.inputs.tag != '' }}
+            # Tag with branch name (e.g., main)
+            type=ref,event=branch
+            # Tag with main-<short-sha> (e.g., main-abc1234)
+            type=sha,prefix=main-,format=short,enable=${{ github.ref == 'refs/heads/main' }}
+            # Tag with PR number for pull requests
+            type=ref,event=pr
+            # Tag with semver for version tags (e.g., v1.2.3 -> 1.2.3, 1.2, 1)
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+          provenance: false  # Disable attestations for ECR Public compatibility
+
+      - name: Output image digest
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "## Docker Image Published :whale:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Registry:** \`${{ env.ECR_REGISTRY }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Repository:** \`${{ env.ECR_REPOSITORY }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tags:**" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Usage" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Pull the image:**" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.IMAGE_NAME }}:main" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Run the server:**" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "docker run -p 3000:3000 \\" >> $GITHUB_STEP_SUMMARY
+          echo "  -e SUPABASE_URL=your-supabase-url \\" >> $GITHUB_STEP_SUMMARY
+          echo "  -e SUPABASE_SERVICE_ROLE_KEY=your-service-role-key \\" >> $GITHUB_STEP_SUMMARY
+          echo "  -e SUPABASE_ANON_KEY=your-anon-key \\" >> $GITHUB_STEP_SUMMARY
+          echo "  -e MCP_HTTP_STATELESS=true \\" >> $GITHUB_STEP_SUMMARY
+          echo "  ${{ env.IMAGE_NAME }}:main" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Run a script:**" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "docker run --rm \\" >> $GITHUB_STEP_SUMMARY
+          echo "  -e SUPABASE_URL=your-supabase-url \\" >> $GITHUB_STEP_SUMMARY
+          echo "  -e SUPABASE_SERVICE_ROLE_KEY=your-service-role-key \\" >> $GITHUB_STEP_SUMMARY
+          echo "  -e SUPABASE_ANON_KEY=your-anon-key \\" >> $GITHUB_STEP_SUMMARY
+          echo "  ${{ env.IMAGE_NAME }}:main script check-db-status" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+  # Optional: Test the built image
+  test-image:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET }}
+          aws-region: us-east-1
+
+      - name: Login to Amazon ECR Public
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
+
+      - name: Test help command
+        run: |
+          docker run --rm ${{ env.IMAGE_NAME }}:main help
+
+      - name: Test script listing
+        run: |
+          docker run --rm ${{ env.IMAGE_NAME }}:main script nonexistent 2>&1 || true
+
