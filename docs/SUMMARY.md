@@ -16,6 +16,7 @@
 ## API Reference
 
 * [Overview](api/index.md)
+* [REST API](api/rest-api.md)
 * [MCP Tools](api/tools.md)
 * [MCP Resources](api/resources.md)
 * [MCP Prompts](api/prompts.md)

@@ -372,6 +372,54 @@ curl -X DELETE http://127.0.0.1:3000 \
 
 See [MCP Streamable HTTP Specification](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports) for protocol details.
 
+## REST API
+
+When running in HTTP transport mode, the server also exposes a RESTful HTTP API for vCon operations, designed for programmatic integration with external systems.
+
+### Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/v1/health` | Health check (no auth required) |
+| `POST` | `/api/v1/vcons` | Create/ingest a single vCon |
+| `POST` | `/api/v1/vcons/batch` | Batch ingest up to 100 vCons |
+| `GET` | `/api/v1/vcons` | List recent vCons |
+| `GET` | `/api/v1/vcons/:uuid` | Get a vCon by UUID |
+| `DELETE` | `/api/v1/vcons/:uuid` | Delete a vCon |
+
+### Configuration
+
+```bash
+# REST API settings (optional - defaults work for most cases)
+REST_API_BASE_PATH=/api/v1     # Base path for endpoints
+REST_API_ENABLED=true          # Enable/disable REST API
+
+# API Key Authentication
+VCON_API_KEYS=key1,key2        # Comma-separated valid API keys
+API_AUTH_REQUIRED=true         # Set to false to disable auth
+```
+
+### Quick Example
+
+```bash
+# Health check
+curl http://localhost:3000/api/v1/health
+
+# Create a vCon (requires API key)
+curl -X POST http://localhost:3000/api/v1/vcons \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: your-api-key" \
+  -d '{"vcon":"0.3.0","subject":"Support Call","parties":[{"name":"Agent","tel":"+1111"}]}'
+
+# Batch create
+curl -X POST http://localhost:3000/api/v1/vcons/batch \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: your-api-key" \
+  -d '[{"vcon":"0.3.0","parties":[{"name":"A","tel":"+1"}]},{"vcon":"0.3.0","parties":[{"name":"B","tel":"+2"}]}]'
+```
+
+See the complete [REST API Reference](docs/api/rest-api.md) for detailed documentation.
+
 ## Available MCP Tools
 
 ### 1. **create_vcon**
@@ -865,6 +913,7 @@ vcon-mcp/
 
 ### API Reference
 
+- **[REST API](docs/api/rest-api.md)** - HTTP REST API for vCon ingestion
 - **[Tools API](docs/api/tools.md)** - MCP tools reference
 - **[Prompts API](docs/api/prompts.md)** - MCP prompts reference
 - **[Resources API](docs/api/resources.md)** - MCP resources reference

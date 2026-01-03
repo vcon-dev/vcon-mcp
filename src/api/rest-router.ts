@@ -59,9 +59,9 @@ export function getRestApiConfig(): RestApiConfig {
 async function createVCon(ctx: Context, apiContext: RestApiContext) {
   const startTime = Date.now();
   
-  // Body can be the vCon directly or wrapped in { vcon: ... }
+  // Body should be the vCon object directly
   const body = ctx.request.body as any;
-  const vconData: Partial<VCon> = body.vcon || body;
+  const vconData: Partial<VCon> = body;
 
   try {
     // Use VConService for consistent lifecycle handling
@@ -106,14 +106,15 @@ async function createVCon(ctx: Context, apiContext: RestApiContext) {
 async function batchCreateVCons(ctx: Context, apiContext: RestApiContext) {
   const startTime = Date.now();
   
+  // Body should be an array of vCon objects directly
   const body = ctx.request.body as any;
-  const vcons: Partial<VCon>[] = body.vcons || body;
+  const vcons: Partial<VCon>[] = body;
 
   if (!Array.isArray(vcons)) {
     ctx.status = 400;
     ctx.body = {
       error: 'Validation Error',
-      message: 'Request body must be an array of vCons or { vcons: [...] }',
+      message: 'Request body must be an array of vCons',
     };
     return;
   }
