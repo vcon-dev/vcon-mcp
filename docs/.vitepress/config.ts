@@ -78,6 +78,7 @@ export default defineConfig({
           text: 'API Reference',
           items: [
             { text: 'Overview', link: '/api/' },
+            { text: 'REST API', link: '/api/rest-api' },
             { text: 'MCP Tools', link: '/api/tools' },
             { text: 'MCP Resources', link: '/api/resources' },
             { text: 'MCP Prompts', link: '/api/prompts' },
