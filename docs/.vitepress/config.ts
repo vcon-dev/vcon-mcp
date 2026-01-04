@@ -137,6 +137,7 @@ export default defineConfig({
             { text: 'Docker', link: '/deployment/docker' },
             { text: 'Kubernetes', link: '/deployment/kubernetes' },
             { text: 'Cloud Providers', link: '/deployment/cloud' },
+            { text: 'Self-Hosted Supabase', link: '/deployment/self-hosted-supabase' },
           ]
         }
       ],

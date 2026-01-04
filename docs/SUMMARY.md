@@ -45,6 +45,7 @@
 * [Docker](deployment/docker.md)
 * [Kubernetes](deployment/kubernetes.md)
 * [Cloud Providers](deployment/cloud.md)
+* [Self-Hosted Supabase](deployment/self-hosted-supabase.md)
 
 ## Reference
 
