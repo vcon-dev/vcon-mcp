@@ -87,6 +87,12 @@ kubectl apply -f k8s/deployment.yaml
 - Azure deployment
 - Heroku deployment
 
+### [Self-Hosted Supabase](./self-hosted-supabase.md)
+- Complete self-hosted deployment
+- Docker Compose stack with all services
+- Kong API Gateway configuration
+- Embedding job scheduling with Ofelia
+
 ## Prerequisites
 
 - Node.js 18 or higher
