@@ -93,11 +93,11 @@ export class VConValidator {
         this.errors.push(`Party ${index} has no identifier (tel, sip, mailto, name, or uuid)`);
       }
 
-      // Validate party UUID if present
+      // Validate party UUID if present (warning only - accepts any string identifier)
       if (party.uuid) {
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         if (!uuidRegex.test(party.uuid)) {
-          this.errors.push(`Party ${index} has invalid UUID format: ${party.uuid}`);
+          this.warnings.push(`Party ${index} has non-standard UUID format: ${party.uuid}`);
         }
       }
     });
@@ -140,13 +140,15 @@ export class VConValidator {
         }
       }
 
-      // Must have either (body + encoding) or (url + content_hash)
+      // Content validation is relaxed - dialogs may have missing content in some cases
+      // (e.g., incomplete recordings, external references not yet available)
       const hasInline = dialog.body !== undefined && dialog.encoding !== undefined;
       const hasExternal = dialog.url !== undefined && dialog.content_hash !== undefined;
       
       if (!hasInline && !hasExternal) {
-        this.errors.push(
-          `Dialog ${index} must have either (body + encoding) or (url + content_hash)`
+        // Only warn, don't error - some dialogs may legitimately have no content
+        this.warnings.push(
+          `Dialog ${index} has no content (body + encoding) or external reference (url + content_hash)`
         );
       }
 
@@ -366,11 +368,11 @@ export function validateParty(party: Party): ValidationResult {
     errors.push('Party must have at least one identifier (tel, sip, mailto, name, or uuid)');
   }
 
-  // Validate UUID format if present
+  // Validate UUID format if present (warning only - accepts any string identifier)
   if (party.uuid) {
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(party.uuid)) {
-      errors.push(`Invalid UUID format: ${party.uuid}`);
+      warnings.push(`Party has non-standard UUID format: ${party.uuid}`);
     }
   }
 
