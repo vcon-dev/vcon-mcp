@@ -5,8 +5,8 @@
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { BaseToolHandler, ToolHandlerContext, ToolResponse } from './base.js';
 import { recordCounter } from '../../observability/instrumentation.js';
-import { ATTR_SEARCH_TYPE, ATTR_SEARCH_RESULTS_COUNT } from '../../observability/attributes.js';
-import { requireUUID, requireParam, requireNonEmptyString } from './validation.js';
+import { ATTR_SEARCH_TYPE } from '../../observability/attributes.js';
+import { requireUUID, requireNonEmptyString } from './validation.js';
 
 /**
  * Handler for manage_tag tool
@@ -100,13 +100,35 @@ export class SearchByTagsHandler extends BaseToolHandler {
   readonly toolName = 'search_by_tags';
 
   protected async execute(args: any, context: ToolHandlerContext): Promise<ToolResponse> {
-    const tags = requireParam(args?.tags as Record<string, string>, 'tags') as Record<string, string>;
+    // Validate tags parameter with detailed error message
+    const tagsValue = args?.tags;
+    if (tagsValue === undefined || tagsValue === null) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        'tags is required. Expected an object like {"key": "value"}. ' +
+        `Received: ${tagsValue === undefined ? 'undefined' : 'null'}. ` +
+        'Example: {"department": "sales", "priority": "high"}'
+      );
+    }
+    
+    const tags = tagsValue as Record<string, string>;
     const limit = (args?.limit as number | undefined) || 50;
     const returnFullVCons = args?.return_full_vcons as boolean | undefined;
     const maxFullVCons = (args?.max_full_vcons as number | undefined) || 20;
 
-    if (typeof tags !== 'object' || Array.isArray(tags) || Object.keys(tags).length === 0) {
-      throw new McpError(ErrorCode.InvalidParams, 'tags must be an object with at least one key-value pair');
+    if (typeof tags !== 'object' || Array.isArray(tags)) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `tags must be an object, not ${Array.isArray(tags) ? 'an array' : typeof tags}. ` +
+        'Example: {"department": "sales", "priority": "high"}'
+      );
+    }
+    
+    if (Object.keys(tags).length === 0) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        'tags must have at least one key-value pair. Example: {"department": "sales"}'
+      );
     }
 
     const vconUuids = await context.queries.searchByTags(tags, limit);

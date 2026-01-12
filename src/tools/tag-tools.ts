@@ -111,13 +111,13 @@ export const removeAllTagsTool = {
 export const searchByTagsTool = {
   name: 'search_by_tags',
   category: 'read' as ToolCategory,
-  description: 'Search for vCons that have specific tag values. All specified tags must match (AND logic).',
+  description: 'Search for vCons that have specific tag values. All specified tags must match (AND logic). REQUIRED: You must provide the tags parameter as an object with at least one key-value pair.',
   inputSchema: {
     type: 'object' as const,
     properties: {
       tags: {
         type: 'object',
-        description: 'Tag key-value pairs to search for. Example: {"department": "sales", "priority": "high"}',
+        description: 'REQUIRED: Tag key-value pairs to search for. Must be a non-empty object. Example: {"department": "sales"} or {"priority": "high", "status": "resolved"}. Do NOT pass null, undefined, or an empty object {}.',
         additionalProperties: { type: 'string' }
       },
       limit: {
