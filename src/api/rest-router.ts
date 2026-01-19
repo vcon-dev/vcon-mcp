@@ -299,6 +299,15 @@ export function createRestApi(apiContext: RestApiContext, config?: Partial<RestA
   // Error handling (must be first)
   app.use(errorHandler());
 
+  // Version headers (added to all responses for easy inspection)
+  const versionInfo = getVersionInfo();
+  app.use(async (ctx: Context, next: () => Promise<void>) => {
+    ctx.set('X-Version', versionInfo.version);
+    ctx.set('X-Git-Commit', versionInfo.gitCommit);
+    ctx.set('X-Build-Time', versionInfo.buildTime);
+    await next();
+  });
+
   // Request logging
   app.use(requestLogger());
 
@@ -307,6 +316,7 @@ export function createRestApi(apiContext: RestApiContext, config?: Partial<RestA
     origin: restConfig.corsOrigin,
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'x-api-key', 'Authorization'],
+    exposeHeaders: ['X-Version', 'X-Git-Commit', 'X-Build-Time'],
   }));
 
   // Body parser (50MB limit for batch operations)
