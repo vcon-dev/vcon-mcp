@@ -38,10 +38,12 @@ function createRootLogger() {
     // Inject OpenTelemetry trace context
     mixin: traceContextMixin,
 
-    // Base fields for all logs
+    // Base fields for all logs (includes build metadata from CI/CD)
     base: {
       service: 'vcon-mcp-server',
-      version: process.env.npm_package_version || '1.0.0',
+      version: process.env.VCON_MCP_VERSION || 'dev',
+      git_commit: process.env.VCON_MCP_GIT_COMMIT || 'unknown',
+      build_time: process.env.VCON_MCP_BUILD_TIME || undefined,
     },
 
     // Timestamp in ISO format
