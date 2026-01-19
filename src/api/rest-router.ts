@@ -15,6 +15,7 @@ import { PluginManager } from '../hooks/plugin-manager.js';
 import { logWithContext, recordCounter } from '../observability/instrumentation.js';
 import { VConService, VConValidationError } from '../services/vcon-service.js';
 import { VCon } from '../types/vcon.js';
+import { getVersionInfo } from '../version.js';
 import { createAuthMiddleware, errorHandler, getAuthConfig, requestLogger } from './auth.js';
 
 // ============================================================================
@@ -232,6 +233,8 @@ async function deleteVCon(ctx: Context, apiContext: RestApiContext) {
  * GET /health - Health check endpoint
  */
 async function healthCheck(ctx: Context, apiContext: RestApiContext) {
+  const versionInfo = getVersionInfo();
+  
   try {
     // Quick DB check
     const { error } = await apiContext.supabase
@@ -245,6 +248,9 @@ async function healthCheck(ctx: Context, apiContext: RestApiContext) {
       status: 'healthy',
       timestamp: new Date().toISOString(),
       database: 'connected',
+      version: versionInfo.version,
+      gitCommit: versionInfo.gitCommit,
+      buildTime: versionInfo.buildTime,
     };
   } catch (error) {
     ctx.status = 503;
@@ -253,8 +259,25 @@ async function healthCheck(ctx: Context, apiContext: RestApiContext) {
       timestamp: new Date().toISOString(),
       database: 'error',
       error: error instanceof Error ? error.message : 'Unknown error',
+      version: versionInfo.version,
+      gitCommit: versionInfo.gitCommit,
+      buildTime: versionInfo.buildTime,
     };
   }
+}
+
+/**
+ * GET /version - Version information endpoint
+ */
+function versionEndpoint(ctx: Context) {
+  const versionInfo = getVersionInfo();
+  
+  ctx.body = {
+    version: versionInfo.version,
+    gitCommit: versionInfo.gitCommit,
+    buildTime: versionInfo.buildTime,
+    isDev: versionInfo.isDev,
+  };
 }
 
 // ============================================================================
@@ -276,6 +299,15 @@ export function createRestApi(apiContext: RestApiContext, config?: Partial<RestA
   // Error handling (must be first)
   app.use(errorHandler());
 
+  // Version headers (added to all responses for easy inspection)
+  const versionInfo = getVersionInfo();
+  app.use(async (ctx: Context, next: () => Promise<void>) => {
+    ctx.set('X-Version', versionInfo.version);
+    ctx.set('X-Git-Commit', versionInfo.gitCommit);
+    ctx.set('X-Build-Time', versionInfo.buildTime);
+    await next();
+  });
+
   // Request logging
   app.use(requestLogger());
 
@@ -284,6 +316,7 @@ export function createRestApi(apiContext: RestApiContext, config?: Partial<RestA
     origin: restConfig.corsOrigin,
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'x-api-key', 'Authorization'],
+    exposeHeaders: ['X-Version', 'X-Git-Commit', 'X-Build-Time'],
   }));
 
   // Body parser (50MB limit for batch operations)
@@ -292,10 +325,10 @@ export function createRestApi(apiContext: RestApiContext, config?: Partial<RestA
     enableTypes: ['json'],
   }));
 
-  // Authentication (skip for health endpoint)
+  // Authentication (skip for health and version endpoints)
   app.use(async (ctx: Context, next: () => Promise<void>) => {
-    // Skip auth for health check
-    if (ctx.path === `${restConfig.basePath}/health`) {
+    // Skip auth for health check and version
+    if (ctx.path === `${restConfig.basePath}/health` || ctx.path === `${restConfig.basePath}/version`) {
       await next();
       return;
     }
@@ -307,8 +340,9 @@ export function createRestApi(apiContext: RestApiContext, config?: Partial<RestA
 
   // ========== Routes ==========
 
-  // Health check (no auth required)
+  // Health check and version (no auth required)
   router.get('/health', async (ctx: Context) => { await healthCheck(ctx, apiContext); });
+  router.get('/version', (ctx: Context) => { versionEndpoint(ctx); });
 
   // vCon CRUD operations
   router.post('/vcons', async (ctx: Context) => { await createVCon(ctx, apiContext); });

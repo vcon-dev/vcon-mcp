@@ -37,6 +37,16 @@ FROM node:20-alpine AS production
 
 WORKDIR /app
 
+# Build arguments for version information (set by CI/CD)
+ARG VCON_MCP_VERSION=dev
+ARG VCON_MCP_GIT_COMMIT=unknown
+ARG VCON_MCP_BUILD_TIME
+
+# Set version environment variables
+ENV VCON_MCP_VERSION=${VCON_MCP_VERSION} \
+    VCON_MCP_GIT_COMMIT=${VCON_MCP_GIT_COMMIT} \
+    VCON_MCP_BUILD_TIME=${VCON_MCP_BUILD_TIME}
+
 # Install runtime dependencies including bash for supabase CLI
 RUN apk add --no-cache dumb-init bash curl
 
@@ -194,6 +204,13 @@ case "$1" in
         echo "  OPENAI_API_KEY                     - OpenAI API key (for embeddings)"
         echo "  AZURE_OPENAI_EMBEDDING_ENDPOINT    - Azure OpenAI base endpoint (e.g., https://your-resource.openai.azure.com)"
         echo "  AZURE_OPENAI_EMBEDDING_API_KEY     - Azure OpenAI API key"
+        echo ""
+        echo "Version Information (set by CI/CD):"
+        echo "  VCON_MCP_VERSION                   - CalVer version (e.g., 2026.01.18)"
+        echo "  VCON_MCP_GIT_COMMIT                - Git commit short hash"
+        echo "  VCON_MCP_BUILD_TIME                - ISO timestamp of build"
+        echo ""
+        echo "Current Version: ${VCON_MCP_VERSION:-dev} (${VCON_MCP_GIT_COMMIT:-unknown})"
         exit 0
         ;;
     *)

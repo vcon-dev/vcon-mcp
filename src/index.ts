@@ -17,12 +17,22 @@ import { registerHandlers } from './server/handlers.js';
 import { setupServer, type ServerContext } from './server/setup.js';
 import { createHttpTransport, getHttpTransportConfig, startHttpServer } from './transport/http.js';
 import { startStdioTransport } from './transport/stdio.js';
+import { getVersionInfo, getVersionString } from './version.js';
 
 // Load environment variables
 dotenv.config();
 
 // Initialize observability
 await initializeObservability();
+
+// Log version information on startup
+const versionInfo = getVersionInfo();
+logger.info({
+  version: versionInfo.version,
+  git_commit: versionInfo.gitCommit,
+  build_time: versionInfo.buildTime,
+  is_dev: versionInfo.isDev,
+}, `vCon MCP Server starting - version ${getVersionString()}`);
 
 // Setup server (database, plugins, handlers)
 let serverContext: ServerContext;
