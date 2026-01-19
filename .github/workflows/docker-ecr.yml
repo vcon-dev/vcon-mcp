@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Image tag to use (defaults to branch name or git tag)'
+        description: 'Image tag to use (defaults to CalVer for main, branch name otherwise)'
         required: false
         default: ''
 
@@ -25,12 +25,61 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write  # Required for creating tags and releases
       id-token: write  # Required for OIDC authentication
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for tag operations
+
+      - name: Generate CalVer version
+        id: calver
+        run: |
+          # Get current date in YYYY.MM.DD format
+          BASE_VERSION=$(date +"%Y.%m.%d")
+          echo "base_version=${BASE_VERSION}" >> $GITHUB_OUTPUT
+          
+          # Get git short hash
+          GIT_SHORT_HASH=$(git rev-parse --short HEAD)
+          echo "git_short_hash=${GIT_SHORT_HASH}" >> $GITHUB_OUTPUT
+          
+          # Get build timestamp
+          BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          echo "build_time=${BUILD_TIME}" >> $GITHUB_OUTPUT
+          
+          # Only calculate sequence for main branch pushes (not PRs or manual triggers)
+          if [[ "${{ github.ref }}" == "refs/heads/main" && "${{ github.event_name }}" == "push" ]]; then
+            # Fetch all tags to check for existing versions
+            git fetch --tags
+            
+            # Find the highest sequence number for today's date
+            SEQUENCE=1
+            while git tag | grep -q "^${BASE_VERSION}\.${SEQUENCE}$" || git tag | grep -q "^${BASE_VERSION}$"; do
+              if [[ $SEQUENCE -eq 1 ]] && ! git tag | grep -q "^${BASE_VERSION}$"; then
+                # First release of the day, no sequence needed
+                break
+              fi
+              SEQUENCE=$((SEQUENCE + 1))
+            done
+            
+            # Determine final version
+            if [[ $SEQUENCE -eq 1 ]] && ! git tag | grep -q "^${BASE_VERSION}$"; then
+              CALVER_VERSION="${BASE_VERSION}"
+            else
+              CALVER_VERSION="${BASE_VERSION}.${SEQUENCE}"
+            fi
+            
+            echo "calver_version=${CALVER_VERSION}" >> $GITHUB_OUTPUT
+            echo "should_tag=true" >> $GITHUB_OUTPUT
+            echo "Generated CalVer version: ${CALVER_VERSION}"
+          else
+            # For PRs and non-main branches, use base version with branch info
+            echo "calver_version=${BASE_VERSION}" >> $GITHUB_OUTPUT
+            echo "should_tag=false" >> $GITHUB_OUTPUT
+            echo "CalVer tagging skipped (not a main branch push)"
+          fi
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -56,10 +105,14 @@ jobs:
           tags: |
             # Use manual tag if provided
             type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event.inputs.tag != '' }}
+            # CalVer version (only for main branch pushes)
+            type=raw,value=${{ steps.calver.outputs.calver_version }},enable=${{ steps.calver.outputs.should_tag == 'true' }}
+            # Git short hash
+            type=raw,value=${{ steps.calver.outputs.git_short_hash }}
+            # Latest tag (only for main branch)
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             # Tag with branch name (e.g., main)
             type=ref,event=branch
-            # Tag with main-<short-sha> (e.g., main-abc1234)
-            type=sha,prefix=main-,format=short,enable=${{ github.ref == 'refs/heads/main' }}
             # Tag with PR number for pull requests
             type=ref,event=pr
             # Tag with semver for version tags (e.g., v1.2.3 -> 1.2.3, 1.2, 1)
@@ -78,6 +131,67 @@ jobs:
           cache-to: type=gha,mode=max
           platforms: linux/amd64
           provenance: false  # Disable attestations for ECR Public compatibility
+          build-args: |
+            VCON_MCP_VERSION=${{ steps.calver.outputs.calver_version }}
+            VCON_MCP_GIT_COMMIT=${{ steps.calver.outputs.git_short_hash }}
+            VCON_MCP_BUILD_TIME=${{ steps.calver.outputs.build_time }}
+
+      - name: Create Git tag
+        if: steps.calver.outputs.should_tag == 'true' && github.event_name != 'pull_request'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.calver.outputs.calver_version }}" -m "Release ${{ steps.calver.outputs.calver_version }}"
+          git push origin "${{ steps.calver.outputs.calver_version }}"
+
+      - name: Create GitHub Release
+        if: steps.calver.outputs.should_tag == 'true' && github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.calver.outputs.calver_version }}
+          name: Release ${{ steps.calver.outputs.calver_version }}
+          body: |
+            ## vCon MCP Server Release ${{ steps.calver.outputs.calver_version }}
+            
+            ### Version Info
+            - **CalVer**: `${{ steps.calver.outputs.calver_version }}`
+            - **Git Commit**: `${{ steps.calver.outputs.git_short_hash }}`
+            - **Build Time**: `${{ steps.calver.outputs.build_time }}`
+            
+            ### Docker Images
+            Pull the image using any of these tags:
+            ```bash
+            # CalVer version (recommended for production)
+            docker pull ${{ env.IMAGE_NAME }}:${{ steps.calver.outputs.calver_version }}
+            
+            # Git commit hash (for specific builds)
+            docker pull ${{ env.IMAGE_NAME }}:${{ steps.calver.outputs.git_short_hash }}
+            
+            # Latest (always points to newest main branch build)
+            docker pull ${{ env.IMAGE_NAME }}:latest
+            ```
+            
+            ### Usage
+            ```bash
+            docker run -p 3000:3000 \
+              -e SUPABASE_URL=your-supabase-url \
+              -e SUPABASE_SERVICE_ROLE_KEY=your-service-role-key \
+              -e MCP_HTTP_STATELESS=true \
+              ${{ env.IMAGE_NAME }}:${{ steps.calver.outputs.calver_version }}
+            ```
+            
+            ### Verify Version
+            ```bash
+            # Via health endpoint
+            curl http://localhost:3000/api/v1/health
+            
+            # Via version endpoint
+            curl http://localhost:3000/api/v1/version
+            ```
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Output image digest
         if: github.event_name != 'pull_request'
@@ -86,6 +200,11 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Registry:** \`${{ env.ECR_REGISTRY }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Repository:** \`${{ env.ECR_REPOSITORY }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Version Info" >> $GITHUB_STEP_SUMMARY
+          echo "- **CalVer:** \`${{ steps.calver.outputs.calver_version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Git Commit:** \`${{ steps.calver.outputs.git_short_hash }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Time:** \`${{ steps.calver.outputs.build_time }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Tags:**" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
@@ -96,7 +215,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Pull the image:**" >> $GITHUB_STEP_SUMMARY
           echo '```bash' >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.IMAGE_NAME }}:main" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.IMAGE_NAME }}:${{ steps.calver.outputs.calver_version }}" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Run the server:**" >> $GITHUB_STEP_SUMMARY
@@ -106,7 +225,12 @@ jobs:
           echo "  -e SUPABASE_SERVICE_ROLE_KEY=your-service-role-key \\" >> $GITHUB_STEP_SUMMARY
           echo "  -e SUPABASE_ANON_KEY=your-anon-key \\" >> $GITHUB_STEP_SUMMARY
           echo "  -e MCP_HTTP_STATELESS=true \\" >> $GITHUB_STEP_SUMMARY
-          echo "  ${{ env.IMAGE_NAME }}:main" >> $GITHUB_STEP_SUMMARY
+          echo "  ${{ env.IMAGE_NAME }}:${{ steps.calver.outputs.calver_version }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Check version:**" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "curl http://localhost:3000/api/v1/version" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Run a script:**" >> $GITHUB_STEP_SUMMARY
@@ -115,7 +239,7 @@ jobs:
           echo "  -e SUPABASE_URL=your-supabase-url \\" >> $GITHUB_STEP_SUMMARY
           echo "  -e SUPABASE_SERVICE_ROLE_KEY=your-service-role-key \\" >> $GITHUB_STEP_SUMMARY
           echo "  -e SUPABASE_ANON_KEY=your-anon-key \\" >> $GITHUB_STEP_SUMMARY
-          echo "  ${{ env.IMAGE_NAME }}:main script check-db-status" >> $GITHUB_STEP_SUMMARY
+          echo "  ${{ env.IMAGE_NAME }}:${{ steps.calver.outputs.calver_version }} script check-db-status" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
   # Optional: Test the built image
@@ -139,9 +263,8 @@ jobs:
 
       - name: Test help command
         run: |
-          docker run --rm ${{ env.IMAGE_NAME }}:main help
+          docker run --rm ${{ env.IMAGE_NAME }}:${{ github.ref == 'refs/heads/main' && 'latest' || github.ref_name }} help
 
       - name: Test script listing
         run: |
-          docker run --rm ${{ env.IMAGE_NAME }}:main script nonexistent 2>&1 || true
-
+          docker run --rm ${{ env.IMAGE_NAME }}:${{ github.ref == 'refs/heads/main' && 'latest' || github.ref_name }} script nonexistent 2>&1 || true
