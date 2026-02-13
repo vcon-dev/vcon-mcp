@@ -6,54 +6,20 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 
-export interface DatabaseAnalyticsOptions {
-  includeGrowthTrends?: boolean;
-  includeContentAnalytics?: boolean;
-  includeAttachmentStats?: boolean;
-  includeTagAnalytics?: boolean;
-  includeHealthMetrics?: boolean;
-  monthsBack?: number;
-}
 
-export interface MonthlyGrowthOptions {
-  monthsBack?: number;
-  includeProjections?: boolean;
-  granularity?: 'monthly' | 'weekly' | 'daily';
-}
 
-export interface AttachmentAnalyticsOptions {
-  includeSizeDistribution?: boolean;
-  includeTypeBreakdown?: boolean;
-  includeTemporalPatterns?: boolean;
-  topNTypes?: number;
-}
+import {
+  IDatabaseAnalytics,
+  DatabaseAnalyticsOptions,
+  MonthlyGrowthOptions,
+  AttachmentAnalyticsOptions,
+  TagAnalyticsOptions,
+  ContentAnalyticsOptions,
+  DatabaseHealthOptions
+} from './types.js';
 
-export interface TagAnalyticsOptions {
-  includeFrequencyAnalysis?: boolean;
-  includeValueDistribution?: boolean;
-  includeTemporalTrends?: boolean;
-  topNKeys?: number;
-  minUsageCount?: number;
-}
-
-export interface ContentAnalyticsOptions {
-  includeDialogAnalysis?: boolean;
-  includeAnalysisBreakdown?: boolean;
-  includePartyPatterns?: boolean;
-  includeConversationMetrics?: boolean;
-  includeTemporalContent?: boolean;
-}
-
-export interface DatabaseHealthOptions {
-  includePerformanceMetrics?: boolean;
-  includeStorageEfficiency?: boolean;
-  includeIndexHealth?: boolean;
-  includeConnectionMetrics?: boolean;
-  includeRecommendations?: boolean;
-}
-
-export class DatabaseAnalytics {
-  constructor(private supabase: SupabaseClient) {}
+export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
+  constructor(private supabase: SupabaseClient) { }
 
   /**
    * Get comprehensive database analytics
@@ -497,7 +463,7 @@ export class DatabaseAnalytics {
 
   private async getVConCreationTrends(monthsBack: number, granularity: string) {
     const dateTrunc = granularity === 'daily' ? 'day' : granularity === 'weekly' ? 'week' : 'month';
-    
+
     const query = `
       SELECT 
         DATE_TRUNC('${dateTrunc}', created_at) as period,
@@ -520,7 +486,7 @@ export class DatabaseAnalytics {
 
   private async getSizeGrowthTrends(monthsBack: number, granularity: string) {
     const dateTrunc = granularity === 'daily' ? 'day' : granularity === 'weekly' ? 'week' : 'month';
-    
+
     const query = `
       WITH size_trends AS (
         SELECT 
@@ -557,7 +523,7 @@ export class DatabaseAnalytics {
 
   private async getContentVolumeTrends(monthsBack: number, granularity: string) {
     const dateTrunc = granularity === 'daily' ? 'day' : granularity === 'weekly' ? 'week' : 'month';
-    
+
     const query = `
       WITH content_trends AS (
         SELECT 
@@ -600,16 +566,16 @@ export class DatabaseAnalytics {
 
     const latest = vconTrends[vconTrends.length - 1];
     const previous = vconTrends[vconTrends.length - 2];
-    
-    const vconGrowthRate = previous.vcon_count > 0 
-      ? ((latest.vcon_count - previous.vcon_count) / previous.vcon_count) * 100 
+
+    const vconGrowthRate = previous.vcon_count > 0
+      ? ((latest.vcon_count - previous.vcon_count) / previous.vcon_count) * 100
       : 0;
 
     const latestSize = sizeTrends[sizeTrends.length - 1];
     const previousSize = sizeTrends[sizeTrends.length - 2];
-    
-    const sizeGrowthRate = previousSize?.total_size > 0 
-      ? ((latestSize?.total_size - previousSize?.total_size) / previousSize?.total_size) * 100 
+
+    const sizeGrowthRate = previousSize?.total_size > 0
+      ? ((latestSize?.total_size - previousSize?.total_size) / previousSize?.total_size) * 100
       : 0;
 
     return {
@@ -1179,7 +1145,7 @@ export class DatabaseAnalytics {
 
     const first = monthlyData[0];
     const last = monthlyData[monthlyData.length - 1];
-    
+
     const totalGrowth = last.vcon_count - first.vcon_count;
     const avgMonthlyGrowth = totalGrowth / monthlyData.length;
 

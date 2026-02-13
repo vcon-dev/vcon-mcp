@@ -19,7 +19,9 @@ import { Analysis, Attachment, Dialog, VCon } from '../types/vcon.js';
 
 const logger = createLogger('queries');
 
-export class VConQueries {
+import { IVConQueries } from './interfaces.js';
+
+export class SupabaseVConQueries implements IVConQueries {
   private redis: Redis | null = null;
   private cacheEnabled: boolean = false;
   private cacheTTL: number = 3600; // Default 1 hour
@@ -97,45 +99,45 @@ export class VConQueries {
         throw vconError;
       }
 
-    // Insert parties
-    if (vcon.parties.length > 0) {
-      const partiesData = vcon.parties.map((party, index) => ({
-        vcon_id: vconData.id,
-        party_index: index,
-        tel: party.tel,
-        sip: party.sip,
-        stir: party.stir,
-        mailto: party.mailto,
-        name: party.name,
-        did: party.did,                       // ✅ Added per spec
-        uuid: party.uuid,                     // ✅ Added per spec Section 4.2.12
-        validation: party.validation,
-        jcard: party.jcard,
-        gmlpos: party.gmlpos,
-        civicaddress: party.civicaddress,
-        timezone: party.timezone,
-      }));
+      // Insert parties
+      if (vcon.parties.length > 0) {
+        const partiesData = vcon.parties.map((party, index) => ({
+          vcon_id: vconData.id,
+          party_index: index,
+          tel: party.tel,
+          sip: party.sip,
+          stir: party.stir,
+          mailto: party.mailto,
+          name: party.name,
+          did: party.did,                       // ✅ Added per spec
+          uuid: party.uuid,                     // ✅ Added per spec Section 4.2.12
+          validation: party.validation,
+          jcard: party.jcard,
+          gmlpos: party.gmlpos,
+          civicaddress: party.civicaddress,
+          timezone: party.timezone,
+        }));
 
-      const { error: partiesError } = await this.supabase
-        .from('parties')
-        .insert(partiesData);
+        const { error: partiesError } = await this.supabase
+          .from('parties')
+          .insert(partiesData);
 
-      if (partiesError) throw partiesError;
-    }
-
-    // Insert dialog if present
-    if (vcon.dialog && vcon.dialog.length > 0) {
-      for (let i = 0; i < vcon.dialog.length; i++) {
-        await this.addDialog(vconData.uuid, vcon.dialog[i]);
+        if (partiesError) throw partiesError;
       }
-    }
 
-    // Insert analysis if present
-    if (vcon.analysis && vcon.analysis.length > 0) {
-      for (let i = 0; i < vcon.analysis.length; i++) {
-        await this.addAnalysis(vconData.uuid, vcon.analysis[i]);
+      // Insert dialog if present
+      if (vcon.dialog && vcon.dialog.length > 0) {
+        for (let i = 0; i < vcon.dialog.length; i++) {
+          await this.addDialog(vconData.uuid, vcon.dialog[i]);
+        }
       }
-    }
+
+      // Insert analysis if present
+      if (vcon.analysis && vcon.analysis.length > 0) {
+        for (let i = 0; i < vcon.analysis.length; i++) {
+          await this.addAnalysis(vconData.uuid, vcon.analysis[i]);
+        }
+      }
 
       // Insert attachments if present
       if (vcon.attachments && vcon.attachments.length > 0) {
@@ -613,120 +615,143 @@ export class VConQueries {
       }, 'Database query count');
 
       // Cache miss - fetch from Supabase
-    // Get main vcon
-    const { data: vconData, error: vconError } = await this.supabase
-      .from('vcons')
-      .select('*')
-      .eq('uuid', uuid)
-      .single();
+      // Get main vcon
+      const { data: vconData, error: vconError } = await this.supabase
+        .from('vcons')
+        .select('*')
+        .eq('uuid', uuid)
+        .single();
 
-    if (vconError) {
-      // Handle "not found" case (PGRST116: no rows returned)
-      if (vconError.code === 'PGRST116') {
-        throw new Error(`vCon not found: ${uuid}`);
+      if (vconError) {
+        // Handle "not found" case (PGRST116: no rows returned)
+        if (vconError.code === 'PGRST116') {
+          throw new Error(`vCon not found: ${uuid}`);
+        }
+        throw vconError;
       }
-      throw vconError;
-    }
 
-    // Get parties
-    const { data: parties } = await this.supabase
-      .from('parties')
-      .select('*')
-      .eq('vcon_id', vconData.id)
-      .order('party_index');
+      // Get parties
+      const { data: parties } = await this.supabase
+        .from('parties')
+        .select('*')
+        .eq('vcon_id', vconData.id)
+        .order('party_index');
 
-    // Get dialog
-    const { data: dialogs } = await this.supabase
-      .from('dialog')
-      .select('*')
-      .eq('vcon_id', vconData.id)
-      .order('dialog_index');
+      // Get dialog
+      const { data: dialogs } = await this.supabase
+        .from('dialog')
+        .select('*')
+        .eq('vcon_id', vconData.id)
+        .order('dialog_index');
 
-    // Get analysis - ✅ Queries 'schema' field (NOT 'schema_version')
-    const { data: analysis } = await this.supabase
-      .from('analysis')
-      .select('*')
-      .eq('vcon_id', vconData.id)
-      .order('analysis_index');
+      // Get analysis - ✅ Queries 'schema' field (NOT 'schema_version')
+      const { data: analysis } = await this.supabase
+        .from('analysis')
+        .select('*')
+        .eq('vcon_id', vconData.id)
+        .order('analysis_index');
 
-    // Get attachments
-    const { data: attachments } = await this.supabase
-      .from('attachments')
-      .select('*')
-      .eq('vcon_id', vconData.id)
-      .order('attachment_index');
+      // Get attachments
+      const { data: attachments } = await this.supabase
+        .from('attachments')
+        .select('*')
+        .eq('vcon_id', vconData.id)
+        .order('attachment_index');
 
-    // Reconstruct vCon with all correct field names
-    const vcon: VCon = {
-      vcon: vconData.vcon_version as '0.3.0',
-      uuid: vconData.uuid,
-      extensions: vconData.extensions,
-      must_support: vconData.must_support,
-      created_at: vconData.created_at,
-      updated_at: vconData.updated_at,
-      subject: vconData.subject,
-      parties: parties?.map(p => ({
-        tel: p.tel,
-        sip: p.sip,
-        stir: p.stir,
-        mailto: p.mailto,
-        name: p.name,
-        did: p.did,
-        uuid: p.uuid,                         // ✅ Correct field
-        validation: p.validation,
-        jcard: p.jcard,
-        gmlpos: p.gmlpos,
-        civicaddress: p.civicaddress,
-        timezone: p.timezone,
-      })) || [],
-      dialog: dialogs?.map(d => ({
-        type: d.type,
-        start: d.start_time,
-        duration: d.duration_seconds,
-        parties: d.parties,
-        originator: d.originator,
-        mediatype: d.mediatype,
-        filename: d.filename,
-        body: d.body,
-        encoding: d.encoding,
-        url: d.url,
-        content_hash: d.content_hash,
-        disposition: d.disposition,
-        session_id: d.session_id,             // ✅ Correct field
-        application: d.application,           // ✅ Correct field
-        message_id: d.message_id,             // ✅ Correct field
-      })),
-      analysis: analysis?.map(a => ({
-        type: a.type,
-        dialog: a.dialog_indices?.length === 1 ? a.dialog_indices[0] : a.dialog_indices,
-        mediatype: a.mediatype,
-        filename: a.filename,
-        vendor: a.vendor,                     // ✅ Required field
-        product: a.product,
-        schema: a.schema,                     // ✅ CORRECT: 'schema' NOT 'schema_version'
-        body: a.body,                         // ✅ TEXT type
-        encoding: a.encoding,
-        url: a.url,
-        content_hash: a.content_hash,
-      })),
-      attachments: attachments?.map(att => ({
-        type: att.type,
-        start: att.start_time,
-        party: att.party,
-        dialog: att.dialog,                   // ✅ Correct field
-        mediatype: att.mimetype,
-        filename: att.filename,
-        body: att.body,
-        encoding: att.encoding,
-        url: att.url,
-        content_hash: att.content_hash,
-      })),
-    };
+      // Reconstruct vCon with all correct field names
+      const vcon: VCon = {
+        vcon: vconData.vcon_version as '0.3.0',
+        uuid: vconData.uuid,
+        extensions: vconData.extensions,
+        must_support: vconData.must_support,
+        created_at: vconData.created_at,
+        updated_at: vconData.updated_at,
+        subject: vconData.subject,
+        parties: parties?.map(p => ({
+          tel: p.tel,
+          sip: p.sip,
+          stir: p.stir,
+          mailto: p.mailto,
+          name: p.name,
+          did: p.did,
+          uuid: p.uuid,                         // ✅ Correct field
+          validation: p.validation,
+          jcard: p.jcard,
+          gmlpos: p.gmlpos,
+          civicaddress: p.civicaddress,
+          timezone: p.timezone,
+        })) || [],
+        dialog: dialogs?.map(d => ({
+          type: d.type,
+          start: d.start_time,
+          duration: d.duration_seconds,
+          parties: d.parties,
+          originator: d.originator,
+          mediatype: d.mediatype,
+          filename: d.filename,
+          body: d.body,
+          encoding: d.encoding,
+          url: d.url,
+          content_hash: d.content_hash,
+          disposition: d.disposition,
+          session_id: d.session_id,             // ✅ Correct field
+          application: d.application,           // ✅ Correct field
+          message_id: d.message_id,             // ✅ Correct field
+        })),
+        analysis: analysis?.map(a => ({
+          type: a.type,
+          dialog: a.dialog_indices?.length === 1 ? a.dialog_indices[0] : a.dialog_indices,
+          mediatype: a.mediatype,
+          filename: a.filename,
+          vendor: a.vendor,                     // ✅ Required field
+          product: a.product,
+          schema: a.schema,                     // ✅ CORRECT: 'schema' NOT 'schema_version'
+          body: a.body,                         // ✅ TEXT type
+          encoding: a.encoding,
+          url: a.url,
+          content_hash: a.content_hash,
+        })),
+        attachments: attachments?.map(att => ({
+          type: att.type,
+          start: att.start_time,
+          party: att.party,
+          dialog: att.dialog,                   // ✅ Correct field
+          mediatype: att.mimetype,
+          filename: att.filename,
+          body: att.body,
+          encoding: att.encoding,
+          url: att.url,
+          content_hash: att.content_hash,
+        })),
+      };
 
       // Cache the result for future reads
       await this.setCachedVCon(uuid, vcon);
 
       return vcon;
+    });
+  }
+
+  /**
+   * Delete a vCon by UUID
+   */
+  async deleteVCon(uuid: string): Promise<void> {
+    return withSpan('db.deleteVCon', async (span) => {
+      span.setAttributes({
+        [ATTR_VCON_UUID]: uuid,
+        [ATTR_DB_OPERATION]: 'delete',
+      });
+
+      // Get ID first to delete related data if not cascading
+      // Supabase cascade delete should handle related tables if configured
+      const { error } = await this.supabase
+        .from('vcons')
+        .delete()
+        .eq('uuid', uuid);
+
+      if (error) throw error;
+
+      await this.invalidateCachedVCon(uuid);
     });
   }
 
@@ -994,17 +1019,7 @@ export class VConQueries {
   /**
    * Delete a vCon and all related entities
    */
-  async deleteVCon(uuid: string): Promise<void> {
-    const { error } = await this.supabase
-      .from('vcons')
-      .delete()
-      .eq('uuid', uuid);
 
-    if (error) throw error;
-
-    // Invalidate cache
-    await this.invalidateCachedVCon(uuid);
-  }
 
   /**
    * Update vCon metadata

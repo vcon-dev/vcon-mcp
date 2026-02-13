@@ -6,39 +6,10 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 
-export interface DatabaseSizeInfo {
-  total_vcons: number;
-  total_size_bytes: number;
-  total_size_pretty: string;
-  size_category: 'small' | 'medium' | 'large' | 'very_large';
-  recommendations: {
-    max_basic_search_limit: number;
-    max_content_search_limit: number;
-    max_semantic_search_limit: number;
-    max_analytics_limit: number;
-    recommended_response_format: string;
-    memory_warning: boolean;
-  };
-  table_sizes: {
-    [table_name: string]: {
-      row_count: number;
-      size_bytes: number;
-      size_pretty: string;
-    };
-  };
-}
+import { IDatabaseSizeAnalyzer, DatabaseSizeInfo, SmartLimits } from './types.js';
 
-export interface SmartLimits {
-  query_type: string;
-  estimated_result_size: string;
-  recommended_limit: number;
-  recommended_response_format: string;
-  memory_warning: boolean;
-  explanation: string;
-}
-
-export class DatabaseSizeAnalyzer {
-  constructor(private supabase: SupabaseClient) {}
+export class SupabaseDatabaseSizeAnalyzer implements IDatabaseSizeAnalyzer {
+  constructor(private supabase: SupabaseClient) { }
 
   /**
    * Get comprehensive database size information
@@ -91,7 +62,7 @@ export class DatabaseSizeAnalyzer {
     tableData?.forEach((row: any) => {
       const sizeBytes = parseInt(row.size_bytes);
       const rowCount = parseInt(row.row_count);
-      
+
       tableSizes[row.table_name] = {
         row_count: rowCount,
         size_bytes: sizeBytes,
@@ -144,7 +115,7 @@ export class DatabaseSizeAnalyzer {
    */
   async getSmartSearchLimits(queryType: string, estimatedResultSize: string): Promise<SmartLimits> {
     const sizeInfo = await this.getDatabaseSizeInfo(false);
-    
+
     let recommendedLimit: number;
     let recommendedFormat: string;
     let memoryWarning: boolean;
@@ -178,7 +149,7 @@ export class DatabaseSizeAnalyzer {
     const baseLimit = baseLimits[queryType as keyof typeof baseLimits] || 50;
     const sizeMult = sizeMultiplier[sizeInfo.size_category];
     const resultMult = resultMultiplier[estimatedResultSize as keyof typeof resultMultiplier];
-    
+
     recommendedLimit = Math.max(1, Math.round(baseLimit * sizeMult * resultMult));
 
     // Determine response format
@@ -197,7 +168,7 @@ export class DatabaseSizeAnalyzer {
     explanation = `Database has ${sizeInfo.total_vcons.toLocaleString()} vCons (${sizeInfo.size_category} size). `;
     explanation += `For ${queryType} queries with ${estimatedResultSize} results, `;
     explanation += `recommend limit of ${recommendedLimit} with ${recommendedFormat} format.`;
-    
+
     if (memoryWarning) {
       explanation += ' ⚠️ Memory warning: Large dataset detected.';
     }

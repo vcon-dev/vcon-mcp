@@ -6,10 +6,21 @@
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { getRedisClient, getSupabaseClient } from '../db/client.js';
-import { DatabaseAnalytics } from '../db/database-analytics.js';
-import { DatabaseInspector } from '../db/database-inspector.js';
-import { DatabaseSizeAnalyzer } from '../db/database-size-analyzer.js';
-import { VConQueries } from '../db/queries.js';
+// Supabase implementations
+import { SupabaseDatabaseAnalytics } from '../db/database-analytics.js';
+import { SupabaseDatabaseInspector } from '../db/database-inspector.js';
+import { SupabaseDatabaseSizeAnalyzer } from '../db/database-size-analyzer.js';
+import { SupabaseVConQueries } from '../db/queries.js';
+// Interfaces
+import { IVConQueries } from '../db/interfaces.js';
+import {
+  IDatabaseInspector,
+  IDatabaseAnalytics,
+  IDatabaseSizeAnalyzer
+} from '../db/types.js'; // Updated import path
+// Mongo implementations (dynamic import or static if we convert to ESM fully)
+// We will use dynamic imports for Mongo to avoid hard dependency if not needed, or stick to static if preferred.
+// verification script uses static import.
 import { debugTenantVisibility, setTenantContext, verifyTenantContext } from '../db/tenant-context.js';
 import { PluginManager } from '../hooks/plugin-manager.js';
 import { createLogger } from '../observability/logger.js';
@@ -20,10 +31,10 @@ const logger = createLogger('server-setup');
 
 export interface ServerContext {
   server: Server;
-  queries: VConQueries;
-  dbInspector: DatabaseInspector;
-  dbAnalytics: DatabaseAnalytics;
-  dbSizeAnalyzer: DatabaseSizeAnalyzer;
+  queries: IVConQueries;
+  dbInspector: IDatabaseInspector;
+  dbAnalytics: IDatabaseAnalytics;
+  dbSizeAnalyzer: IDatabaseSizeAnalyzer;
   supabase: any;
   redis: any;
   pluginManager: PluginManager;
@@ -54,40 +65,84 @@ export function createServer(): Server {
  * Initialize database and cache clients
  */
 export async function initializeDatabase(): Promise<{
-  queries: VConQueries;
-  dbInspector: DatabaseInspector;
-  dbAnalytics: DatabaseAnalytics;
-  dbSizeAnalyzer: DatabaseSizeAnalyzer;
+  queries: IVConQueries;
+  dbInspector: IDatabaseInspector;
+  dbAnalytics: IDatabaseAnalytics;
+  dbSizeAnalyzer: IDatabaseSizeAnalyzer;
   supabase: any;
   redis: any;
+  mongoClient?: { client: any; db: any };
 }> {
-  const supabase = getSupabaseClient();
-  const redis = getRedisClient(); // Optional - returns null if not configured
-  const queries = new VConQueries(supabase, redis);
-  const dbInspector = new DatabaseInspector(supabase);
-  const dbAnalytics = new DatabaseAnalytics(supabase);
-  const dbSizeAnalyzer = new DatabaseSizeAnalyzer(supabase);
+  const dbType = process.env.DB_TYPE || 'supabase';
 
-  logger.info({
-    has_redis: !!redis,
-    cache_enabled: !!redis
-  }, 'Database client initialized');
+  let queries: IVConQueries;
+  let dbInspector: IDatabaseInspector;
+  let dbAnalytics: IDatabaseAnalytics;
+  let dbSizeAnalyzer: IDatabaseSizeAnalyzer;
 
-  // Set tenant context for RLS if enabled
-  try {
-    await setTenantContext(supabase);
-    await verifyTenantContext(supabase);
+  let supabase: any = null;
+  let redis: any = null;
+  let mongoClient: any = null;
 
-    // Debug tenant visibility
-    if (process.env.MCP_DEBUG === 'true' || process.env.RLS_DEBUG === 'true') {
-      await debugTenantVisibility(supabase);
+  if (dbType === 'mongodb') {
+    // Dynamic imports for Mongo modules
+    const { getMongoClient } = await import('../db/mongo-client.js');
+    const { MongoVConQueries } = await import('../db/mongo-queries.js');
+    const { MongoDatabaseInspector } = await import('../db/mongo-inspector.js');
+    const { MongoDatabaseAnalytics } = await import('../db/mongo-analytics.js');
+    const { MongoDatabaseSizeAnalyzer } = await import('../db/mongo-size-analyzer.js');
+
+    mongoClient = await getMongoClient();
+    const db = mongoClient.db;
+
+    queries = new MongoVConQueries(db);
+    dbInspector = new MongoDatabaseInspector(db);
+    dbAnalytics = new MongoDatabaseAnalytics(db);
+    dbSizeAnalyzer = new MongoDatabaseSizeAnalyzer(db);
+
+    logger.info({ db_type: 'mongodb' }, 'Initialized MongoDB backend');
+  } else {
+    // Default to Supabase
+    supabase = getSupabaseClient();
+    redis = getRedisClient(); // Optional
+    queries = new SupabaseVConQueries(supabase, redis);
+    dbInspector = new SupabaseDatabaseInspector(supabase);
+    dbAnalytics = new SupabaseDatabaseAnalytics(supabase);
+    dbSizeAnalyzer = new SupabaseDatabaseSizeAnalyzer(supabase);
+
+    logger.info({
+      db_type: 'supabase',
+      has_redis: !!redis
+    }, 'Initialized Supabase backend');
+  }
+
+  // To avoid breaking existing code that expects Supabase to exist (e.g. some plugins might need it?):
+  if (!supabase && process.env.SUPABASE_URL && dbType === 'mongodb') {
+    try {
+      // Optional: Initialize Supabase client even in Mongo mode if creds exist, 
+      // but don't use it for core queries.
+      supabase = getSupabaseClient();
+    } catch (e) {
+      // Ignore
     }
-  } catch (error) {
-    logger.warn({
-      err: error,
-      error_message: error instanceof Error ? error.message : String(error)
-    }, 'Failed to set tenant context');
-    // Continue anyway - the server should still work for non-RLS scenarios
+  }
+
+  // Set tenant context for RLS if enabled (Supabase only)
+  if (supabase) {
+    try {
+      await setTenantContext(supabase);
+      await verifyTenantContext(supabase);
+
+      // Debug tenant visibility
+      if (process.env.MCP_DEBUG === 'true' || process.env.RLS_DEBUG === 'true') {
+        await debugTenantVisibility(supabase);
+      }
+    } catch (error) {
+      logger.warn({
+        err: error,
+        error_message: error instanceof Error ? error.message : String(error)
+      }, 'Failed to set tenant context');
+    }
   }
 
   return {
@@ -97,6 +152,7 @@ export async function initializeDatabase(): Promise<{
     dbSizeAnalyzer,
     supabase,
     redis,
+    mongoClient
   };
 }
 
