@@ -46,6 +46,17 @@ export class SupabaseVConQueries implements IVConQueries {
   }
 
   /**
+   * Initialize the database connection
+   * For Supabase, this is mostly a no-op as the client is stateless/HTTP based,
+   * but could be used to verify connection or warm up cache.
+   */
+  async initialize(): Promise<void> {
+    // No specific initialization needed for Supabase REST client
+    // Connection verification is handled by database-health-check
+    return Promise.resolve();
+  }
+
+  /**
    * Create a new vCon with all related entities
    * ✅ Uses corrected field names throughout
    * ✅ Extracts and stores tenant_id for RLS multi-tenant support

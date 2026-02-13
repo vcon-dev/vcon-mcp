@@ -73,6 +73,7 @@
     "@aws-sdk/client-s3": "^3.922.0",
     "@aws-sdk/credential-providers": "^3.927.0",
     "@aws-sdk/s3-request-presigner": "^3.922.0",
+    "@jsonld-ex/core": "^0.1.1",
     "@koa/cors": "^5.0.0",
     "@koa/router": "^13.1.0",
     "@modelcontextprotocol/sdk": "^1.19.1",
@@ -87,6 +88,7 @@
     "@opentelemetry/semantic-conventions": "^1.25.0",
     "@supabase/supabase-js": "^2.74.0",
     "dotenv": "^16.4.0",
+    "fast-json-stable-stringify": "^2.1.0",
     "ioredis": "^5.4.1",
     "koa": "^3.1.1",
     "koa-bodyparser": "^4.4.1",
@@ -98,6 +100,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@types/fast-json-stable-stringify": "^2.1.2",
     "@types/koa": "^2.15.0",
     "@types/koa__cors": "^5.0.0",
     "@types/koa__router": "^12.0.4",

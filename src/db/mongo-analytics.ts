@@ -171,31 +171,45 @@ export class MongoDatabaseAnalytics implements IDatabaseAnalytics {
     }
 
     async getContentAnalytics(options: ContentAnalyticsOptions = {}) {
-        // Analyze dialog duration, party count
-        const contentStats = await this.db.collection('vcons').aggregate([
+        // Better approach: Use facets to separate the concerns
+        // One facet for party count (per vcon), one for duration (per dialog)
+        const complexStats = await this.db.collection('vcons').aggregate([
             {
-                $project: {
-                    party_count: { $size: { $ifNull: ["$parties", []] } },
-                    dialogs: "$dialog"
-                }
-            },
-            { $unwind: { path: "$dialogs", preserveNullAndEmptyArrays: true } },
-            {
-                $group: {
-                    _id: null,
-                    avg_parties: { $avg: "$party_count" },
-                    total_duration: { $sum: "$dialogs.duration" },
-                    avg_duration: { $avg: "$dialogs.duration" }
+                $facet: {
+                    "general": [
+                        {
+                            $project: {
+                                party_count: { $size: { $ifNull: ["$parties", []] } }
+                            }
+                        },
+                        {
+                            $group: {
+                                _id: null,
+                                avg_parties: { $avg: "$party_count" }
+                            }
+                        }
+                    ],
+                    "content": [
+                        { $unwind: { path: "$dialog", preserveNullAndEmptyArrays: false } }, // Only consider vcons with dialogs for duration stats
+                        {
+                            $group: {
+                                _id: null,
+                                total_duration: { $sum: "$dialog.duration" },
+                                avg_duration: { $avg: "$dialog.duration" }
+                            }
+                        }
+                    ]
                 }
             }
         ]).toArray();
 
-        const stats = contentStats[0] || {};
+        const generalStats = (complexStats[0].general && complexStats[0].general[0]) || {};
+        const durationStats = (complexStats[0].content && complexStats[0].content[0]) || {};
 
         return {
-            avg_parties_per_vcon: stats.avg_parties || 0,
-            total_conversation_duration: stats.total_duration || 0,
-            avg_dialog_duration: stats.avg_duration || 0
+            avg_parties_per_vcon: generalStats.avg_parties || 0,
+            total_conversation_duration: durationStats.total_duration || 0,
+            avg_dialog_duration: durationStats.avg_duration || 0
         };
     }
 

@@ -51,6 +51,10 @@ export async function getMongoClient(): Promise<{ client: MongoClient; db: Db }>
         logWithContext('info', 'MongoDB connected successfully');
 
     } catch (error) {
+        // Reset singleton state so retry is possible
+        client = null;
+        db = null;
+
         logWithContext('error', 'Failed to connect to MongoDB', {
             error_message: error instanceof Error ? error.message : String(error),
         });

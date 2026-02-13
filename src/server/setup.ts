@@ -145,6 +145,9 @@ export async function initializeDatabase(): Promise<{
     }
   }
 
+  // Initialize DB (create indexes, etc)
+  await queries.initialize();
+
   return {
     queries,
     dbInspector,

@@ -25,6 +25,11 @@ export interface SearchResult {
 
 export interface IVConQueries {
     /**
+     * Initialize the database connection and schema (e.g. indexes)
+     */
+    initialize(): Promise<void>;
+
+    /**
      * Create a new vCon with all related entities
      */
     createVCon(vcon: VCon): Promise<{ uuid: string; id: string }>;

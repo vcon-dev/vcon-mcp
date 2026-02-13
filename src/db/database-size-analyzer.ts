@@ -7,6 +7,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 
 import { IDatabaseSizeAnalyzer, DatabaseSizeInfo, SmartLimits } from './types.js';
+import { calculateSmartSearchLimits } from './shared-utils.js';
 
 export class SupabaseDatabaseSizeAnalyzer implements IDatabaseSizeAnalyzer {
   constructor(private supabase: SupabaseClient) { }
