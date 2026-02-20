@@ -466,7 +466,7 @@ services:
       # Tool categories: read, write, schema, analytics, infra
       # Only enable read operations for production deployments
       - MCP_ENABLED_CATEGORIES=read
-      - VCON_API_KEYS=your-vcon-api-key
+      - API_KEYS=your-api-key
     labels:
       ofelia.enabled: "true"
       ofelia.job-exec.embed-vcons.schedule: "0 */10 * * *"
@@ -786,7 +786,7 @@ chains:
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role JWT for admin access | Generated JWT |
 | `SUPABASE_ANON_KEY` | Anonymous user JWT | Generated JWT |
 | `MCP_ENABLED_CATEGORIES` | Enabled tool categories | `read` (for production) |
-| `VCON_API_KEYS` | API keys for authentication | Comma-separated keys |
+| `API_KEYS` | API keys for authentication | Comma-separated keys |
 
 ### 9.2 Embedding Provider Configuration
 
