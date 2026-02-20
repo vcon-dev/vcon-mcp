@@ -10,7 +10,14 @@ import Koa from 'koa';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { randomUUID } from 'crypto';
-import { createRestApi, getRestApiConfig, isRestApiPath, type RestApiContext } from '../api/index.js';
+import {
+  createRestApi,
+  getAuthConfig,
+  getRestApiConfig,
+  isRestApiPath,
+  validateHttpRequestAuth,
+  type RestApiContext,
+} from '../api/index.js';
 import { logWithContext } from '../observability/instrumentation.js';
 import { setupHttpMiddleware } from './middleware.js';
 
@@ -77,6 +84,14 @@ export async function startHttpServer(
     });
   }
 
+  // MCP endpoint auth (same config as REST: API_KEYS, API_KEY_HEADER, API_AUTH_REQUIRED)
+  const mcpAuthConfig = getAuthConfig();
+  logWithContext('info', 'MCP HTTP endpoint auth', {
+    auth_required: mcpAuthConfig.required,
+    header: mcpAuthConfig.headerName,
+    bearer_supported: true,
+  });
+
   // Create HTTP server that routes between REST API and MCP
   const httpServer = http.createServer((req, res) => {
     const path = req.url?.split('?')[0] || '';
@@ -84,6 +99,18 @@ export async function startHttpServer(
     // Route to Koa REST API if path matches
     if (koaCallback && isRestApiPath(path, restConfig.basePath)) {
       koaCallback(req, res);
+      return;
+    }
+
+    // MCP path: validate auth (Authorization: Bearer <token> or configured header)
+    const authResult = validateHttpRequestAuth(req, mcpAuthConfig);
+    if (authResult.ok === false) {
+      const { statusCode, body, wwwAuth } = authResult;
+      res.writeHead(statusCode, {
+        'Content-Type': 'application/json',
+        ...(wwwAuth ? { 'WWW-Authenticate': wwwAuth } : {}),
+      });
+      res.end(JSON.stringify(body));
       return;
     }
 

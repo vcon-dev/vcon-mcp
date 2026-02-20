@@ -395,7 +395,7 @@ REST_API_BASE_PATH=/api/v1     # Base path for endpoints
 REST_API_ENABLED=true          # Enable/disable REST API
 
 # API Key Authentication
-VCON_API_KEYS=key1,key2        # Comma-separated valid API keys
+API_KEYS=key1,key2             # Comma-separated valid API keys
 API_AUTH_REQUIRED=true         # Set to false to disable auth
 ```
 
@@ -408,13 +408,13 @@ curl http://localhost:3000/api/v1/health
 # Create a vCon (requires API key)
 curl -X POST http://localhost:3000/api/v1/vcons \
   -H "Content-Type: application/json" \
-  -H "x-api-key: your-api-key" \
+  -H "Authorization: Bearer your-api-key" \
   -d '{"vcon":"0.3.0","subject":"Support Call","parties":[{"name":"Agent","tel":"+1111"}]}'
 
 # Batch create
 curl -X POST http://localhost:3000/api/v1/vcons/batch \
   -H "Content-Type: application/json" \
-  -H "x-api-key: your-api-key" \
+  -H "Authorization: Bearer your-api-key" \
   -d '[{"vcon":"0.3.0","parties":[{"name":"A","tel":"+1"}]},{"vcon":"0.3.0","parties":[{"name":"B","tel":"+2"}]}]'
 ```
 
