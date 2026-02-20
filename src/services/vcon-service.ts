@@ -7,7 +7,7 @@
  */
 
 import { randomUUID } from 'crypto';
-import { VConQueries } from '../db/queries.js';
+import { IVConQueries } from '../db/interfaces.js';
 import { PluginManager } from '../hooks/plugin-manager.js';
 import { RequestContext } from '../hooks/plugin-interface.js';
 import { ATTR_VCON_UUID } from '../observability/attributes.js';
@@ -20,7 +20,7 @@ import { validateVCon } from '../utils/validation.js';
 // ============================================================================
 
 export interface VConServiceContext {
-  queries: VConQueries;
+  queries: IVConQueries;
   pluginManager: PluginManager;
 }
 
@@ -76,7 +76,7 @@ export interface DeleteVConOptions {
 // ============================================================================
 
 export class VConService {
-  constructor(private context: VConServiceContext) {}
+  constructor(private context: VConServiceContext) { }
 
   /**
    * Normalize partial RequestContext to full RequestContext
@@ -276,7 +276,7 @@ export class VConService {
    * Search vCons with hook support
    */
   async search(
-    filters: Parameters<VConQueries['searchVCons']>[0],
+    filters: Parameters<IVConQueries['searchVCons']>[0],
     options: { requestContext?: Partial<RequestContext>; skipHooks?: boolean } = {}
   ): Promise<VCon[]> {
     const requestContext = this.normalizeRequestContext(options.requestContext, 'search');

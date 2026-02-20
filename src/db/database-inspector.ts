@@ -4,8 +4,10 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 
-export class DatabaseInspector {
-  constructor(private supabase: SupabaseClient) {}
+import { IDatabaseInspector, InspectorOptions, InspectorStatsOptions } from './types.js';
+
+export class SupabaseDatabaseInspector implements IDatabaseInspector {
+  constructor(private supabase: SupabaseClient) { }
 
   /**
    * Get comprehensive database shape information
@@ -68,7 +70,7 @@ export class DatabaseInspector {
           q: `SELECT COUNT(*) as count FROM ${table.tablename}`,
           params: {}
         });
-        
+
         if (!countError && countData && countData.length > 0) {
           tableInfo.row_count = parseInt(countData[0].count);
         }
