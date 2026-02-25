@@ -828,38 +828,9 @@ export class VConQueries {
       return [];
     }
 
+    // Party filtering was already applied above via candidateVconIds constrained
+    // with .in('id', ...) on the main query — no second pass needed.
     let vconUuids = data.map(v => v.uuid);
-
-    if (filters.partyName || filters.partyEmail || filters.partyTel) {
-      let partyQuery = this.supabase
-        .from('parties')
-        .select('vcon_id');
-
-      if (filters.partyName) {
-        partyQuery = partyQuery.ilike('name', `%${filters.partyName}%`);
-      }
-      if (filters.partyEmail) {
-        partyQuery = partyQuery.ilike('mailto', `%${filters.partyEmail}%`);
-      }
-      if (filters.partyTel) {
-        partyQuery = partyQuery.ilike('tel', `%${filters.partyTel}%`);
-      }
-
-      const { data: partyData, error: partyError } = await partyQuery;
-      if (partyError) throw partyError;
-
-      const partyVconIds = new Set(partyData.map(p => p.vcon_id));
-
-      // Get UUIDs for matching vcon_ids
-      const { data: matchingVcons } = await this.supabase
-        .from('vcons')
-        .select('uuid, id')
-        .in('id', Array.from(partyVconIds));
-
-      vconUuids = vconUuids.filter(uuid =>
-        matchingVcons?.some(v => v.uuid === uuid)
-      );
-    }
 
     // If tag filters, get matching UUIDs and intersect with current results
     if (filters.tags && Object.keys(filters.tags).length > 0) {
