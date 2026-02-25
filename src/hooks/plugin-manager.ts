@@ -1,10 +1,10 @@
-import { VConPlugin, RequestContext } from './plugin-interface.js';
-import { Tool, Resource } from '@modelcontextprotocol/sdk/types.js';
+import { Resource, Tool } from '@modelcontextprotocol/sdk/types.js';
+import { RequestContext, VConPlugin } from './plugin-interface.js';
 
 export class PluginManager {
   private plugins: VConPlugin[] = [];
   private initialized = false;
-  
+
   /**
    * Register a plugin
    */
@@ -12,7 +12,7 @@ export class PluginManager {
     console.error(`📦 Registering plugin: ${plugin.name} v${plugin.version}`);
     this.plugins.push(plugin);
   }
-  
+
   /**
    * Initialize all plugins
    */
@@ -25,18 +25,19 @@ export class PluginManager {
     this.initialized = true;
     console.error(`✅ Initialized ${this.plugins.length} plugin(s)`);
   }
-  
+
   /**
    * Shutdown all plugins
    */
   async shutdown(): Promise<void> {
-    for (const plugin of this.plugins) {
-      if (plugin.shutdown) {
-        await plugin.shutdown();
-      }
-    }
+    // Shut down all plugins concurrently — one slow plugin won't block others.
+    await Promise.allSettled(
+      this.plugins
+        .filter((p) => p.shutdown)
+        .map((p) => p.shutdown!())
+    );
   }
-  
+
   /**
    * Execute a hook across all plugins
    * Returns first non-undefined result or undefined
@@ -61,7 +62,7 @@ export class PluginManager {
     }
     return undefined;
   }
-  
+
   /**
    * Get all additional tools from plugins
    */
@@ -75,7 +76,7 @@ export class PluginManager {
     }
     return tools;
   }
-  
+
   /**
    * Get all additional resources from plugins
    */
@@ -89,7 +90,7 @@ export class PluginManager {
     }
     return resources;
   }
-  
+
   /**
    * Handle a tool call by delegating to the appropriate plugin
    */
@@ -110,4 +111,3 @@ export class PluginManager {
     return undefined;
   }
 }
-

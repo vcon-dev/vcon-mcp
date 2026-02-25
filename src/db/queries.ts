@@ -123,26 +123,14 @@ export class VConQueries {
       if (partiesError) throw partiesError;
     }
 
-    // Insert dialog if present
-    if (vcon.dialog && vcon.dialog.length > 0) {
-      for (let i = 0; i < vcon.dialog.length; i++) {
-        await this.addDialog(vconData.uuid, vcon.dialog[i]);
-      }
-    }
-
-    // Insert analysis if present
-    if (vcon.analysis && vcon.analysis.length > 0) {
-      for (let i = 0; i < vcon.analysis.length; i++) {
-        await this.addAnalysis(vconData.uuid, vcon.analysis[i]);
-      }
-    }
-
-      // Insert attachments if present
-      if (vcon.attachments && vcon.attachments.length > 0) {
-        for (let i = 0; i < vcon.attachments.length; i++) {
-          await this.addAttachment(vconData.uuid, vcon.attachments[i]);
-        }
-      }
+    // Insert dialog, analysis, and attachments in parallel across categories.
+    // Within each category the index is pre-computed from array position (0,1,2...)
+    // since this is a brand-new vCon — no SELECT MAX needed.
+    await Promise.all([
+      ...(vcon.dialog ?? []).map((d, i) => this.addDialog(vconData.uuid, d, i)),
+      ...(vcon.analysis ?? []).map((a, i) => this.addAnalysis(vconData.uuid, a, i)),
+      ...(vcon.attachments ?? []).map((att, i) => this.addAttachment(vconData.uuid, att, i)),
+    ]);
 
       // Invalidate cache after creation
       if (this.cacheEnabled && this.redis) {
@@ -340,8 +328,11 @@ export class VConQueries {
    * ✅ CRITICAL: Uses 'schema' field, NOT 'schema_version'
    * ✅ CRITICAL: 'vendor' is required (NOT NULL)
    * ✅ CRITICAL: 'body' is TEXT type
+   *
+   * @param knownIndex - Pass the index directly (e.g. from createVCon) to skip
+   *                     the SELECT MAX round-trip. Omit for standalone add_analysis calls.
    */
-  async addAnalysis(vconUuid: string, analysis: Analysis): Promise<void> {
+  async addAnalysis(vconUuid: string, analysis: Analysis, knownIndex?: number): Promise<void> {
     // Get vcon_id and created_at
     const { data: vcon, error: vconError } = await this.supabase
       .from('vcons')
@@ -351,17 +342,21 @@ export class VConQueries {
 
     if (vconError) throw vconError;
 
-    // Get next analysis index
-    const { data: existingAnalysis } = await this.supabase
-      .from('analysis')
-      .select('analysis_index')
-      .eq('vcon_id', vcon.id)
-      .order('analysis_index', { ascending: false })
-      .limit(1);
-
-    const nextIndex = existingAnalysis && existingAnalysis.length > 0
-      ? existingAnalysis[0].analysis_index + 1
-      : 0;
+    // Use provided index or query for the next available one
+    let nextIndex: number;
+    if (knownIndex !== undefined) {
+      nextIndex = knownIndex;
+    } else {
+      const { data: existingAnalysis } = await this.supabase
+        .from('analysis')
+        .select('analysis_index')
+        .eq('vcon_id', vcon.id)
+        .order('analysis_index', { ascending: false })
+        .limit(1);
+      nextIndex = existingAnalysis && existingAnalysis.length > 0
+        ? existingAnalysis[0].analysis_index + 1
+        : 0;
+    }
 
     // ✅ CRITICAL CORRECTIONS:
     // - Uses 'schema' field (NOT 'schema_version')
@@ -394,8 +389,11 @@ export class VConQueries {
   /**
    * Add dialog to a vCon
    * ✅ Includes new fields: session_id, application, message_id
+   *
+   * @param knownIndex - Pass the index directly (e.g. from createVCon) to skip
+   *                     the SELECT MAX round-trip. Omit for standalone add_dialog calls.
    */
-  async addDialog(vconUuid: string, dialog: Dialog): Promise<void> {
+  async addDialog(vconUuid: string, dialog: Dialog, knownIndex?: number): Promise<void> {
     const { data: vcon, error: vconError } = await this.supabase
       .from('vcons')
       .select('id')
@@ -404,17 +402,21 @@ export class VConQueries {
 
     if (vconError) throw vconError;
 
-    // Get next dialog index
-    const { data: existingDialog } = await this.supabase
-      .from('dialog')
-      .select('dialog_index')
-      .eq('vcon_id', vcon.id)
-      .order('dialog_index', { ascending: false })
-      .limit(1);
-
-    const nextIndex = existingDialog && existingDialog.length > 0
-      ? existingDialog[0].dialog_index + 1
-      : 0;
+    // Use provided index or query for the next available one
+    let nextIndex: number;
+    if (knownIndex !== undefined) {
+      nextIndex = knownIndex;
+    } else {
+      const { data: existingDialog } = await this.supabase
+        .from('dialog')
+        .select('dialog_index')
+        .eq('vcon_id', vcon.id)
+        .order('dialog_index', { ascending: false })
+        .limit(1);
+      nextIndex = existingDialog && existingDialog.length > 0
+        ? existingDialog[0].dialog_index + 1
+        : 0;
+    }
 
     // Normalize parties array
     let parties = null;
@@ -470,8 +472,11 @@ export class VConQueries {
   /**
    * Add attachment to a vCon
    * ✅ Includes dialog field per spec Section 4.4.4
+   *
+   * @param knownIndex - Pass the index directly (e.g. from createVCon) to skip
+   *                     the SELECT MAX round-trip. Omit for standalone add_attachment calls.
    */
-  async addAttachment(vconUuid: string, attachment: Attachment): Promise<void> {
+  async addAttachment(vconUuid: string, attachment: Attachment, knownIndex?: number): Promise<void> {
     const { data: vcon, error: vconError } = await this.supabase
       .from('vcons')
       .select('id, created_at')
@@ -480,17 +485,21 @@ export class VConQueries {
 
     if (vconError) throw vconError;
 
-    // Get next attachment index
-    const { data: existingAttachments } = await this.supabase
-      .from('attachments')
-      .select('attachment_index')
-      .eq('vcon_id', vcon.id)
-      .order('attachment_index', { ascending: false })
-      .limit(1);
-
-    const nextIndex = existingAttachments && existingAttachments.length > 0
-      ? existingAttachments[0].attachment_index + 1
-      : 0;
+    // Use provided index or query for the next available one
+    let nextIndex: number;
+    if (knownIndex !== undefined) {
+      nextIndex = knownIndex;
+    } else {
+      const { data: existingAttachments } = await this.supabase
+        .from('attachments')
+        .select('attachment_index')
+        .eq('vcon_id', vcon.id)
+        .order('attachment_index', { ascending: false })
+        .limit(1);
+      nextIndex = existingAttachments && existingAttachments.length > 0
+        ? existingAttachments[0].attachment_index + 1
+        : 0;
+    }
 
     const { error: attachmentError } = await this.supabase
       .from('attachments')
@@ -627,34 +636,18 @@ export class VConQueries {
       }
       throw vconError;
     }
-
-    // Get parties
-    const { data: parties } = await this.supabase
-      .from('parties')
-      .select('*')
-      .eq('vcon_id', vconData.id)
-      .order('party_index');
-
-    // Get dialog
-    const { data: dialogs } = await this.supabase
-      .from('dialog')
-      .select('*')
-      .eq('vcon_id', vconData.id)
-      .order('dialog_index');
-
-    // Get analysis - ✅ Queries 'schema' field (NOT 'schema_version')
-    const { data: analysis } = await this.supabase
-      .from('analysis')
-      .select('*')
-      .eq('vcon_id', vconData.id)
-      .order('analysis_index');
-
-    // Get attachments
-    const { data: attachments } = await this.supabase
-      .from('attachments')
-      .select('*')
-      .eq('vcon_id', vconData.id)
-      .order('attachment_index');
+    //parallelize the query
+    const [
+      {data: parties},
+      {data: dialogs},
+      {data: analysis},
+      {data: attachments}
+    ] = await Promise.all([this.supabase.from('parties').select('*').eq('vcon_id', vconData.id).order('party_index'),
+      this.supabase.from('dialog').select('*').eq('vcon_id', vconData.id).order('dialog_index'),
+      this.supabase.from('analysis').select('*').eq('vcon_id', vconData.id).order('analysis_index'),
+      this.supabase.from('attachments').select('*').eq('vcon_id', vconData.id)
+      .order('attachment_index'),
+    ])
 
     // Reconstruct vCon with all correct field names
     const vcon: VCon = {
