@@ -17,10 +17,14 @@ dotenv.config();
 const supabaseUrl = process.env.SUPABASE_URL || 'http://127.0.0.1:54321';
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || 
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU';
+
+const litellmUrl = (process.env.LITELLM_PROXY_URL ?? '').trim().replace(/\/$/, '');
+const litellmKey = (process.env.LITELLM_MASTER_KEY ?? process.env.LITELLM_API_KEY ?? '').trim();
+const useLiteLLM = Boolean(litellmUrl && litellmKey);
 const openaiKey = process.env.OPENAI_API_KEY;
 
-if (!openaiKey) {
-  console.error('❌ OPENAI_API_KEY is required');
+if (!useLiteLLM && !openaiKey) {
+  console.error('❌ Set LITELLM_PROXY_URL + LITELLM_MASTER_KEY, or OPENAI_API_KEY');
   process.exit(1);
 }
 
@@ -28,14 +32,19 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 const queries = new VConQueries(supabase);
 
 /**
- * Generate embedding for a text query using OpenAI
+ * Generate embedding for a text query using LiteLLM proxy or OpenAI
  */
 async function generateQueryEmbedding(text: string): Promise<number[]> {
-  const resp = await fetch('https://api.openai.com/v1/embeddings', {
+  const url = useLiteLLM
+    ? (litellmUrl.startsWith('http') ? `${litellmUrl}/v1/embeddings` : `https://${litellmUrl}/v1/embeddings`)
+    : 'https://api.openai.com/v1/embeddings';
+  const apiKey = useLiteLLM ? litellmKey : openaiKey;
+
+  const resp = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${openaiKey}`,
+      'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
       model: 'text-embedding-3-small',
@@ -45,7 +54,7 @@ async function generateQueryEmbedding(text: string): Promise<number[]> {
   });
 
   if (!resp.ok) {
-    throw new Error(`OpenAI API error: ${resp.status} ${await resp.text()}`);
+    throw new Error(`${useLiteLLM ? 'LiteLLM' : 'OpenAI'} API error: ${resp.status} ${await resp.text()}`);
   }
 
   const json = await resp.json();

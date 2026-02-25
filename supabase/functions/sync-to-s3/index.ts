@@ -11,6 +11,8 @@ const VCON_S3_PREFIX = Deno.env.get("VCON_S3_PREFIX") ?? "";
 const AWS_REGION = Deno.env.get("AWS_REGION") ?? "us-east-1";
 const AWS_ACCESS_KEY_ID = Deno.env.get("AWS_ACCESS_KEY_ID") ?? "";
 const AWS_SECRET_ACCESS_KEY = Deno.env.get("AWS_SECRET_ACCESS_KEY") ?? "";
+const LITELLM_PROXY_URL = (Deno.env.get("LITELLM_PROXY_URL") ?? "").replace(/\/$/, "");
+const LITELLM_MASTER_KEY = Deno.env.get("LITELLM_MASTER_KEY") ?? Deno.env.get("LITELLM_API_KEY");
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 const AZURE_OPENAI_EMBEDDING_ENDPOINT = Deno.env.get("AZURE_OPENAI_EMBEDDING_ENDPOINT");
 const AZURE_OPENAI_EMBEDDING_API_KEY = Deno.env.get("AZURE_OPENAI_EMBEDDING_API_KEY");
@@ -99,14 +101,16 @@ async function uploadToS3(key, jsonStr) {
 // ---------------------------------------------------------------------------
 // Embedding helpers (unchanged except for safety fixes)
 // ---------------------------------------------------------------------------
-// Provider priority: Azure OpenAI > OpenAI > Hugging Face
-const PROVIDER = (AZURE_OPENAI_EMBEDDING_ENDPOINT && AZURE_OPENAI_EMBEDDING_API_KEY)
-  ? "azure"
-  : OPENAI_API_KEY
-    ? "openai"
-    : HF_API_TOKEN
-      ? "hf"
-      : "openai";
+// Provider priority: LiteLLM > Azure OpenAI > OpenAI > Hugging Face
+const PROVIDER = (LITELLM_PROXY_URL && LITELLM_MASTER_KEY)
+  ? "litellm"
+  : (AZURE_OPENAI_EMBEDDING_ENDPOINT && AZURE_OPENAI_EMBEDDING_API_KEY)
+    ? "azure"
+    : OPENAI_API_KEY
+      ? "openai"
+      : HF_API_TOKEN
+        ? "hf"
+        : "openai";
 function estimateTokens(text) {
   return Math.ceil(text.length / 3.5);
 }
