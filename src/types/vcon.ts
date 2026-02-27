@@ -106,7 +106,7 @@ export interface Dialog {
   url?: string;             // HTTPS URL to external content
   content_hash?: string | string[];  // SHA-256 hash for integrity verification
 
-  disposition?: DialogDisposition;
+  disposition?: string;  // Any string accepted; spec suggests no-answer, congestion, failed, busy, hung-up, voicemail-no-message
   session_id?: string;      // Section 4.3.10 - Session identifier
   party_history?: PartyHistory[];  // Section 4.3.11
   application?: string;     // Section 4.3.13 - Application identifier
@@ -247,10 +247,11 @@ export function isValidEncoding(encoding: string): encoding is Encoding {
 }
 
 /**
- * Type guard to check if a string is a valid DialogDisposition
+ * Accept any non-empty string as disposition (forgiving of values outside spec).
+ * Spec suggests: no-answer, congestion, failed, busy, hung-up, voicemail-no-message.
  */
-export function isValidDisposition(disposition: string): disposition is DialogDisposition {
-  return ['no-answer', 'congestion', 'failed', 'busy', 'hung-up', 'voicemail-no-message'].includes(disposition);
+export function isValidDisposition(disposition: string): boolean {
+  return typeof disposition === 'string';
 }
 
 /**

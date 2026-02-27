@@ -178,10 +178,11 @@ describe('CRUD Schema Validation', () => {
       }
     });
 
-    it('should validate disposition values', () => {
-      const validDispositions = ['no-answer', 'congestion', 'failed', 'busy', 'hung-up', 'voicemail-no-message'];
-      
-      validDispositions.forEach(disposition => {
+    it('should accept any string for disposition (spec values and custom)', () => {
+      const specDispositions = ['no-answer', 'congestion', 'failed', 'busy', 'hung-up', 'voicemail-no-message'];
+      const customDispositions = ['Customer Hung Up', 'Abandoned', ''];
+
+      [...specDispositions, ...customDispositions].forEach(disposition => {
         const dialog = {
           type: 'incomplete',
           disposition,
