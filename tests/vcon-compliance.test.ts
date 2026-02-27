@@ -296,6 +296,70 @@ describe('IETF vCon Spec Compliance', () => {
   });
 
   // ==========================================================================
+  // Version field (deprecated): accept any value or missing
+  // ==========================================================================
+  describe('vcon version field (relaxed: any value or missing accepted)', () => {
+    it('should accept vcon version 0.0.1', () => {
+      const vcon = {
+        vcon: '0.0.1',
+        uuid: randomUUID(),
+        created_at: new Date().toISOString(),
+        parties: [{ name: 'Test', tel: '+15551234567' }],
+      } as VCon;
+      const result = validateVCon(vcon);
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('should accept vcon version 1.0.0', () => {
+      const vcon = {
+        vcon: '1.0.0',
+        uuid: randomUUID(),
+        created_at: new Date().toISOString(),
+        parties: [{ name: 'Test' }],
+      } as VCon;
+      const result = validateVCon(vcon);
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('should accept vcon when vcon field is missing', () => {
+      const vcon = {
+        uuid: randomUUID(),
+        created_at: new Date().toISOString(),
+        parties: [{ name: 'Test', mailto: 'test@example.com' }],
+      } as VCon;
+      const result = validateVCon(vcon);
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('should accept sample Crexendo-style vcon with vcon "0.0.1"', () => {
+      const sampleVcon = {
+        vcon: '0.0.1',
+        uuid: '019c9896-7570-86d4-9dd8-dd37220d739c',
+        created_at: '2026-02-26T06:15:23.248460+00:00',
+        parties: [
+          { id: '+19782250878_None_744', tel: '+19782250878', name: null, role: 'customer', mailto: null },
+          { id: 'scott.henshaw@strolid.com', tel: '+15593660701', name: 'Scott Henshaw', role: 'agent', mailto: 'scott.henshaw@strolid.com' },
+        ],
+        dialog: [{
+          type: 'recording',
+          start: '2026-02-26T06:13:12.811092+00:00',
+          duration: 4,
+          parties: [1, 0],
+          url: 'https://example.com/rec.wav',
+          content_hash: 'abc',
+        }],
+        attachments: [{ type: 'ingress_info', encoding: 'none', body: { source: 'crexendo' } }],
+      } as unknown as VCon;
+      const result = validateVCon(sampleVcon);
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+  });
+
+  // ==========================================================================
   // Integration Tests
   // ==========================================================================
   describe('Complete vCon Validation', () => {

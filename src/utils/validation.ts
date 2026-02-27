@@ -32,8 +32,7 @@ export class VConValidator {
     this.errors = [];
     this.warnings = [];
 
-    // Core vCon validation
-    this.validateVConVersion(vcon);
+    // Core vCon validation (vcon version field is deprecated - accept any value or missing)
     this.validateUUID(vcon.uuid);
     this.validateDates(vcon);
     this.validateParties(vcon.parties);
@@ -49,12 +48,6 @@ export class VConValidator {
       errors: this.errors,
       warnings: this.warnings
     };
-  }
-
-  private validateVConVersion(vcon: VCon): void {
-    if (vcon.vcon !== '0.3.0') {
-      this.errors.push(`Invalid vcon version: ${vcon.vcon}. Must be '0.3.0'`);
-    }
   }
 
   private validateUUID(uuid: string): void {
