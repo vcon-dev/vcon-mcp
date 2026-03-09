@@ -1,0 +1,35 @@
+%% ============================================================================
+%% DIAGRAM 3: Neo4j Graph Schema
+%% Render at https://mermaid.live
+%% ============================================================================
+
+graph LR
+    subgraph Legend
+        direction TB
+        L1["🟦 Node"]
+        L2["➡️ Relationship"]
+    end
+
+    P1(["👤 Person\n---\nname, email,\nphone, identifier,\nrole"])
+    P2(["👤 Person\n---\nname, email,\nphone, identifier,\nrole"])
+
+    C(["💬 Conversation\n---\nuuid, subject,\nstart, duration,\nsentiment,\nparty_count"])
+
+    T1(["🏷️ Topic\n---\nname"])
+    T2(["🏷️ Topic\n---\nname"])
+
+    A(["📊 Analysis\n---\ntype, vendor, id"])
+
+    P1 -- "PARTICIPATED_IN" --> C
+    P2 -- "PARTICIPATED_IN" --> C
+    P1 -- "CONTACTED\n(canonical order)" --> P2
+    C -- "HAS_TOPIC" --> T1
+    C -- "HAS_TOPIC" --> T2
+    C -- "ANALYZED_BY" --> A
+
+    style P1 fill:#00b4d8,stroke:#0077b6,color:#fff,stroke-width:2px
+    style P2 fill:#8e44ad,stroke:#6c3483,color:#fff,stroke-width:2px
+    style C fill:#2e75b6,stroke:#1a5276,color:#fff,stroke-width:2px
+    style T1 fill:#f39c12,stroke:#d68910,color:#fff,stroke-width:2px
+    style T2 fill:#f39c12,stroke:#d68910,color:#fff,stroke-width:2px
+    style A fill:#27ae60,stroke:#1e8449,color:#fff,stroke-width:2px

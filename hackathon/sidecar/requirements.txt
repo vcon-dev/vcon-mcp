@@ -1,0 +1,16 @@
+# Whisper + LLaMA sidecar dependencies
+# Install: pip install -r requirements.txt
+
+fastapi==0.115.*
+uvicorn[standard]==0.34.*
+python-multipart==0.0.*
+
+# Whisper (OpenAI) - GPU accelerated
+openai-whisper==20240930
+
+# Groq API client (runs Llama on Groq's cloud — free tier)
+groq>=0.9.0
+
+# PyTorch with CUDA 12.x (install separately if needed):
+#   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+# torch should be pulled in by whisper, but if you need CUDA specifically, use the above.

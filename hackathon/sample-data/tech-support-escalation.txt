@@ -1,0 +1,21 @@
+Agent Lisa Park: TechCorp support, this is Lisa. How can I assist you?
+
+David Chen: Hi Lisa, I've been having a serious issue with your cloud platform. My production database has been experiencing intermittent outages for the past three days and your tier one support hasn't been able to resolve it.
+
+Agent Lisa Park: I'm sorry to hear that, David. That sounds very frustrating, especially for a production system. Let me review the ticket history. Can you give me your account ID?
+
+David Chen: It's CORP-88421. And honestly, I'm running out of patience. We've lost revenue because of this downtime. My CTO is asking me why we're still on your platform.
+
+Agent Lisa Park: I understand the urgency and the business impact. I can see the previous tickets. It looks like the issue was initially diagnosed as a network configuration problem, but the suggested fixes haven't resolved it. I'm going to escalate this to our senior infrastructure team right now.
+
+David Chen: That's what the last agent said too. I need someone who can actually fix this, not just pass it along.
+
+Agent Lisa Park: You're absolutely right, and I want to handle this differently. I'm creating a priority one escalation with a direct line to our infrastructure lead, James. I'm also going to give you my direct extension so you have a single point of contact. You won't have to explain this again.
+
+David Chen: Okay. When can I expect to hear back?
+
+Agent Lisa Park: James will contact you within two hours. If you don't hear from him by 1:30 PM, call me directly at extension 4472. I'm going to personally follow up to make sure this gets resolved today.
+
+David Chen: Alright, I appreciate you taking this seriously. Thank you Lisa.
+
+Agent Lisa Park: Of course. We value your business and I'll make sure this gets the attention it deserves.

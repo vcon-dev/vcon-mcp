@@ -38,6 +38,8 @@ out/
 # Logs
 logs/
 *.log
+verif_log.txt
+verif_analytics_log.txt
 
 # Temporary files
 tmp/
@@ -49,3 +51,24 @@ backups/
 docs/.vitepress/cache/
 docs/.vitepress/dist/
 
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Executables
+*.exe
+*.dll
+
+# Local/Secret files
+test_output.txt
+secrets.json
+*.local
+
+# Hackathon runtime files
+hackathon/watch/processed/
+hackathon/watch/failed/
+hackathon/sample-data/demo-call.mp3
+__pycache__/
+*.pyc

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<recording>
+  <session id="DEMO-WHISPER-001">
+    <start-time>2026-03-09T09:15:00Z</start-time>
+    <end-time>2026-03-09T09:17:30Z</end-time>
+  </session>
+  <caller>
+    <number>+15553847291</number>
+    <name>Robert Martinez</name>
+  </caller>
+  <callee>
+    <number>+15551000200</number>
+    <name>Agent Jennifer Walsh</name>
+  </callee>
+  <direction>inbound</direction>
+</recording>

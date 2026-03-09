@@ -1,0 +1,24 @@
+{
+  "vcon": "0.3.0",
+  "created_at": "2026-03-07T09:00:00Z",
+  "subject": "Teams Meeting: Support Team Weekly Standup",
+  "parties": [
+    { "mailto": "rachel.kim@techcorp.com", "name": "Rachel Kim", "uuid": "usr-teams-001" },
+    { "mailto": "mike.rivera@techcorp.com", "name": "Agent Mike Rivera", "uuid": "usr-teams-006" },
+    { "mailto": "lisa.park@techcorp.com", "name": "Agent Lisa Park", "uuid": "usr-teams-004" },
+    { "mailto": "tom.bradley@techcorp.com", "name": "Tom Bradley", "uuid": "usr-teams-002" }
+  ],
+  "dialog": [
+    { "type": "recording", "start": "2026-03-07T09:00:00Z", "duration": 1800, "parties": [0, 1, 2, 3], "mediatype": "audio/wav", "url": "https://teams-recordings.blob.core.windows.net/recordings/standup-20260307.wav" }
+  ],
+  "analysis": [
+    {
+      "type": "transcript", "vendor": "teams-adapter", "encoding": "none", "dialog": 0,
+      "body": "Rachel Kim: Good morning everyone. Let's do our weekly standup. Mike, you're up first.\n\nAgent Mike Rivera: Morning. This week I handled 47 calls. The biggest issue was the billing batch error from February — I had six customers call about duplicate charges. All refunds are processed now. I also saved a cancellation yesterday with the loyalty discount.\n\nRachel Kim: Great work on the retention. Lisa?\n\nAgent Lisa Park: I had 38 calls, mostly technical support. The VPN 4.2.0 bug drove a lot of volume — about 15 calls were related to that. Since the 4.2.1 patch went out, those have dropped to zero. I also did some proactive follow-ups which got very positive feedback.\n\nRachel Kim: Love the proactive approach. Tom, what's the data telling us?\n\nTom Bradley: Overall metrics look good. Average handle time is down 12% week over week. Customer satisfaction score is at 4.3 out of 5. The fraud detection process memo is drafted and going to legal review today. One concern — we're seeing an uptick in cancellation inquiries. Competitor X launched a price cut last week.\n\nRachel Kim: That's important. Mike, you mentioned the loyalty discount worked. Let's formalize that as a standard retention offer. Tom, can you pull the data on how many customers would qualify?\n\nTom Bradley: Sure, I'll have that by end of day.\n\nRachel Kim: Perfect. Any blockers anyone?\n\nAgent Lisa Park: We could use better documentation on the new API integration. I'm getting questions I can't answer.\n\nRachel Kim: Noted. I'll follow up with engineering. Alright, great standup everyone. Let's have a strong week."
+    },
+    { "type": "summary", "vendor": "teams-adapter", "body": "Weekly support standup. Mike: 47 calls, billing batch error resolved, cancellation saved. Lisa: 38 calls, VPN bug resolved with 4.2.1 patch, proactive follow-ups. Tom: AHT down 12%, CSAT 4.3/5, fraud detection memo in legal review, competitor price cut driving cancellation uptick. Action items: formalize loyalty discount as retention offer, pull qualification data, improve API docs.", "encoding": "none" },
+    { "type": "sentiment", "vendor": "keyword-heuristic", "body": "{\"overall\": 0.72, \"positive\": 5, \"negative\": 1}", "encoding": "json" },
+    { "type": "topics", "vendor": "keyword-heuristic", "body": "[\"Billing\", \"Technical Support\", \"Cancellation\"]", "encoding": "json" },
+    { "type": "source-metadata", "vendor": "teams-adapter", "body": "{\"source\": \"microsoft-teams\", \"callType\": \"groupCall\", \"modalities\": [\"audio\"], \"organizerName\": \"Rachel Kim\"}", "encoding": "json" }
+  ]
+}

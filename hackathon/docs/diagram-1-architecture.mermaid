@@ -1,0 +1,77 @@
+%% ============================================================================
+%% DIAGRAM 1: Five-Layer Architecture
+%% Render at https://mermaid.live
+%% ============================================================================
+
+graph TB
+    subgraph INGESTION["LAYER 1: INGESTION"]
+        direction LR
+        SIPREC["SIPREC Adapter\nFolder Drop + XML Parser"]
+        TEAMS["Teams Adapter\nMS Graph callRecord"]
+        WHATSAPP["WhatsApp Adapter\nChat Export Parser"]
+        AUDIO["Audio Upload\nIngest UI + Whisper"]
+    end
+
+    subgraph ENRICHMENT["LAYER 2: SEMANTIC ENRICHMENT"]
+        direction LR
+        JSONLD["JSON-LD-ex Transformer\n@context, Provenance,\nConfidence Algebra"]
+        AIANALYZE["AI Analyzer\nSentiment, Summary,\nTopics via Groq LLaMA"]
+        WHISPER["Whisper GPU\nRTX 4090\nAudio to Transcript"]
+    end
+
+    subgraph PERSISTENCE["LAYER 3: PERSISTENCE"]
+        direction LR
+        MONGO[("MongoDB 7.0\nvCon Documents +\nJSON-LD Enrichment")]
+        NEO4J[("Neo4j 5\nParticipant Graphs\nTopic Networks")]
+        CHROMA[("ChromaDB\nVector Embeddings\nfor RAG")]
+    end
+
+    subgraph INTELLIGENCE["LAYER 4: INTELLIGENCE"]
+        direction LR
+        RAG["RAG Engine\nContext Retrieval +\nLLM Q&A with Citations"]
+        MQTT["MQTT / UNS Bridge\nReal-time Event\nStreaming"]
+        MCP["MCP Extensions\nPlugin Tools for\nAgent Interaction"]
+    end
+
+    subgraph PRESENTATION["LAYER 5: PRESENTATION"]
+        direction LR
+        DASH["Analytics Dashboard\nKPIs, Sentiment, Live Feed"]
+        GRAPH["Graph Visualization\nNeo4j d3-force Network"]
+        CHAT["RAG Chat Panel\nNatural Language Q&A"]
+        INSPECTOR["JSON-LD Inspector\nSemantic Enrichment Tree"]
+    end
+
+    SIPREC --> ENRICHMENT
+    TEAMS --> ENRICHMENT
+    WHATSAPP --> ENRICHMENT
+    AUDIO --> ENRICHMENT
+
+    ENRICHMENT --> PERSISTENCE
+
+    PERSISTENCE --> INTELLIGENCE
+
+    INTELLIGENCE --> PRESENTATION
+
+    style INGESTION fill:#0d2137,stroke:#00b4d8,stroke-width:2px,color:#fff
+    style ENRICHMENT fill:#0d2137,stroke:#8e44ad,stroke-width:2px,color:#fff
+    style PERSISTENCE fill:#0d2137,stroke:#2e75b6,stroke-width:2px,color:#fff
+    style INTELLIGENCE fill:#0d2137,stroke:#27ae60,stroke-width:2px,color:#fff
+    style PRESENTATION fill:#0d2137,stroke:#f39c12,stroke-width:2px,color:#fff
+
+    style SIPREC fill:#1a3a5c,stroke:#00b4d8,color:#fff
+    style TEAMS fill:#1a3a5c,stroke:#00b4d8,color:#fff
+    style WHATSAPP fill:#1a3a5c,stroke:#00b4d8,color:#fff
+    style AUDIO fill:#1a3a5c,stroke:#00b4d8,color:#fff
+    style JSONLD fill:#2a1a3c,stroke:#8e44ad,color:#fff
+    style AIANALYZE fill:#2a1a3c,stroke:#8e44ad,color:#fff
+    style WHISPER fill:#2a1a3c,stroke:#8e44ad,color:#fff
+    style MONGO fill:#1a2a3c,stroke:#2e75b6,color:#fff
+    style NEO4J fill:#1a2a3c,stroke:#2e75b6,color:#fff
+    style CHROMA fill:#1a2a3c,stroke:#2e75b6,color:#fff
+    style RAG fill:#1a3a2c,stroke:#27ae60,color:#fff
+    style MQTT fill:#1a3a2c,stroke:#27ae60,color:#fff
+    style MCP fill:#1a3a2c,stroke:#27ae60,color:#fff
+    style DASH fill:#2a2a1c,stroke:#f39c12,color:#fff
+    style GRAPH fill:#2a2a1c,stroke:#f39c12,color:#fff
+    style CHAT fill:#2a2a1c,stroke:#f39c12,color:#fff
+    style INSPECTOR fill:#2a2a1c,stroke:#f39c12,color:#fff

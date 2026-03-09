@@ -1,0 +1,45 @@
+{
+  "vcon": "0.3.0",
+  "created_at": "2026-03-06T09:15:00Z",
+  "subject": "Sarah Johnson ↔ Agent Mike Rivera — Billing Dispute",
+  "parties": [
+    { "tel": "+15551234567", "name": "Sarah Johnson", "meta": { "role": "customer" } },
+    { "tel": "+15559876001", "name": "Agent Mike Rivera", "meta": { "role": "agent" } }
+  ],
+  "dialog": [
+    {
+      "type": "text",
+      "start": "2026-03-06T09:15:00Z",
+      "duration": 342,
+      "parties": [0, 1],
+      "mediatype": "text/plain"
+    }
+  ],
+  "analysis": [
+    {
+      "type": "transcript",
+      "vendor": "siprec-adapter",
+      "body": "Agent Mike Rivera: Thank you for calling TechCorp support, this is Mike. How can I help you today?\n\nSarah Johnson: Hi Mike, I'm calling because I was charged twice for my subscription last month. I noticed two charges of $49.99 on my credit card statement.\n\nAgent Mike Rivera: I'm sorry to hear that, Sarah. Let me pull up your account right away. Can you confirm the email address on your account?\n\nSarah Johnson: It's sarah.johnson@email.com.\n\nAgent Mike Rivera: Thank you. I can see the issue here. It looks like there was a system error during our billing cycle update on February 15th that caused duplicate charges for several customers. I sincerely apologize for the inconvenience.\n\nSarah Johnson: This is really frustrating. I've been a customer for three years and this is the second billing issue I've had.\n\nAgent Mike Rivera: I completely understand your frustration, and I want to make this right. I'm going to process a refund for the duplicate charge of $49.99 right now. You should see it back on your card within 3 to 5 business days. I'm also going to add a $10 credit to your account for the inconvenience.\n\nSarah Johnson: Okay, that sounds fair. Thank you for taking care of it quickly.\n\nAgent Mike Rivera: Absolutely. Is there anything else I can help you with today?\n\nSarah Johnson: No, that's all. Thanks Mike.\n\nAgent Mike Rivera: You're welcome, Sarah. Have a great day!",
+      "encoding": "none",
+      "dialog": 0
+    },
+    {
+      "type": "sentiment",
+      "vendor": "keyword-heuristic",
+      "body": "{\"overall\": 0.62, \"positive\": 4, \"negative\": 2}",
+      "encoding": "json"
+    },
+    {
+      "type": "topics",
+      "vendor": "keyword-heuristic",
+      "body": "[\"Billing\"]",
+      "encoding": "json"
+    },
+    {
+      "type": "summary",
+      "vendor": "siprec-adapter",
+      "body": "Customer called about duplicate $49.99 charge caused by billing system error. Agent processed refund (3-5 business days) and added $10 account credit.",
+      "encoding": "none"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "vcon": "0.3.0",
+  "created_at": "2026-03-06T11:20:00Z",
+  "subject": "David Chen ↔ Agent Lisa Park — VPN Connectivity Issue",
+  "parties": [
+    { "tel": "+15552345678", "name": "David Chen", "meta": { "role": "customer" } },
+    { "tel": "+15559876002", "name": "Agent Lisa Park", "meta": { "role": "agent" } }
+  ],
+  "dialog": [
+    { "type": "text", "start": "2026-03-06T11:20:00Z", "duration": 487, "parties": [0, 1], "mediatype": "text/plain" }
+  ],
+  "analysis": [
+    {
+      "type": "transcript", "vendor": "siprec-adapter", "encoding": "none", "dialog": 0,
+      "body": "Agent Lisa Park: TechCorp support, this is Lisa. How can I help?\n\nDavid Chen: Hi, my VPN keeps disconnecting every 10 minutes. I'm working remotely and it's killing my productivity.\n\nAgent Lisa Park: I understand how frustrating that is. Let me check your client version. What version are you running?\n\nDavid Chen: It says 4.2.0.\n\nAgent Lisa Park: That's the issue. Version 4.2.0 has a known keep-alive packet bug. We released a fix in 4.2.1 last week. Let me walk you through the update.\n\nDavid Chen: Okay, updating now... done. Version 4.2.1. Should I test it?\n\nAgent Lisa Park: Yes, connect and let's wait a few minutes.\n\nDavid Chen: It's been 5 minutes and holding steady. Before it would have dropped by now.\n\nAgent Lisa Park: Excellent! The update should resolve it permanently. I'll create a tracking ticket as well.\n\nDavid Chen: Great, thank you Lisa. Much easier than I expected.\n\nAgent Lisa Park: Happy to help! Have a great day."
+    },
+    { "type": "sentiment", "vendor": "keyword-heuristic", "body": "{\"overall\": 0.74, \"positive\": 4, \"negative\": 1}", "encoding": "json" },
+    { "type": "topics", "vendor": "keyword-heuristic", "body": "[\"Technical Support\", \"Remote Work\"]", "encoding": "json" },
+    { "type": "summary", "vendor": "siprec-adapter", "body": "VPN disconnection issue resolved by updating client from v4.2.0 to v4.2.1. Known keep-alive packet bug fixed.", "encoding": "none" }
+  ]
+}
