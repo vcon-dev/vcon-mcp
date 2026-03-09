@@ -17,6 +17,7 @@
 // Type Definitions
 // ============================================================================
 
+/** @deprecated Version field is deprecated; any string or missing is accepted. Kept for compatibility. */
 export type VConVersion = '0.3.0';
 export type Encoding = 'base64url' | 'json' | 'none';
 export type DialogType = 'recording' | 'text' | 'transfer' | 'incomplete';
@@ -212,7 +213,8 @@ export interface Group {
  * ✅ CORRECTED: Added appended per spec Section 4.1.9
  */
 export interface VCon {
-  vcon: VConVersion;
+  /** Version string (deprecated). Any value or missing is accepted; default '0.3.0' when normalizing. */
+  vcon?: string;
   uuid: string;
   extensions?: string[];    // ✅ Section 4.1.3 - Extension identifiers
   must_support?: string[];  // ✅ Section 4.1.4 - Required extension support
