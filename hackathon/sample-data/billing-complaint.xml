@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<recording>
+  <session id="SIPREC-2026-0307-001">
+    <start-time>2026-03-07T10:30:00Z</start-time>
+    <end-time>2026-03-07T10:35:42Z</end-time>
+  </session>
+  <caller>
+    <number>+15551234567</number>
+    <name>Sarah Johnson</name>
+  </caller>
+  <callee>
+    <number>+15559876001</number>
+    <name>Agent Mike Rivera</name>
+  </callee>
+  <direction>inbound</direction>
+</recording>

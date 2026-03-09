@@ -1,0 +1,11 @@
+3/5/26, 10:15 AM - Sarah Johnson: Hi, is this TechCorp support?
+3/5/26, 10:16 AM - Agent Mike Rivera: Hi Sarah! Yes, this is Mike from TechCorp support. How can I help you today?
+3/5/26, 10:16 AM - Sarah Johnson: I'm having trouble logging into my account. It says my password is incorrect but I'm sure it's right.
+3/5/26, 10:17 AM - Agent Mike Rivera: I'm sorry to hear that. Let me check your account. Can you confirm the email address you're using to log in?
+3/5/26, 10:17 AM - Sarah Johnson: sarah.johnson@email.com
+3/5/26, 10:18 AM - Agent Mike Rivera: Thanks Sarah. I can see your account was temporarily locked after 5 failed login attempts. This is a security measure. I'm going to unlock it now.
+3/5/26, 10:19 AM - Agent Mike Rivera: Done! Your account is unlocked. You should be able to log in now with your existing password. If you'd like, I can also send you a password reset link.
+3/5/26, 10:20 AM - Sarah Johnson: Let me try... yes! I'm in! Thank you so much Mike.
+3/5/26, 10:20 AM - Agent Mike Rivera: Great! Just so you know, the lockout happens after 5 failed attempts within 30 minutes. If it happens again, you can wait 30 minutes or reach out to us.
+3/5/26, 10:21 AM - Sarah Johnson: Good to know. Thanks for the quick help!
+3/5/26, 10:21 AM - Agent Mike Rivera: You're welcome! Have a great day Sarah 😊

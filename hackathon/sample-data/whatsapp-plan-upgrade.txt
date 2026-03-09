@@ -1,0 +1,16 @@
+3/6/26, 2:30 PM - David Chen: Hey, I have a question about upgrading my plan
+3/6/26, 2:32 PM - Agent Lisa Park: Hi David! Of course, I'd be happy to help with that. What would you like to know?
+3/6/26, 2:33 PM - David Chen: I'm currently on the Basic plan at $29/mo. What's the difference with Professional?
+3/6/26, 2:34 PM - Agent Lisa Park: Great question! The Professional plan is $49/mo and includes:
+3/6/26, 2:34 PM - Agent Lisa Park: - Priority VPN routing (dedicated bandwidth)
+3/6/26, 2:34 PM - Agent Lisa Park: - 24/7 phone support (vs business hours only)
+3/6/26, 2:35 PM - Agent Lisa Park: - Advanced analytics dashboard
+3/6/26, 2:35 PM - Agent Lisa Park: - Up to 10 user seats (vs 3 on Basic)
+3/6/26, 2:36 PM - David Chen: The priority VPN routing sounds great. I've been having some connectivity issues working remotely.
+3/6/26, 2:37 PM - Agent Lisa Park: Actually, I helped you with a VPN issue recently! The 4.2.1 update should have fixed the disconnections. But priority routing would give you even better performance during peak hours.
+3/6/26, 2:38 PM - David Chen: Right, that fix worked perfectly. Can I do a trial of Professional before committing?
+3/6/26, 2:39 PM - Agent Lisa Park: Absolutely! I can set you up with a 14-day free trial. No credit card change needed — if you like it, we'll switch your billing after the trial. If not, you'll stay on Basic automatically.
+3/6/26, 2:40 PM - David Chen: Perfect, let's do that!
+3/6/26, 2:41 PM - Agent Lisa Park: Done! Your Professional trial is active now. You'll see the new features in your dashboard within a few minutes. I'll also send you a getting-started guide via email.
+3/6/26, 2:42 PM - David Chen: Awesome, thanks Lisa! Really appreciate the help.
+3/6/26, 2:42 PM - Agent Lisa Park: My pleasure David! Feel free to message anytime if you have questions during the trial. 😊

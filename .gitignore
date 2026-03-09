@@ -65,3 +65,10 @@ Desktop.ini
 test_output.txt
 secrets.json
 *.local
+
+# Hackathon runtime files
+hackathon/watch/processed/
+hackathon/watch/failed/
+hackathon/sample-data/demo-call.mp3
+__pycache__/
+*.pyc

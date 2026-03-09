@@ -1,0 +1,21 @@
+{
+  "vcon": "0.3.0",
+  "created_at": "2026-03-07T08:30:00Z",
+  "subject": "Maria Gonzalez ↔ Agent Mike Rivera — Account Cancellation Request",
+  "parties": [
+    { "tel": "+15553456789", "name": "Maria Gonzalez", "meta": { "role": "customer" } },
+    { "tel": "+15559876001", "name": "Agent Mike Rivera", "meta": { "role": "agent" } }
+  ],
+  "dialog": [
+    { "type": "text", "start": "2026-03-07T08:30:00Z", "duration": 425, "parties": [0, 1], "mediatype": "text/plain" }
+  ],
+  "analysis": [
+    {
+      "type": "transcript", "vendor": "siprec-adapter", "encoding": "none", "dialog": 0,
+      "body": "Agent Mike Rivera: TechCorp support, this is Mike. How can I help you?\n\nMaria Gonzalez: Hi, I'd like to cancel my account. I'm switching to a competitor.\n\nAgent Mike Rivera: I'm sorry to hear that, Maria. May I ask what's prompting the switch?\n\nMaria Gonzalez: Honestly, the pricing. Your competitor is offering the same features for $30 a month instead of $50.\n\nAgent Mike Rivera: I understand. Price is an important factor. Before you go, I want to make sure you're aware that we recently launched a loyalty discount for customers who've been with us over a year. You'd qualify for 25% off, bringing your monthly cost to $37.50.\n\nMaria Gonzalez: I didn't know about that. That's closer, but still more expensive.\n\nAgent Mike Rivera: I can also offer you a one-time additional discount of $5 per month for the next 6 months, bringing it to $32.50. Plus, our premium support and 99.9% uptime guarantee are included at no extra cost.\n\nMaria Gonzalez: $32.50 with the premium support... let me think about that. Actually, that's competitive enough. I'll stay.\n\nAgent Mike Rivera: Wonderful! I've applied both discounts to your account. They'll take effect on your next billing cycle. Is there anything else I can help with?\n\nMaria Gonzalez: No, that's great. Thank you for working with me on this.\n\nAgent Mike Rivera: My pleasure, Maria. We're glad to keep you as a customer!"
+    },
+    { "type": "sentiment", "vendor": "keyword-heuristic", "body": "{\"overall\": 0.68, \"positive\": 4, \"negative\": 1}", "encoding": "json" },
+    { "type": "topics", "vendor": "keyword-heuristic", "body": "[\"Cancellation\", \"Billing\", \"Upgrade\"]", "encoding": "json" },
+    { "type": "summary", "vendor": "siprec-adapter", "body": "Customer requested cancellation due to competitor pricing ($30 vs $50). Retention offer: 25% loyalty discount + $5/mo for 6 months = $32.50/mo. Customer retained.", "encoding": "none" }
+  ]
+}

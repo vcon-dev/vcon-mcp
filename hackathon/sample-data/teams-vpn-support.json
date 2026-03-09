@@ -1,0 +1,48 @@
+{
+  "id": "b8c2d4e6-1a3f-5c7d-9e0b-2d4f6a8c0e2a",
+  "version": 1,
+  "type": "peerToPeer",
+  "modalities": ["audio"],
+  "lastModifiedDateTime": "2026-03-05T16:45:00Z",
+  "startDateTime": "2026-03-05T16:15:00Z",
+  "endDateTime": "2026-03-05T16:42:18Z",
+  "organizer": {
+    "user": {
+      "id": "usr-teams-004",
+      "displayName": "Agent Lisa Park",
+      "userPrincipalName": "lisa.park@techcorp.com"
+    }
+  },
+  "participants": [
+    {
+      "user": {
+        "id": "usr-teams-004",
+        "displayName": "Agent Lisa Park",
+        "userPrincipalName": "lisa.park@techcorp.com"
+      },
+      "role": "organizer"
+    },
+    {
+      "user": {
+        "id": "usr-teams-005",
+        "displayName": "David Chen",
+        "userPrincipalName": "david.chen@gmail.com"
+      },
+      "role": "attendee"
+    }
+  ],
+  "sessions": [
+    {
+      "id": "sess-002",
+      "startDateTime": "2026-03-05T16:15:00Z",
+      "endDateTime": "2026-03-05T16:42:18Z",
+      "modalities": ["audio"]
+    }
+  ],
+  "_simulated": {
+    "subject": "Technical Support — David Chen VPN Configuration",
+    "transcript": "Agent Lisa Park: Hi David, thanks for reaching out via Teams. I see you're having issues with VPN connectivity?\n\nDavid Chen: Yes, ever since the last update my VPN client keeps disconnecting every 10 to 15 minutes. I'm working remotely and it's really impacting my productivity.\n\nAgent Lisa Park: I understand how frustrating that must be. Let me check a few things. Are you running the latest version of the VPN client, version 4.2.1?\n\nDavid Chen: I think so. Let me check... it says version 4.2.0.\n\nAgent Lisa Park: There's the issue. Version 4.2.0 has a known bug with keep-alive packets on certain network configurations. We pushed a patch in 4.2.1 last week. Let me walk you through the update.\n\nDavid Chen: Okay, I'm ready.\n\nAgent Lisa Park: First, open your system tray and right-click the VPN icon. Select 'Check for Updates'. It should find version 4.2.1. Go ahead and install it — it won't interrupt your current connection.\n\nDavid Chen: Updating now... it's downloading. Okay, it's asking me to restart the client.\n\nAgent Lisa Park: Go ahead and restart it. I'll wait.\n\nDavid Chen: Done. It says version 4.2.1 now. Should I test the connection?\n\nAgent Lisa Park: Yes, connect to the corporate VPN and let's wait a few minutes to see if the disconnection issue persists.\n\nDavid Chen: Connected. It's been about 5 minutes now and it's holding steady. Before it would have dropped by now.\n\nAgent Lisa Park: Excellent! The update should resolve the keep-alive issue permanently. If you experience any more disconnections, please reach out again and we'll investigate further. I'm also going to create a ticket so we can track this.\n\nDavid Chen: Great, thank you Lisa. That was much easier than I expected.\n\nAgent Lisa Park: Happy to help! Have a great rest of your day.",
+    "recording_url": "https://teams-recordings.blob.core.windows.net/recordings/call-b8c2d4e6.wav",
+    "summary": "VPN disconnection issue resolved by updating client from v4.2.0 to v4.2.1 which fixed a known keep-alive packet bug. Customer confirmed stable connection after update."
+  }
+}
