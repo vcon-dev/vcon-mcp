@@ -48,8 +48,9 @@ function getHeader(req: IncomingMessage, name: string): string | undefined {
  */
 export function getTokenFromRequest(req: IncomingMessage, headerName: string): string | undefined {
   const authHeader = getHeader(req, 'authorization');
-  if (authHeader?.trim().toLowerCase().startsWith('bearer ')) {
-    return authHeader.slice(7).trim() || undefined;
+  const trimmedAuthHeader = authHeader?.trim();
+  if (trimmedAuthHeader?.toLowerCase().startsWith('bearer ')) {
+    return trimmedAuthHeader.slice(7).trim() || undefined;
   }
   const value = getHeader(req, headerName);
   return value?.trim() || undefined;
@@ -152,8 +153,9 @@ export function createAuthMiddleware(config?: Partial<AuthConfig>) {
 
     // Get API key: support Authorization: Bearer <token> (MockMCP-style) and configured header
     const authHeader = ctx.get('authorization');
-    const apiKey = authHeader?.trim().toLowerCase().startsWith('bearer ')
-      ? authHeader.slice(7).trim()
+    const trimmedAuthHeader = authHeader?.trim();
+    const apiKey = trimmedAuthHeader?.toLowerCase().startsWith('bearer ')
+      ? trimmedAuthHeader.slice(7).trim()
       : (ctx.get(authConfig.headerName) || '').trim();
 
     if (!apiKey) {
