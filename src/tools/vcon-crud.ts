@@ -56,7 +56,7 @@ export const DialogSchema = z.object({
   encoding: z.enum(['base64url', 'json', 'none']).optional(),
   url: z.string().optional(),
   content_hash: z.union([z.string(), z.array(z.string())]).optional(),
-  disposition: z.enum(['no-answer', 'congestion', 'failed', 'busy', 'hung-up', 'voicemail-no-message']).optional(),
+  disposition: z.string().optional().describe('Call disposition; any string accepted (spec suggests no-answer, congestion, failed, busy, hung-up, voicemail-no-message)'),
   session_id: z.string().optional().describe('Session identifier'),  // ✅ New field
   application: z.string().optional().describe('Application that created this dialog'),  // ✅ New field
   message_id: z.string().optional().describe('Message identifier'),  // ✅ New field

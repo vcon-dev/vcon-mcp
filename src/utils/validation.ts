@@ -11,8 +11,7 @@ import {
   Dialog, 
   Party,
   isValidDialogType,
-  isValidEncoding,
-  isValidDisposition 
+  isValidEncoding
 } from '../types/vcon.js';
 
 export interface ValidationResult {
@@ -114,16 +113,13 @@ export class VConValidator {
         );
       }
 
-      // Incomplete dialogs must have disposition
+      // Incomplete dialogs must have disposition (any string is accepted)
       if (dialog.type === 'incomplete' && !dialog.disposition) {
         this.errors.push(`Dialog ${index} is incomplete but has no disposition`);
       }
 
-      // Validate disposition values
-      if (dialog.disposition && !isValidDisposition(dialog.disposition)) {
-        this.errors.push(
-          `Dialog ${index} has invalid disposition: ${dialog.disposition}`
-        );
+      if (dialog.disposition != null && typeof dialog.disposition !== 'string') {
+        this.errors.push(`Dialog ${index} disposition must be a string`);
       }
 
       // Transfer dialogs must have transfer fields
