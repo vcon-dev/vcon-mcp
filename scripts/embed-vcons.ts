@@ -22,7 +22,7 @@
  *   --mode=MODE          Mode: 'backfill' (default) or 'embed'
  *   --vcon-id=UUID       Specific vCon UUID to embed (required for embed mode)
  *   --limit=N            Max text units to process per batch (default: 100, max: 500)
- *   --provider=PROVIDER  Embedding provider: 'openai', 'azure', or 'hf' (auto-detected from env)
+ *   --provider=PROVIDER  Embedding provider: 'litellm', 'openai', 'azure', or 'hf' (auto-detected from env)
  *   --continuous, -c     Run continuously until all embeddings complete
  *   --delay=N            Delay in seconds between batches in continuous mode (default: 2)
  *   --oldest-first       Process oldest vCons first (for backfilling old data)
@@ -30,6 +30,8 @@
  * Environment Variables:
  *   SUPABASE_URL                       Supabase project URL
  *   SUPABASE_SERVICE_ROLE_KEY          Service role key for admin operations
+ *   LITELLM_PROXY_URL                  LiteLLM proxy base URL (when using LiteLLM; takes priority)
+ *   LITELLM_MASTER_KEY / LITELLM_API_KEY  LiteLLM proxy API key
  *   OPENAI_API_KEY                     OpenAI API key (for text-embedding-3-small)
  *   AZURE_OPENAI_EMBEDDING_ENDPOINT    Azure OpenAI base endpoint (e.g., https://your-resource.openai.azure.com)
  *   AZURE_OPENAI_EMBEDDING_API_KEY     Azure OpenAI API key
@@ -63,11 +65,12 @@
 import * as dotenv from 'dotenv';
 import { getSupabaseClient } from '../dist/db/client.js';
 import pLimit from 'p-limit';
+import * as sharedEmbed from '../supabase/functions/_shared/embeddings';
 
 // Load environment variables
 dotenv.config();
 
-type EmbeddingProvider = 'openai' | 'azure' | 'hf';
+type EmbeddingProvider = sharedEmbed.EmbeddingProvider;
 
 interface TextUnit {
   vcon_id: string;
@@ -119,7 +122,7 @@ function parseArgs(): {
       limit = Math.max(1, Math.min(500, parseInt(arg.split('=')[1], 10)));
     } else if (arg.startsWith('--provider=')) {
       const value = arg.split('=')[1] as EmbeddingProvider;
-      if (value === 'openai' || value === 'azure' || value === 'hf') {
+      if (value === 'litellm' || value === 'openai' || value === 'azure' || value === 'hf') {
         provider = value;
       }
     } else if (arg === '--continuous' || arg === '-c') {
@@ -136,13 +139,17 @@ function parseArgs(): {
 
 /**
  * Detect embedding provider from environment variables
- * Priority: Azure OpenAI > OpenAI > Hugging Face
+ * Priority: LiteLLM > Azure OpenAI > OpenAI > Hugging Face
  */
 function detectProvider(preferredProvider?: EmbeddingProvider): EmbeddingProvider {
   if (preferredProvider) {
     return preferredProvider;
   }
-  // Azure OpenAI takes priority if endpoint and API key are set
+  const litellmUrl = (process.env.LITELLM_PROXY_URL ?? '').trim().replace(/\/$/, '');
+  const litellmKey = (process.env.LITELLM_MASTER_KEY ?? process.env.LITELLM_API_KEY ?? '').trim();
+  if (litellmUrl && litellmKey) {
+    return 'litellm';
+  }
   if (process.env.AZURE_OPENAI_EMBEDDING_ENDPOINT && 
       process.env.AZURE_OPENAI_EMBEDDING_API_KEY) {
     return 'azure';
@@ -305,141 +312,31 @@ function truncateToTokens(text: string, maxTokens: number): string {
   return text.substring(0, maxChars);
 }
 
-/**
- * Generate embeddings using OpenAI API
- */
+/** Wrapper: reads env and calls shared embedLiteLLM */
+export async function embedLiteLLM(texts: string[]): Promise<number[][]> {
+  const baseUrl = (process.env.LITELLM_PROXY_URL ?? '').trim().replace(/\/$/, '');
+  const apiKey = (process.env.LITELLM_MASTER_KEY ?? process.env.LITELLM_API_KEY ?? '').trim();
+  return sharedEmbed.embedLiteLLM(texts, { baseUrl, apiKey });
+}
+
+/** Wrapper: reads env and calls shared embedOpenAI */
 async function embedOpenAI(texts: string[]): Promise<number[][]> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error('OPENAI_API_KEY not set');
-  }
-
-  try {
-    const response = await fetch('https://api.openai.com/v1/embeddings', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: 'text-embedding-3-small',
-        input: texts,
-        dimensions: 384
-      })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      let errorDetails = '';
-      try {
-        const errorJson = JSON.parse(errorText);
-        errorDetails = JSON.stringify(errorJson, null, 2);
-      } catch {
-        errorDetails = errorText;
-      }
-      throw new Error(`OpenAI API error ${response.status}: ${errorDetails}`);
-    }
-
-    const json = await response.json();
-    return json.data.map((d: any) => d.embedding as number[]);
-  } catch (error) {
-    if (error instanceof Error) {
-      throw error;
-    }
-    throw new Error(`OpenAI embeddings failed: ${JSON.stringify(error)}`);
-  }
+  const apiKey = process.env.OPENAI_API_KEY ?? '';
+  return sharedEmbed.embedOpenAI(texts, { apiKey });
 }
 
-/**
- * Generate embeddings using Azure OpenAI API
- */
+/** Wrapper: reads env and calls shared embedAzureOpenAI */
 async function embedAzureOpenAI(texts: string[]): Promise<number[][]> {
-  const baseEndpoint = process.env.AZURE_OPENAI_EMBEDDING_ENDPOINT;
-  const apiKey = process.env.AZURE_OPENAI_EMBEDDING_API_KEY;
-  const deployment = 'text-embedding-3-small';
+  const endpoint = process.env.AZURE_OPENAI_EMBEDDING_ENDPOINT ?? '';
+  const apiKey = process.env.AZURE_OPENAI_EMBEDDING_API_KEY ?? '';
   const apiVersion = process.env.AZURE_OPENAI_EMBEDDING_API_VERSION || '2024-02-01';
-
-  if (!baseEndpoint || !apiKey) {
-    throw new Error('AZURE_OPENAI_EMBEDDING_ENDPOINT and AZURE_OPENAI_EMBEDDING_API_KEY are required');
-  }
-
-  // Construct the full URL: {endpoint}/openai/deployments/{deployment}/embeddings?api-version={version}
-  const normalizedEndpoint = baseEndpoint.replace(/\/$/, ''); // Remove trailing slash if present
-  const url = `${normalizedEndpoint}/openai/deployments/${deployment}/embeddings?api-version=${apiVersion}`;
-
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'api-key': apiKey
-      },
-      body: JSON.stringify({
-        input: texts,
-        dimensions: 384
-      })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      let errorDetails = '';
-      try {
-        const errorJson = JSON.parse(errorText);
-        errorDetails = JSON.stringify(errorJson, null, 2);
-      } catch {
-        errorDetails = errorText;
-      }
-      throw new Error(`Azure OpenAI API error ${response.status}: ${errorDetails}`);
-    }
-
-    const json = await response.json();
-    return json.data.map((d: any) => d.embedding as number[]);
-  } catch (error) {
-    if (error instanceof Error) {
-      throw error;
-    }
-    throw new Error(`Azure OpenAI embeddings failed: ${JSON.stringify(error)}`);
-  }
+  return sharedEmbed.embedAzureOpenAI(texts, { endpoint, apiKey, apiVersion });
 }
 
-/**
- * Generate embeddings using Hugging Face API
- */
+/** Wrapper: reads env and calls shared embedHF */
 async function embedHF(texts: string[]): Promise<number[][]> {
-  const apiToken = process.env.HF_API_TOKEN;
-  if (!apiToken) {
-    throw new Error('HF_API_TOKEN not set');
-  }
-
-  const result: number[][] = [];
-  
-  for (const text of texts) {
-    const response = await fetch(
-      'https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/all-MiniLM-L6-v2',
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          inputs: text,
-          options: { wait_for_model: true }
-        })
-      }
-    );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HF embeddings failed: ${response.status} ${errorText}`);
-    }
-
-    const json = await response.json();
-    const vec = Array.isArray(json[0]) ? json[0] : json;
-    result.push(vec as number[]);
-  }
-
-  return result;
+  const apiToken = process.env.HF_API_TOKEN ?? '';
+  return sharedEmbed.embedHF(texts, { apiToken });
 }
 
 /**
@@ -451,24 +348,13 @@ async function upsertEmbeddings(
   vectors: number[][],
   provider: EmbeddingProvider
 ): Promise<void> {
-  const getModelName = (provider: EmbeddingProvider): string => {
-    switch (provider) {
-      case 'openai':
-      case 'azure':
-        // Both use the same underlying model
-        return 'text-embedding-3-small';
-      case 'hf':
-        return 'sentence-transformers/all-MiniLM-L6-v2';
-    }
-  };
-
   const rows = units.map((u, i) => ({
     vcon_id: u.vcon_id,
     content_type: u.content_type,
     content_reference: u.content_reference,
     content_text: u.content_text,
     embedding: vectors[i],
-    embedding_model: getModelName(provider),
+    embedding_model: sharedEmbed.getModelName(provider),
     embedding_dimension: 384
   }));
 
@@ -511,7 +397,7 @@ async function processEmbeddings(
   const MAX_TOKENS_PER_ITEM = 8000;
   const CONCURRENCY_LIMIT = 15; // Process 15 batches concurrently
 
-  if (provider === 'openai' || provider === 'azure') {
+  if (provider === 'litellm' || provider === 'openai' || provider === 'azure') {
     // Group units into token-aware batches
     const batches: TextUnit[][] = [];
     let currentBatch: TextUnit[] = [];
@@ -543,7 +429,7 @@ async function processEmbeddings(
     const startTime = Date.now();
 
     // Choose the appropriate embedding function
-    const embedFn = provider === 'azure' ? embedAzureOpenAI : embedOpenAI;
+    const embedFn = provider === 'litellm' ? embedLiteLLM : provider === 'azure' ? embedAzureOpenAI : embedOpenAI;
 
     const processBatch = async (batch: TextUnit[], batchIndex: number) => {
       try {
@@ -662,6 +548,15 @@ async function main() {
     process.exit(1);
   }
 
+  if (provider === 'litellm') {
+    const url = (process.env.LITELLM_PROXY_URL ?? '').trim();
+    const key = (process.env.LITELLM_MASTER_KEY ?? process.env.LITELLM_API_KEY ?? '').trim();
+    if (!url || !key) {
+      console.error('❌ LITELLM_PROXY_URL and LITELLM_MASTER_KEY (or LITELLM_API_KEY) required for LiteLLM provider');
+      process.exit(1);
+    }
+  }
+
   if (provider === 'openai' && !process.env.OPENAI_API_KEY) {
     console.error('❌ OPENAI_API_KEY not set (required for OpenAI provider)');
     console.error('   Set OPENAI_API_KEY or use --provider=azure for Azure OpenAI');
@@ -695,6 +590,8 @@ async function main() {
   // Display configuration
   const getProviderDisplayName = (p: EmbeddingProvider): string => {
     switch (p) {
+      case 'litellm':
+        return 'LiteLLM proxy (text-embedding-3-small)';
       case 'openai':
         return 'OpenAI (text-embedding-3-small)';
       case 'azure':
