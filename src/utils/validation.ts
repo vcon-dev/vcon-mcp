@@ -170,7 +170,11 @@ export class VConValidator {
       // If body and encoding are present, validate they match
       if (analysis.body && analysis.encoding === 'json') {
         try {
-          JSON.parse(analysis.body);
+          // body may already be a parsed object or a JSON string
+          if (typeof analysis.body === 'string') {
+            JSON.parse(analysis.body);
+          }
+          // If it's already an object, it's valid JSON
         } catch (e) {
           this.errors.push(
             `Analysis ${index} has encoding='json' but body is not valid JSON`

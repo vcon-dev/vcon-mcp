@@ -137,7 +137,7 @@ export interface Attachment {
   dialog?: number;          // ✅ Section 4.4.4 - Dialog reference
   mediatype?: string;
   filename?: string;
-  body?: string;
+  body?: unknown;           // Can be string, object, or array depending on encoding
   encoding?: Encoding;
   url?: string;
   content_hash?: string | string[];
@@ -163,7 +163,7 @@ export interface Analysis {
   vendor: string;           // ✅ REQUIRED per spec Section 4.5.5 (no ?)
   product?: string;
   schema?: string;          // ✅ CORRECT: 'schema' NOT 'schema_version' (Section 4.5.7)
-  body?: string;            // ✅ CORRECT: string type, supports all formats (Section 4.5.8)
+  body?: unknown;           // Can be string, object, or array depending on content/encoding
   encoding?: Encoding;
   url?: string;
   content_hash?: string | string[];

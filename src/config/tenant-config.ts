@@ -52,15 +52,19 @@ export function extractTenantFromAttachment(
     return null;
   }
 
-  // Try to parse body as JSON
+  // Use encoding to determine how to interpret body (same logic as deserializeBody in queries.ts)
+  // encoding='none' (or unset): body is a native object (already deserialized on read)
+  // encoding='json': body is intentionally a JSON string — parse it
+  // encoding='base64url': not a JSON payload, cannot extract tenant
   let bodyData: any;
   try {
-    // Handle different encodings
-    if (attachment.encoding === 'json' || !attachment.encoding) {
+    if (attachment.encoding === 'base64url') {
+      return null;
+    } else if (attachment.encoding === 'json' && typeof attachment.body === 'string') {
       bodyData = JSON.parse(attachment.body);
     } else {
-      // For other encodings, try parsing anyway (might be plain JSON)
-      bodyData = JSON.parse(attachment.body);
+      // encoding='none' or unset: body was deserialized to an object on read; use directly
+      bodyData = attachment.body;
     }
   } catch (e) {
     // Not valid JSON, cannot extract tenant

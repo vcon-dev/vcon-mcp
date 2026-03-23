@@ -16,8 +16,10 @@ import { ATTR_CACHE_HIT, ATTR_DB_OPERATION, ATTR_SEARCH_RESULTS_COUNT, ATTR_SEAR
 import { logWithContext, recordCounter, withSpan } from '../observability/instrumentation.js';
 import { createLogger } from '../observability/logger.js';
 import { Analysis, Attachment, Dialog, VCon } from '../types/vcon.js';
+import { deserializeBody, serializeBody } from '../utils/body-serialization.js';
 
 const logger = createLogger('queries');
+
 
 export class VConQueries {
   private redis: Redis | null = null;
@@ -376,7 +378,7 @@ export class VConQueries {
         vendor: analysis.vendor,              // ✅ REQUIRED field
         product: analysis.product,
         schema: analysis.schema,              // ✅ CORRECT: 'schema' NOT 'schema_version'
-        body: analysis.body,                  // ✅ CORRECT: TEXT type, supports all formats
+        body: serializeBody(analysis.body, analysis.encoding),  // Serialize only for encoding='none'
         encoding: analysis.encoding,
         url: analysis.url,
         content_hash: analysis.content_hash,
@@ -512,7 +514,7 @@ export class VConQueries {
         dialog: attachment.dialog,            // ✅ Added per spec Section 4.4.4
         mimetype: attachment.mediatype,
         filename: attachment.filename,
-        body: attachment.body,
+        body: serializeBody(attachment.body, attachment.encoding),  // Serialize only for encoding='none'
         encoding: attachment.encoding,
         url: attachment.url,
         content_hash: attachment.content_hash,
@@ -697,7 +699,7 @@ export class VConQueries {
         vendor: a.vendor,                     // ✅ Required field
         product: a.product,
         schema: a.schema,                     // ✅ CORRECT: 'schema' NOT 'schema_version'
-        body: a.body,                         // ✅ TEXT type
+        body: deserializeBody(a.body, a.encoding),   // Parse back to object only for encoding='none'
         encoding: a.encoding,
         url: a.url,
         content_hash: a.content_hash,
@@ -709,7 +711,7 @@ export class VConQueries {
         dialog: att.dialog,                   // ✅ Correct field
         mediatype: att.mimetype,
         filename: att.filename,
-        body: att.body,
+        body: deserializeBody(att.body, att.encoding),  // Parse back to object only for encoding='none'
         encoding: att.encoding,
         url: att.url,
         content_hash: att.content_hash,
