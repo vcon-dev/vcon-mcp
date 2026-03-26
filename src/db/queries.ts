@@ -71,11 +71,11 @@ export class VConQueries {
         }
       }
 
-      // Insert main vcon
+      // Upsert main vcon — idempotent on re-submission of same UUID
       // Set id = uuid so they match (id is the PK, uuid is the vCon document UUID)
       const { data: vconData, error: vconError } = await this.supabase
         .from('vcons')
-        .insert({
+        .upsert({
           id: vcon.uuid,     // Explicitly set id to match uuid
           uuid: vcon.uuid,
           vcon_version: vcon.vcon ?? '0.3.0',
@@ -87,7 +87,7 @@ export class VConQueries {
           redacted: vcon.redacted || {},
           appended: vcon.appended || {},        // ✅ Added per spec
           tenant_id: tenantId,                  // ✅ Added for RLS multi-tenant support
-        })
+        }, { onConflict: 'id' })
         .select('id, uuid')
         .single();
 
@@ -98,6 +98,14 @@ export class VConQueries {
         }, 'Database query errors');
         throw vconError;
       }
+
+      // Delete existing child rows so re-submission replaces them cleanly
+      await Promise.all([
+        this.supabase.from('parties').delete().eq('vcon_id', vconData.id),
+        this.supabase.from('dialog').delete().eq('vcon_id', vconData.id),
+        this.supabase.from('analysis').delete().eq('vcon_id', vconData.id),
+        this.supabase.from('attachments').delete().eq('vcon_id', vconData.id),
+      ]);
 
     // Insert parties
     if (vcon.parties.length > 0) {

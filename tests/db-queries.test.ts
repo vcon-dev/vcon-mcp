@@ -19,6 +19,7 @@ describe('VConQueries', () => {
         from: vi.fn(),
         select: vi.fn(),
         insert: vi.fn(),
+        upsert: vi.fn(),
         update: vi.fn(),
         delete: vi.fn(),
         eq: vi.fn(),
@@ -70,7 +71,7 @@ describe('VConQueries', () => {
 
       expect(result.uuid).toBe(testVCon.uuid);
       expect(mockSupabase.from).toHaveBeenCalledWith('vcons');
-      expect(mockSupabase.insert).toHaveBeenCalled();
+      expect(mockSupabase.upsert).toHaveBeenCalled();
     });
 
     it('should create vCon with all components (dialog, analysis, attachments)', async () => {
