@@ -1,5 +1,7 @@
 # Supabase Semantic Search Implementation Guide
 
+> **⚠️ Historical reference document.** The SQL examples in Steps 1–2 below reflect an early 1536-dim / `text-embedding-ada-002` design. The current implementation uses **`text-embedding-3-small` at 384 dimensions**. For the authoritative setup, see [`docs/development/INGEST_AND_EMBEDDINGS.md`](./INGEST_AND_EMBEDDINGS.md).
+
 ## Overview
 
 This guide explains how to implement semantic search for vCon conversation content in Supabase PostgreSQL using the **pgvector** extension for vector similarity search.
@@ -48,18 +50,18 @@ SELECT * FROM pg_extension WHERE extname = 'vector';
 ```sql
 -- Add vector columns to existing tables
 ALTER TABLE vcons 
-ADD COLUMN subject_embedding vector(1536),  -- OpenAI ada-002 dimension
-ADD COLUMN subject_embedding_model TEXT DEFAULT 'text-embedding-ada-002',
+ADD COLUMN subject_embedding vector(384),  -- text-embedding-3-small dimension
+ADD COLUMN subject_embedding_model TEXT DEFAULT 'text-embedding-3-small',
 ADD COLUMN subject_embedding_updated_at TIMESTAMPTZ;
 
 ALTER TABLE dialog
-ADD COLUMN content_embedding vector(1536),
-ADD COLUMN content_embedding_model TEXT DEFAULT 'text-embedding-ada-002',
+ADD COLUMN content_embedding vector(384),
+ADD COLUMN content_embedding_model TEXT DEFAULT 'text-embedding-3-small',
 ADD COLUMN content_embedding_updated_at TIMESTAMPTZ;
 
 ALTER TABLE analysis
-ADD COLUMN summary_embedding vector(1536),
-ADD COLUMN summary_embedding_model TEXT DEFAULT 'text-embedding-ada-002',
+ADD COLUMN summary_embedding vector(384),
+ADD COLUMN summary_embedding_model TEXT DEFAULT 'text-embedding-3-small',
 ADD COLUMN summary_embedding_updated_at TIMESTAMPTZ;
 ```
 
@@ -79,9 +81,9 @@ CREATE TABLE vcon_embeddings (
     content_text TEXT NOT NULL, -- Original text that was embedded
     
     -- The embedding
-    embedding vector(1536) NOT NULL,
-    embedding_model TEXT NOT NULL DEFAULT 'text-embedding-ada-002',
-    embedding_dimension INTEGER NOT NULL DEFAULT 1536,
+    embedding vector(384) NOT NULL,
+    embedding_model TEXT NOT NULL DEFAULT 'text-embedding-3-small',
+    embedding_dimension INTEGER NOT NULL DEFAULT 384,
     
     -- Metadata
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -157,7 +159,7 @@ from supabase import create_client
 openai.api_key = "your-openai-key"
 supabase = create_client("your-supabase-url", "your-supabase-key")
 
-def generate_embedding(text: str, model: str = "text-embedding-ada-002") -> list[float]:
+def generate_embedding(text: str, model: str = "text-embedding-3-small") -> list[float]:
     """Generate embedding using OpenAI API."""
     response = openai.embeddings.create(
         input=text,
@@ -177,8 +179,8 @@ def embed_vcon_content(vcon_id: str, subject: str, dialog_texts: list[str]):
             'content_reference': None,
             'content_text': subject,
             'embedding': subject_embedding,
-            'embedding_model': 'text-embedding-ada-002',
-            'embedding_dimension': 1536
+            'embedding_model': 'text-embedding-3-small',
+            'embedding_dimension': 384
         }).execute()
     
     # Embed dialogs
@@ -264,7 +266,7 @@ serve(async (req) => {
 })
 ```
 
-See `docs/INGEST_AND_EMBEDDINGS.md` for the production-ready function (`supabase/functions/embed-vcons/index.ts`), environment variables, and Cron scheduling. This repository standardizes on 384‑dim embeddings to match the migrations and HNSW index.
+See [`docs/development/INGEST_AND_EMBEDDINGS.md`](./INGEST_AND_EMBEDDINGS.md) for the production-ready function (`supabase/functions/embed-vcons/index.ts`), environment variables, and Cron scheduling. This repository standardizes on 384‑dim embeddings to match the migrations and HNSW index.
 
 ---
 
@@ -275,7 +277,7 @@ See `docs/INGEST_AND_EMBEDDINGS.md` for the production-ready function (`supabase
 ```sql
 -- Function to search by semantic similarity
 CREATE OR REPLACE FUNCTION search_vcons_semantic(
-    query_embedding vector(1536),
+    query_embedding vector(384),
     match_threshold float DEFAULT 0.7,
     match_count int DEFAULT 20
 )

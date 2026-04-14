@@ -547,7 +547,7 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
         analysis_count,
         attachment_count,
         total_duration,
-        ROUND(total_duration / NULLIF(dialog_count, 0), 2) as avg_duration_per_dialog
+        ROUND((total_duration / NULLIF(dialog_count, 0))::numeric, 2) as avg_duration_per_dialog
       FROM content_trends
       ORDER BY period
     `;

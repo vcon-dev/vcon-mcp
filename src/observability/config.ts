@@ -111,8 +111,11 @@ export async function initializeObservability(): Promise<void> {
   }
 
   try {
-    // Set up diagnostic logging
-    diag.setLogger(new DiagConsoleLogger(), config.logLevel);
+    // Set up diagnostic logging — only when using OTLP; DiagConsoleLogger writes to stdout
+    // which corrupts MCP stdio in non-OTLP mode.
+    if (config.exporterType === 'otlp') {
+      diag.setLogger(new DiagConsoleLogger(), config.logLevel);
+    }
 
     // Create resource with service information
     const resource = new Resource({

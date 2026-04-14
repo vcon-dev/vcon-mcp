@@ -72,7 +72,7 @@ Create a new vCon (Virtual Conversation) record.
 ```typescript
 {
   vcon_data: {
-    vcon: "0.3.0",           // vCon version
+    vcon: "0.4.0",           // vCon version
     uuid?: string,           // Auto-generated if not provided
     subject?: string,        // Conversation subject
     parties: Party[],        // At least one party required
@@ -80,7 +80,7 @@ Create a new vCon (Virtual Conversation) record.
     analysis?: Analysis[],   // Optional AI analysis
     attachments?: Attachment[], // Optional files
     extensions?: string[],   // Optional extensions
-    must_support?: string[]  // Optional requirements
+    critical?: string[]      // Optional: extensions that must be supported (v0.4.0)
   },
   metadata?: {
     basename?: string,
@@ -106,7 +106,7 @@ Create a new vCon (Virtual Conversation) record.
 ```typescript
 {
   "vcon_data": {
-    "vcon": "0.3.0",
+    "vcon": "0.4.0",
     "subject": "Customer Support Call",
     "parties": [
       {
@@ -146,7 +146,7 @@ Retrieve a vCon by UUID.
 {
   success: boolean,
   vcon: {
-    vcon: "0.3.0",
+    vcon: "0.4.0",
     uuid: string,
     created_at: string,
     updated_at?: string,
@@ -181,7 +181,7 @@ Update vCon metadata and top-level fields.
   updates: {
     subject?: string,
     extensions?: string[],
-    must_support?: string[],
+    critical?: string[],
     [key: string]: any
   },
   merge_strategy?: "replace" | "merge" | "append",  // Default: "merge"

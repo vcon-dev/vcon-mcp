@@ -1,25 +1,35 @@
 // deno-lint-ignore-file no-explicit-any
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-type EmbeddingProvider = "openai" | "azure" | "hf";
+import {
+  type EmbeddingProvider,
+  embedLiteLLM,
+  embedOpenAI,
+  embedAzureOpenAI,
+  embedHF,
+  getModelName,
+} from "../_shared/embeddings.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const LITELLM_PROXY_URL = (Deno.env.get("LITELLM_PROXY_URL") ?? "").replace(/\/$/, "");
+const LITELLM_MASTER_KEY = Deno.env.get("LITELLM_MASTER_KEY") ?? Deno.env.get("LITELLM_API_KEY");
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 const AZURE_OPENAI_EMBEDDING_ENDPOINT = Deno.env.get("AZURE_OPENAI_EMBEDDING_ENDPOINT");
 const AZURE_OPENAI_EMBEDDING_API_KEY = Deno.env.get("AZURE_OPENAI_EMBEDDING_API_KEY");
 const AZURE_OPENAI_EMBEDDING_API_VERSION = Deno.env.get("AZURE_OPENAI_EMBEDDING_API_VERSION") || "2024-02-01";
 const HF_API_TOKEN = Deno.env.get("HF_API_TOKEN");
 
-// Provider priority: Azure OpenAI > OpenAI > Hugging Face
-const PROVIDER: EmbeddingProvider = (AZURE_OPENAI_EMBEDDING_ENDPOINT && AZURE_OPENAI_EMBEDDING_API_KEY)
-  ? "azure"
-  : OPENAI_API_KEY
-    ? "openai"
-    : HF_API_TOKEN
-      ? "hf"
-      : "openai";
+// Provider priority: LiteLLM > Azure OpenAI > OpenAI > Hugging Face
+const PROVIDER: EmbeddingProvider = (LITELLM_PROXY_URL && LITELLM_MASTER_KEY)
+  ? "litellm"
+  : (AZURE_OPENAI_EMBEDDING_ENDPOINT && AZURE_OPENAI_EMBEDDING_API_KEY)
+    ? "azure"
+    : OPENAI_API_KEY
+      ? "openai"
+      : HF_API_TOKEN
+        ? "hf"
+        : "openai";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false }
@@ -118,78 +128,6 @@ function truncateToTokens(text: string, maxTokens: number): string {
   return text.substring(0, maxChars) + "...";
 }
 
-async function embedOpenAI(texts: string[]): Promise<number[][]> {
-  const resp = await fetch("https://api.openai.com/v1/embeddings", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${OPENAI_API_KEY}`
-    },
-    body: JSON.stringify({ model: "text-embedding-3-small", input: texts, dimensions: 384 })
-  });
-  if (!resp.ok) throw new Error(`OpenAI embeddings failed: ${resp.status} ${await resp.text()}`);
-  const json = await resp.json();
-  return json.data.map((d: any) => d.embedding as number[]);
-}
-
-async function embedAzureOpenAI(texts: string[]): Promise<number[][]> {
-  if (!AZURE_OPENAI_EMBEDDING_ENDPOINT || !AZURE_OPENAI_EMBEDDING_API_KEY) {
-    throw new Error("AZURE_OPENAI_EMBEDDING_ENDPOINT and AZURE_OPENAI_EMBEDDING_API_KEY are required");
-  }
-
-  // Construct the full URL: {endpoint}/openai/deployments/{deployment}/embeddings?api-version={version}
-  const normalizedEndpoint = AZURE_OPENAI_EMBEDDING_ENDPOINT.replace(/\/$/, "");
-  const deployment = "text-embedding-3-small";
-  const url = `${normalizedEndpoint}/openai/deployments/${deployment}/embeddings?api-version=${AZURE_OPENAI_EMBEDDING_API_VERSION}`;
-
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "api-key": AZURE_OPENAI_EMBEDDING_API_KEY
-    },
-    body: JSON.stringify({ input: texts, dimensions: 384 })
-  });
-  if (!resp.ok) throw new Error(`Azure OpenAI embeddings failed: ${resp.status} ${await resp.text()}`);
-  const json = await resp.json();
-  return json.data.map((d: any) => d.embedding as number[]);
-}
-
-async function embedHF(texts: string[]): Promise<number[][]> {
-  // Hugging Face Inference API batched: one by one fallback for simplicity
-  const result: number[][] = [];
-  for (const t of texts) {
-    const resp = await fetch(
-      "https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/all-MiniLM-L6-v2",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${HF_API_TOKEN}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ inputs: t, options: { wait_for_model: true } })
-      }
-    );
-    if (!resp.ok) throw new Error(`HF embeddings failed: ${resp.status} ${await resp.text()}`);
-    const json = await resp.json();
-    // Response is nested array [1 x 384] → flatten
-    const vec = Array.isArray(json[0]) ? json[0] : json;
-    result.push(vec as number[]);
-  }
-  return result;
-}
-
-function getModelName(provider: EmbeddingProvider): string {
-  switch (provider) {
-    case "openai":
-    case "azure":
-      // Both use the same underlying model
-      return "text-embedding-3-small";
-    case "hf":
-      return "sentence-transformers/all-MiniLM-L6-v2";
-  }
-}
-
 async function upsertEmbeddings(units: TextUnit[], vectors: number[][]) {
   const rows = units.map((u, i) => ({
     vcon_id: u.vcon_id,
@@ -214,6 +152,9 @@ serve(async (req) => {
     const vconId = url.searchParams.get("vcon_id") ?? undefined;
     const limit = Math.max(1, Math.min(500, Number(url.searchParams.get("limit") ?? "100")));
 
+    if (PROVIDER === "litellm" && (!LITELLM_PROXY_URL || !LITELLM_MASTER_KEY)) {
+      return new Response(JSON.stringify({ error: "LITELLM_PROXY_URL and LITELLM_MASTER_KEY (or LITELLM_API_KEY) missing" }), { status: 400 });
+    }
     if (PROVIDER === "openai" && !OPENAI_API_KEY) {
       return new Response(JSON.stringify({ error: "OPENAI_API_KEY missing" }), { status: 400 });
     }
@@ -238,41 +179,52 @@ serve(async (req) => {
     let totalEmbedded = 0;
     let totalErrors = 0;
     
-    if (PROVIDER === "openai" || PROVIDER === "azure") {
+    if (PROVIDER === "litellm" || PROVIDER === "openai" || PROVIDER === "azure") {
       // Group units into token-aware batches
       const batches: TextUnit[][] = [];
       let currentBatch: TextUnit[] = [];
       let currentTokens = 0;
-      
+
       for (const unit of units) {
         // Truncate extremely long texts
         const truncated = truncateToTokens(unit.content_text, MAX_TOKENS_PER_ITEM);
         const tokens = estimateTokens(truncated);
-        
+
         // If adding this unit would exceed batch limit, start a new batch
         if (currentBatch.length > 0 && currentTokens + tokens > MAX_TOKENS_PER_BATCH) {
           batches.push(currentBatch);
           currentBatch = [];
           currentTokens = 0;
         }
-        
+
         currentBatch.push({ ...unit, content_text: truncated });
         currentTokens += tokens;
       }
-      
+
       // Add remaining batch
       if (currentBatch.length > 0) {
         batches.push(currentBatch);
       }
-      
-      // Choose the appropriate embedding function
-      const embedFn = PROVIDER === "azure" ? embedAzureOpenAI : embedOpenAI;
-      
-      // Process each batch
+
+      // Process each batch with shared embedders (pass env as options)
       for (const batch of batches) {
         try {
           const texts = batch.map((u) => u.content_text);
-          const vectors = await embedFn(texts);
+          let vectors: number[][];
+          switch (PROVIDER) {
+            case "litellm":
+              vectors = await embedLiteLLM(texts, { baseUrl: LITELLM_PROXY_URL, apiKey: LITELLM_MASTER_KEY ?? "" });
+              break;
+            case "azure":
+              vectors = await embedAzureOpenAI(texts, {
+                endpoint: AZURE_OPENAI_EMBEDDING_ENDPOINT ?? "",
+                apiKey: AZURE_OPENAI_EMBEDDING_API_KEY ?? "",
+                apiVersion: AZURE_OPENAI_EMBEDDING_API_VERSION,
+              });
+              break;
+            default:
+              vectors = await embedOpenAI(texts, { apiKey: OPENAI_API_KEY ?? "" });
+          }
           await upsertEmbeddings(batch, vectors);
           totalEmbedded += batch.length;
         } catch (e) {
@@ -281,9 +233,9 @@ serve(async (req) => {
         }
       }
     } else {
-      // HF processes one at a time anyway
+      // HF
       const texts = units.map((u) => u.content_text);
-      const vectors = await embedHF(texts);
+      const vectors = await embedHF(texts, { apiToken: HF_API_TOKEN ?? "" });
       await upsertEmbeddings(units, vectors);
       totalEmbedded = units.length;
     }

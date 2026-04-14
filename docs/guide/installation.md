@@ -532,14 +532,19 @@ curl "https://your-project.supabase.co/rest/v1/" \
 
 Complete list of supported environment variables:
 
+Embedding provider priority: **LiteLLM → Azure OpenAI → OpenAI → Hugging Face** (first configured wins).
+
 | Variable | Required | Description | Default |
 |----------|----------|-------------|---------|
 | `SUPABASE_URL` | ✅ Yes | Your Supabase project URL | - |
 | `SUPABASE_ANON_KEY` | ✅ Yes | Supabase anon public key | - |
 | `SUPABASE_SERVICE_ROLE_KEY` | ❌ No | Service role key (admin operations) | - |
-| `OPENAI_API_KEY` | ❌ No | OpenAI API key for embeddings | - |
+| `LITELLM_PROXY_URL` | ❌ No | LiteLLM proxy base URL — takes priority for embeddings | - |
+| `LITELLM_MASTER_KEY` | ❌ No | LiteLLM proxy API key (also accepted as `LITELLM_API_KEY`) | - |
+| `OPENAI_API_KEY` | ❌ No | OpenAI API key for embeddings (if LiteLLM not set) | - |
 | `AZURE_OPENAI_EMBEDDING_ENDPOINT` | ❌ No | Azure OpenAI base endpoint (e.g., https://your-resource.openai.azure.com) | - |
 | `AZURE_OPENAI_EMBEDDING_API_KEY` | ❌ No | Azure OpenAI API key | - |
+| `HF_API_TOKEN` | ❌ No | Hugging Face API token for embeddings (lowest priority fallback) | - |
 | `VCON_PLUGINS_PATH` | ❌ No | Comma-separated plugin paths | - |
 | `VCON_LICENSE_KEY` | ❌ No | Enterprise license key | - |
 | `MCP_SERVER_NAME` | ❌ No | Server name for MCP | `vcon-mcp-server` |
