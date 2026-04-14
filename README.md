@@ -3,7 +3,7 @@
 > A Model Context Protocol (MCP) server for storing, managing, and analyzing IETF vCon (Virtual Conversation) data with AI assistants.
 
 ![Version](https://img.shields.io/badge/version-1.0.1-blue)
-![IETF Spec](https://img.shields.io/badge/IETF%20vCon-draft--00-green)
+![IETF Spec](https://img.shields.io/badge/IETF%20vCon-draft--02%20v0.4.0-green)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ## Overview
@@ -26,7 +26,7 @@ The Model Context Protocol (MCP) enables AI assistants to use external tools and
 
 ## Key Features
 
-- ✅ **IETF vCon Compliant** - Implements `draft-ietf-vcon-vcon-core-00` specification
+- ✅ **IETF vCon Compliant** - Implements `draft-ietf-vcon-vcon-core-02` specification (v0.4.0)
 - ✅ **MCP Integration** - 27+ tools for AI assistants to manage conversation data
 - ✅ **Database Analytics** - Comprehensive analytics for size, growth, content patterns, and health monitoring
 - ✅ **Large Database Support** - Smart response limiting, metadata-only options, and memory-safe queries
@@ -95,8 +95,9 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
       "args": ["/path/to/vcon-mcp/dist/index.js"],
       "env": {
         "SUPABASE_URL": "your-project-url",
+        "SUPABASE_SERVICE_ROLE_KEY": "your-service-role-key",
         "SUPABASE_ANON_KEY": "your-anon-key",
-        "REDIS_URL": "redis://localhost:6379"
+        "OPENAI_API_KEY": "your-openai-key"
       }
     }
   }

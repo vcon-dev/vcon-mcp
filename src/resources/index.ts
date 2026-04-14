@@ -16,7 +16,8 @@
  * - Lightweight ID-only discovery
  */
 
-import { VConQueries } from '../db/queries.js';
+import { IVConQueries } from '../db/interfaces.js';
+import { deserializeBody } from '../utils/body-serialization.js';
 
 export interface ResourceDescriptor {
   uri: string;
@@ -109,7 +110,7 @@ export function getCoreResources(): ResourceDescriptor[] {
   ];
 }
 
-export async function resolveCoreResource(queries: VConQueries, uri: string): Promise<{ mimeType: string; content: any } | undefined> {
+export async function resolveCoreResource(queries: IVConQueries, uri: string): Promise<{ mimeType: string; content: any } | undefined> {
   const json = (data: any) => ({ mimeType: 'application/json', content: data });
 
   // Handle recent vCons (full data)
@@ -238,8 +239,7 @@ export async function resolveCoreResource(queries: VConQueries, uri: string): Pr
     }
     
     try {
-      // Parse the tags body - it should be a JSON array of "key:value" strings
-      const tagsArray = JSON.parse(tagsAttachment.body);
+      const tagsArray = JSON.parse(tagsAttachment.body as string) as string[];
       const tagsObject: Record<string, string> = {};
       
       for (const tagString of tagsArray) {

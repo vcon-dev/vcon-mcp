@@ -1,0 +1,76 @@
+# vCon Intelligence Platform — Hackathon Infrastructure
+# Run: docker compose -f hackathon/docker-compose.yml up -d
+
+version: '3.8'
+
+services:
+  # ============================================================================
+  # MongoDB — Primary vCon document store
+  # ============================================================================
+  mongodb:
+    image: mongo:7.0
+    container_name: vcon-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: vcon2026
+      MONGO_INITDB_DATABASE: vcon
+    volumes:
+      - mongodb_data:/data/db
+    restart: unless-stopped
+
+  # ============================================================================
+  # Neo4j — Graph database for relationship mapping (BASE 5)
+  # ============================================================================
+  neo4j:
+    image: neo4j:5-community
+    container_name: vcon-neo4j
+    ports:
+      - "7474:7474"   # HTTP browser
+      - "7687:7687"   # Bolt protocol
+    environment:
+      NEO4J_AUTH: neo4j/vcon2026
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_memory_heap_initial__size: 256m
+      NEO4J_dbms_memory_heap_max__size: 512m
+    volumes:
+      - neo4j_data:/data
+    restart: unless-stopped
+
+  # ============================================================================
+  # Mosquitto — MQTT broker for UNS event bridge (BASE 2)
+  # ============================================================================
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: vcon-mosquitto
+    ports:
+      - "1883:1883"   # MQTT
+      - "9001:9001"   # WebSocket (for dashboard)
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    restart: unless-stopped
+
+  # ============================================================================
+  # ChromaDB — Vector store for RAG embeddings (WOW 3)
+  # ============================================================================
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: vcon-chromadb
+    ports:
+      - "8000:8000"
+    environment:
+      ANONYMIZED_TELEMETRY: "false"
+      ALLOW_RESET: "true"
+    volumes:
+      - chromadb_data:/chroma/chroma
+    restart: unless-stopped
+
+volumes:
+  mongodb_data:
+  neo4j_data:
+  mosquitto_data:
+  mosquitto_log:
+  chromadb_data:

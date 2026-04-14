@@ -11,8 +11,7 @@ import {
   Dialog, 
   Party,
   isValidDialogType,
-  isValidEncoding,
-  isValidDisposition 
+  isValidEncoding
 } from '../types/vcon.js';
 
 export interface ValidationResult {
@@ -32,8 +31,7 @@ export class VConValidator {
     this.errors = [];
     this.warnings = [];
 
-    // Core vCon validation
-    this.validateVConVersion(vcon);
+    // Core vCon validation (vcon version field is deprecated - accept any value or missing)
     this.validateUUID(vcon.uuid);
     this.validateDates(vcon);
     this.validateParties(vcon.parties);
@@ -42,19 +40,13 @@ export class VConValidator {
     if (vcon.analysis) this.validateAnalysis(vcon.analysis);
     if (vcon.attachments) this.validateAttachments(vcon.attachments);
     if (vcon.extensions) this.validateExtensions(vcon.extensions);
-    if (vcon.must_support) this.validateMustSupport(vcon.must_support, vcon.extensions);
+    if (vcon.critical) this.validateCritical(vcon.critical, vcon.extensions);
 
     return {
       valid: this.errors.length === 0,
       errors: this.errors,
       warnings: this.warnings
     };
-  }
-
-  private validateVConVersion(vcon: VCon): void {
-    if (vcon.vcon !== '0.3.0') {
-      this.errors.push(`Invalid vcon version: ${vcon.vcon}. Must be '0.3.0'`);
-    }
   }
 
   private validateUUID(uuid: string): void {
@@ -121,16 +113,13 @@ export class VConValidator {
         );
       }
 
-      // Incomplete dialogs must have disposition
+      // Incomplete dialogs must have disposition (any string is accepted)
       if (dialog.type === 'incomplete' && !dialog.disposition) {
         this.errors.push(`Dialog ${index} is incomplete but has no disposition`);
       }
 
-      // Validate disposition values
-      if (dialog.disposition && !isValidDisposition(dialog.disposition)) {
-        this.errors.push(
-          `Dialog ${index} has invalid disposition: ${dialog.disposition}`
-        );
+      if (dialog.disposition != null && typeof dialog.disposition !== 'string') {
+        this.errors.push(`Dialog ${index} disposition must be a string`);
       }
 
       // Transfer dialogs must have transfer fields
@@ -181,7 +170,11 @@ export class VConValidator {
       // If body and encoding are present, validate they match
       if (analysis.body && analysis.encoding === 'json') {
         try {
-          JSON.parse(analysis.body);
+          // body may already be a parsed object or a JSON string
+          if (typeof analysis.body === 'string') {
+            JSON.parse(analysis.body);
+          }
+          // If it's already an object, it's valid JSON
         } catch (e) {
           this.errors.push(
             `Analysis ${index} has encoding='json' but body is not valid JSON`
@@ -240,18 +233,18 @@ export class VConValidator {
     });
   }
 
-  private validateMustSupport(mustSupport: string[], extensions?: string[]): void {
-    // must_support should reference extensions
+  private validateCritical(critical: string[], extensions?: string[]): void {
+    // critical should reference extensions
     if (extensions) {
-      mustSupport.forEach((ext, index) => {
+      critical.forEach((ext, index) => {
         if (!extensions.includes(ext)) {
           this.warnings.push(
-            `must_support[${index}] references '${ext}' which is not in extensions array`
+            `critical[${index}] references '${ext}' which is not in extensions array`
           );
         }
       });
     } else {
-      this.warnings.push('must_support is set but no extensions are defined');
+      this.warnings.push('critical is set but no extensions are defined');
     }
   }
 }

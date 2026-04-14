@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<recording>
+  <session id="SIPREC-2026-0307-002">
+    <start-time>2026-03-07T11:15:00Z</start-time>
+    <end-time>2026-03-07T11:22:30Z</end-time>
+  </session>
+  <caller>
+    <number>+15552223344</number>
+    <name>David Chen</name>
+  </caller>
+  <callee>
+    <number>+15559876002</number>
+    <name>Agent Lisa Park</name>
+  </callee>
+  <direction>inbound</direction>
+</recording>

@@ -1,0 +1,40 @@
+{
+    "vcon": "0.0.1",
+    "uuid": "SAMPLE-1234-abcd-5678",
+    "created_at": "2026-03-09T10:00:00Z",
+    "parties": [
+        {
+            "tel": "+9999999999",
+            "name": "Jane User",
+            "role": "customer"
+        },
+        {
+            "tel": "+1111111111",
+            "name": "Help Desk",
+            "role": "agent"
+        }
+    ],
+    "dialog": [
+        {
+            "type": "text",
+            "start": "2026-03-09T10:01:00Z",
+            "parties": [0, 1],
+            "body": "Hi, I need to cancel my subscription.",
+            "mimetype": "text/plain"
+        },
+        {
+            "type": "text",
+            "start": "2026-03-09T10:02:00Z",
+            "parties": [1, 0],
+            "body": "I can help with that. Could you please provide your account number?",
+            "mimetype": "text/plain"
+        }
+    ],
+    "analysis": [
+        {
+            "type": "intent",
+            "vendor": "sample_analyzer",
+            "body": "subscription_cancellation"
+        }
+    ]
+}

@@ -17,48 +17,44 @@ This project provides:
 
 **Read in this order:**
 
-1. **[README.md](./README.md)** (5 min)
+1. **[README.md](../../README.md)** (5 min)
    - Overview of the project
    - Documentation structure
    - Critical corrections summary
 
-2. **[QUICK_REFERENCE.md](./QUICK_REFERENCE.md)** (5 min)
+2. **[QUICK_REFERENCE.md](../reference/QUICK_REFERENCE.md)** (5 min)
    - Critical field corrections
    - Common mistakes to avoid
    - Quick checklist
 
-3. **[BUILD_GUIDE.md](./BUILD_GUIDE.md)** (60 min read, 4-6 hrs to implement)
-   - Complete step-by-step implementation
-   - Code examples for every component
-   - Testing and deployment
+3. **[CLAUDE.md](../../CLAUDE.md)** (15 min)
+   - Complete implementation guide for AI-assisted development
+   - Corrected TypeScript types and patterns
+   - Database schema and queries
 
 ### Already Know vCon?
 
 **Fast track:**
 
-1. **[IMPLEMENTATION_CORRECTIONS.md](./IMPLEMENTATION_CORRECTIONS.md)** (15 min)
+1. **[IMPLEMENTATION_CORRECTIONS.md](../reference/IMPLEMENTATION_CORRECTIONS.md)** (15 min)
    - All 7 critical spec issues
    - What was wrong vs. what's correct
    - Why each correction matters
 
-2. **[CLAUDE_CODE_INSTRUCTIONS.md](./CLAUDE_CODE_INSTRUCTIONS.md)** (30 min)
+2. **[CLAUDE.md](../../CLAUDE.md)** (30 min)
    - Complete implementation guide
    - Corrected TypeScript types
    - Database schema and queries
    - MCP tool definitions
 
-3. **[BUILD_GUIDE.md](./BUILD_GUIDE.md)** → Jump to Phase 4
-   - Skip setup if you have environment ready
-   - Start with Core Implementation
-
 ### Migrating Existing Code?
 
-1. **[MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md)** (30 min)
+1. **[MIGRATION_GUIDE.md](../reference/MIGRATION_GUIDE.md)** (30 min)
    - Database migration SQL
    - Code refactoring steps
    - Verification queries
 
-2. **[QUICK_REFERENCE.md](./QUICK_REFERENCE.md)**
+2. **[QUICK_REFERENCE.md](../reference/QUICK_REFERENCE.md)**
    - Use as checklist while migrating
 
 ## 🔴 Critical Corrections
@@ -141,27 +137,27 @@ echo "SUPABASE_ANON_KEY=your-key" >> .env
 
 ```
 Start Here
-    ├── README.md ────────────────► Master index & navigation
+    ├── README.md ────────────────────► Master index & navigation
     │
-    ├── GETTING_STARTED.md ───────► You are here!
+    ├── docs/guide/getting-started.md ► You are here!
     │
     └── Choose your path:
         │
-        ├── New Implementation ───────────┐
-        │   ├── QUICK_REFERENCE.md        │
-        │   ├── BUILD_GUIDE.md ───────────┼──► Primary path
-        │   ├── CLAUDE_CODE_INSTRUCTIONS │
-        │   └── CORRECTED_SCHEMA.md ──────┘
+        ├── New Implementation ─────────────┐
+        │   ├── docs/reference/QUICK_REF    │
+        │   ├── CLAUDE.md ──────────────────┼──► Primary path
+        │   └── docs/reference/CORRECTED_   │
+        │       SCHEMA.md ─────────────────-┘
         │
-        ├── Migration ────────────────────┐
-        │   ├── IMPLEMENTATION_CORRECTIONS│
-        │   ├── MIGRATION_GUIDE.md ───────┼──► Fix existing code
-        │   └── CORRECTED_SCHEMA.md ──────┘
+        ├── Migration ──────────────────────┐
+        │   ├── IMPLEMENTATION_CORRECTIONS  │
+        │   ├── docs/reference/MIGRATION ───┼──► Fix existing code
+        │   └── docs/reference/CORRECTED_   │
+        │       SCHEMA.md ─────────────────-┘
         │
-        └── Deep Dive ────────────────────┐
-            ├── VISUAL_REFERENCE.md      │
-            ├── PROJECT_SUMMARY.md ───────┼──► Complete details
-            └── background_docs/ ─────────┘
+        └── Deep Dive ──────────────────────┐
+            ├── docs/reference/vcon-spec.md │
+            └── background_docs/ ───────────┘
 
 ```
 
@@ -176,14 +172,14 @@ Start Here
    - `background_docs/draft-ietf-vcon-vcon-core-00.txt` (introduction)
 
 2. Understand corrections (30 min)
-   - `QUICK_REFERENCE.md`
-   - `IMPLEMENTATION_CORRECTIONS.md`
+   - `docs/reference/QUICK_REFERENCE.md`
+   - `docs/reference/IMPLEMENTATION_CORRECTIONS.md`
 
-3. Follow build guide (4 hours)
-   - `BUILD_GUIDE.md` - Complete all 7 phases
+3. Follow the implementation guide (4 hours)
+   - `CLAUDE.md` — complete patterns, types, and DB schema
 
 4. Test and verify (30 min)
-   - Run compliance tests
+   - Run `npm test`
    - Test with AI assistant
 
 ### Path 2: Experienced Developer (2 hours)
@@ -191,10 +187,10 @@ Start Here
 **Goal:** Implement spec-compliant vCon server quickly
 
 1. Review corrections (15 min)
-   - `QUICK_REFERENCE.md`
+   - `docs/reference/QUICK_REFERENCE.md`
 
 2. Study implementation (30 min)
-   - `CLAUDE_CODE_INSTRUCTIONS.md`
+   - `CLAUDE.md`
 
 3. Build core (1 hour)
    - Database schema
@@ -210,11 +206,11 @@ Start Here
 **Goal:** Fix existing implementation to match spec
 
 1. Identify issues (30 min)
-   - `IMPLEMENTATION_CORRECTIONS.md`
+   - `docs/reference/IMPLEMENTATION_CORRECTIONS.md`
    - Compare with your code
 
 2. Plan migration (30 min)
-   - `MIGRATION_GUIDE.md`
+   - `docs/reference/MIGRATION_GUIDE.md`
    - Backup database and code
 
 3. Execute migration (1.5 hours)
@@ -224,7 +220,7 @@ Start Here
 
 4. Verify (30 min)
    - Run verification queries
-   - Compliance tests
+   - Run `npm test`
    - Manual review
 
 ### Path 4: AI-Assisted Build (30 min + AI time)
@@ -232,15 +228,15 @@ Start Here
 **Goal:** Use Claude Code to build for you
 
 1. Prepare instructions (15 min)
-   - Read `QUICK_REFERENCE.md`
+   - Read `docs/reference/QUICK_REFERENCE.md`
    - Set up Supabase
 
 2. Provide to AI (5 min)
    ```
    Build an IETF vCon MCP server following the specifications in:
-   - CLAUDE_CODE_INSTRUCTIONS.md
-   - CORRECTED_SCHEMA.md
-   - QUICK_REFERENCE.md (for checklist)
+   - CLAUDE.md
+   - docs/reference/CORRECTED_SCHEMA.md
+   - docs/reference/QUICK_REFERENCE.md (for checklist)
    
    Use the corrected field names and ensure full spec compliance.
    ```
@@ -248,7 +244,7 @@ Start Here
 3. Review & test (10 min)
    - Verify no `schema_version` in code
    - Check vendor is required
-   - Run compliance tests
+   - Run `npm test`
 
 ## 🛠️ What You'll Build
 
@@ -371,12 +367,12 @@ grep -r "schema_version" src/
 grep "vendor?" src/types/vcon.ts
 # Should return nothing
 
-# 3. Run compliance tests
-npm run test:compliance
-# Should pass all tests
+# 3. Run tests
+npm test
+# Should pass
 
 # 4. Check database schema
-# Run verification queries from CORRECTED_SCHEMA.md
+# Run verification queries from docs/reference/CORRECTED_SCHEMA.md
 ```
 
 ### Integration Test
@@ -385,7 +381,7 @@ Create a test vCon:
 
 ```typescript
 const vcon: VCon = {
-  vcon: '0.3.0',
+  vcon: '0.4.0',
   uuid: crypto.randomUUID(),
   created_at: new Date().toISOString(),
   parties: [{
@@ -449,16 +445,16 @@ Your implementation is successful when:
 **Choose your path:**
 
 ### I'm Ready to Build
-→ Go to **[BUILD_GUIDE.md](./BUILD_GUIDE.md)** and start at Phase 1
+→ Read **[CLAUDE.md](../../CLAUDE.md)** and follow the patterns there
 
 ### I Need to Understand Corrections First
-→ Read **[IMPLEMENTATION_CORRECTIONS.md](./IMPLEMENTATION_CORRECTIONS.md)**
+→ Read **[IMPLEMENTATION_CORRECTIONS.md](../reference/IMPLEMENTATION_CORRECTIONS.md)**
 
 ### I'm Migrating Existing Code
-→ Follow **[MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md)**
+→ Follow **[MIGRATION_GUIDE.md](../reference/MIGRATION_GUIDE.md)**
 
 ### I Want the Quick Version
-→ Read **[QUICK_REFERENCE.md](./QUICK_REFERENCE.md)** then jump to **[BUILD_GUIDE.md](./BUILD_GUIDE.md)** Phase 4
+→ Read **[QUICK_REFERENCE.md](../reference/QUICK_REFERENCE.md)** then dive into **[CLAUDE.md](../../CLAUDE.md)**
 
 ---
 
@@ -479,13 +475,13 @@ Your implementation is successful when:
 
 **Ready?** Start with **[BUILD_GUIDE.md](./BUILD_GUIDE.md)**
 
-**Questions?** Check **[README.md](./README.md)** → Troubleshooting
+**Questions?** Check **[README.md](../../README.md)** → Troubleshooting
 
-**Need quick reference?** Use **[QUICK_REFERENCE.md](./QUICK_REFERENCE.md)**
+**Need quick reference?** Use **[QUICK_REFERENCE.md](../reference/QUICK_REFERENCE.md)**
 
 ---
 
-*Last Updated: October 7, 2025*  
-*Project: vCon MCP Server Documentation v1.0.0*  
-*Spec: draft-ietf-vcon-vcon-core-00*
+*Last Updated: April 2026*  
+*Project: vCon MCP Server Documentation v1.2.0*  
+*Spec: draft-ietf-vcon-vcon-core-02 (v0.4.0)*
 

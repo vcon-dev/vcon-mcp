@@ -1,0 +1,21 @@
+{
+  "vcon": "0.3.0",
+  "created_at": "2026-03-06T14:45:00Z",
+  "subject": "Sarah Johnson ↔ Agent Mike Rivera — Refund Follow-up",
+  "parties": [
+    { "tel": "+15551234567", "name": "Sarah Johnson", "meta": { "role": "customer" } },
+    { "tel": "+15559876001", "name": "Agent Mike Rivera", "meta": { "role": "agent" } }
+  ],
+  "dialog": [
+    { "type": "text", "start": "2026-03-06T14:45:00Z", "duration": 198, "parties": [0, 1], "mediatype": "text/plain" }
+  ],
+  "analysis": [
+    {
+      "type": "transcript", "vendor": "siprec-adapter", "encoding": "none", "dialog": 0,
+      "body": "Agent Mike Rivera: TechCorp support, Mike speaking.\n\nSarah Johnson: Hi Mike, it's Sarah Johnson again. I called earlier about the duplicate charge? I just wanted to confirm — I got an email saying the refund is being processed.\n\nAgent Mike Rivera: Hi Sarah! Yes, I can confirm the refund of $49.99 was initiated this morning. It typically takes 3 to 5 business days to appear on your statement. The $10 credit has already been applied to your account.\n\nSarah Johnson: Perfect. And I noticed you also fixed something with my billing cycle date?\n\nAgent Mike Rivera: Yes, I moved your billing date from the 15th to the 1st of each month to avoid the batch processing window that caused the original error. You won't be charged until April 1st.\n\nSarah Johnson: That's great. I really appreciate the proactive fix. Thank you, Mike.\n\nAgent Mike Rivera: My pleasure, Sarah. We value your loyalty. Have a wonderful afternoon!"
+    },
+    { "type": "sentiment", "vendor": "keyword-heuristic", "body": "{\"overall\": 0.86, \"positive\": 5, \"negative\": 0}", "encoding": "json" },
+    { "type": "topics", "vendor": "keyword-heuristic", "body": "[\"Billing\"]", "encoding": "json" },
+    { "type": "summary", "vendor": "siprec-adapter", "body": "Follow-up call confirming refund processing and billing cycle adjustment. Customer satisfied with resolution.", "encoding": "none" }
+  ]
+}

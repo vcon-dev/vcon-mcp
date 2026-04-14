@@ -1,0 +1,21 @@
+Agent Mike Rivera: Thank you for calling TechCorp support, this is Mike. How can I help you today?
+
+Sarah Johnson: Hi Mike, I'm calling because I was charged twice for my subscription last month. I noticed two charges of $49.99 on my credit card statement.
+
+Agent Mike Rivera: I'm sorry to hear that, Sarah. Let me pull up your account right away. Can you confirm the email address on your account?
+
+Sarah Johnson: It's sarah.johnson@email.com.
+
+Agent Mike Rivera: Thank you. I can see the issue here. It looks like there was a system error during our billing cycle update on February 15th that caused duplicate charges for several customers. I sincerely apologize for the inconvenience.
+
+Sarah Johnson: This is really frustrating. I've been a customer for three years and this is the second billing issue I've had.
+
+Agent Mike Rivera: I completely understand your frustration, and I want to make this right. I'm going to process a refund for the duplicate charge of $49.99 right now. You should see it back on your card within 3 to 5 business days. I'm also going to add a $10 credit to your account for the inconvenience.
+
+Sarah Johnson: Okay, that sounds fair. Thank you for taking care of it quickly.
+
+Agent Mike Rivera: Absolutely. Is there anything else I can help you with today?
+
+Sarah Johnson: No, that's all. Thanks Mike.
+
+Agent Mike Rivera: You're welcome, Sarah. Have a great day!

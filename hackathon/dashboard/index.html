@@ -1,0 +1,1427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>vCon Intelligence Platform — Mission Control</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            surface: { 900: '#0a0e17', 800: '#111827', 700: '#1a2236', 600: '#243049' },
+            neon: { cyan: '#00e5ff', amber: '#ffab00', green: '#00e676', red: '#ff1744', purple: '#d500f9' },
+          },
+          fontFamily: {
+            mono: ['"JetBrains Mono"', '"Fira Code"', 'monospace'],
+            display: ['"Orbitron"', '"Rajdhani"', 'sans-serif'],
+            body: ['"Rajdhani"', '"Exo 2"', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- React -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Recharts -->
+  <script crossorigin src="https://unpkg.com/prop-types@15/prop-types.min.js"></script>
+  <script crossorigin src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+
+  <!-- MQTT.js browser bundle -->
+  <script src="https://unpkg.com/mqtt@5.5.0/dist/mqtt.min.js"></script>
+
+  <!-- D3 for force graph -->
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0a0e17; color: #e0e6f0; overflow-x: hidden; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #111827; }
+    ::-webkit-scrollbar-thumb { background: #243049; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #00e5ff44; }
+
+    /* Glow effects */
+    .glow-cyan { box-shadow: 0 0 20px #00e5ff22, inset 0 1px 0 #00e5ff18; }
+    .glow-amber { box-shadow: 0 0 20px #ffab0022, inset 0 1px 0 #ffab0018; }
+    .glow-green { box-shadow: 0 0 20px #00e67622, inset 0 1px 0 #00e67618; }
+    .glow-red { box-shadow: 0 0 20px #ff174422, inset 0 1px 0 #ff174418; }
+    .glow-purple { box-shadow: 0 0 20px #d500f922, inset 0 1px 0 #d500f918; }
+
+    /* Panel base */
+    .panel {
+      background: linear-gradient(135deg, #111827 0%, #1a2236 100%);
+      border: 1px solid #243049;
+      border-radius: 8px;
+      overflow: hidden;
+      transition: border-color 0.3s;
+    }
+    .panel:hover { border-color: #00e5ff44; }
+
+    .panel-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid #243049;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: #8899aa;
+    }
+
+    .status-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    /* Live feed items */
+    .feed-item {
+      padding: 10px 16px;
+      border-bottom: 1px solid #1a223644;
+      animation: slideIn 0.3s ease-out;
+      transition: background 0.2s;
+    }
+    .feed-item:hover { background: #1a223688; }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* KPI card pulse */
+    .kpi-value {
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 700;
+      font-size: 28px;
+      line-height: 1;
+    }
+
+    /* JSON-LD tree */
+    .json-key { color: #00e5ff; }
+    .json-string { color: #00e676; }
+    .json-number { color: #ffab00; }
+    .json-bool { color: #d500f9; }
+    .json-null { color: #666; }
+    .json-bracket { color: #556; }
+    .json-toggle { cursor: pointer; user-select: none; }
+    .json-toggle:hover { color: #00e5ff; }
+
+    /* Scanline overlay */
+    .scanline::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: repeating-linear-gradient(
+        0deg, transparent, transparent 2px, #00e5ff03 2px, #00e5ff03 4px
+      );
+      pointer-events: none;
+    }
+
+    /* Graph canvas */
+    .graph-container svg { width: 100%; height: 100%; }
+    .graph-container .node-label { font-family: 'Rajdhani', sans-serif; font-size: 11px; fill: #ccd; }
+    .graph-container .link { stroke: #243049; stroke-width: 1.5; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" data-type="module">
+    const { useState, useEffect, useRef, useCallback, useMemo } = React;
+    const {
+      AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
+      BarChart, Bar, CartesianGrid, Cell,
+    } = Recharts;
+
+    // ========================================================================
+    // CONFIG
+    // ========================================================================
+    const API_BASE = 'http://localhost:3000/api/v1';
+    const MQTT_WS_URL = 'ws://localhost:9001';
+    const MQTT_TOPIC = 'vcon/enterprise/hackathon/#';
+
+    // ========================================================================
+    // UTILITY HELPERS
+    // ========================================================================
+    function timeAgo(dateStr) {
+      const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+      if (seconds < 60) return `${seconds}s ago`;
+      if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+      if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+      return `${Math.floor(seconds / 86400)}d ago`;
+    }
+
+    function sentimentColor(val) {
+      if (val == null) return '#556';
+      if (val >= 0.6) return '#00e676';
+      if (val >= 0.3) return '#ffab00';
+      return '#ff1744';
+    }
+
+    function eventTypeIcon(eventType) {
+      switch (eventType) {
+        case 'vcon.ingested': return '⬇';
+        case 'vcon.enriched': return '✦';
+        case 'vcon.deleted': return '✕';
+        case 'vcon.tagged': return '🏷';
+        case 'vcon.alert': return '⚠';
+        default: return '●';
+      }
+    }
+
+    function eventTypeColor(eventType) {
+      switch (eventType) {
+        case 'vcon.ingested': return '#00e5ff';
+        case 'vcon.enriched': return '#d500f9';
+        case 'vcon.deleted': return '#ff1744';
+        case 'vcon.tagged': return '#ffab00';
+        case 'vcon.alert': return '#ff1744';
+        default: return '#556';
+      }
+    }
+
+    // ========================================================================
+    // STATUS DOT COMPONENT
+    // ========================================================================
+    function StatusDot({ color = '#00e676', active = true }) {
+      return (
+        <span
+          className="status-dot"
+          style={{
+            background: color,
+            boxShadow: active ? `0 0 8px ${color}` : 'none',
+            animation: active ? undefined : 'none',
+            opacity: active ? 1 : 0.3,
+          }}
+        />
+      );
+    }
+
+    // ========================================================================
+    // KPI CARDS
+    // ========================================================================
+    function KpiCard({ label, value, icon, color, subtitle }) {
+      return (
+        <div className="panel glow-cyan flex flex-col justify-between p-4 min-h-[110px]">
+          <div className="flex items-center justify-between">
+            <span className="font-display text-[10px] tracking-[2px] uppercase" style={{ color: '#667788' }}>
+              {label}
+            </span>
+            <span style={{ fontSize: 20, opacity: 0.6 }}>{icon}</span>
+          </div>
+          <div className="kpi-value mt-2" style={{ color }}>{value}</div>
+          {subtitle && (
+            <div className="font-body text-xs mt-1" style={{ color: '#667788' }}>{subtitle}</div>
+          )}
+        </div>
+      );
+    }
+
+    function KpiRow({ vcons, mqttConnected }) {
+      const totalVcons = vcons.length;
+
+      const avgSentiment = useMemo(() => {
+        const sentiments = vcons
+          .flatMap(v => (v.analysis || []))
+          .filter(a => a.type === 'sentiment')
+          .map(a => {
+            try {
+              const body = typeof a.body === 'string' ? JSON.parse(a.body) : a.body;
+              return body?.overall ?? body?.score ?? null;
+            } catch { return null; }
+          })
+          .filter(v => v != null);
+        if (sentiments.length === 0) return null;
+        return (sentiments.reduce((a, b) => a + b, 0) / sentiments.length).toFixed(2);
+      }, [vcons]);
+
+      const uniqueAgents = useMemo(() => {
+        const agents = new Set();
+        vcons.forEach(v => {
+          (v.parties || []).forEach(p => {
+            if (p.name && /agent/i.test(p.name)) agents.add(p.name);
+            if (p.meta?.role === 'agent') agents.add(p.name || p.tel || 'unknown');
+          });
+        });
+        return agents.size;
+      }, [vcons]);
+
+      const topTopic = useMemo(() => {
+        const topicCounts = {};
+        vcons.forEach(v => {
+          (v.analysis || []).filter(a => a.type === 'topics').forEach(a => {
+            try {
+              const topics = typeof a.body === 'string' ? JSON.parse(a.body) : a.body;
+              if (Array.isArray(topics)) topics.forEach(t => { topicCounts[t] = (topicCounts[t] || 0) + 1; });
+            } catch {}
+          });
+        });
+        const sorted = Object.entries(topicCounts).sort((a, b) => b[1] - a[1]);
+        return sorted.length > 0 ? sorted[0][0] : '—';
+      }, [vcons]);
+
+      return (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <KpiCard label="Total vCons" value={totalVcons} icon="📡" color="#00e5ff" subtitle="in pipeline" />
+          <KpiCard
+            label="Avg Sentiment"
+            value={avgSentiment ?? '—'}
+            icon="💭"
+            color={avgSentiment ? sentimentColor(parseFloat(avgSentiment)) : '#556'}
+            subtitle={avgSentiment ? (avgSentiment >= 0.6 ? 'positive' : avgSentiment >= 0.3 ? 'mixed' : 'negative') : 'no data'}
+          />
+          <KpiCard label="Active Agents" value={uniqueAgents || '—'} icon="🎧" color="#d500f9" subtitle="detected" />
+          <KpiCard label="Top Topic" value={topTopic} icon="🏷" color="#ffab00" subtitle="by frequency" />
+        </div>
+      );
+    }
+
+    // ========================================================================
+    // LIVE VCON FEED
+    // ========================================================================
+    function LiveFeed({ events }) {
+      const feedRef = useRef(null);
+
+      useEffect(() => {
+        if (feedRef.current) feedRef.current.scrollTop = 0;
+      }, [events.length]);
+
+      return (
+        <div className="panel glow-cyan flex flex-col h-full">
+          <div className="panel-header">
+            <StatusDot color="#00e5ff" active={true} />
+            <span>Live Event Stream</span>
+            <span className="ml-auto font-mono text-[10px]" style={{ color: '#00e5ff' }}>
+              {events.length} events
+            </span>
+          </div>
+          <div ref={feedRef} className="flex-1 overflow-y-auto" style={{ maxHeight: 420 }}>
+            {events.length === 0 ? (
+              <div className="p-6 text-center font-body text-sm" style={{ color: '#445566' }}>
+                Waiting for events...<br />
+                <span className="text-xs">Drop SIPREC files into hackathon/watch/siprec/</span>
+              </div>
+            ) : (
+              events.map((evt, i) => (
+                <div key={evt.id || i} className="feed-item">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span style={{ color: eventTypeColor(evt.event), fontSize: 14 }}>
+                      {eventTypeIcon(evt.event)}
+                    </span>
+                    <span className="font-mono text-xs" style={{ color: eventTypeColor(evt.event) }}>
+                      {evt.event}
+                    </span>
+                    <span className="ml-auto font-mono text-[10px]" style={{ color: '#556' }}>
+                      {evt.timestamp ? timeAgo(evt.timestamp) : ''}
+                    </span>
+                  </div>
+                  <div className="font-body text-xs" style={{ color: '#8899aa' }}>
+                    {evt.subject || evt.vcon_uuid?.slice(0, 12) + '...' || 'unknown'}
+                    {evt.participant_count != null && (
+                      <span className="ml-2" style={{ color: '#556' }}>
+                        · {evt.participant_count} parties
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ========================================================================
+    // SENTIMENT TIMELINE
+    // ========================================================================
+    function SentimentTimeline({ vcons }) {
+      const data = useMemo(() => {
+        return vcons
+          .filter(v => v.created_at || v.meta?.created_at)
+          .map(v => {
+            const sentimentAnalysis = (v.analysis || []).find(a => a.type === 'sentiment');
+            let sentiment = null;
+            if (sentimentAnalysis) {
+              try {
+                const body = typeof sentimentAnalysis.body === 'string'
+                  ? JSON.parse(sentimentAnalysis.body) : sentimentAnalysis.body;
+                sentiment = body?.overall ?? body?.score ?? null;
+              } catch {}
+            }
+            const created = v.created_at || v.meta?.created_at || '';
+            return {
+              time: new Date(created).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+              sentiment: sentiment != null ? parseFloat(sentiment.toFixed(2)) : null,
+              subject: v.subject || 'untitled',
+              uuid: v.uuid,
+            };
+          })
+          .filter(d => d.sentiment != null)
+          .reverse();
+      }, [vcons]);
+
+      const CustomTooltip = ({ active, payload }) => {
+        if (!active || !payload?.length) return null;
+        const d = payload[0].payload;
+        return (
+          <div className="panel p-3" style={{ border: '1px solid #00e5ff44' }}>
+            <div className="font-body text-xs" style={{ color: '#00e5ff' }}>{d.subject}</div>
+            <div className="font-mono text-sm mt-1" style={{ color: sentimentColor(d.sentiment) }}>
+              {d.sentiment}
+            </div>
+          </div>
+        );
+      };
+
+      return (
+        <div className="panel glow-purple flex flex-col">
+          <div className="panel-header">
+            <StatusDot color="#d500f9" active={data.length > 0} />
+            <span>Sentiment Timeline</span>
+          </div>
+          <div className="p-4 flex-1" style={{ minHeight: 200 }}>
+            {data.length === 0 ? (
+              <div className="h-full flex items-center justify-center font-body text-sm" style={{ color: '#445566' }}>
+                No sentiment data yet
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={180}>
+                <AreaChart data={data} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="sentGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#00e5ff" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#00e5ff" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#556' }} axisLine={false} tickLine={false} />
+                  <YAxis domain={[0, 1]} tick={{ fontSize: 10, fill: '#556' }} axisLine={false} tickLine={false} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Area
+                    type="monotone" dataKey="sentiment" stroke="#00e5ff" strokeWidth={2}
+                    fill="url(#sentGrad)" dot={{ r: 4, fill: '#00e5ff', strokeWidth: 0 }}
+                    activeDot={{ r: 6, fill: '#00e5ff', stroke: '#0a0e17', strokeWidth: 2 }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ========================================================================
+    // PARTICIPANT NETWORK GRAPH (D3 Force)
+    // ========================================================================
+    // Neo4j HTTP API helper
+    const NEO4J_URL = 'http://localhost:7474/db/neo4j/tx/commit';
+    const NEO4J_AUTH = 'Basic ' + btoa('neo4j:vcon2026');
+
+    async function neo4jQuery(cypher, params = {}) {
+      try {
+        const res = await fetch(NEO4J_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': NEO4J_AUTH },
+          body: JSON.stringify({ statements: [{ statement: cypher, parameters: params }] }),
+        });
+        const data = await res.json();
+        if (data.errors?.length) console.warn('[Neo4j]', data.errors);
+        return data.results?.[0]?.data || [];
+      } catch (err) {
+        console.warn('[Neo4j] Query failed:', err.message);
+        return [];
+      }
+    }
+
+    function ParticipantGraph({ vcons }) {
+      const svgRef = useRef(null);
+      const simRef = useRef(null);
+      const [graphData, setGraphData] = useState({ nodes: [], links: [] });
+      const [neo4jOnline, setNeo4jOnline] = useState(false);
+      const [selectedNode, setSelectedNode] = useState(null);
+      const [nodeDetail, setNodeDetail] = useState(null);
+      const [detailLoading, setDetailLoading] = useState(false);
+
+      // Fetch graph from Neo4j
+      const fetchGraph = useCallback(async () => {
+        const personRows = await neo4jQuery(
+          `MATCH (p:Person)
+           OPTIONAL MATCH (p)-[r:PARTICIPATED_IN]->(c:Conversation)
+           RETURN p.name AS name, p.identifier AS id, p.role AS role,
+                  count(c) AS conversations`
+        );
+        const contactRows = await neo4jQuery(
+          `MATCH (a:Person)-[r:CONTACTED]->(b:Person)
+           RETURN a.identifier AS source, b.identifier AS target,
+                  r.contact_count AS weight`
+        );
+        const topicRows = await neo4jQuery(
+          `MATCH (c:Conversation)-[r:HAS_TOPIC]->(t:Topic)
+           RETURN t.name AS topic, count(c) AS count
+           ORDER BY count DESC LIMIT 10`
+        );
+
+        if (personRows.length === 0 && contactRows.length === 0) {
+          setNeo4jOnline(false);
+          buildClientSideGraph();
+          return;
+        }
+
+        setNeo4jOnline(true);
+        const nodesMap = {};
+        const links = [];
+
+        personRows.forEach(row => {
+          const [name, id, role, convos] = row.row;
+          const nodeId = id || name || 'unknown';
+          if (!nodesMap[nodeId]) {
+            nodesMap[nodeId] = {
+              id: nodeId, name: name || nodeId, type: 'person',
+              isAgent: /agent/i.test(name || '') || role === 'agent',
+              conversations: convos || 0,
+            };
+          }
+        });
+
+        topicRows.forEach(row => {
+          const [topic, count] = row.row;
+          if (topic) {
+            nodesMap['topic:' + topic] = {
+              id: 'topic:' + topic, name: topic,
+              type: 'topic', isAgent: false, conversations: count,
+            };
+          }
+        });
+
+        contactRows.forEach(row => {
+          const [source, target, weight] = row.row;
+          if (source && target && nodesMap[source] && nodesMap[target]) {
+            links.push({ source, target, weight: weight || 1, type: 'contacted' });
+          }
+        });
+
+        const personTopicRows = await neo4jQuery(
+          `MATCH (p:Person)-[:PARTICIPATED_IN]->(c:Conversation)-[:HAS_TOPIC]->(t:Topic)
+           RETURN DISTINCT p.identifier AS person, t.name AS topic`
+        );
+        personTopicRows.forEach(row => {
+          const [person, topic] = row.row;
+          const topicId = 'topic:' + topic;
+          if (person && topic && nodesMap[person] && nodesMap[topicId]) {
+            links.push({ source: person, target: topicId, weight: 0.5, type: 'topic' });
+          }
+        });
+
+        setGraphData({ nodes: Object.values(nodesMap), links });
+      }, []);
+
+      const buildClientSideGraph = useCallback(() => {
+        const nodesMap = {};
+        const linksMap = {};
+        vcons.forEach(v => {
+          const partyIds = (v.parties || []).map(p => {
+            const id = p.tel || p.mailto || p.name || 'unknown';
+            if (!nodesMap[id]) {
+              nodesMap[id] = { id, name: p.name || id, type: 'person',
+                isAgent: /agent/i.test(p.name || '') || p.meta?.role === 'agent', conversations: 0 };
+            }
+            nodesMap[id].conversations++;
+            return id;
+          });
+          for (let i = 0; i < partyIds.length; i++) {
+            for (let j = i + 1; j < partyIds.length; j++) {
+              const key = [partyIds[i], partyIds[j]].sort().join('::');
+              if (!linksMap[key]) linksMap[key] = { source: partyIds[i], target: partyIds[j], weight: 0, type: 'contacted' };
+              linksMap[key].weight++;
+            }
+          }
+        });
+        setGraphData({ nodes: Object.values(nodesMap), links: Object.values(linksMap) });
+      }, [vcons]);
+
+      // Load detail for a clicked node
+      const loadNodeDetail = useCallback(async (node) => {
+        if (selectedNode?.id === node.id) { setSelectedNode(null); setNodeDetail(null); return; }
+        setSelectedNode(node);
+        setDetailLoading(true);
+        setNodeDetail(null);
+
+        if (node.type === 'topic') {
+          const rows = await neo4jQuery(
+            `MATCH (c:Conversation)-[:HAS_TOPIC]->(t:Topic {name: $topic})
+             OPTIONAL MATCH (p:Person)-[:PARTICIPATED_IN]->(c)
+             RETURN c.uuid AS uuid, c.subject AS subject, c.sentiment AS sentiment,
+                    c.start_time AS start, collect(DISTINCT p.name) AS participants
+             ORDER BY c.start_time DESC LIMIT 10`,
+            { topic: node.name }
+          );
+          setNodeDetail({
+            type: 'topic', name: node.name,
+            conversations: rows.map(r => ({
+              uuid: r.row[0], subject: r.row[1], sentiment: r.row[2],
+              start: r.row[3], participants: r.row[4],
+            })),
+          });
+        } else {
+          // Person node — get contacts, conversations, topics
+          const convoRows = await neo4jQuery(
+            `MATCH (p:Person {identifier: $id})-[:PARTICIPATED_IN]->(c:Conversation)
+             OPTIONAL MATCH (c)-[:HAS_TOPIC]->(t:Topic)
+             RETURN c.uuid AS uuid, c.subject AS subject, c.sentiment AS sentiment,
+                    c.start_time AS start, c.duration AS duration,
+                    collect(DISTINCT t.name) AS topics
+             ORDER BY c.start_time DESC LIMIT 10`,
+            { id: node.id }
+          );
+          const contactRows = await neo4jQuery(
+            `MATCH (p:Person {identifier: $id})-[r:CONTACTED]-(other:Person)
+             RETURN other.name AS name, other.identifier AS id,
+                    r.contact_count AS count
+             ORDER BY r.contact_count DESC`,
+            { id: node.id }
+          );
+          setNodeDetail({
+            type: 'person', name: node.name, isAgent: node.isAgent, id: node.id,
+            conversations: convoRows.map(r => ({
+              uuid: r.row[0], subject: r.row[1], sentiment: r.row[2],
+              start: r.row[3], duration: r.row[4], topics: r.row[5],
+            })),
+            contacts: contactRows.map(r => ({ name: r.row[0], id: r.row[1], count: r.row[2] })),
+          });
+        }
+        setDetailLoading(false);
+      }, [selectedNode]);
+
+      useEffect(() => { fetchGraph(); }, [vcons.length]);
+
+      // D3 rendering
+      useEffect(() => {
+        if (!svgRef.current || graphData.nodes.length === 0) return;
+
+        const svg = d3.select(svgRef.current);
+        svg.selectAll('*').remove();
+
+        const container = svgRef.current.parentElement;
+        const width = container?.clientWidth || 400;
+        const height = container?.clientHeight || 300;
+
+        const simulation = d3.forceSimulation(graphData.nodes)
+          .force('link', d3.forceLink(graphData.links).id(d => d.id).distance(90))
+          .force('charge', d3.forceManyBody().strength(-250))
+          .force('center', d3.forceCenter(width / 2, height / 2))
+          .force('collision', d3.forceCollide().radius(35));
+
+        simRef.current = simulation;
+        const g = svg.append('g');
+
+        svg.call(d3.zoom().scaleExtent([0.3, 4]).on('zoom', (event) => {
+          g.attr('transform', event.transform);
+        }));
+
+        // Edge labels for weight
+        const link = g.selectAll('.link')
+          .data(graphData.links).enter()
+          .append('line')
+          .attr('class', 'link')
+          .attr('stroke', d => d.type === 'topic' ? '#ffab0044' : '#344')
+          .attr('stroke-width', d => Math.min((d.weight || 1) * 1.5, 6))
+          .attr('stroke-opacity', d => d.type === 'topic' ? 0.3 : 0.5)
+          .attr('stroke-dasharray', d => d.type === 'topic' ? '4,3' : null);
+
+        // Weight labels on contact edges
+        const linkLabel = g.selectAll('.link-label')
+          .data(graphData.links.filter(d => d.type === 'contacted' && d.weight > 1)).enter()
+          .append('text')
+          .attr('font-size', 9).attr('fill', '#667')
+          .attr('font-family', 'JetBrains Mono, monospace')
+          .attr('text-anchor', 'middle')
+          .text(d => d.weight + '×');
+
+        const nodeGroup = g.selectAll('.node')
+          .data(graphData.nodes).enter()
+          .append('g')
+          .attr('class', 'node')
+          .style('cursor', 'pointer')
+          .call(d3.drag()
+            .on('start', (event, d) => {
+              if (!event.active) simulation.alphaTarget(0.3).restart();
+              d.fx = d.x; d.fy = d.y;
+            })
+            .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; })
+            .on('end', (event, d) => {
+              if (!event.active) simulation.alphaTarget(0);
+              d.fx = null; d.fy = null;
+            })
+          );
+
+        // Outer glow ring (hidden by default, shown on hover/select)
+        nodeGroup.append('circle')
+          .attr('class', 'glow-ring')
+          .attr('r', d => (d.type === 'topic' ? 12 : d.isAgent ? 14 : 10) + 6)
+          .attr('fill', 'none')
+          .attr('stroke', d => d.type === 'topic' ? '#ffab00' : d.isAgent ? '#d500f9' : '#00e5ff')
+          .attr('stroke-width', 2)
+          .attr('opacity', 0);
+
+        // Main circle
+        nodeGroup.append('circle')
+          .attr('class', 'main-circle')
+          .attr('r', d => d.type === 'topic' ? 12 : d.isAgent ? 14 : 10)
+          .attr('fill', d => d.type === 'topic' ? '#ffab00' : d.isAgent ? '#d500f9' : '#00e5ff')
+          .attr('stroke', d => d.type === 'topic' ? '#ffab0044' : d.isAgent ? '#d500f944' : '#00e5ff44')
+          .attr('stroke-width', 3)
+          .attr('opacity', 0.9);
+
+        // Conversation count badge for persons
+        nodeGroup.filter(d => d.type === 'person' && d.conversations > 0).append('text')
+          .attr('dy', 4).attr('text-anchor', 'middle')
+          .attr('font-size', 9).attr('font-weight', 700)
+          .attr('font-family', 'JetBrains Mono, monospace')
+          .attr('fill', '#0a0e17')
+          .text(d => d.conversations);
+
+        // Name label below
+        nodeGroup.append('text')
+          .attr('class', 'node-label')
+          .attr('dy', d => (d.type === 'topic' ? 12 : d.isAgent ? 14 : 10) + 14)
+          .attr('text-anchor', 'middle')
+          .text(d => {
+            const name = d.name || d.id;
+            return name.length > 18 ? name.slice(0, 16) + '…' : name;
+          });
+
+        // Role label
+        nodeGroup.filter(d => d.type === 'person').append('text')
+          .attr('dy', d => (d.isAgent ? 14 : 10) + 26)
+          .attr('text-anchor', 'middle')
+          .attr('font-size', 8).attr('fill', '#445')
+          .attr('font-family', 'Rajdhani, sans-serif')
+          .text(d => d.isAgent ? 'AGENT' : 'CUSTOMER');
+
+        // Hover effects
+        nodeGroup
+          .on('mouseenter', function(event, d) {
+            d3.select(this).select('.glow-ring').transition().duration(200).attr('opacity', 0.5);
+            d3.select(this).select('.main-circle').transition().duration(200)
+              .attr('r', (d.type === 'topic' ? 12 : d.isAgent ? 14 : 10) + 3);
+            // Highlight connected links
+            link.transition().duration(200)
+              .attr('stroke-opacity', l => {
+                const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+                const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+                return (srcId === d.id || tgtId === d.id) ? 0.9 : 0.15;
+              })
+              .attr('stroke', l => {
+                const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+                const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+                if (srcId === d.id || tgtId === d.id) {
+                  return d.type === 'topic' ? '#ffab00' : d.isAgent ? '#d500f9' : '#00e5ff';
+                }
+                return l.type === 'topic' ? '#ffab0022' : '#222';
+              });
+            // Dim other nodes
+            nodeGroup.filter(n => n.id !== d.id).transition().duration(200).attr('opacity', 0.3);
+          })
+          .on('mouseleave', function() {
+            d3.select(this).select('.glow-ring').transition().duration(300).attr('opacity', 0);
+            d3.select(this).select('.main-circle').transition().duration(300)
+              .attr('r', d => d.type === 'topic' ? 12 : d.isAgent ? 14 : 10);
+            link.transition().duration(300)
+              .attr('stroke-opacity', d => d.type === 'topic' ? 0.3 : 0.5)
+              .attr('stroke', d => d.type === 'topic' ? '#ffab0044' : '#344');
+            nodeGroup.transition().duration(300).attr('opacity', 1);
+          })
+          .on('click', (event, d) => {
+            event.stopPropagation();
+            loadNodeDetail(d);
+          });
+
+        // Click background to deselect
+        svg.on('click', () => { setSelectedNode(null); setNodeDetail(null); });
+
+        simulation.on('tick', () => {
+          link
+            .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+            .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+          linkLabel
+            .attr('x', d => (d.source.x + d.target.x) / 2)
+            .attr('y', d => (d.source.y + d.target.y) / 2 - 4);
+          nodeGroup.attr('transform', d => `translate(${d.x},${d.y})`);
+        });
+
+        return () => simulation.stop();
+      }, [graphData, loadNodeDetail]);
+
+      return (
+        <div className="panel glow-green flex flex-col" style={{ minHeight: selectedNode ? 420 : 280 }}>
+          <div className="panel-header">
+            <StatusDot color="#00e676" active={graphData.nodes.length > 0} />
+            <span>Participant Network</span>
+            {neo4jOnline && (
+              <span className="font-mono text-[9px] px-1.5 py-0.5 rounded" style={{ background: '#00e67622', color: '#00e676' }}>NEO4J</span>
+            )}
+            <span className="ml-auto font-mono text-[10px]" style={{ color: '#556' }}>
+              {graphData.nodes.length} nodes · {graphData.links.length} edges
+            </span>
+          </div>
+          <div className="flex-1 relative graph-container" style={{ minHeight: 280 }}>
+            {graphData.nodes.length === 0 ? (
+              <div className="h-full flex items-center justify-center font-body text-sm" style={{ color: '#445566' }}>
+                No participants yet
+              </div>
+            ) : (
+              <svg ref={svgRef} style={{ width: '100%', height: '100%', minHeight: 280 }} />
+            )}
+          </div>
+
+          {/* Node detail drawer */}
+          {selectedNode && (
+            <div style={{ borderTop: '1px solid #243049', background: '#0d1220', maxHeight: 220, overflowY: 'auto' }}>
+              <div className="px-4 py-2 flex items-center gap-2" style={{ borderBottom: '1px solid #1a2236' }}>
+                <span style={{
+                  width: 10, height: 10, borderRadius: '50%', display: 'inline-block',
+                  background: selectedNode.type === 'topic' ? '#ffab00' : selectedNode.isAgent ? '#d500f9' : '#00e5ff',
+                }} />
+                <span className="font-body text-sm font-semibold" style={{
+                  color: selectedNode.type === 'topic' ? '#ffab00' : selectedNode.isAgent ? '#d500f9' : '#00e5ff',
+                }}>
+                  {selectedNode.name}
+                </span>
+                <span className="font-mono text-[9px] px-1.5 py-0.5 rounded" style={{ background: '#1a2236', color: '#667788' }}>
+                  {selectedNode.type === 'topic' ? 'TOPIC' : selectedNode.isAgent ? 'AGENT' : 'CUSTOMER'}
+                </span>
+                <button
+                  className="ml-auto font-mono text-xs px-2 py-0.5 rounded"
+                  style={{ background: '#1a2236', color: '#556', border: 'none', cursor: 'pointer' }}
+                  onClick={() => { setSelectedNode(null); setNodeDetail(null); }}
+                >✕</button>
+              </div>
+
+              {detailLoading ? (
+                <div className="p-4 text-center font-body text-sm" style={{ color: '#556' }}>Querying Neo4j...</div>
+              ) : nodeDetail ? (
+                <div className="p-3">
+                  {/* Contacts (person nodes only) */}
+                  {nodeDetail.contacts && nodeDetail.contacts.length > 0 && (
+                    <div className="mb-3">
+                      <div className="font-display text-[9px] tracking-[2px] mb-1" style={{ color: '#556' }}>CONTACTED</div>
+                      <div className="flex flex-wrap gap-1">
+                        {nodeDetail.contacts.map((c, i) => (
+                          <span key={i} className="font-mono text-[10px] px-2 py-0.5 rounded"
+                            style={{ background: '#1a2236', color: '#8899aa', border: '1px solid #243049' }}>
+                            {c.name || c.id}
+                            {c.count > 1 && <span style={{ color: '#00e5ff', marginLeft: 4 }}>{c.count}×</span>}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Conversations */}
+                  {nodeDetail.conversations && nodeDetail.conversations.length > 0 && (
+                    <div>
+                      <div className="font-display text-[9px] tracking-[2px] mb-1" style={{ color: '#556' }}>CONVERSATIONS</div>
+                      {nodeDetail.conversations.map((c, i) => (
+                        <div key={i} className="flex items-center gap-2 py-1" style={{ borderBottom: '1px solid #1a2236' }}>
+                          {c.sentiment != null && (
+                            <span className="font-mono text-[10px] font-bold" style={{ color: sentimentColor(c.sentiment), minWidth: 30 }}>
+                              {typeof c.sentiment === 'number' ? c.sentiment.toFixed(2) : c.sentiment}
+                            </span>
+                          )}
+                          <span className="font-body text-xs flex-1" style={{ color: '#aabbcc' }}>
+                            {c.subject || c.uuid?.slice(0, 16) + '...'}
+                          </span>
+                          {c.topics && c.topics.length > 0 && c.topics.map((t, ti) => (
+                            <span key={ti} className="font-mono text-[9px] px-1.5 py-0.5 rounded"
+                              style={{ background: '#ffab0018', color: '#ffab00' }}>
+                              {t}
+                            </span>
+                          ))}
+                          {c.participants && c.participants.length > 0 && (
+                            <span className="font-mono text-[9px]" style={{ color: '#556' }}>
+                              {c.participants.filter(Boolean).join(', ')}
+                            </span>
+                          )}
+                          {c.duration != null && (
+                            <span className="font-mono text-[9px]" style={{ color: '#445' }}>
+                              {Math.round(c.duration)}s
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {nodeDetail.conversations?.length === 0 && (
+                    <div className="font-body text-xs" style={{ color: '#445566' }}>No conversation data found</div>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ========================================================================
+    // JSON-LD INSPECTOR
+    // ========================================================================
+    function JsonLdInspector({ vcons }) {
+      const [selectedUuid, setSelectedUuid] = useState(null);
+      const [enrichment, setEnrichment] = useState(null);
+      const [loading, setLoading] = useState(false);
+
+      const loadEnrichment = async (uuid) => {
+        setSelectedUuid(uuid);
+        setLoading(true);
+        try {
+          const res = await fetch(`${API_BASE}/vcons/${uuid}`);
+          const data = await res.json();
+          setEnrichment(data?.vcon?.jsonld_enrichment || data?.vcon || null);
+        } catch (err) {
+          setEnrichment({ error: err.message });
+        }
+        setLoading(false);
+      };
+
+      return (
+        <div className="panel glow-amber flex flex-col">
+          <div className="panel-header">
+            <StatusDot color="#ffab00" active={!!enrichment} />
+            <span>JSON-LD Inspector</span>
+          </div>
+          <div className="p-3 border-b" style={{ borderColor: '#243049' }}>
+            <select
+              className="w-full bg-surface-900 border font-mono text-xs p-2 rounded"
+              style={{ borderColor: '#243049', color: '#8899aa' }}
+              value={selectedUuid || ''}
+              onChange={(e) => e.target.value && loadEnrichment(e.target.value)}
+            >
+              <option value="">Select a vCon...</option>
+              {vcons.map(v => (
+                <option key={v.uuid} value={v.uuid}>
+                  {v.subject || v.uuid?.slice(0, 20) + '...'}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex-1 overflow-y-auto p-3" style={{ maxHeight: 320 }}>
+            {loading ? (
+              <div className="text-center font-body text-sm py-8" style={{ color: '#556' }}>Loading...</div>
+            ) : enrichment ? (
+              <JsonTree data={enrichment} depth={0} />
+            ) : (
+              <div className="text-center font-body text-sm py-8" style={{ color: '#445566' }}>
+                Select a vCon to inspect JSON-LD enrichment
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // Recursive JSON tree renderer
+    function JsonTree({ data, depth = 0, keyName = null }) {
+      const [collapsed, setCollapsed] = useState(depth > 2);
+
+      if (data === null) return <span className="json-null">null</span>;
+      if (data === undefined) return <span className="json-null">undefined</span>;
+      if (typeof data === 'boolean') return <span className="json-bool">{data.toString()}</span>;
+      if (typeof data === 'number') return <span className="json-number">{data}</span>;
+      if (typeof data === 'string') {
+        if (data.length > 120) {
+          return <span className="json-string">"{data.slice(0, 120)}…"</span>;
+        }
+        return <span className="json-string">"{data}"</span>;
+      }
+
+      const isArray = Array.isArray(data);
+      const entries = isArray ? data.map((v, i) => [i, v]) : Object.entries(data);
+      const bracket = isArray ? ['[', ']'] : ['{', '}'];
+
+      if (entries.length === 0) {
+        return <span className="json-bracket">{bracket[0]}{bracket[1]}</span>;
+      }
+
+      return (
+        <span>
+          <span
+            className="json-toggle json-bracket"
+            onClick={() => setCollapsed(!collapsed)}
+            title={collapsed ? 'Expand' : 'Collapse'}
+          >
+            {collapsed ? '▸' : '▾'} {bracket[0]}
+          </span>
+          {collapsed ? (
+            <span className="json-bracket" style={{ color: '#445566' }}>
+              {' '}{entries.length} {isArray ? 'items' : 'keys'}{' '}{bracket[1]}
+            </span>
+          ) : (
+            <div style={{ paddingLeft: 16 }}>
+              {entries.map(([k, v], i) => (
+                <div key={k} style={{ lineHeight: '20px' }}>
+                  {!isArray && <span className="json-key">"{k}"</span>}
+                  {!isArray && <span style={{ color: '#556' }}>: </span>}
+                  <JsonTree data={v} depth={depth + 1} keyName={k} />
+                  {i < entries.length - 1 && <span style={{ color: '#334' }}>,</span>}
+                </div>
+              ))}
+              <span className="json-bracket">{bracket[1]}</span>
+            </div>
+          )}
+        </span>
+      );
+    }
+
+    // ========================================================================
+    // RAG CHAT (LIVE — powered by LLaMA sidecar via Groq)
+    // ========================================================================
+    function RagChat({ vcons }) {
+      const LLAMA_URL = 'http://localhost:8200';
+      const [messages, setMessages] = useState([]);
+      const [input, setInput] = useState('');
+      const [loading, setLoading] = useState(false);
+      const [online, setOnline] = useState(false);
+      const chatEndRef = useRef(null);
+
+      // Check sidecar health on mount and periodically
+      useEffect(() => {
+        const check = () => {
+          fetch(`${LLAMA_URL}/health`, { signal: AbortSignal.timeout(2000) })
+            .then(r => r.ok ? r.json() : null)
+            .then(data => setOnline(data?.status === 'ok'))
+            .catch(() => setOnline(false));
+        };
+        check();
+        const interval = setInterval(check, 15000);
+        return () => clearInterval(interval);
+      }, []);
+
+      // Auto-scroll to bottom
+      useEffect(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, [messages]);
+
+      // Build context chunks from available vCons
+      const buildContext = () => {
+        const chunks = [];
+        for (const v of (vcons || [])) {
+          // Extract transcripts from analysis
+          const transcripts = (v.analysis || [])
+            .filter(a => a.type === 'transcript' && a.body)
+            .map(a => typeof a.body === 'string' ? a.body : JSON.stringify(a.body));
+
+          // Extract summaries
+          const summaries = (v.analysis || [])
+            .filter(a => a.type === 'summary' && a.body)
+            .map(a => typeof a.body === 'string' ? a.body : JSON.stringify(a.body));
+
+          // Extract sentiment
+          const sentiments = (v.analysis || [])
+            .filter(a => a.type === 'sentiment' && a.body)
+            .map(a => {
+              const b = a.body;
+              return typeof b === 'object' ? `Sentiment: ${b.label || 'unknown'} (${b.score || 'N/A'})` : String(b);
+            });
+
+          // Extract topics
+          const topicEntries = (v.analysis || [])
+            .filter(a => a.type === 'topic-extraction' && a.body)
+            .map(a => {
+              const b = a.body;
+              return typeof b === 'object' && b.topics ? `Topics: ${b.topics.join(', ')}` : '';
+            })
+            .filter(Boolean);
+
+          const partyNames = (v.parties || []).map(p => p.name).filter(Boolean).join(', ');
+
+          const parts = [
+            `Subject: ${v.subject || 'Unknown conversation'}`,
+            partyNames ? `Participants: ${partyNames}` : '',
+            ...sentiments,
+            ...topicEntries,
+            ...summaries.map(s => `Summary: ${s}`),
+            ...transcripts,
+          ].filter(Boolean);
+
+          if (parts.length > 1) {
+            chunks.push({
+              text: parts.join('\n'),
+              vcon_uuid: v.uuid,
+              source: v.subject || 'conversation',
+            });
+          }
+        }
+        return chunks;
+      };
+
+      const handleSend = async () => {
+        const q = input.trim();
+        if (!q || loading) return;
+
+        setInput('');
+        setMessages(prev => [...prev, { role: 'user', text: q }]);
+        setLoading(true);
+
+        try {
+          const context_chunks = buildContext();
+
+          if (context_chunks.length === 0) {
+            setMessages(prev => [...prev, {
+              role: 'assistant',
+              text: 'No conversation data loaded yet. Use the Ingest page to load sample data, then come back and ask your question.',
+            }]);
+            setLoading(false);
+            return;
+          }
+
+          const resp = await fetch(`${LLAMA_URL}/query`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question: q, context_chunks }),
+            signal: AbortSignal.timeout(30000),
+          });
+
+          if (!resp.ok) throw new Error(`Sidecar returned ${resp.status}`);
+
+          const data = await resp.json();
+
+          // Format answer with citations
+          let answerText = data.answer || 'No answer generated.';
+
+          if (data.citations && data.citations.length > 0) {
+            answerText += '\n\n📎 Sources:';
+            data.citations.forEach((c, i) => {
+              const label = c.vcon_uuid ? c.vcon_uuid.slice(0, 8) : `source-${i+1}`;
+              answerText += `\n  [${label}] ${c.excerpt || ''}`;
+            });
+          }
+
+          if (data.confidence !== undefined) {
+            const pct = Math.round(data.confidence * 100);
+            answerText += `\n\n⚡ Confidence: ${pct}%`;
+          }
+
+          setMessages(prev => [...prev, { role: 'assistant', text: answerText }]);
+        } catch (err) {
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            text: `Error: ${err.message}. Make sure the LLaMA sidecar is running on port 8200.`,
+          }]);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      // Suggested questions
+      const suggestions = [
+        'What are customers most frustrated about?',
+        'Which agent handles the most calls?',
+        'Summarize recent escalations',
+        'What topics come up most frequently?',
+      ];
+
+      return (
+        <div className="panel flex flex-col" style={{ borderColor: online ? '#00e67644' : '#ff174444' }}>
+          <div className="panel-header">
+            <StatusDot color={online ? '#00e676' : '#ff1744'} active={online} />
+            <span>RAG Intelligence</span>
+            <span className="ml-auto font-mono text-[10px] px-2 py-0.5 rounded"
+              style={{ background: online ? '#00e67622' : '#ff174422', color: online ? '#00e676' : '#ff1744' }}>
+              {online ? 'ONLINE' : 'OFFLINE'}
+            </span>
+          </div>
+
+          {/* Chat messages */}
+          <div className="flex-1 overflow-y-auto p-4" style={{ maxHeight: 300 }}>
+            {messages.length === 0 && !loading && (
+              <div className="text-center py-4">
+                <div className="font-display text-xs tracking-widest mb-3" style={{ color: '#556' }}>ASK ABOUT YOUR CONVERSATIONS</div>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {suggestions.map((s, i) => (
+                    <button key={i}
+                      className="px-3 py-1.5 rounded text-xs font-body"
+                      style={{ background: '#1a2236', color: '#8899aa', border: '1px solid #243049', cursor: 'pointer' }}
+                      onClick={() => { setInput(s); }}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+                <div className="font-mono text-[10px] mt-3" style={{ color: '#334' }}>
+                  {(vcons || []).length} vCons loaded as context
+                </div>
+              </div>
+            )}
+            {messages.map((m, i) => (
+              <div key={i} className={`mb-3 ${m.role === 'user' ? 'text-right' : ''}`}>
+                <div
+                  className="inline-block px-3 py-2 rounded-lg font-body text-sm max-w-[85%]"
+                  style={{
+                    background: m.role === 'user' ? '#00e5ff18' : '#1a2236',
+                    color: m.role === 'user' ? '#00e5ff' : '#c8d6e0',
+                    textAlign: 'left',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                  }}
+                >
+                  {m.text}
+                </div>
+              </div>
+            ))}
+            {loading && (
+              <div className="mb-3">
+                <div className="inline-block px-3 py-2 rounded-lg font-body text-sm"
+                  style={{ background: '#1a2236', color: '#00e5ff' }}>
+                  <span className="inline-block animate-pulse">Reasoning over {(vcons || []).length} conversations...</span>
+                </div>
+              </div>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+
+          {/* Input */}
+          <div className="p-3 border-t flex gap-2" style={{ borderColor: '#243049' }}>
+            <input
+              type="text"
+              className="flex-1 bg-surface-900 border font-body text-sm px-3 py-2 rounded"
+              style={{ borderColor: '#243049', color: '#aabbcc', outline: 'none' }}
+              placeholder={online ? 'Ask about your conversations...' : 'Sidecar offline...'}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+              disabled={!online || loading}
+            />
+            <button
+              className="px-4 py-2 rounded font-display text-xs tracking-widest"
+              style={{
+                background: online && !loading ? '#00e5ff22' : '#243049',
+                color: online && !loading ? '#00e5ff' : '#556',
+                cursor: online && !loading ? 'pointer' : 'default',
+              }}
+              onClick={handleSend}
+              disabled={!online || loading}
+            >
+              {loading ? '...' : 'ASK'}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // ========================================================================
+    // MQTT CONNECTION STATUS BAR
+    // ========================================================================
+    function StatusBar({ mqttConnected, eventCount, vconCount }) {
+      return (
+        <div className="flex items-center gap-6 px-4 py-2 font-mono text-[10px]"
+          style={{ background: '#0d1220', borderBottom: '1px solid #1a2236', color: '#556' }}>
+          <div className="flex items-center gap-2">
+            <StatusDot color={mqttConnected ? '#00e676' : '#ff1744'} active={mqttConnected} />
+            <span>MQTT {mqttConnected ? 'CONNECTED' : 'DISCONNECTED'}</span>
+          </div>
+          <span>EVENTS: <span style={{ color: '#00e5ff' }}>{eventCount}</span></span>
+          <span>VCONS: <span style={{ color: '#d500f9' }}>{vconCount}</span></span>
+          <span className="ml-auto" style={{ color: '#334' }}>
+            vCon Intelligence Platform v1.0
+          </span>
+        </div>
+      );
+    }
+
+    // ========================================================================
+    // MAIN APP
+    // ========================================================================
+    function App() {
+      const [vcons, setVcons] = useState([]);
+      const [events, setEvents] = useState([]);
+      const [mqttConnected, setMqttConnected] = useState(false);
+      const mqttClientRef = useRef(null);
+
+      // Fetch initial vCons from REST API
+      const fetchVcons = useCallback(async () => {
+        try {
+          const res = await fetch(`${API_BASE}/vcons?limit=50`);
+          const data = await res.json();
+          if (data.success && data.vcons) {
+            setVcons(data.vcons);
+          }
+        } catch (err) {
+          console.warn('REST API not available:', err.message);
+        }
+      }, []);
+
+      useEffect(() => {
+        fetchVcons();
+        const interval = setInterval(fetchVcons, 10000); // Refresh every 10s
+        return () => clearInterval(interval);
+      }, [fetchVcons]);
+
+      // MQTT WebSocket connection
+      useEffect(() => {
+        let client;
+        try {
+          client = mqtt.connect(MQTT_WS_URL, {
+            clientId: 'vcon-dashboard-' + Math.random().toString(16).slice(2, 8),
+            reconnectPeriod: 5000,
+            connectTimeout: 10000,
+          });
+
+          client.on('connect', () => {
+            console.log('[MQTT] Connected to', MQTT_WS_URL);
+            setMqttConnected(true);
+            client.subscribe(MQTT_TOPIC, { qos: 0 }, (err) => {
+              if (err) console.error('[MQTT] Subscribe error:', err);
+              else console.log('[MQTT] Subscribed to', MQTT_TOPIC);
+            });
+          });
+
+          client.on('message', (topic, message) => {
+            try {
+              const payload = JSON.parse(message.toString());
+              const evt = {
+                ...payload,
+                id: Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+                _topic: topic,
+              };
+              setEvents(prev => [evt, ...prev].slice(0, 200));
+
+              // Refresh vCon list on new ingestion
+              if (payload.event === 'vcon.ingested' || payload.event === 'vcon.enriched') {
+                setTimeout(fetchVcons, 1500);
+              }
+            } catch (err) {
+              console.warn('[MQTT] Parse error:', err);
+            }
+          });
+
+          client.on('close', () => setMqttConnected(false));
+          client.on('error', (err) => {
+            console.warn('[MQTT] Error:', err.message);
+            setMqttConnected(false);
+          });
+
+          mqttClientRef.current = client;
+        } catch (err) {
+          console.warn('[MQTT] Connection failed:', err.message);
+        }
+
+        return () => {
+          if (client) client.end(true);
+        };
+      }, [fetchVcons]);
+
+      return (
+        <div className="min-h-screen flex flex-col font-body relative scanline">
+          {/* Top bar */}
+          <header className="flex items-center justify-between px-6 py-4"
+            style={{ background: '#0d1220', borderBottom: '1px solid #1a2236' }}>
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded flex items-center justify-center"
+                style={{ background: 'linear-gradient(135deg, #00e5ff, #d500f9)' }}>
+                <span className="text-white font-bold text-sm">V</span>
+              </div>
+              <div>
+                <h1 className="font-display text-sm tracking-[4px] uppercase" style={{ color: '#e0e6f0' }}>
+                  vCon Intelligence
+                </h1>
+                <div className="font-mono text-[9px] tracking-[2px]" style={{ color: '#445566' }}>
+                  MISSION CONTROL
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <a
+                href="ingest.html"
+                className="px-3 py-1.5 rounded font-display text-[10px] tracking-[2px] uppercase"
+                style={{ background: '#00e5ff18', border: '1px solid #00e5ff44', color: '#00e5ff', textDecoration: 'none' }}
+              >
+                + Ingest
+              </a>
+              <button
+                className="px-3 py-1.5 rounded font-display text-[10px] tracking-[2px] uppercase transition-colors"
+                style={{ background: '#1a2236', border: '1px solid #243049', color: '#8899aa' }}
+                onClick={() => {
+                  fetchVcons();
+                  // Also refresh Neo4j graph by bumping vcon count trigger
+                  setVcons(prev => [...prev]);
+                }}
+              >
+                ↻ Refresh
+              </button>
+            </div>
+          </header>
+
+          {/* Status bar */}
+          <StatusBar
+            mqttConnected={mqttConnected}
+            eventCount={events.length}
+            vconCount={vcons.length}
+          />
+
+          {/* Main grid */}
+          <main className="flex-1 p-4 grid gap-3"
+            style={{
+              gridTemplateColumns: '1fr 1.5fr 1fr',
+              gridTemplateRows: 'auto 1fr 1fr',
+            }}>
+
+            {/* Row 1: KPI Cards spanning full width */}
+            <div className="col-span-3">
+              <KpiRow vcons={vcons} mqttConnected={mqttConnected} />
+            </div>
+
+            {/* Row 2 Left: Live Feed */}
+            <div className="row-span-2">
+              <LiveFeed events={events} />
+            </div>
+
+            {/* Row 2 Center: Sentiment + Graph */}
+            <div className="flex flex-col gap-3">
+              <SentimentTimeline vcons={vcons} />
+              <ParticipantGraph vcons={vcons} />
+            </div>
+
+            {/* Row 2 Right: JSON-LD Inspector + RAG Chat */}
+            <div className="flex flex-col gap-3 row-span-2" style={{ alignSelf: 'start' }}>
+              <JsonLdInspector vcons={vcons} />
+              <RagChat vcons={vcons} />
+            </div>
+          </main>
+
+          {/* Footer */}
+          <footer className="px-6 py-2 text-center font-mono text-[9px]"
+            style={{ color: '#334', borderTop: '1px solid #1a2236' }}>
+            VCONIC TadHack 2026 · vCon Intelligence Platform · JSON-LD-ex Semantic Enrichment · Local GPU Inference
+          </footer>
+        </div>
+      );
+    }
+
+    // ========================================================================
+    // MOUNT
+    // ========================================================================
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>

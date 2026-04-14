@@ -55,7 +55,7 @@ describe('VConService', () => {
       });
 
       expect(result.uuid).toBe(createdUuid);
-      expect(result.vcon.vcon).toBe('0.3.0');
+      expect(result.vcon.vcon).toBe('0.4.0');
       expect(result.vcon.uuid).toBeDefined();
       expect(result.vcon.created_at).toBeDefined();
       expect(result.vcon.parties).toEqual([{ name: 'Test User' }]);
@@ -74,7 +74,7 @@ describe('VConService', () => {
       expect(mockPluginManager.executeHook).toHaveBeenCalledWith(
         'beforeCreate',
         expect.objectContaining({
-          vcon: '0.3.0',
+          vcon: '0.4.0',
           parties: [{ name: 'Test User' }],
         }),
         expect.objectContaining({
@@ -96,7 +96,7 @@ describe('VConService', () => {
       expect(mockPluginManager.executeHook).toHaveBeenCalledWith(
         'afterCreate',
         expect.objectContaining({
-          vcon: '0.3.0',
+          vcon: '0.4.0',
           parties: [{ name: 'Test User' }],
         }),
         expect.objectContaining({
@@ -108,7 +108,7 @@ describe('VConService', () => {
     it('should apply modifications from beforeCreate hook', async () => {
       const createdUuid = randomUUID();
       const modifiedVCon: VCon = {
-        vcon: '0.3.0',
+        vcon: '0.4.0',
         uuid: createdUuid,
         created_at: new Date().toISOString(),
         subject: 'Modified by plugin',
@@ -262,7 +262,7 @@ describe('VConService', () => {
   describe('get', () => {
     it('should retrieve a vCon by UUID', async () => {
       const testVCon: VCon = {
-        vcon: '0.3.0',
+        vcon: '0.4.0',
         uuid: randomUUID(),
         created_at: new Date().toISOString(),
         parties: [{ name: 'Test User' }],
@@ -280,7 +280,7 @@ describe('VConService', () => {
     it('should call beforeRead hook before fetching', async () => {
       const uuid = randomUUID();
       const testVCon: VCon = {
-        vcon: '0.3.0',
+        vcon: '0.4.0',
         uuid,
         created_at: new Date().toISOString(),
         parties: [],
@@ -302,7 +302,7 @@ describe('VConService', () => {
 
     it('should call afterRead hook after fetching', async () => {
       const testVCon: VCon = {
-        vcon: '0.3.0',
+        vcon: '0.4.0',
         uuid: randomUUID(),
         created_at: new Date().toISOString(),
         parties: [],
@@ -324,7 +324,7 @@ describe('VConService', () => {
 
     it('should apply modifications from afterRead hook', async () => {
       const testVCon: VCon = {
-        vcon: '0.3.0',
+        vcon: '0.4.0',
         uuid: randomUUID(),
         created_at: new Date().toISOString(),
         parties: [{ name: 'Test User' }],
@@ -354,7 +354,7 @@ describe('VConService', () => {
 
     it('should skip hooks when skipHooks option is true', async () => {
       const testVCon: VCon = {
-        vcon: '0.3.0',
+        vcon: '0.4.0',
         uuid: randomUUID(),
         created_at: new Date().toISOString(),
         parties: [],
@@ -372,7 +372,7 @@ describe('VConService', () => {
     it('should delete a vCon by UUID', async () => {
       const uuid = randomUUID();
       const testVCon: VCon = {
-        vcon: '0.3.0',
+        vcon: '0.4.0',
         uuid,
         created_at: new Date().toISOString(),
         parties: [],
@@ -401,7 +401,7 @@ describe('VConService', () => {
     it('should call beforeDelete hook before deleting', async () => {
       const uuid = randomUUID();
       const testVCon: VCon = {
-        vcon: '0.3.0',
+        vcon: '0.4.0',
         uuid,
         created_at: new Date().toISOString(),
         parties: [],
@@ -425,7 +425,7 @@ describe('VConService', () => {
     it('should call afterDelete hook after deleting', async () => {
       const uuid = randomUUID();
       const testVCon: VCon = {
-        vcon: '0.3.0',
+        vcon: '0.4.0',
         uuid,
         created_at: new Date().toISOString(),
         parties: [],
@@ -449,7 +449,7 @@ describe('VConService', () => {
     it('should throw if beforeDelete hook throws (deletion blocked)', async () => {
       const uuid = randomUUID();
       const testVCon: VCon = {
-        vcon: '0.3.0',
+        vcon: '0.4.0',
         uuid,
         created_at: new Date().toISOString(),
         parties: [],
@@ -467,7 +467,7 @@ describe('VConService', () => {
     it('should skip hooks when skipHooks option is true', async () => {
       const uuid = randomUUID();
       const testVCon: VCon = {
-        vcon: '0.3.0',
+        vcon: '0.4.0',
         uuid,
         created_at: new Date().toISOString(),
         parties: [],
@@ -485,8 +485,8 @@ describe('VConService', () => {
   describe('search', () => {
     it('should search vCons with filters', async () => {
       const testVCons: VCon[] = [
-        { vcon: '0.3.0', uuid: randomUUID(), created_at: new Date().toISOString(), parties: [] },
-        { vcon: '0.3.0', uuid: randomUUID(), created_at: new Date().toISOString(), parties: [] },
+        { vcon: '0.4.0', uuid: randomUUID(), created_at: new Date().toISOString(), parties: [] },
+        { vcon: '0.4.0', uuid: randomUUID(), created_at: new Date().toISOString(), parties: [] },
       ];
 
       mockQueries.searchVCons.mockResolvedValue(testVCons);
@@ -529,7 +529,7 @@ describe('VConService', () => {
 
     it('should call afterSearch hook to filter results', async () => {
       const testVCons: VCon[] = [
-        { vcon: '0.3.0', uuid: randomUUID(), created_at: new Date().toISOString(), parties: [] },
+        { vcon: '0.4.0', uuid: randomUUID(), created_at: new Date().toISOString(), parties: [] },
       ];
 
       mockQueries.searchVCons.mockResolvedValue(testVCons);
@@ -548,8 +548,8 @@ describe('VConService', () => {
 
     it('should apply filtered results from afterSearch hook', async () => {
       const testVCons: VCon[] = [
-        { vcon: '0.3.0', uuid: 'uuid-1', created_at: new Date().toISOString(), parties: [] },
-        { vcon: '0.3.0', uuid: 'uuid-2', created_at: new Date().toISOString(), parties: [] },
+        { vcon: '0.4.0', uuid: 'uuid-1', created_at: new Date().toISOString(), parties: [] },
+        { vcon: '0.4.0', uuid: 'uuid-2', created_at: new Date().toISOString(), parties: [] },
       ];
       const filteredVCons = [testVCons[0]]; // Plugin filters out second result
 

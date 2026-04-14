@@ -1,0 +1,55 @@
+%% ============================================================================
+%% DIAGRAM 2: Plugin Pipeline Flow (afterCreate Hook Chain)
+%% Shows what happens when a vCon is created
+%% Render at https://mermaid.live
+%% ============================================================================
+
+sequenceDiagram
+    participant U as Source<br/>SIPREC / Teams /<br/>WhatsApp / UI
+    participant API as REST API<br/>POST /api/v1/vcons
+    participant VS as VConService<br/>create()
+    participant PM as PluginManager<br/>executeHook
+    participant MQTT as MQTT Bridge<br/>Plugin
+    participant NEO as Neo4j Consumer<br/>Plugin
+    participant JLD as JSON-LD-ex<br/>Plugin
+    participant AIA as AI Analyzer<br/>Plugin
+    participant MQ as Mosquitto<br/>Broker
+    participant N4 as Neo4j<br/>Database
+    participant MDB as MongoDB
+    participant GRQ as Groq API<br/>LLaMA 3.1-8B
+
+    U->>API: POST vCon JSON
+    API->>VS: create(vconData)
+    VS->>VS: normalizeVCon()
+    VS->>PM: beforeCreate hooks
+    VS->>MDB: insertOne(vcon)
+    MDB-->>VS: { uuid, id }
+
+    Note over PM: afterCreate hooks fire<br/>in plugin loading order
+
+    VS->>PM: afterCreate(vcon)
+
+    PM->>MQTT: afterCreate()
+    MQTT->>MQ: publish vcon.ingested
+    MQ-->>U: WebSocket event
+
+    PM->>NEO: afterCreate()
+    NEO->>N4: MERGE Person nodes
+    NEO->>N4: MERGE Conversation
+    NEO->>N4: MERGE CONTACTED edges
+    NEO->>N4: MERGE Topics
+
+    PM->>JLD: afterCreate()
+    JLD->>JLD: enrichVCon()
+    Note over JLD: @context + provenance<br/>+ confidence algebra<br/>+ integrity signing
+    JLD->>MDB: $set jsonld_enrichment
+    JLD->>MQ: publish vcon.enriched
+
+    PM->>AIA: afterCreate()
+    AIA->>AIA: extractTranscript()
+    AIA->>GRQ: POST /analyze
+    GRQ-->>AIA: { sentiment, summary, topics }
+    AIA->>MDB: $push analysis[]
+
+    VS-->>API: { uuid, success }
+    API-->>U: 200 OK

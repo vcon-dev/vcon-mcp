@@ -33,7 +33,7 @@ export class CreateVConHandler extends BaseToolHandler {
           subject: args?.subject as string | undefined,
           parties: (args?.parties as any[]) || [],
           extensions: args?.extensions as string[] | undefined,
-          must_support: args?.must_support as string[] | undefined,
+          critical: args?.critical as string[] | undefined,
         },
         {
           requestContext,
@@ -101,13 +101,45 @@ export class GetVConHandler extends BaseToolHandler {
 
   protected async execute(args: any, context: ToolHandlerContext): Promise<ToolResponse> {
     const uuid = requireUUID(args?.uuid as string, 'uuid');
+    const responseFormat = (args?.response_format as string | undefined) || 'full';
     const requestContext = this.createRequestContext(args);
 
     const vcon = await context.vconService.get(uuid, { requestContext });
-    
-    return this.createSuccessResponse({
-      vcon,
-    });
+
+    if (responseFormat === 'metadata') {
+      return this.createSuccessResponse({
+        vcon: {
+          vcon: vcon.vcon,
+          uuid: vcon.uuid,
+          created_at: vcon.created_at,
+          updated_at: vcon.updated_at,
+          subject: vcon.subject,
+          extensions: vcon.extensions,
+          critical: vcon.critical,
+          parties: vcon.parties,
+        }
+      });
+    }
+
+    if (responseFormat === 'summary') {
+      const summaryAnalysis = (vcon.analysis || []).filter((a: any) => a.type === 'summary');
+      return this.createSuccessResponse({
+        vcon: {
+          vcon: vcon.vcon,
+          uuid: vcon.uuid,
+          created_at: vcon.created_at,
+          updated_at: vcon.updated_at,
+          subject: vcon.subject,
+          extensions: vcon.extensions,
+          critical: vcon.critical,
+          parties: vcon.parties,
+          analysis: summaryAnalysis,
+        }
+      });
+    }
+
+    // 'full' — return everything
+    return this.createSuccessResponse({ vcon });
   }
 }
 
@@ -134,8 +166,8 @@ export class UpdateVConHandler extends BaseToolHandler {
     if (Object.prototype.hasOwnProperty.call(updates, 'extensions')) {
       allowed.extensions = updates.extensions;
     }
-    if (Object.prototype.hasOwnProperty.call(updates, 'must_support')) {
-      allowed.must_support = updates.must_support as string[] | undefined;
+    if (Object.prototype.hasOwnProperty.call(updates, 'critical')) {
+      allowed.critical = updates.critical as string[] | undefined;
     }
 
     const requestContext = this.createRequestContext(args);

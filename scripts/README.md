@@ -103,7 +103,8 @@ REDIS_URL=redis://localhost:6379
 | Script | Description |
 |--------|-------------|
 | `sync-all.ts` | Unified sync: vCons + embeddings + tags |
-| `load-legacy-vcons.ts` | Load vCons from S3 or local directory |
+| `import-vcon-files.ts` | Bulk import real `.vcon` files from a local directory (93k+ files supported) |
+| `load-legacy-vcons.ts` | Load vCons from S3 or local directory (legacy sync) |
 | `embed-vcons.ts` | Generate embeddings for vCons |
 | `check-db-status.ts` | Database status with table counts |
 | `check-daily-counts.ts` | Identify data gaps by day |
@@ -127,6 +128,26 @@ REDIS_URL=redis://localhost:6379
 | `analyze-search-indexes.ts` | Analyze search index usage |
 
 ## Script Details
+
+### import-vcon-files.ts
+
+Bulk importer for real `.vcon` files from a local directory. Handles both v0.0.1 (old Strolid-style) and v0.4.0 spec field names transparently.
+
+```bash
+# Import all .vcon files from a directory tree
+npx tsx scripts/import-vcon-files.ts /Volumes/T9/test-vcons/strolid/2026/04
+
+# Options (env vars)
+CONCURRENCY=20          # Parallel workers (default: 20)
+SKIP_EXISTING=true      # Skip UUIDs already in DB (default: true)
+DRY_RUN=true            # Validate without inserting
+```
+
+Errors are logged to `import-errors.log`. Expected rate: ~220 vCons/sec with CONCURRENCY=20.
+
+> **Note:** Before re-importing after a failed run, truncate the DB: `psql ... -c "TRUNCATE vcons CASCADE;"`
+
+---
 
 ### sync-all.ts
 

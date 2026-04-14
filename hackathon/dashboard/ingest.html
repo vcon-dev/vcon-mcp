@@ -1,0 +1,1433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>vCon Ingestion — SIPREC Drop</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            surface: { 900: '#0a0e17', 800: '#111827', 700: '#1a2236', 600: '#243049' },
+            neon: { cyan: '#00e5ff', amber: '#ffab00', green: '#00e676', red: '#ff1744', purple: '#d500f9' },
+          },
+          fontFamily: {
+            mono: ['"JetBrains Mono"', '"Fira Code"', 'monospace'],
+            display: ['"Orbitron"', '"Rajdhani"', 'sans-serif'],
+            body: ['"Rajdhani"', '"Exo 2"', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/mqtt@5.5.0/dist/mqtt.min.js"></script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0a0e17; color: #e0e6f0; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #111827; }
+    ::-webkit-scrollbar-thumb { background: #243049; border-radius: 3px; }
+
+    .panel {
+      background: linear-gradient(135deg, #111827 0%, #1a2236 100%);
+      border: 1px solid #243049;
+      border-radius: 8px;
+      overflow: hidden;
+      transition: border-color 0.3s;
+    }
+    .panel:hover { border-color: #00e5ff44; }
+    .panel-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid #243049;
+      display: flex; align-items: center; gap: 8px;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 11px; font-weight: 600; letter-spacing: 2px;
+      text-transform: uppercase; color: #8899aa;
+    }
+    .status-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; } 50% { opacity: 0.4; }
+    }
+
+    .drop-zone {
+      border: 2px dashed #243049;
+      border-radius: 8px;
+      transition: all 0.3s;
+      cursor: pointer;
+    }
+    .drop-zone.active {
+      border-color: #00e5ff;
+      background: #00e5ff08;
+      box-shadow: 0 0 30px #00e5ff11;
+    }
+    .drop-zone:hover { border-color: #00e5ff88; }
+
+    .pipeline-step {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 14px;
+      border-left: 3px solid #243049;
+      transition: all 0.4s;
+    }
+    .pipeline-step.done { border-left-color: #00e676; }
+    .pipeline-step.active { border-left-color: #00e5ff; background: #00e5ff06; }
+    .pipeline-step.error { border-left-color: #ff1744; }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .feed-item { animation: slideIn 0.3s ease-out; }
+
+    textarea, input[type="text"], input[type="number"], select {
+      background: #0a0e17; border: 1px solid #243049; color: #aabbcc;
+      font-family: 'JetBrains Mono', monospace; font-size: 12px;
+      padding: 8px 12px; border-radius: 6px; outline: none;
+      transition: border-color 0.2s;
+    }
+    textarea:focus, input:focus, select:focus { border-color: #00e5ff66; }
+
+    .btn {
+      font-family: 'Orbitron', sans-serif; font-size: 11px; font-weight: 600;
+      letter-spacing: 2px; text-transform: uppercase;
+      padding: 10px 24px; border-radius: 6px; cursor: pointer;
+      border: none; transition: all 0.2s;
+    }
+    .btn-primary { background: #00e5ff; color: #0a0e17; }
+    .btn-primary:hover { background: #00c8e0; box-shadow: 0 0 20px #00e5ff33; }
+    .btn-primary:disabled { background: #243049; color: #556; cursor: not-allowed; box-shadow: none; }
+    .btn-secondary { background: #1a2236; color: #8899aa; border: 1px solid #243049; }
+    .btn-secondary:hover { border-color: #00e5ff66; color: #bbccdd; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    const API_BASE = 'http://localhost:3000/api/v1';
+    const MQTT_WS_URL = 'ws://localhost:9001';
+    const WHISPER_URL = 'http://localhost:8100';
+    const NEO4J_URL = 'http://localhost:7474/db/neo4j/tx/commit';
+    const NEO4J_AUTH = 'Basic ' + btoa('neo4j:vcon2026');
+
+    const SAMPLE_VCONS = [
+      {"vcon":"0.3.0","subject":"Sarah Johnson ↔ Agent Mike Rivera — Billing Dispute","parties":[{"tel":"+15551234567","name":"Sarah Johnson","meta":{"role":"customer"}},{"tel":"+15559876001","name":"Agent Mike Rivera","meta":{"role":"agent"}}],"dialog":[{"type":"text","start":"2026-03-06T09:15:00Z","duration":342,"parties":[0,1],"mediatype":"text/plain"}],"analysis":[{"type":"transcript","vendor":"siprec-adapter","body":"Agent Mike Rivera: Thank you for calling TechCorp support, this is Mike. How can I help you today?\n\nSarah Johnson: Hi Mike, I'm calling because I was charged twice for my subscription last month. I noticed two charges of $49.99 on my credit card statement.\n\nAgent Mike Rivera: I'm sorry to hear that, Sarah. Let me pull up your account right away.\n\nSarah Johnson: This is really frustrating. I've been a customer for three years and this is the second billing issue I've had.\n\nAgent Mike Rivera: I completely understand your frustration. I'm going to process a refund for $49.99 right now. You should see it in 3 to 5 business days. I'm also adding a $10 credit.\n\nSarah Johnson: Okay, that sounds fair. Thank you for taking care of it quickly.\n\nAgent Mike Rivera: You're welcome, Sarah. Have a great day!","encoding":"none","dialog":0},{"type":"sentiment","vendor":"keyword-heuristic","body":"{\"overall\":0.62,\"positive\":4,\"negative\":2}","encoding":"json"},{"type":"topics","vendor":"keyword-heuristic","body":"[\"Billing\"]","encoding":"json"},{"type":"summary","vendor":"siprec-adapter","body":"Customer called about duplicate $49.99 charge caused by billing system error. Agent processed refund and added $10 account credit.","encoding":"none"}]},
+      {"vcon":"0.3.0","subject":"David Chen ↔ Agent Lisa Park — VPN Connectivity Issue","parties":[{"tel":"+15552345678","name":"David Chen","meta":{"role":"customer"}},{"tel":"+15559876002","name":"Agent Lisa Park","meta":{"role":"agent"}}],"dialog":[{"type":"text","start":"2026-03-06T11:20:00Z","duration":487,"parties":[0,1],"mediatype":"text/plain"}],"analysis":[{"type":"transcript","vendor":"siprec-adapter","body":"Agent Lisa Park: TechCorp support, this is Lisa. How can I help?\n\nDavid Chen: Hi, my VPN keeps disconnecting every 10 minutes. I'm working remotely and it's killing my productivity.\n\nAgent Lisa Park: What version are you running?\n\nDavid Chen: It says 4.2.0.\n\nAgent Lisa Park: That's the issue. Version 4.2.0 has a known keep-alive packet bug. We released a fix in 4.2.1.\n\nDavid Chen: Updating now... done. It's been 5 minutes and holding steady.\n\nAgent Lisa Park: Excellent! The update should resolve it permanently.\n\nDavid Chen: Great, thank you Lisa. Much easier than I expected.","encoding":"none","dialog":0},{"type":"sentiment","vendor":"keyword-heuristic","body":"{\"overall\":0.74,\"positive\":4,\"negative\":1}","encoding":"json"},{"type":"topics","vendor":"keyword-heuristic","body":"[\"Technical Support\",\"Remote Work\"]","encoding":"json"},{"type":"summary","vendor":"siprec-adapter","body":"VPN disconnection resolved by updating client from v4.2.0 to v4.2.1. Known keep-alive bug fixed.","encoding":"none"}]},
+      {"vcon":"0.3.0","subject":"Sarah Johnson ↔ Agent Mike Rivera — Refund Follow-up","parties":[{"tel":"+15551234567","name":"Sarah Johnson","meta":{"role":"customer"}},{"tel":"+15559876001","name":"Agent Mike Rivera","meta":{"role":"agent"}}],"dialog":[{"type":"text","start":"2026-03-06T14:45:00Z","duration":198,"parties":[0,1],"mediatype":"text/plain"}],"analysis":[{"type":"transcript","vendor":"siprec-adapter","body":"Agent Mike Rivera: TechCorp support, Mike speaking.\n\nSarah Johnson: Hi Mike, it's Sarah Johnson again. I just wanted to confirm the refund is being processed.\n\nAgent Mike Rivera: Hi Sarah! Yes, the refund of $49.99 was initiated this morning. 3 to 5 business days. The $10 credit is already applied.\n\nSarah Johnson: Perfect. I really appreciate the proactive fix. Thank you, Mike.\n\nAgent Mike Rivera: My pleasure, Sarah. We value your loyalty!","encoding":"none","dialog":0},{"type":"sentiment","vendor":"keyword-heuristic","body":"{\"overall\":0.86,\"positive\":5,\"negative\":0}","encoding":"json"},{"type":"topics","vendor":"keyword-heuristic","body":"[\"Billing\"]","encoding":"json"},{"type":"summary","vendor":"siprec-adapter","body":"Follow-up confirming refund processing and billing cycle adjustment. Customer satisfied.","encoding":"none"}]},
+      {"vcon":"0.3.0","subject":"Teams Meeting: Q1 Customer Escalation Review — Sarah Johnson Account","parties":[{"mailto":"rachel.kim@techcorp.com","name":"Rachel Kim","uuid":"usr-teams-001"},{"mailto":"tom.bradley@techcorp.com","name":"Tom Bradley","uuid":"usr-teams-002"},{"mailto":"sarah.johnson@email.com","name":"Sarah Johnson","uuid":"usr-teams-003"}],"dialog":[{"type":"recording","start":"2026-03-06T14:00:00Z","duration":1710,"parties":[0,1,2],"mediatype":"audio/wav","url":"https://teams-recordings.blob.core.windows.net/recordings/call-e3f3a7d1.wav"}],"analysis":[{"type":"transcript","vendor":"teams-adapter","body":"Rachel Kim: Let's start with the Sarah Johnson escalation. Tom, walk us through the timeline.\n\nTom Bradley: Sarah contacted us about a duplicate billing charge. Agent Mike Rivera processed a refund, but it was flagged by fraud detection and never went through.\n\nSarah Johnson: I called back and was told there was no record of the refund. That's when I asked for a manager.\n\nRachel Kim: Tom, what happened with the flag?\n\nTom Bradley: Fraud detection flagged it because it exceeded auto-approval threshold. It needed manual finance approval, but that was never communicated to front-line agents.\n\nRachel Kim: That's a process gap. Sarah, I sincerely apologize. We're processing your refund today with priority handling, plus a $25 credit.\n\nSarah Johnson: I appreciate that. This experience made me consider switching providers.\n\nRachel Kim: Tom, draft a process update — any flagged refund should auto-notify the agent and customer within 24 hours.\n\nTom Bradley: Got it, drafted by end of day.","encoding":"none","dialog":0},{"type":"summary","vendor":"teams-adapter","body":"Escalation review: unprocessed refund caused by fraud detection flag. Process gap identified. Resolution: priority refund + $25 credit, process update memo.","encoding":"none"},{"type":"sentiment","vendor":"keyword-heuristic","body":"{\"overall\":0.52,\"positive\":4,\"negative\":4}","encoding":"json"},{"type":"topics","vendor":"keyword-heuristic","body":"[\"Billing\",\"Escalation\",\"Security\"]","encoding":"json"},{"type":"source-metadata","vendor":"teams-adapter","body":"{\"source\":\"microsoft-teams\",\"callType\":\"groupCall\",\"organizerName\":\"Rachel Kim\"}","encoding":"json"}]},
+      {"vcon":"0.3.0","subject":"Teams Call: Lisa Park ↔ David Chen — VPN Follow-up","parties":[{"mailto":"lisa.park@techcorp.com","name":"Agent Lisa Park","uuid":"usr-teams-004"},{"mailto":"david.chen@gmail.com","name":"David Chen","uuid":"usr-teams-005"}],"dialog":[{"type":"recording","start":"2026-03-06T16:15:00Z","duration":1638,"parties":[0,1],"mediatype":"audio/wav","url":"https://teams-recordings.blob.core.windows.net/recordings/call-b8c2d4e6.wav"}],"analysis":[{"type":"transcript","vendor":"teams-adapter","body":"Agent Lisa Park: Hi David, I wanted to follow up on the VPN fix. How has connectivity been?\n\nDavid Chen: Rock solid since the update. No disconnections at all.\n\nAgent Lisa Park: Great. Also, our network team pushed a server-side optimization overnight.\n\nDavid Chen: I did notice faster connection this morning.\n\nAgent Lisa Park: I also noticed your account is on standard VPN tier. Since you're fully remote, you'd benefit from priority routing — dedicated bandwidth during peak hours. It's included in your enterprise plan.\n\nDavid Chen: Absolutely, yes please.\n\nAgent Lisa Park: Done. Reconnect to pick up the new routing.\n\nDavid Chen: Excellent service. Really appreciate the proactive follow-up.","encoding":"none","dialog":0},{"type":"summary","vendor":"teams-adapter","body":"Proactive VPN follow-up. Connectivity confirmed stable. Upgraded to priority routing tier (included in enterprise plan).","encoding":"none"},{"type":"sentiment","vendor":"keyword-heuristic","body":"{\"overall\":0.88,\"positive\":5,\"negative\":0}","encoding":"json"},{"type":"topics","vendor":"keyword-heuristic","body":"[\"Technical Support\",\"Remote Work\",\"Upgrade\"]","encoding":"json"},{"type":"source-metadata","vendor":"teams-adapter","body":"{\"source\":\"microsoft-teams\",\"callType\":\"peerToPeer\",\"organizerName\":\"Agent Lisa Park\"}","encoding":"json"}]},
+      {"vcon":"0.3.0","subject":"Maria Gonzalez ↔ Agent Mike Rivera — Account Cancellation Request","parties":[{"tel":"+15553456789","name":"Maria Gonzalez","meta":{"role":"customer"}},{"tel":"+15559876001","name":"Agent Mike Rivera","meta":{"role":"agent"}}],"dialog":[{"type":"text","start":"2026-03-07T08:30:00Z","duration":425,"parties":[0,1],"mediatype":"text/plain"}],"analysis":[{"type":"transcript","vendor":"siprec-adapter","body":"Agent Mike Rivera: TechCorp support, this is Mike. How can I help you?\n\nMaria Gonzalez: Hi, I'd like to cancel my account. I'm switching to a competitor.\n\nAgent Mike Rivera: May I ask what's prompting the switch?\n\nMaria Gonzalez: The pricing. Your competitor offers the same features for $30 instead of $50.\n\nAgent Mike Rivera: We recently launched a loyalty discount — 25% off for customers over a year. That brings you to $37.50. Plus an additional $5/mo off for 6 months = $32.50.\n\nMaria Gonzalez: $32.50 with premium support... that's competitive enough. I'll stay.\n\nAgent Mike Rivera: Wonderful! Both discounts are applied.","encoding":"none","dialog":0},{"type":"sentiment","vendor":"keyword-heuristic","body":"{\"overall\":0.68,\"positive\":4,\"negative\":1}","encoding":"json"},{"type":"topics","vendor":"keyword-heuristic","body":"[\"Cancellation\",\"Billing\",\"Upgrade\"]","encoding":"json"},{"type":"summary","vendor":"siprec-adapter","body":"Cancellation request due to competitor pricing. Retention offer: 25% loyalty + $5/mo for 6mo = $32.50. Customer retained.","encoding":"none"}]},
+      {"vcon":"0.3.0","subject":"Teams Meeting: Support Team Weekly Standup","parties":[{"mailto":"rachel.kim@techcorp.com","name":"Rachel Kim","uuid":"usr-teams-001"},{"mailto":"mike.rivera@techcorp.com","name":"Agent Mike Rivera","uuid":"usr-teams-006"},{"mailto":"lisa.park@techcorp.com","name":"Agent Lisa Park","uuid":"usr-teams-004"},{"mailto":"tom.bradley@techcorp.com","name":"Tom Bradley","uuid":"usr-teams-002"}],"dialog":[{"type":"recording","start":"2026-03-07T09:00:00Z","duration":1800,"parties":[0,1,2,3],"mediatype":"audio/wav","url":"https://teams-recordings.blob.core.windows.net/recordings/standup-20260307.wav"}],"analysis":[{"type":"transcript","vendor":"teams-adapter","body":"Rachel Kim: Good morning everyone. Let's do our weekly standup.\n\nAgent Mike Rivera: This week I handled 47 calls. The billing batch error drove volume — six customers with duplicate charges. All refunds processed. I also saved a cancellation with the loyalty discount.\n\nAgent Lisa Park: I had 38 calls, mostly technical support. The VPN 4.2.0 bug drove 15 calls. Since 4.2.1 patch, those dropped to zero. Proactive follow-ups got positive feedback.\n\nTom Bradley: Average handle time down 12% week over week. CSAT at 4.3/5. Fraud detection memo going to legal today. Concern: uptick in cancellation inquiries from Competitor X price cut.\n\nRachel Kim: Let's formalize the loyalty discount as a standard retention offer. Tom, pull data on qualifying customers.\n\nAgent Lisa Park: We need better API integration docs — I'm getting questions I can't answer.\n\nRachel Kim: Noted. I'll follow up with engineering.","encoding":"none","dialog":0},{"type":"summary","vendor":"teams-adapter","body":"Weekly standup. Mike: 47 calls, billing resolved, cancellation saved. Lisa: 38 calls, VPN fixed, proactive follow-ups. Tom: AHT -12%, CSAT 4.3/5, competitor price cut concern. Actions: formalize retention offer, pull qualification data, improve API docs.","encoding":"none"},{"type":"sentiment","vendor":"keyword-heuristic","body":"{\"overall\":0.72,\"positive\":5,\"negative\":1}","encoding":"json"},{"type":"topics","vendor":"keyword-heuristic","body":"[\"Billing\",\"Technical Support\",\"Cancellation\"]","encoding":"json"},{"type":"source-metadata","vendor":"teams-adapter","body":"{\"source\":\"microsoft-teams\",\"callType\":\"groupCall\",\"organizerName\":\"Rachel Kim\"}","encoding":"json"}]},
+      {"vcon":"0.3.0","subject":"WhatsApp: Sarah Johnson ↔ Agent Mike Rivera — Account Security","parties":[{"name":"Sarah Johnson","meta":{"role":"customer"}},{"name":"Agent Mike Rivera","meta":{"role":"agent"}}],"dialog":[{"type":"text","start":"2026-03-05T15:15:00Z","duration":360,"parties":[0,1],"mediatype":"text/plain"}],"analysis":[{"type":"transcript","vendor":"whatsapp-adapter","body":"Sarah Johnson: Hi, is this TechCorp support?\n\nAgent Mike Rivera: Hi Sarah! Yes, this is Mike from TechCorp support. How can I help you today?\n\nSarah Johnson: I'm having trouble logging into my account. It says my password is incorrect but I'm sure it's right.\n\nAgent Mike Rivera: Let me check your account. Can you confirm the email address?\n\nSarah Johnson: sarah.johnson@email.com\n\nAgent Mike Rivera: Your account was temporarily locked after 5 failed login attempts. This is a security measure. I'm unlocking it now.\n\nAgent Mike Rivera: Done! Your account is unlocked. You should be able to log in now.\n\nSarah Johnson: Let me try... yes! I'm in! Thank you so much Mike.\n\nAgent Mike Rivera: Great! The lockout happens after 5 failed attempts within 30 minutes.\n\nSarah Johnson: Good to know. Thanks for the quick help!","encoding":"none","dialog":0},{"type":"sentiment","vendor":"keyword-heuristic","body":"{\"overall\":0.72,\"positive\":3,\"negative\":0}","encoding":"json"},{"type":"topics","vendor":"keyword-heuristic","body":"[\"Account Security\"]","encoding":"json"},{"type":"source-metadata","vendor":"whatsapp-adapter","body":"{\"source\":\"whatsapp-export\",\"messageCount\":11,\"participantCount\":2}","encoding":"json"}]},
+      {"vcon":"0.3.0","subject":"WhatsApp: David Chen ↔ Agent Lisa Park — Upgrade","parties":[{"name":"David Chen","meta":{"role":"customer"}},{"name":"Agent Lisa Park","meta":{"role":"agent"}}],"dialog":[{"type":"text","start":"2026-03-06T19:30:00Z","duration":720,"parties":[0,1],"mediatype":"text/plain"}],"analysis":[{"type":"transcript","vendor":"whatsapp-adapter","body":"David Chen: Hey, I have a question about upgrading my plan\n\nAgent Lisa Park: Hi David! Of course, what would you like to know?\n\nDavid Chen: I'm on the Basic plan at $29/mo. What's the difference with Professional?\n\nAgent Lisa Park: The Professional plan is $49/mo and includes priority VPN routing, 24/7 phone support, advanced analytics, and up to 10 user seats.\n\nDavid Chen: The priority VPN routing sounds great. Can I do a trial first?\n\nAgent Lisa Park: Absolutely! I can set you up with a 14-day free trial. No credit card change needed.\n\nDavid Chen: Perfect, let's do that!\n\nAgent Lisa Park: Done! Your Professional trial is active now. I'll send a getting-started guide via email.\n\nDavid Chen: Awesome, thanks Lisa! Really appreciate the help.","encoding":"none","dialog":0},{"type":"sentiment","vendor":"keyword-heuristic","body":"{\"overall\":0.82,\"positive\":4,\"negative\":0}","encoding":"json"},{"type":"topics","vendor":"keyword-heuristic","body":"[\"Billing\",\"Upgrade\"]","encoding":"json"},{"type":"source-metadata","vendor":"whatsapp-adapter","body":"{\"source\":\"whatsapp-export\",\"messageCount\":14,\"participantCount\":2}","encoding":"json"}]}
+    ];
+
+    // ======================================================================
+    // WHATSAPP CHAT PARSER (client-side)
+    // ======================================================================
+    function parseWhatsAppChat(content) {
+      const messages = [];
+      const participants = new Set();
+      const patterns = [
+        /^(\d{1,2}\/\d{1,2}\/\d{2,4}),?\s+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)\s*[-\u2013]\s*(.+?):\s*([\s\S]*?)$/,
+        /^\[(\d{1,2}\/\d{1,2}\/\d{2,4}),?\s+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)\]\s*(.+?):\s*([\s\S]*?)$/,
+      ];
+      const lines = content.split('\n');
+      let current = null;
+      const systemWords = ['end-to-end encrypted', 'created group', 'added you', 'changed the subject', 'left the group'];
+      for (const line of lines) {
+        const t = line.trim();
+        if (!t || systemWords.some(w => t.toLowerCase().includes(w))) continue;
+        let matched = false;
+        for (const pat of patterns) {
+          const m = t.match(pat);
+          if (m) {
+            if (current) messages.push(current);
+            const [, dateStr, timeStr, sender, text] = m;
+            participants.add(sender.trim());
+            let iso;
+            try { const d = new Date(dateStr + ' ' + timeStr); iso = isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString(); } catch { iso = new Date().toISOString(); }
+            current = { timestamp: iso, sender: sender.trim(), text: text.trim() };
+            matched = true;
+            break;
+          }
+        }
+        if (!matched && current) current.text += '\n' + t;
+      }
+      if (current) messages.push(current);
+      return { messages, participants: Array.from(participants) };
+    }
+
+    // ======================================================================
+    // SIPREC XML PARSER (client-side)
+    // ======================================================================
+    function parseSiprecXml(xmlStr) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(xmlStr, 'text/xml');
+      const parseError = doc.querySelector('parsererror');
+      if (parseError) throw new Error('Invalid XML: ' + parseError.textContent.slice(0, 100));
+
+      const getText = (parent, ...tags) => {
+        for (const tag of tags) {
+          const el = parent?.querySelector(tag);
+          if (el?.textContent?.trim()) return el.textContent.trim();
+        }
+        return null;
+      };
+
+      const session = doc.querySelector('session');
+      const caller = doc.querySelector('caller');
+      const callee = doc.querySelector('callee');
+
+      return {
+        sessionId: session?.getAttribute('id') || 'SIPREC-' + Date.now(),
+        startTime: getText(session, 'start-time') || new Date().toISOString(),
+        endTime: getText(session, 'end-time'),
+        caller: {
+          number: getText(caller, 'number') || '+15550000000',
+          name: getText(caller, 'name', 'n') || 'Unknown Caller',
+        },
+        callee: {
+          number: getText(callee, 'number') || '+15550000001',
+          name: getText(callee, 'name', 'n') || 'Unknown Agent',
+        },
+        direction: getText(doc.documentElement, 'direction') || 'inbound',
+      };
+    }
+
+    // ======================================================================
+    // BUILD VCON FROM PARSED DATA
+    // ======================================================================
+    function buildVcon({ parsed, transcript, subject, audioBase64, audioMimetype }) {
+      const startTime = parsed?.startTime || new Date().toISOString();
+      const endTime = parsed?.endTime || new Date().toISOString();
+      const durationSec = (new Date(endTime) - new Date(startTime)) / 1000;
+
+      const vcon = {
+        vcon: '0.3.0',
+        created_at: new Date().toISOString(),
+        subject: subject || `${parsed?.caller?.name || 'Caller'} ↔ ${parsed?.callee?.name || 'Agent'}`,
+        parties: [
+          {
+            tel: parsed?.caller?.number || '+15550000000',
+            name: parsed?.caller?.name || 'Unknown Caller',
+            meta: { role: 'customer' },
+          },
+          {
+            tel: parsed?.callee?.number || '+15550000001',
+            name: parsed?.callee?.name || 'Unknown Agent',
+            meta: { role: 'agent' },
+          },
+        ],
+        dialog: [],
+        analysis: [],
+      };
+
+      // Recording dialog
+      if (audioBase64) {
+        vcon.dialog.push({
+          type: 'recording',
+          start: startTime,
+          duration: durationSec > 0 ? durationSec : 120,
+          parties: [0, 1],
+          mediatype: audioMimetype || 'audio/wav',
+          body: audioBase64,
+          encoding: 'base64url',
+        });
+      } else {
+        // Text dialog placeholder
+        vcon.dialog.push({
+          type: 'text',
+          start: startTime,
+          duration: durationSec > 0 ? durationSec : 120,
+          parties: [0, 1],
+          mediatype: 'text/plain',
+        });
+      }
+
+      // Transcript analysis
+      if (transcript?.trim()) {
+        vcon.analysis.push({
+          type: 'transcript',
+          vendor: audioBase64 ? 'whisper-local' : 'manual-input',
+          body: transcript.trim(),
+          encoding: 'none',
+          dialog: 0,
+        });
+      }
+
+      // Basic sentiment from keywords
+      if (transcript?.trim()) {
+        const lower = transcript.toLowerCase();
+        const posWords = ['thank', 'great', 'appreciate', 'excellent', 'resolved', 'happy', 'fair', 'pleased'];
+        const negWords = ['frustrat', 'angry', 'terrible', 'worst', 'upset', 'complain', 'unacceptable', 'ridiculous'];
+        const posCount = posWords.filter(w => lower.includes(w)).length;
+        const negCount = negWords.filter(w => lower.includes(w)).length;
+        const score = Math.max(0, Math.min(1, 0.5 + (posCount - negCount) * 0.12));
+        vcon.analysis.push({
+          type: 'sentiment',
+          vendor: 'keyword-heuristic',
+          body: JSON.stringify({ overall: parseFloat(score.toFixed(2)), positive: posCount, negative: negCount }),
+          encoding: 'json',
+        });
+
+        // Extract topics from transcript
+        const topicPatterns = [
+          { pattern: /bill|charg|payment|refund|invoice|subscript/i, topic: 'Billing' },
+          { pattern: /technical|error|bug|crash|slow|broken|install/i, topic: 'Technical Support' },
+          { pattern: /cancel|close|terminat|end.*account/i, topic: 'Cancellation' },
+          { pattern: /upgrade|plan|feature|premium/i, topic: 'Upgrade' },
+          { pattern: /ship|deliver|track|order/i, topic: 'Shipping' },
+          { pattern: /password|login|access|secur|auth/i, topic: 'Account Security' },
+        ];
+        const topics = topicPatterns.filter(t => t.pattern.test(lower)).map(t => t.topic);
+        if (topics.length > 0) {
+          vcon.analysis.push({
+            type: 'topics',
+            vendor: 'keyword-heuristic',
+            body: JSON.stringify(topics),
+            encoding: 'json',
+          });
+        }
+      }
+
+      return vcon;
+    }
+
+    // ======================================================================
+    // STATUS DOT
+    // ======================================================================
+    function StatusDot({ color = '#00e676', active = true }) {
+      return (
+        <span className="status-dot" style={{
+          background: color,
+          boxShadow: active ? `0 0 8px ${color}` : 'none',
+          animation: active ? undefined : 'none', opacity: active ? 1 : 0.3,
+        }} />
+      );
+    }
+
+    // ======================================================================
+    // PIPELINE TRACKER
+    // ======================================================================
+    function PipelineTracker({ steps }) {
+      return (
+        <div className="panel">
+          <div className="panel-header">
+            <StatusDot color="#d500f9" />
+            <span>Pipeline Status</span>
+          </div>
+          <div className="p-2">
+            {steps.map((step, i) => (
+              <div key={i} className={`pipeline-step ${step.status}`}>
+                <span style={{ fontSize: 16, width: 20, textAlign: 'center' }}>
+                  {step.status === 'done' ? '✓' : step.status === 'active' ? '◉' : step.status === 'error' ? '✕' : '○'}
+                </span>
+                <div className="flex-1">
+                  <div className="font-body text-sm" style={{
+                    color: step.status === 'done' ? '#00e676' : step.status === 'active' ? '#00e5ff' :
+                      step.status === 'error' ? '#ff1744' : '#556'
+                  }}>
+                    {step.label}
+                  </div>
+                  {step.detail && (
+                    <div className="font-mono text-[10px]" style={{ color: '#556' }}>{step.detail}</div>
+                  )}
+                </div>
+                {step.time && (
+                  <span className="font-mono text-[10px]" style={{ color: '#445566' }}>{step.time}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // ======================================================================
+    // MQTT EVENT LOG
+    // ======================================================================
+    function EventLog({ events }) {
+      const evtColor = (e) => {
+        if (e.includes('ingested')) return '#00e5ff';
+        if (e.includes('enriched')) return '#d500f9';
+        if (e.includes('alert')) return '#ff1744';
+        return '#556';
+      };
+      return (
+        <div className="panel flex flex-col" style={{ maxHeight: 300 }}>
+          <div className="panel-header">
+            <StatusDot color="#00e5ff" />
+            <span>MQTT Events</span>
+            <span className="ml-auto font-mono text-[10px]" style={{ color: '#00e5ff' }}>{events.length}</span>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {events.length === 0 ? (
+              <div className="p-4 text-center font-body text-sm" style={{ color: '#445566' }}>
+                Listening for pipeline events...
+              </div>
+            ) : events.map((evt, i) => (
+              <div key={i} className="feed-item px-4 py-2 border-b" style={{ borderColor: '#1a223644' }}>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs" style={{ color: evtColor(evt.event || '') }}>
+                    {evt.event || 'unknown'}
+                  </span>
+                  <span className="ml-auto font-mono text-[10px]" style={{ color: '#445566' }}>
+                    {evt.timestamp ? new Date(evt.timestamp).toLocaleTimeString() : ''}
+                  </span>
+                </div>
+                {evt.subject && (
+                  <div className="font-body text-xs" style={{ color: '#667788' }}>{evt.subject}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // ======================================================================
+    // MAIN APP
+    // ======================================================================
+    function App() {
+      const [mode, setMode] = useState('form'); // 'form' | 'xml' | 'audio' | 'teams' | 'whatsapp'
+      const [mqttConnected, setMqttConnected] = useState(false);
+      const [events, setEvents] = useState([]);
+      const [submitting, setSubmitting] = useState(false);
+      const [lastResult, setLastResult] = useState(null);
+      const [whisperAvailable, setWhisperAvailable] = useState(false);
+      const fileInputRef = useRef(null);
+      const [loadingSamples, setLoadingSamples] = useState(false);
+      const [resetting, setResetting] = useState(false);
+      const [showResetConfirm, setShowResetConfirm] = useState(false);
+      const [sampleLoadResult, setSampleLoadResult] = useState(null);
+
+      // Form fields
+      const [callerName, setCallerName] = useState('');
+      const [callerNumber, setCallerNumber] = useState('');
+      const [agentName, setAgentName] = useState('');
+      const [agentNumber, setAgentNumber] = useState('');
+      const [subject, setSubject] = useState('');
+      const [transcript, setTranscript] = useState('');
+
+      // XML mode
+      const [xmlContent, setXmlContent] = useState('');
+      const [xmlTranscript, setXmlTranscript] = useState('');
+
+      // Audio mode
+      const [audioFile, setAudioFile] = useState(null);
+      const [audioTranscribing, setAudioTranscribing] = useState(false);
+      const [audioTranscript, setAudioTranscript] = useState('');
+
+      // Teams mode
+      const [teamsJson, setTeamsJson] = useState('');
+      const [teamsParseResult, setTeamsParseResult] = useState(null);
+
+      // WhatsApp mode
+      const [whatsappText, setWhatsappText] = useState('');
+      const [whatsappParseResult, setWhatsappParseResult] = useState(null);
+
+      // Pipeline steps
+      const [pipelineSteps, setPipelineSteps] = useState([
+        { label: 'Build vCon', status: 'pending', detail: 'Construct IETF-compliant vCon JSON' },
+        { label: 'POST to API', status: 'pending', detail: 'Submit to /api/v1/vcons' },
+        { label: 'MQTT Published', status: 'pending', detail: 'vcon.ingested event' },
+        { label: 'Neo4j Graph', status: 'pending', detail: 'Participant nodes + edges' },
+        { label: 'JSON-LD Enrichment', status: 'pending', detail: 'Semantic provenance + confidence' },
+      ]);
+
+      // Check Whisper sidecar
+      useEffect(() => {
+        fetch(WHISPER_URL + '/health', { signal: AbortSignal.timeout(2000) })
+          .then(r => r.ok && setWhisperAvailable(true))
+          .catch(() => setWhisperAvailable(false));
+      }, []);
+
+      // MQTT connection
+      useEffect(() => {
+        let client;
+        try {
+          client = mqtt.connect(MQTT_WS_URL, {
+            clientId: 'vcon-ingest-' + Math.random().toString(16).slice(2, 8),
+            reconnectPeriod: 5000,
+          });
+          client.on('connect', () => {
+            setMqttConnected(true);
+            client.subscribe('vcon/enterprise/hackathon/#');
+          });
+          client.on('message', (topic, msg) => {
+            try {
+              const payload = JSON.parse(msg.toString());
+              setEvents(prev => [payload, ...prev].slice(0, 50));
+              // Update pipeline steps based on events
+              if (payload.event === 'vcon.ingested') {
+                updateStep(2, 'done', 'Event published');
+                updateStep(3, 'active', 'Processing...');
+              }
+              if (payload.event === 'vcon.enriched') {
+                updateStep(3, 'done', 'Graph updated');
+                updateStep(4, 'done', 'Enrichment complete');
+              }
+            } catch {}
+          });
+          client.on('close', () => setMqttConnected(false));
+          client.on('error', () => setMqttConnected(false));
+        } catch {}
+        return () => { if (client) client.end(true); };
+      }, []);
+
+      const updateStep = (index, status, detail) => {
+        setPipelineSteps(prev => prev.map((s, i) =>
+          i === index ? { ...s, status, detail, time: new Date().toLocaleTimeString() } : s
+        ));
+      };
+
+      const resetPipeline = () => {
+        setPipelineSteps([
+          { label: 'Build vCon', status: 'pending', detail: 'Construct IETF-compliant vCon JSON' },
+          { label: 'POST to API', status: 'pending', detail: 'Submit to /api/v1/vcons' },
+          { label: 'MQTT Published', status: 'pending', detail: 'vcon.ingested event' },
+          { label: 'Neo4j Graph', status: 'pending', detail: 'Participant nodes + edges' },
+          { label: 'JSON-LD Enrichment', status: 'pending', detail: 'Semantic provenance + confidence' },
+        ]);
+        setLastResult(null);
+      };
+
+      // Load all sample vCons
+      const loadSamples = async () => {
+        setLoadingSamples(true);
+        setSampleLoadResult(null);
+        let loaded = 0, failed = 0;
+        for (const sample of SAMPLE_VCONS) {
+          try {
+            const vcon = { ...sample, created_at: new Date().toISOString() };
+            delete vcon.uuid;
+            const postRes = await fetch(`${API_BASE}/vcons`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(vcon),
+            });
+            const data = await postRes.json();
+            if (data.success) loaded++; else failed++;
+          } catch { failed++; }
+        }
+        setSampleLoadResult({ loaded, failed, total: SAMPLE_VCONS.length });
+        setLoadingSamples(false);
+      };
+
+      // Master reset — clear all data
+      const masterReset = async () => {
+        setResetting(true);
+        setShowResetConfirm(false);
+        const log = [];
+
+        // 1. Get all vCon UUIDs and delete them via REST API
+        try {
+          const listRes = await fetch(`${API_BASE}/vcons?limit=100`);
+          const listData = await listRes.json();
+          const vcons = listData.vcons || [];
+          let deleted = 0;
+          for (const v of vcons) {
+            try {
+              await fetch(`${API_BASE}/vcons/${v.uuid}`, { method: 'DELETE' });
+              deleted++;
+            } catch {}
+          }
+          log.push(`Deleted ${deleted} vCons from MongoDB`);
+        } catch (err) {
+          log.push(`MongoDB cleanup error: ${err.message}`);
+        }
+
+        // 2. Clear Neo4j graph
+        try {
+          await fetch(NEO4J_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': NEO4J_AUTH },
+            body: JSON.stringify({ statements: [
+              { statement: 'MATCH (n) DETACH DELETE n' }
+            ] }),
+          });
+          log.push('Cleared Neo4j graph');
+        } catch (err) {
+          log.push(`Neo4j cleanup error: ${err.message}`);
+        }
+
+        // 3. Reset UI state
+        resetPipeline();
+        setEvents([]);
+        setCallerName(''); setAgentName(''); setTranscript('');
+        setCallerNumber(''); setAgentNumber('');
+        setXmlContent(''); setXmlTranscript('');
+        setAudioFile(null); setAudioTranscript('');
+        setTeamsJson(''); setTeamsParseResult(null);
+        setSubject(''); setSampleLoadResult(null);
+        setMode('form');
+        log.push('Reset UI state');
+
+        setLastResult({ success: true, message: log.join(' · ') });
+        setResetting(false);
+      };
+
+      // Transcribe audio via Whisper sidecar
+      const transcribeAudio = async (file) => {
+        if (!whisperAvailable) return null;
+        setAudioTranscribing(true);
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+          const res = await fetch(WHISPER_URL + '/transcribe', { method: 'POST', body: formData });
+          const data = await res.json();
+          setAudioTranscribing(false);
+          return data.text || data.transcript || null;
+        } catch (err) {
+          setAudioTranscribing(false);
+          return null;
+        }
+      };
+
+      // Submit vCon
+      const handleSubmit = async () => {
+        setSubmitting(true);
+        resetPipeline();
+        updateStep(0, 'active', 'Building...');
+
+        try {
+          let parsed = null;
+          let txn = '';
+          let subj = '';
+          let audioB64 = null;
+          let audioMime = null;
+
+          if (mode === 'whatsapp') {
+            // WhatsApp mode — parse exported chat text
+            const { messages, participants } = parseWhatsAppChat(whatsappText);
+            if (messages.length === 0) throw new Error('No messages found in WhatsApp chat');
+
+            const startTime = messages[0].timestamp;
+            const endTime = messages[messages.length - 1].timestamp;
+            const durationSec = Math.max(60, (new Date(endTime) - new Date(startTime)) / 1000);
+            const transcript = messages.map(m => `${m.sender}: ${m.text}`).join('\n\n');
+
+            const waParties = participants.map(name => ({
+              name, meta: { role: /agent/i.test(name) || /support/i.test(name) ? 'agent' : 'customer' },
+            }));
+
+            const vcon = {
+              vcon: '0.3.0', created_at: new Date().toISOString(),
+              subject: subject || `WhatsApp: ${participants.join(' \u2194 ')}`,
+              parties: waParties,
+              dialog: [{ type: 'text', start: startTime, duration: durationSec, parties: waParties.map((_, i) => i), mediatype: 'text/plain' }],
+              analysis: [{ type: 'transcript', vendor: 'whatsapp-adapter', body: transcript, encoding: 'none', dialog: 0 }],
+            };
+
+            // Sentiment + topics
+            const lower = transcript.toLowerCase();
+            const posWords = ['thank', 'great', 'appreciate', 'excellent', 'resolved', 'happy', 'perfect', 'awesome', 'pleasure'];
+            const negWords = ['frustrat', 'angry', 'terrible', 'worst', 'upset', 'complain', 'disappointed', 'problem'];
+            const posCount = posWords.filter(w => lower.includes(w)).length;
+            const negCount = negWords.filter(w => lower.includes(w)).length;
+            const score = Math.max(0, Math.min(1, 0.5 + (posCount - negCount) * 0.1));
+            vcon.analysis.push({ type: 'sentiment', vendor: 'keyword-heuristic', body: JSON.stringify({ overall: parseFloat(score.toFixed(2)), positive: posCount, negative: negCount }), encoding: 'json' });
+
+            const topicPatterns = [
+              { pattern: /bill|charg|refund|payment|invoice|subscript|credit|pric|plan|cost/i, topic: 'Billing' },
+              { pattern: /technical|vpn|error|bug|crash|slow|broken|update|version|config|connect/i, topic: 'Technical Support' },
+              { pattern: /cancel|close|terminat|switch/i, topic: 'Cancellation' },
+              { pattern: /upgrade|premium|professional|enterprise|tier|feature|trial/i, topic: 'Upgrade' },
+              { pattern: /password|login|access|secur|auth|lock|unlock/i, topic: 'Account Security' },
+            ];
+            const topics = topicPatterns.filter(t => t.pattern.test(lower)).map(t => t.topic);
+            if (topics.length > 0) vcon.analysis.push({ type: 'topics', vendor: 'keyword-heuristic', body: JSON.stringify(topics), encoding: 'json' });
+            vcon.analysis.push({ type: 'source-metadata', vendor: 'whatsapp-adapter', body: JSON.stringify({ source: 'whatsapp-export', messageCount: messages.length, participantCount: participants.length }), encoding: 'json' });
+
+            updateStep(0, 'done', `${waParties.length} parties, ${messages.length} msgs (WhatsApp)`);
+            updateStep(1, 'active', 'Submitting...');
+
+            const res = await fetch(`${API_BASE}/vcons`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(vcon) });
+            const data = await res.json();
+            if (data.success) {
+              updateStep(1, 'done', `UUID: ${data.uuid?.slice(0, 12)}... (${data.duration_ms}ms)`);
+              updateStep(2, 'active', 'Waiting for MQTT...');
+              setLastResult({ success: true, uuid: data.uuid, duration: data.duration_ms });
+            } else { throw new Error(data.message || 'API error'); }
+
+            setTimeout(() => { setPipelineSteps(prev => prev.map(s => s.status === 'active' ? { ...s, status: 'done', detail: s.detail + ' (assumed)', time: new Date().toLocaleTimeString() } : s)); }, 5000);
+            setSubmitting(false);
+            return;
+          } else if (mode === 'teams') {
+            // Teams mode — parse the MS Graph callRecord JSON directly
+            let callRecord;
+            try { callRecord = JSON.parse(teamsJson); } catch { throw new Error('Invalid Teams JSON'); }
+
+            const participants = (callRecord.participants || []).map(p => {
+              const user = p.user || p.phone || {};
+              const party = { name: user.displayName || 'Unknown' };
+              if (user.userPrincipalName) party.mailto = user.userPrincipalName;
+              if (user.id) party.uuid = user.id;
+              return party;
+            });
+
+            const startTime = callRecord.startDateTime || new Date().toISOString();
+            const endTime = callRecord.endDateTime || new Date().toISOString();
+            const durationSec = (new Date(endTime) - new Date(startTime)) / 1000;
+            const sim = callRecord._simulated || {};
+
+            const vcon = {
+              vcon: '0.3.0',
+              created_at: new Date().toISOString(),
+              subject: sim.subject || subject || `Teams ${callRecord.type === 'groupCall' ? 'Meeting' : 'Call'}: ${participants.map(p => p.name).join(', ')}`,
+              parties: participants,
+              dialog: [{
+                type: sim.recording_url ? 'recording' : 'text',
+                start: startTime,
+                duration: durationSec > 0 ? durationSec : 300,
+                parties: participants.map((_, i) => i),
+                mediatype: sim.recording_url ? 'audio/wav' : 'text/plain',
+                ...(sim.recording_url ? { url: sim.recording_url } : {}),
+              }],
+              analysis: [],
+            };
+
+            if (sim.transcript) vcon.analysis.push({ type: 'transcript', vendor: 'teams-adapter', body: sim.transcript, encoding: 'none', dialog: 0 });
+            if (sim.summary) vcon.analysis.push({ type: 'summary', vendor: 'teams-adapter', body: sim.summary, encoding: 'none' });
+
+            // Sentiment + topics from transcript
+            if (sim.transcript) {
+              const lower = sim.transcript.toLowerCase();
+              const posWords = ['thank', 'great', 'appreciate', 'excellent', 'resolved', 'happy', 'easier', 'steady'];
+              const negWords = ['frustrat', 'angry', 'terrible', 'worst', 'upset', 'complain', 'disconnect', 'runaround'];
+              const posCount = posWords.filter(w => lower.includes(w)).length;
+              const negCount = negWords.filter(w => lower.includes(w)).length;
+              const score = Math.max(0, Math.min(1, 0.5 + (posCount - negCount) * 0.1));
+              vcon.analysis.push({ type: 'sentiment', vendor: 'keyword-heuristic', body: JSON.stringify({ overall: parseFloat(score.toFixed(2)), positive: posCount, negative: negCount }), encoding: 'json' });
+
+              const topicPatterns = [
+                { pattern: /bill|charg|refund|payment|invoice|subscript|credit/i, topic: 'Billing' },
+                { pattern: /technical|vpn|error|bug|crash|slow|broken|update|version|config/i, topic: 'Technical Support' },
+                { pattern: /escalat|manager|supervisor|complain|process/i, topic: 'Escalation' },
+                { pattern: /cancel|close|terminat|switch/i, topic: 'Cancellation' },
+                { pattern: /security|fraud|flag|detect|approval/i, topic: 'Security' },
+                { pattern: /remote|work from home|connectivity|network/i, topic: 'Remote Work' },
+              ];
+              const topics = topicPatterns.filter(t => t.pattern.test(lower)).map(t => t.topic);
+              if (topics.length > 0) vcon.analysis.push({ type: 'topics', vendor: 'keyword-heuristic', body: JSON.stringify(topics), encoding: 'json' });
+            }
+
+            // Source metadata
+            vcon.analysis.push({ type: 'source-metadata', vendor: 'teams-adapter', body: JSON.stringify({
+              source: 'microsoft-teams', callRecordId: callRecord.id, callType: callRecord.type,
+              modalities: callRecord.modalities, joinWebUrl: callRecord.joinWebUrl,
+              organizerName: callRecord.organizer?.user?.displayName,
+            }), encoding: 'json' });
+
+            updateStep(0, 'done', `${vcon.parties.length} parties, ${vcon.analysis.length} analyses (Teams)`);
+            updateStep(1, 'active', 'Submitting...');
+
+            const res = await fetch(`${API_BASE}/vcons`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(vcon),
+            });
+            const data = await res.json();
+            if (data.success) {
+              updateStep(1, 'done', `UUID: ${data.uuid?.slice(0, 12)}... (${data.duration_ms}ms)`);
+              updateStep(2, 'active', 'Waiting for MQTT...');
+              setLastResult({ success: true, uuid: data.uuid, duration: data.duration_ms });
+            } else { throw new Error(data.message || 'API error'); }
+
+            setTimeout(() => {
+              setPipelineSteps(prev => prev.map(s =>
+                s.status === 'active' ? { ...s, status: 'done', detail: s.detail + ' (assumed)', time: new Date().toLocaleTimeString() } : s
+              ));
+            }, 5000);
+            setSubmitting(false);
+            return;
+          } else if (mode === 'xml') {
+            parsed = parseSiprecXml(xmlContent);
+            txn = xmlTranscript;
+            subj = subject || `${parsed.caller.name} ↔ ${parsed.callee.name}`;
+          } else if (mode === 'audio') {
+            // Generate unique phone numbers if not provided (prevents Neo4j node merge)
+            const rnd = () => Math.floor(1000000 + Math.random() * 9000000);
+            parsed = {
+              startTime: new Date().toISOString(),
+              endTime: new Date().toISOString(),
+              caller: { number: callerNumber || `+1555${rnd()}`, name: callerName || 'Caller' },
+              callee: { number: agentNumber || `+1555${rnd()}`, name: agentName || 'Agent' },
+            };
+            txn = audioTranscript;
+            subj = subject || `${parsed.caller.name} ↔ ${parsed.callee.name}`;
+
+            if (audioFile) {
+              audioMime = audioFile.type || 'audio/wav';
+              audioB64 = await new Promise((res, rej) => {
+                const r = new FileReader();
+                r.onload = () => res(r.result.split(',')[1]);
+                r.onerror = rej;
+                r.readAsDataURL(audioFile);
+              });
+            }
+          } else {
+            // Form mode
+            parsed = {
+              startTime: new Date().toISOString(),
+              endTime: new Date(Date.now() + 300000).toISOString(),
+              caller: { number: callerNumber, name: callerName },
+              callee: { number: agentNumber, name: agentName },
+            };
+            txn = transcript;
+            subj = subject || `${callerName || 'Caller'} ↔ ${agentName || 'Agent'}`;
+          }
+
+          const vcon = buildVcon({
+            parsed, transcript: txn, subject: subj,
+            audioBase64: audioB64, audioMimetype: audioMime,
+          });
+
+          updateStep(0, 'done', `${vcon.parties.length} parties, ${vcon.analysis.length} analyses`);
+          updateStep(1, 'active', 'Submitting...');
+
+          const res = await fetch(`${API_BASE}/vcons`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(vcon),
+          });
+
+          const data = await res.json();
+
+          if (data.success) {
+            updateStep(1, 'done', `UUID: ${data.uuid?.slice(0, 12)}... (${data.duration_ms}ms)`);
+            updateStep(2, 'active', 'Waiting for MQTT...');
+            setLastResult({ success: true, uuid: data.uuid, duration: data.duration_ms });
+          } else {
+            throw new Error(data.message || 'API error');
+          }
+
+          // Pipeline steps 3-5 are updated by MQTT events above
+          // Set a timeout fallback in case MQTT events don't come
+          setTimeout(() => {
+            setPipelineSteps(prev => prev.map(s =>
+              s.status === 'active' ? { ...s, status: 'done', detail: s.detail + ' (assumed)', time: new Date().toLocaleTimeString() } : s
+            ));
+          }, 5000);
+
+        } catch (err) {
+          const failedIdx = pipelineSteps.findIndex(s => s.status === 'active');
+          if (failedIdx >= 0) updateStep(failedIdx, 'error', err.message);
+          setLastResult({ success: false, error: err.message });
+        }
+
+        setSubmitting(false);
+      };
+
+      // Shared file handler (used by drop + file chooser)
+      const handleFileSelect = (files) => {
+        const xmlFile = files.find(f => f.name.endsWith('.xml'));
+        const audioFileFound = files.find(f => /\.(wav|mp3|ogg|webm|m4a|flac)$/i.test(f.name));
+
+        // Detect WhatsApp .txt files vs SIPREC transcript .txt files
+        const whatsappTxtFile = files.find(f => f.name.startsWith('whatsapp-') && f.name.endsWith('.txt'));
+        const txtFile = !whatsappTxtFile ? files.find(f => f.name.endsWith('.txt')) : null;
+
+        if (whatsappTxtFile) {
+          setMode('whatsapp');
+          whatsappTxtFile.text().then(t => {
+            setWhatsappText(t);
+            try {
+              const { messages, participants } = parseWhatsAppChat(t);
+              setWhatsappParseResult({ messages: messages.length, participants, firstMsg: messages[0]?.text?.slice(0, 60) });
+            } catch { setWhatsappParseResult(null); }
+          });
+          return; // Don't process other files
+        }
+
+        // If a .txt file looks like WhatsApp format (has date - name: pattern), treat it as WhatsApp
+        if (txtFile && !xmlFile) {
+          txtFile.text().then(t => {
+            const waPattern = /^\d{1,2}\/\d{1,2}\/\d{2,4},?\s+\d{1,2}:\d{2}/m;
+            if (waPattern.test(t)) {
+              setMode('whatsapp');
+              setWhatsappText(t);
+              try {
+                const { messages, participants } = parseWhatsAppChat(t);
+                setWhatsappParseResult({ messages: messages.length, participants, firstMsg: messages[0]?.text?.slice(0, 60) });
+              } catch { setWhatsappParseResult(null); }
+            } else {
+              // Treat as SIPREC transcript
+              setXmlTranscript(t);
+            }
+          });
+        }
+
+        const teamsJsonFile = files.find(f => f.name.startsWith('teams-') && f.name.endsWith('.json'));
+        const genericJsonFile = !teamsJsonFile ? files.find(f => f.name.endsWith('.json')) : null;
+
+        if (teamsJsonFile) {
+          setMode('teams');
+          teamsJsonFile.text().then(t => {
+            setTeamsJson(t);
+            try {
+              const parsed = JSON.parse(t);
+              setTeamsParseResult({
+                id: parsed.id, type: parsed.type,
+                participants: (parsed.participants || []).map(p => p.user?.displayName || 'Unknown').join(', '),
+                start: parsed.startDateTime, end: parsed.endDateTime,
+                hasTranscript: !!parsed._simulated?.transcript,
+                hasSummary: !!parsed._simulated?.summary,
+                subject: parsed._simulated?.subject || '',
+              });
+            } catch { setTeamsParseResult({ error: 'Invalid JSON' }); }
+          });
+        } else if (genericJsonFile) {
+          // Could be a Teams JSON without the prefix — try parsing
+          setMode('teams');
+          genericJsonFile.text().then(t => {
+            setTeamsJson(t);
+            try {
+              const parsed = JSON.parse(t);
+              if (parsed.participants && parsed.startDateTime) {
+                setTeamsParseResult({
+                  id: parsed.id, type: parsed.type,
+                  participants: (parsed.participants || []).map(p => p.user?.displayName || 'Unknown').join(', '),
+                  start: parsed.startDateTime, end: parsed.endDateTime,
+                  hasTranscript: !!parsed._simulated?.transcript,
+                  hasSummary: !!parsed._simulated?.summary,
+                  subject: parsed._simulated?.subject || '',
+                });
+              }
+            } catch {}
+          });
+        }
+
+        if (xmlFile) {
+          setMode('xml');
+          xmlFile.text().then(t => setXmlContent(t));
+        }
+        if (txtFile && xmlFile) {
+          // SIPREC pair: .xml + .txt transcript
+          txtFile.text().then(t => setXmlTranscript(t));
+        }
+        if (audioFileFound) {
+          setMode('audio');
+          setAudioFile(audioFileFound);
+          if (whisperAvailable) {
+            transcribeAudio(audioFileFound).then(t => { if (t) setAudioTranscript(t); });
+          }
+        }
+      };
+
+      // File drop handler
+      const handleFileDrop = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.currentTarget.classList.remove('active');
+        handleFileSelect(Array.from(e.dataTransfer?.files || []));
+      };
+
+      return (
+        <div className="min-h-screen flex flex-col font-body">
+          {/* Header */}
+          <header className="flex items-center justify-between px-6 py-4"
+            style={{ background: '#0d1220', borderBottom: '1px solid #1a2236' }}>
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded flex items-center justify-center"
+                style={{ background: 'linear-gradient(135deg, #00e5ff, #d500f9)' }}>
+                <span className="text-white font-bold text-sm">V</span>
+              </div>
+              <div>
+                <h1 className="font-display text-sm tracking-[4px] uppercase" style={{ color: '#e0e6f0' }}>
+                  vCon Ingestion
+                </h1>
+                <div className="font-mono text-[9px] tracking-[2px]" style={{ color: '#445566' }}>
+                  SIPREC · MANUAL · AUDIO · TEAMS · WHATSAPP
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <StatusDot color={mqttConnected ? '#00e676' : '#ff1744'} active={mqttConnected} />
+                <span className="font-mono text-[10px]" style={{ color: '#556' }}>
+                  MQTT {mqttConnected ? 'LIVE' : 'OFF'}
+                </span>
+              </div>
+              <button
+                className="btn text-[10px] px-3 py-1.5"
+                style={{ background: '#00e67622', border: '1px solid #00e67644', color: '#00e676' }}
+                onClick={loadSamples}
+                disabled={loadingSamples}
+              >
+                {loadingSamples ? 'LOADING...' : '▶ Load Samples'}
+              </button>
+              <button
+                className="btn text-[10px] px-3 py-1.5"
+                style={{ background: '#ff174422', border: '1px solid #ff174444', color: '#ff1744' }}
+                onClick={() => setShowResetConfirm(true)}
+                disabled={resetting}
+              >
+                {resetting ? 'RESETTING...' : '⚠ Master Reset'}
+              </button>
+              <a href="index.html" className="btn btn-secondary text-[10px] px-3 py-1.5">
+                ← Dashboard
+              </a>
+            </div>
+          </header>
+
+          {/* Sample load result banner */}
+          {sampleLoadResult && (
+            <div className="mx-4 mt-2 px-4 py-2 rounded font-mono text-xs flex items-center gap-3"
+              style={{ background: sampleLoadResult.failed === 0 ? '#00e67611' : '#ffab0011', border: `1px solid ${sampleLoadResult.failed === 0 ? '#00e67633' : '#ffab0033'}` }}>
+              <span style={{ color: sampleLoadResult.failed === 0 ? '#00e676' : '#ffab00' }}>
+                ✓ Loaded {sampleLoadResult.loaded}/{sampleLoadResult.total} sample vCons
+                {sampleLoadResult.failed > 0 && ` (${sampleLoadResult.failed} failed)`}
+              </span>
+              <button className="ml-auto" style={{ color: '#556', background: 'none', border: 'none', cursor: 'pointer' }}
+                onClick={() => setSampleLoadResult(null)}>✕</button>
+            </div>
+          )}
+
+          {/* Reset confirmation modal */}
+          {showResetConfirm && (
+            <div style={{ position: 'fixed', inset: 0, background: '#0a0e17cc', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div className="panel p-6" style={{ maxWidth: 440, border: '1px solid #ff174444' }}>
+                <div className="font-display text-sm tracking-[3px] mb-3" style={{ color: '#ff1744' }}>⚠ MASTER RESET</div>
+                <div className="font-body text-sm mb-4" style={{ color: '#aabbcc' }}>
+                  This will permanently delete:
+                </div>
+                <div className="font-mono text-xs mb-4 space-y-1" style={{ color: '#8899aa' }}>
+                  <div>• All vCons from MongoDB</div>
+                  <div>• All nodes and relationships from Neo4j</div>
+                  <div>• All UI state and event history</div>
+                </div>
+                <div className="font-body text-xs mb-4" style={{ color: '#667788' }}>
+                  Docker containers and configuration are not affected. You can reload samples after reset.
+                </div>
+                <div className="flex gap-3">
+                  <button className="btn text-[10px] px-4 py-2"
+                    style={{ background: '#ff1744', color: '#fff' }}
+                    onClick={masterReset}>
+                    CONFIRM RESET
+                  </button>
+                  <button className="btn btn-secondary text-[10px] px-4 py-2"
+                    onClick={() => setShowResetConfirm(false)}>
+                    CANCEL
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <main className="flex-1 p-4 grid gap-4" style={{ gridTemplateColumns: '1fr 340px' }}>
+            {/* Left: Input area */}
+            <div className="flex flex-col gap-4">
+
+              {/* Drop Zone + File Chooser */}
+              <input
+                type="file"
+                ref={fileInputRef}
+                multiple
+                accept=".xml,.txt,.json,.wav,.mp3,.ogg,.webm,.m4a,.flac"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  if (e.target.files?.length) {
+                    handleFileSelect(Array.from(e.target.files));
+                    e.target.value = ''; // reset so same file can be picked again
+                  }
+                }}
+              />
+              <div
+                className="drop-zone p-8 text-center"
+                onClick={() => fileInputRef.current?.click()}
+                onDrop={handleFileDrop}
+                onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('active'); }}
+                onDragLeave={(e) => e.currentTarget.classList.remove('active')}
+              >
+                <div className="font-display text-sm tracking-[3px] mb-2" style={{ color: '#667788' }}>
+                  DROP FILES OR CLICK TO BROWSE
+                </div>
+                <div className="font-body text-xs" style={{ color: '#445566' }}>
+                  Accepts: .xml + .txt (SIPREC) · .wav / .mp3 (audio) · teams-*.json (Teams) · whatsapp-*.txt (WhatsApp export)
+                </div>
+              </div>
+
+              {/* Mode tabs */}
+              <div className="flex gap-2">
+                {[
+                  { id: 'form', label: 'Manual Entry' },
+                  { id: 'xml', label: 'SIPREC XML' },
+                  { id: 'audio', label: 'Audio Upload' },
+                  { id: 'teams', label: 'Teams Import' },
+                  { id: 'whatsapp', label: 'WhatsApp Chat' },
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    className="btn text-[10px] px-4 py-2"
+                    style={{
+                      background: mode === tab.id ? '#00e5ff18' : '#1a2236',
+                      color: mode === tab.id ? '#00e5ff' : '#667788',
+                      border: `1px solid ${mode === tab.id ? '#00e5ff44' : '#243049'}`,
+                    }}
+                    onClick={() => setMode(tab.id)}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Form Mode */}
+              {mode === 'form' && (
+                <div className="panel p-4">
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className="block font-display text-[10px] tracking-[2px] mb-1" style={{ color: '#667788' }}>
+                        CALLER NAME
+                      </label>
+                      <input type="text" className="w-full" placeholder="Sarah Johnson"
+                        value={callerName} onChange={e => setCallerName(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="block font-display text-[10px] tracking-[2px] mb-1" style={{ color: '#667788' }}>
+                        CALLER NUMBER
+                      </label>
+                      <input type="text" className="w-full" placeholder="+15551234567"
+                        value={callerNumber} onChange={e => setCallerNumber(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="block font-display text-[10px] tracking-[2px] mb-1" style={{ color: '#667788' }}>
+                        AGENT NAME
+                      </label>
+                      <input type="text" className="w-full" placeholder="Agent Mike Rivera"
+                        value={agentName} onChange={e => setAgentName(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="block font-display text-[10px] tracking-[2px] mb-1" style={{ color: '#667788' }}>
+                        AGENT NUMBER
+                      </label>
+                      <input type="text" className="w-full" placeholder="+15559876001"
+                        value={agentNumber} onChange={e => setAgentNumber(e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="mb-4">
+                    <label className="block font-display text-[10px] tracking-[2px] mb-1" style={{ color: '#667788' }}>
+                      SUBJECT
+                    </label>
+                    <input type="text" className="w-full" placeholder="Auto-generated if blank"
+                      value={subject} onChange={e => setSubject(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block font-display text-[10px] tracking-[2px] mb-1" style={{ color: '#667788' }}>
+                      TRANSCRIPT
+                    </label>
+                    <textarea className="w-full" rows={10}
+                      placeholder="Agent: Thank you for calling...&#10;Customer: Hi, I'm calling about..."
+                      value={transcript} onChange={e => setTranscript(e.target.value)} />
+                  </div>
+                </div>
+              )}
+
+              {/* XML Mode */}
+              {mode === 'xml' && (
+                <div className="panel p-4">
+                  <div className="mb-4">
+                    <label className="block font-display text-[10px] tracking-[2px] mb-1" style={{ color: '#667788' }}>
+                      SIPREC XML
+                    </label>
+                    <textarea className="w-full" rows={8}
+                      placeholder='<recording>&#10;  <session id="...">&#10;    <start-time>...</start-time>&#10;  </session>&#10;  <caller><number>...</number><n>...</n></caller>&#10;  <callee>...</callee>&#10;</recording>'
+                      value={xmlContent} onChange={e => setXmlContent(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block font-display text-[10px] tracking-[2px] mb-1" style={{ color: '#667788' }}>
+                      TRANSCRIPT TEXT
+                    </label>
+                    <textarea className="w-full" rows={8}
+                      placeholder="Agent: Thank you for calling..."
+                      value={xmlTranscript} onChange={e => setXmlTranscript(e.target.value)} />
+                  </div>
+                </div>
+              )}
+
+              {/* Audio Mode */}
+              {mode === 'audio' && (
+                <div className="panel p-4">
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className="block font-display text-[10px] tracking-[2px] mb-1" style={{ color: '#667788' }}>
+                        CALLER NAME
+                      </label>
+                      <input type="text" className="w-full" placeholder="Robert Martinez"
+                        value={callerName} onChange={e => setCallerName(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="block font-display text-[10px] tracking-[2px] mb-1" style={{ color: '#667788' }}>
+                        AGENT NAME
+                      </label>
+                      <input type="text" className="w-full" placeholder="Agent Jennifer Walsh"
+                        value={agentName} onChange={e => setAgentName(e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className="block font-display text-[10px] tracking-[2px] mb-1" style={{ color: '#556' }}>
+                        CALLER PHONE <span style={{ color: '#334' }}>(optional)</span>
+                      </label>
+                      <input type="text" className="w-full" placeholder="Auto-generated if blank"
+                        value={callerNumber} onChange={e => setCallerNumber(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="block font-display text-[10px] tracking-[2px] mb-1" style={{ color: '#556' }}>
+                        AGENT PHONE <span style={{ color: '#334' }}>(optional)</span>
+                      </label>
+                      <input type="text" className="w-full" placeholder="Auto-generated if blank"
+                        value={agentNumber} onChange={e => setAgentNumber(e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="mb-4">
+                    <label className="block font-display text-[10px] tracking-[2px] mb-1" style={{ color: '#667788' }}>
+                      AUDIO FILE
+                    </label>
+                    <div className="flex items-center gap-3">
+                      <input type="file" accept="audio/*" className="font-mono text-xs"
+                        style={{ color: '#8899aa' }}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) {
+                            setAudioFile(f);
+                            if (whisperAvailable) {
+                              transcribeAudio(f).then(t => { if (t) setAudioTranscript(t); });
+                            }
+                          }
+                        }}
+                      />
+                      {audioFile && (
+                        <span className="font-mono text-[10px]" style={{ color: '#00e676' }}>
+                          {audioFile.name} ({(audioFile.size / 1024).toFixed(0)} KB)
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-2 font-mono text-[10px] flex items-center gap-2"
+                      style={{ color: whisperAvailable ? '#00e676' : '#ff1744' }}>
+                      <StatusDot color={whisperAvailable ? '#00e676' : '#ff1744'} active={whisperAvailable} />
+                      Whisper Sidecar: {whisperAvailable ? 'ONLINE — auto-transcription enabled' : 'OFFLINE — paste transcript manually below'}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block font-display text-[10px] tracking-[2px] mb-1" style={{ color: '#667788' }}>
+                      TRANSCRIPT {audioTranscribing && <span style={{ color: '#ffab00' }}>(transcribing...)</span>}
+                    </label>
+                    <textarea className="w-full" rows={8}
+                      placeholder={whisperAvailable ? 'Will be filled by Whisper...' : 'Paste transcript here...'}
+                      value={audioTranscript} onChange={e => setAudioTranscript(e.target.value)} />
+                  </div>
+                </div>
+              )}
+
+              {/* Teams Mode */}
+              {mode === 'teams' && (
+                <div className="panel p-4">
+                  <div className="mb-4">
+                    <label className="block font-display text-[10px] tracking-[2px] mb-1" style={{ color: '#667788' }}>
+                      MS TEAMS CALL RECORD JSON
+                    </label>
+                    <textarea className="w-full" rows={12}
+                      placeholder='{&#10;  "id": "...",&#10;  "type": "groupCall",&#10;  "startDateTime": "...",&#10;  "participants": [...],&#10;  "_simulated": {&#10;    "subject": "...",&#10;    "transcript": "..."&#10;  }&#10;}'
+                      value={teamsJson}
+                      onChange={e => {
+                        setTeamsJson(e.target.value);
+                        try {
+                          const parsed = JSON.parse(e.target.value);
+                          setTeamsParseResult({
+                            id: parsed.id, type: parsed.type,
+                            participants: (parsed.participants || []).map(p => p.user?.displayName || 'Unknown').join(', '),
+                            start: parsed.startDateTime, end: parsed.endDateTime,
+                            hasTranscript: !!parsed._simulated?.transcript,
+                            hasSummary: !!parsed._simulated?.summary,
+                            subject: parsed._simulated?.subject || '',
+                          });
+                        } catch { setTeamsParseResult(teamsJson.trim() ? { error: 'Invalid JSON' } : null); }
+                      }}
+                    />
+                  </div>
+
+                  {/* Parse preview */}
+                  {teamsParseResult && !teamsParseResult.error && (
+                    <div className="p-3 rounded mb-4" style={{ background: '#0a0e17', border: '1px solid #243049' }}>
+                      <div className="font-display text-[9px] tracking-[2px] mb-2" style={{ color: '#00e5ff' }}>PARSED CALL RECORD</div>
+                      <div className="grid grid-cols-2 gap-2 font-mono text-[11px]">
+                        <div>
+                          <span style={{ color: '#556' }}>ID: </span>
+                          <span style={{ color: '#8899aa' }}>{teamsParseResult.id?.slice(0, 20)}...</span>
+                        </div>
+                        <div>
+                          <span style={{ color: '#556' }}>Type: </span>
+                          <span style={{ color: '#d500f9' }}>{teamsParseResult.type || 'unknown'}</span>
+                        </div>
+                        <div className="col-span-2">
+                          <span style={{ color: '#556' }}>Participants: </span>
+                          <span style={{ color: '#00e676' }}>{teamsParseResult.participants}</span>
+                        </div>
+                        {teamsParseResult.subject && (
+                          <div className="col-span-2">
+                            <span style={{ color: '#556' }}>Subject: </span>
+                            <span style={{ color: '#ffab00' }}>{teamsParseResult.subject}</span>
+                          </div>
+                        )}
+                        <div>
+                          <span style={{ color: '#556' }}>Start: </span>
+                          <span style={{ color: '#8899aa' }}>{teamsParseResult.start ? new Date(teamsParseResult.start).toLocaleString() : '—'}</span>
+                        </div>
+                        <div>
+                          <span style={{ color: '#556' }}>End: </span>
+                          <span style={{ color: '#8899aa' }}>{teamsParseResult.end ? new Date(teamsParseResult.end).toLocaleString() : '—'}</span>
+                        </div>
+                        <div>
+                          <span style={{ color: '#556' }}>Transcript: </span>
+                          <span style={{ color: teamsParseResult.hasTranscript ? '#00e676' : '#ff1744' }}>
+                            {teamsParseResult.hasTranscript ? '✓ included' : '✕ missing'}
+                          </span>
+                        </div>
+                        <div>
+                          <span style={{ color: '#556' }}>Summary: </span>
+                          <span style={{ color: teamsParseResult.hasSummary ? '#00e676' : '#ff1744' }}>
+                            {teamsParseResult.hasSummary ? '✓ included' : '✕ missing'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {teamsParseResult?.error && (
+                    <div className="p-3 rounded mb-4 font-mono text-xs" style={{ background: '#ff174411', border: '1px solid #ff174433', color: '#ff1744' }}>
+                      ✕ {teamsParseResult.error}
+                    </div>
+                  )}
+
+                  <div className="font-body text-xs" style={{ color: '#445566' }}>
+                    Paste a Teams call record JSON (MS Graph <code style={{ color: '#667788' }}>/communications/callRecords</code> format), or drop a <code style={{ color: '#667788' }}>teams-*.json</code> file above.
+                    The <code style={{ color: '#667788' }}>_simulated</code> field provides transcript and summary for hackathon demo.
+                  </div>
+                </div>
+              )}
+
+              {/* WhatsApp Mode */}
+              {mode === 'whatsapp' && (
+                <div className="panel p-4">
+                  <div className="mb-4">
+                    <label className="block font-display text-[10px] tracking-[2px] mb-1" style={{ color: '#667788' }}>
+                      WHATSAPP CHAT EXPORT
+                    </label>
+                    <textarea className="w-full" rows={12}
+                      placeholder='3/5/26, 10:15 AM - Sarah Johnson: Hi, is this TechCorp support?&#10;3/5/26, 10:16 AM - Agent Mike: Yes! How can I help?'
+                      value={whatsappText}
+                      onChange={e => {
+                        setWhatsappText(e.target.value);
+                        if (e.target.value.trim()) {
+                          try {
+                            const { messages, participants } = parseWhatsAppChat(e.target.value);
+                            setWhatsappParseResult({ messages: messages.length, participants, firstMsg: messages[0]?.text?.slice(0, 60), lastMsg: messages[messages.length-1]?.text?.slice(0, 60) });
+                          } catch { setWhatsappParseResult(null); }
+                        } else { setWhatsappParseResult(null); }
+                      }}
+                    />
+                  </div>
+
+                  {whatsappParseResult && whatsappParseResult.messages > 0 && (
+                    <div className="p-3 rounded mb-4" style={{ background: '#0a0e17', border: '1px solid #243049' }}>
+                      <div className="font-display text-[9px] tracking-[2px] mb-2" style={{ color: '#00e676' }}>PARSED CHAT</div>
+                      <div className="grid grid-cols-2 gap-2 font-mono text-[11px]">
+                        <div>
+                          <span style={{ color: '#556' }}>Messages: </span>
+                          <span style={{ color: '#00e5ff' }}>{whatsappParseResult.messages}</span>
+                        </div>
+                        <div>
+                          <span style={{ color: '#556' }}>Participants: </span>
+                          <span style={{ color: '#00e676' }}>{whatsappParseResult.participants?.length || 0}</span>
+                        </div>
+                        <div className="col-span-2">
+                          <span style={{ color: '#556' }}>People: </span>
+                          <span style={{ color: '#d500f9' }}>{whatsappParseResult.participants?.join(', ')}</span>
+                        </div>
+                        {whatsappParseResult.firstMsg && (
+                          <div className="col-span-2">
+                            <span style={{ color: '#556' }}>First: </span>
+                            <span style={{ color: '#8899aa' }}>"{whatsappParseResult.firstMsg}..."</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="font-body text-xs" style={{ color: '#445566' }}>
+                    Paste a WhatsApp exported chat, or drop/browse a <code style={{ color: '#667788' }}>whatsapp-*.txt</code> file.
+                    Format: <code style={{ color: '#667788' }}>M/D/YY, H:MM AM - Name: Message</code>
+                  </div>
+                </div>
+              )}
+
+              {/* Submit */}
+              <div className="flex items-center gap-4">
+                <button
+                  className="btn btn-primary"
+                  disabled={submitting}
+                  onClick={handleSubmit}
+                >
+                  {submitting ? 'PROCESSING...' : 'INGEST VCON'}
+                </button>
+                <button className="btn btn-secondary" onClick={() => {
+                  resetPipeline();
+                  setCallerName(''); setAgentName(''); setTranscript('');
+                  setXmlContent(''); setXmlTranscript('');
+                  setAudioFile(null); setAudioTranscript('');
+                  setTeamsJson(''); setTeamsParseResult(null);
+                  setWhatsappText(''); setWhatsappParseResult(null);
+                  setSubject('');
+                }}>
+                  CLEAR
+                </button>
+                {lastResult && (
+                  <span className="font-mono text-xs" style={{ color: lastResult.success ? '#00e676' : '#ff1744' }}>
+                    {lastResult.success
+                      ? (lastResult.uuid ? `✓ Created ${lastResult.uuid?.slice(0, 12)}... (${lastResult.duration}ms)` : `✓ ${lastResult.message}`)
+                      : `✕ ${lastResult.error}`
+                    }
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Right sidebar: Pipeline + Events */}
+            <div className="flex flex-col gap-4">
+              <PipelineTracker steps={pipelineSteps} />
+              <EventLog events={events} />
+            </div>
+          </main>
+
+          {/* Footer */}
+          <footer className="px-6 py-2 text-center font-mono text-[9px]"
+            style={{ color: '#334', borderTop: '1px solid #1a2236' }}>
+            VCONIC TadHack 2026 · vCon Ingestion Console
+          </footer>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
