@@ -170,12 +170,17 @@ export class SearchVConsContentHandler extends BaseToolHandler {
         relevance_score: r.rank
       }));
     } else if (responseFormat === 'snippets') {
+      // Truncate snippets to 500 chars — ts_headline with HighlightAll=TRUE can return full
+      // transcript bodies (up to 100KB each), pushing 50 results well over the 1MB MCP limit
+      const MAX_SNIPPET = 500;
       formattedResults = results.map(r => ({
         vcon_id: r.vcon_id,
         content_type: r.doc_type,
         content_index: r.ref_index,
         relevance_score: r.rank,
-        snippet: r.snippet
+        snippet: r.snippet && r.snippet.length > MAX_SNIPPET
+          ? r.snippet.slice(0, MAX_SNIPPET) + '…'
+          : r.snippet
       }));
     } else {
       // Full format - get complete vCons
