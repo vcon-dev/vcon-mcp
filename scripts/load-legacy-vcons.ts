@@ -1392,6 +1392,38 @@ async function main() {
     await startSyncMode(directoryPath, options);
   }
 
+  // Refresh vcon_tags_mv materialized view so tag-based searches stay accurate
+  if (!dryRun) {
+    console.log('\n' + '='.repeat(60));
+    console.log('🏷️  Refreshing vcon_tags_mv materialized view...');
+    console.log('='.repeat(60) + '\n');
+    try {
+      const supabaseUrlForRefresh = process.env.SUPABASE_URL!;
+      const supabaseKeyForRefresh = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY!;
+      const supabaseForRefresh = createSupabaseClient(supabaseUrlForRefresh, supabaseKeyForRefresh, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+      const { error: mvError } = await supabaseForRefresh.rpc('refresh_vcon_tags_mv');
+      if (mvError) {
+        // Fallback: try direct SQL via pg_catalog (service role only)
+        console.warn(`⚠️  RPC refresh failed (${mvError.message}), trying direct SQL...`);
+        const { error: sqlError } = await supabaseForRefresh
+          .from('vcons')
+          .select('id', { count: 'exact', head: true }); // no-op to test connection
+        if (!sqlError) {
+          // Can't run DDL through PostgREST — warn and continue
+          console.warn('⚠️  Cannot refresh materialized view via PostgREST — run manually:');
+          console.warn('     REFRESH MATERIALIZED VIEW vcon_tags_mv;');
+        }
+      } else {
+        console.log('✅ vcon_tags_mv refreshed successfully');
+      }
+    } catch (mvRefreshError: any) {
+      console.warn(`⚠️  Failed to refresh vcon_tags_mv: ${mvRefreshError.message}`);
+      console.warn('     Run manually: REFRESH MATERIALIZED VIEW vcon_tags_mv;');
+    }
+  }
+
   // Generate embeddings for newly imported vCons (default behaviour; skip with --skip-embed)
   if (!dryRun && !skipEmbed) {
     console.log('\n' + '='.repeat(60));
