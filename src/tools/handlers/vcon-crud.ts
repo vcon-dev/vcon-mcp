@@ -101,13 +101,45 @@ export class GetVConHandler extends BaseToolHandler {
 
   protected async execute(args: any, context: ToolHandlerContext): Promise<ToolResponse> {
     const uuid = requireUUID(args?.uuid as string, 'uuid');
+    const responseFormat = (args?.response_format as string | undefined) || 'full';
     const requestContext = this.createRequestContext(args);
 
     const vcon = await context.vconService.get(uuid, { requestContext });
-    
-    return this.createSuccessResponse({
-      vcon,
-    });
+
+    if (responseFormat === 'metadata') {
+      return this.createSuccessResponse({
+        vcon: {
+          vcon: vcon.vcon,
+          uuid: vcon.uuid,
+          created_at: vcon.created_at,
+          updated_at: vcon.updated_at,
+          subject: vcon.subject,
+          extensions: vcon.extensions,
+          critical: vcon.critical,
+          parties: vcon.parties,
+        }
+      });
+    }
+
+    if (responseFormat === 'summary') {
+      const summaryAnalysis = (vcon.analysis || []).filter((a: any) => a.type === 'summary');
+      return this.createSuccessResponse({
+        vcon: {
+          vcon: vcon.vcon,
+          uuid: vcon.uuid,
+          created_at: vcon.created_at,
+          updated_at: vcon.updated_at,
+          subject: vcon.subject,
+          extensions: vcon.extensions,
+          critical: vcon.critical,
+          parties: vcon.parties,
+          analysis: summaryAnalysis,
+        }
+      });
+    }
+
+    // 'full' — return everything
+    return this.createSuccessResponse({ vcon });
   }
 }
 
