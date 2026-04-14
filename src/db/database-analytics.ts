@@ -419,8 +419,8 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
   private async getGrowthTrends(monthsBack: number) {
     const query = `
       WITH monthly_stats AS (
-        SELECT 
-          DATE_TRUNC('month', created_at) as month,
+        SELECT
+          DATE_TRUNC('month', v.created_at) as month,
           COUNT(*) as vcon_count,
           COUNT(DISTINCT v.id) as unique_vcons,
           SUM(COALESCE(d.size_bytes, 0)) as dialog_size,
@@ -431,7 +431,7 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
         LEFT JOIN dialog d ON d.vcon_id = v.id
         LEFT JOIN attachments a ON a.vcon_id = v.id
         WHERE v.created_at >= NOW() - INTERVAL '${monthsBack} months'
-        GROUP BY DATE_TRUNC('month', created_at)
+        GROUP BY DATE_TRUNC('month', v.created_at)
         ORDER BY month
       )
       SELECT 
