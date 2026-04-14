@@ -232,3 +232,6 @@ export class SupabaseDatabaseSizeAnalyzer implements IDatabaseSizeAnalyzer {
     return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
   }
 }
+
+// Backward-compatible alias for tests that import the old name
+export const DatabaseSizeAnalyzer = SupabaseDatabaseSizeAnalyzer;

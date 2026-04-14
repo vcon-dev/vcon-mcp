@@ -239,7 +239,7 @@ export async function resolveCoreResource(queries: IVConQueries, uri: string): P
     }
     
     try {
-      const tagsArray = deserializeBody(tagsAttachment.body as string, tagsAttachment.encoding) as string[];
+      const tagsArray = JSON.parse(tagsAttachment.body as string) as string[];
       const tagsObject: Record<string, string> = {};
       
       for (const tagString of tagsArray) {

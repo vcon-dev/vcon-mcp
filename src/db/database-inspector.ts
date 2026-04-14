@@ -66,18 +66,6 @@ export class SupabaseDatabaseInspector implements IDatabaseInspector {
           tableInfo.indexes_size = table.indexes_size;
         }
 
-        // Get row count
-        if (includeCounts) {
-          const { data: countData, error: countError } = await this.supabase.rpc('exec_sql', {
-            q: `SELECT COUNT(*) as count FROM ${table.tablename}`,
-            params: {}
-          });
-
-          if (!countError && countData && countData.length > 0) {
-            tableInfo.row_count = parseInt(countData[0].count);
-          }
-        }
-
         const columnsQuery = `
           SELECT
             column_name,
@@ -344,3 +332,6 @@ export class SupabaseDatabaseInspector implements IDatabaseInspector {
     return data && data.length > 0 ? data[0] : null;
   }
 }
+
+// Backward-compatible alias for tests that import the old name
+export const DatabaseInspector = SupabaseDatabaseInspector;

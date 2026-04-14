@@ -1156,3 +1156,6 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
     };
   }
 }
+
+// Backward-compatible alias for tests that import the old name
+export const DatabaseAnalytics = SupabaseDatabaseAnalytics;
