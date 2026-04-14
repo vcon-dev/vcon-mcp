@@ -18,9 +18,10 @@ import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentation
 import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { Resource } from '@opentelemetry/resources';
-import { ConsoleMetricExporter, PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
+import { ExportResult, ExportResultCode } from '@opentelemetry/core';
+import { PeriodicExportingMetricReader, PushMetricExporter, ResourceMetrics } from '@opentelemetry/sdk-metrics';
 import { NodeSDK } from '@opentelemetry/sdk-node';
-import { ConsoleSpanExporter } from '@opentelemetry/sdk-trace-node';
+import { ReadableSpan, SpanExporter } from '@opentelemetry/sdk-trace-base';
 import { SEMRESATTRS_SERVICE_NAME, SEMRESATTRS_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
 import { logger as pinoLogger } from './logger.js';
 
@@ -37,6 +38,23 @@ interface ObservabilityConfig {
   serviceName: string;
   serviceVersion: string;
   logLevel: DiagLogLevel;
+}
+
+/** No-op span exporter — used instead of ConsoleSpanExporter to keep stdout clean for MCP protocol */
+class NullSpanExporter implements SpanExporter {
+  export(_spans: ReadableSpan[], resultCallback: (result: ExportResult) => void): void {
+    resultCallback({ code: ExportResultCode.SUCCESS });
+  }
+  shutdown(): Promise<void> { return Promise.resolve(); }
+}
+
+/** No-op metric exporter — used instead of ConsoleMetricExporter to keep stdout clean for MCP protocol */
+class NullMetricExporter implements PushMetricExporter {
+  export(_metrics: ResourceMetrics, resultCallback: (result: ExportResult) => void): void {
+    resultCallback({ code: ExportResultCode.SUCCESS });
+  }
+  forceFlush(): Promise<void> { return Promise.resolve(); }
+  shutdown(): Promise<void> { return Promise.resolve(); }
 }
 
 let sdk: NodeSDK | null = null;
@@ -113,8 +131,10 @@ export async function initializeObservability(): Promise<void> {
         endpoint: config.endpoint
       }, 'OpenTelemetry traces configured');
     } else {
-      traceExporter = new ConsoleSpanExporter();
-      logger.info({ exporter: 'console' }, 'OpenTelemetry traces configured');
+      // NullSpanExporter instead of ConsoleSpanExporter — console exporter writes to stdout
+      // which corrupts the MCP stdio JSON-RPC protocol
+      traceExporter = new NullSpanExporter();
+      logger.info({ exporter: 'null' }, 'OpenTelemetry traces configured (no-op; set OTEL_EXPORTER_TYPE=otlp to enable)');
     }
 
     // Configure metric exporter
@@ -125,7 +145,7 @@ export async function initializeObservability(): Promise<void> {
       });
       metricReader = new PeriodicExportingMetricReader({
         exporter: metricExporter,
-        exportIntervalMillis: 60000, // Export every 60 seconds
+        exportIntervalMillis: 60000,
       });
       logger.info({
         exporter: 'otlp',
@@ -133,15 +153,15 @@ export async function initializeObservability(): Promise<void> {
         interval_ms: 60000
       }, 'OpenTelemetry metrics configured');
     } else {
-      const metricExporter = new ConsoleMetricExporter();
+      // NullMetricExporter instead of ConsoleMetricExporter — same stdout pollution issue
       metricReader = new PeriodicExportingMetricReader({
-        exporter: metricExporter,
+        exporter: new NullMetricExporter(),
         exportIntervalMillis: 60000,
       });
       logger.info({
-        exporter: 'console',
+        exporter: 'null',
         interval_ms: 60000
-      }, 'OpenTelemetry metrics configured');
+      }, 'OpenTelemetry metrics configured (no-op; set OTEL_EXPORTER_TYPE=otlp to enable)');
     }
 
     // Initialize SDK
