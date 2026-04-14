@@ -1289,19 +1289,28 @@ export class SupabaseVConQueries implements IVConQueries {
       }
 
       // Get UUIDs for matching vcon_ids
+      // Batch the .in() query to avoid "URI too long" when there are many matching IDs
       if (matchingVconIds.size === 0) {
         return [];
       }
 
-      const { data: vcons, error: vconsError } = await this.supabase
-        .from('vcons')
-        .select('uuid')
-        .in('id', Array.from(matchingVconIds))
-        .limit(limit);
+      const idArray = Array.from(matchingVconIds);
+      const batchSize500 = 500;
+      const uuids: string[] = [];
 
-      if (vconsError) throw vconsError;
+      for (let i = 0; i < idArray.length && uuids.length < limit; i += batchSize500) {
+        const chunk = idArray.slice(i, i + batchSize500);
+        const { data: vcons, error: vconsError } = await this.supabase
+          .from('vcons')
+          .select('uuid')
+          .in('id', chunk)
+          .limit(limit - uuids.length);
 
-      return (vcons || []).map(v => v.uuid);
+        if (vconsError) throw vconsError;
+        uuids.push(...(vcons || []).map(v => v.uuid));
+      }
+
+      return uuids;
     };
 
     // If RPC doesn't exist or fails, use fallback
