@@ -1336,7 +1336,8 @@ export class SupabaseVConQueries implements IVConQueries {
     }
 
     // RPC succeeded and returned results (or no tag attachments exist)
-    return (data || []) as string[];
+    // The RPC returns [{vcon_id: "uuid"}, ...] — extract the uuid string from each row
+    return (data || []).map((row: any) => (typeof row === 'object' && row !== null ? row.vcon_id : row)) as string[];
   }
 
   /**
