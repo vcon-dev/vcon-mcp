@@ -1,23 +1,30 @@
 /**
- * IETF vCon Core Types - Compliant with draft-ietf-vcon-vcon-core-01
+ * IETF vCon Core Types - Compliant with draft-ietf-vcon-vcon-core-02
  *
- * Updated from vcon-core-00 to vcon-core-01 (2025-10-15)
+ * Spec version: 0.4.0  (January 2026)
+ * Reference: https://ietf-wg-vcon.github.io/draft-ietf-vcon-vcon-core/
+ *
+ * Breaking changes vs -01:
+ *   'mimetype'     → 'mediatype'    (dialog, analysis, attachments) — since 0.0.2
+ *   'appended'     → 'amended'      (vCon top-level)                — since 0.4.0
+ *   'must_support' → 'critical'     (vCon top-level)                — since 0.4.0
+ *   session_id     now SessionId object {local, remote}             — since 0.4.0
  *
  * Key spec requirements:
- * 1. Dialog content can be inline (body + encoding) or external (url + content_hash)
- * 2. body and url are mutually exclusive for content storage
- * 3. HTTPS MUST be used for external content retrieval
- * 4. encoding: 'base64url' | 'json' | 'none'
- * 5. Analysis: vendor is REQUIRED, schema (not schema_version), body is string
- * 6. Dialog types: 'recording' | 'text' | 'transfer' | 'incomplete'
- * 7. transfer and incomplete types MUST NOT have Dialog Content parameters
+ *   1. Dialog content can be inline (body + encoding) or external (url + content_hash)
+ *   2. body and url are mutually exclusive for content storage
+ *   3. HTTPS MUST be used for external content retrieval
+ *   4. encoding: 'base64url' | 'json' | 'none'
+ *   5. Analysis: vendor is REQUIRED, schema (not schema_version), body is string
+ *   6. Dialog types: 'recording' | 'text' | 'transfer' | 'incomplete'
+ *   7. 'transfer' and 'incomplete' MUST NOT have Dialog Content parameters
  */
 
 // ============================================================================
 // Type Definitions
 // ============================================================================
 
-export type VConVersion = '0.3.0';
+export type VConVersion = '0.4.0';
 export type Encoding = 'base64url' | 'json' | 'none';
 export type DialogType = 'recording' | 'text' | 'transfer' | 'incomplete';
 export type DialogDisposition = 'no-answer' | 'congestion' | 'failed' | 'busy' | 'hung-up' | 'voicemail-no-message';
@@ -49,8 +56,6 @@ export interface Civicaddress {
 
 /**
  * Party Object - Section 4.2
- * ✅ CORRECTED: Added uuid field per spec Section 4.2.12
- * ✅ CORRECTED: Added did field per spec Section 4.2.6
  */
 export interface Party {
   tel?: string;
@@ -64,12 +69,21 @@ export interface Party {
   gmlpos?: string;
   civicaddress?: Civicaddress;
   timezone?: string;
-  uuid?: string;            // ✅ Section 4.2.12 - Party UUID
+  uuid?: string;            // Section 4.2.10 - Party UUID
 }
 
 // ============================================================================
 // Section 4.3 - Dialog Object
 // ============================================================================
+
+/**
+ * Session Identifier Object - Section 2.2 / 4.3.10
+ * Changed from String to Object in spec v0.4.0
+ */
+export interface SessionId {
+  local: string;   // local-uuid
+  remote: string;  // remote-uuid
+}
 
 /**
  * Party History - Section 4.3.11
@@ -81,44 +95,44 @@ export interface PartyHistory {
 }
 
 /**
- * Dialog Object - Section 4.3 (vcon-core-01)
+ * Dialog Object - Section 4.3
  *
- * Content can be stored in two mutually exclusive ways:
- * 1. Inline: body + encoding fields
- * 2. External: url + content_hash fields (HTTPS MUST be used)
+ * Content stored in two mutually exclusive ways:
+ *   Inline:   body + encoding
+ *   External: url + content_hash (HTTPS required)
  *
- * Note: 'transfer' and 'incomplete' types MUST NOT have content parameters
+ * 'transfer' and 'incomplete' types MUST NOT have content parameters.
  */
 export interface Dialog {
   type: DialogType;
   start?: string;           // ISO 8601 datetime string
-  duration?: number;        // Duration in seconds
+  duration?: number;        // Duration in seconds (UnsignedInt | UnsignedFloat)
   parties?: number | number[] | (number | number[])[];
   originator?: number;
-  mediatype?: string;       // MIME type (e.g., 'audio/x-wav', 'video/x-mp4')
+  mediatype?: string;       // ✅ 'mediatype' (was 'mimetype' pre-0.0.2)
   filename?: string;
 
   // Inline content (mutually exclusive with url)
-  body?: string;            // Content data (base64url encoded for binary)
-  encoding?: Encoding;      // How body is encoded: 'base64url' | 'json' | 'none'
+  body?: string;
+  encoding?: Encoding;
 
   // External content (mutually exclusive with body)
-  url?: string;             // HTTPS URL to external content
-  content_hash?: string | string[];  // SHA-256 hash for integrity verification
+  url?: string;
+  content_hash?: string | string[];
 
   disposition?: DialogDisposition;
-  session_id?: string;      // Section 4.3.10 - Session identifier
-  party_history?: PartyHistory[];  // Section 4.3.11
-  application?: string;     // Section 4.3.13 - Application identifier
-  message_id?: string;      // Section 4.3.14 - Message identifier
+  session_id?: SessionId;   // ✅ SessionId object (was String pre-0.4.0)
+  party_history?: PartyHistory[];
+  application?: string;     // Section 4.3.13
+  message_id?: string;      // Section 4.3.14
 
-  // Transfer-specific fields (only for type='transfer')
+  // Transfer-specific (type='transfer' only)
   transferee?: number;
   transferor?: number;
-  transfer_target?: number;
-  original?: number;
-  consultation?: number;
-  target_dialog?: number;
+  transfer_target?: number | number[];
+  original?: number | number[];
+  consultation?: number | number[];
+  target_dialog?: number | number[];
 }
 
 // ============================================================================
@@ -127,19 +141,20 @@ export interface Dialog {
 
 /**
  * Attachment Object - Section 4.4
- * ✅ CORRECTED: Added dialog field per spec Section 4.4.4
  */
 export interface Attachment {
-  type?: string;
-  start?: string;           // ISO 8601 datetime string
-  party?: number;
-  dialog?: number;          // ✅ Section 4.4.4 - Dialog reference
-  mediatype?: string;
+  purpose?: string;         // Section 4.4.1
+  start?: string;           // Section 4.4.2 - ISO 8601 datetime
+  party?: number;           // Section 4.4.3
+  dialog?: number;          // Section 4.4.4
+  mediatype?: string;       // ✅ 'mediatype' (was 'mimetype' pre-0.0.2)
   filename?: string;
   body?: string;
   encoding?: Encoding;
   url?: string;
   content_hash?: string | string[];
+  // Non-spec fields used by Strolid for custom attachment types (stored in metadata)
+  type?: string;
 }
 
 // ============================================================================
@@ -148,21 +163,20 @@ export interface Attachment {
 
 /**
  * Analysis Object - Section 4.5
- * 
- * ⚠️ CRITICAL CORRECTIONS:
- * ✅ Field name is 'schema' NOT 'schema_version' (Section 4.5.7)
- * ✅ 'vendor' is REQUIRED (Section 4.5.5)
- * ✅ 'body' is string type (Section 4.5.8)
+ *
+ * ⚠️  CRITICAL: 'vendor' is REQUIRED (no ?)
+ * ⚠️  CORRECT field name is 'schema' NOT 'schema_version'
+ * ⚠️  'body' MUST be a string (JSON.stringify objects before storing)
  */
 export interface Analysis {
   type: string;             // e.g., 'summary', 'transcript', 'translation', 'sentiment'
-  dialog?: number | number[];  // Section 4.5.2 - Dialog reference(s)
-  mediatype?: string;
+  dialog?: number | number[];  // Section 4.5.2
+  mediatype?: string;       // ✅ 'mediatype' (was 'mimetype' pre-0.0.2)
   filename?: string;
-  vendor: string;           // ✅ REQUIRED per spec Section 4.5.5 (no ?)
+  vendor: string;           // ✅ REQUIRED — no optional marker
   product?: string;
-  schema?: string;          // ✅ CORRECT: 'schema' NOT 'schema_version' (Section 4.5.7)
-  body?: string;            // ✅ CORRECT: string type, supports all formats (Section 4.5.8)
+  schema?: string;          // ✅ 'schema' NOT 'schema_version'
+  body?: string;            // ✅ Must be string; JSON.stringify objects
   encoding?: Encoding;
   url?: string;
   content_hash?: string | string[];
@@ -180,14 +194,17 @@ export interface Redacted {
 }
 
 // ============================================================================
-// Section 4.1.9 - Appended Object
+// Section 4.1.9 - Amended Object (was 'Appended' pre-0.4.0)
 // ============================================================================
 
-export interface Appended {
+export interface Amended {
   uuid?: string;
   url?: string;
   content_hash?: string | string[];
 }
+
+/** @deprecated Use Amended — renamed in spec v0.4.0 */
+export type Appended = Amended;
 
 // ============================================================================
 // Section 4.6 - Group Object
@@ -195,8 +212,8 @@ export interface Appended {
 
 export interface Group {
   uuid?: string;
-  body?: string;            // Inline vCon content
-  encoding?: 'json';        // Must be 'json' per spec
+  body?: string;
+  encoding?: 'json';
   url?: string;
   content_hash?: string | string[];
 }
@@ -206,21 +223,22 @@ export interface Group {
 // ============================================================================
 
 /**
- * Main vCon Object - Section 4.1
- * ✅ CORRECTED: Added extensions per spec Section 4.1.3
- * ✅ CORRECTED: Added must_support per spec Section 4.1.4
- * ✅ CORRECTED: Added appended per spec Section 4.1.9
+ * Main vCon Object - Section 4.1 (spec v0.4.0)
+ *
+ * Field renames from earlier versions:
+ *   appended    → amended     (v0.4.0)
+ *   must_support → critical   (v0.4.0)
  */
 export interface VCon {
-  vcon: VConVersion;
+  vcon: VConVersion;        // Must be "0.4.0" per spec
   uuid: string;
-  extensions?: string[];    // ✅ Section 4.1.3 - Extension identifiers
-  must_support?: string[];  // ✅ Section 4.1.4 - Required extension support
-  created_at: string;       // ISO 8601 datetime string
-  updated_at?: string;      // ISO 8601 datetime string
+  extensions?: string[];    // Section 4.1.3 - compatible extension names
+  critical?: string[];      // ✅ Section 4.1.4 (was 'must_support' pre-0.4.0)
+  created_at: string;       // ISO 8601 datetime — MUST be present
+  updated_at?: string;      // ISO 8601 datetime
   subject?: string;
-  redacted?: Redacted;
-  appended?: Appended;      // ✅ Section 4.1.9
+  redacted?: Redacted;      // Section 4.1.8
+  amended?: Amended;        // ✅ Section 4.1.9 (was 'appended' pre-0.4.0)
   group?: Group[];
   parties: Party[];
   dialog?: Dialog[];
@@ -232,30 +250,18 @@ export interface VCon {
 // Validation Helper Functions
 // ============================================================================
 
-/**
- * Type guard to check if a string is a valid DialogType
- */
 export function isValidDialogType(type: string): type is DialogType {
   return ['recording', 'text', 'transfer', 'incomplete'].includes(type);
 }
 
-/**
- * Type guard to check if a string is a valid Encoding
- */
 export function isValidEncoding(encoding: string): encoding is Encoding {
   return ['base64url', 'json', 'none'].includes(encoding);
 }
 
-/**
- * Type guard to check if a string is a valid DialogDisposition
- */
 export function isValidDisposition(disposition: string): disposition is DialogDisposition {
   return ['no-answer', 'congestion', 'failed', 'busy', 'hung-up', 'voicemail-no-message'].includes(disposition);
 }
 
-/**
- * Type guard to check if a string is a valid PartyEventType
- */
 export function isValidPartyEvent(event: string): event is PartyEventType {
   return ['join', 'drop', 'hold', 'unhold', 'mute', 'unmute'].includes(event);
 }
@@ -264,19 +270,12 @@ export function isValidPartyEvent(event: string): event is PartyEventType {
 // Utility Types
 // ============================================================================
 
-/**
- * Partial vCon for updates (all fields optional except uuid)
- */
 export type VConUpdate = Partial<Omit<VCon, 'uuid' | 'vcon'>> & {
   uuid: string;
   vcon?: VConVersion;
 };
 
-/**
- * vCon creation input (before UUID generation)
- */
 export type VConCreate = Omit<VCon, 'uuid' | 'created_at'> & {
   uuid?: string;
   created_at?: string;
 };
-

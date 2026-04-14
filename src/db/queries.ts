@@ -94,9 +94,9 @@ export class SupabaseVConQueries implements IVConQueries {
           created_at: vcon.created_at,
           updated_at: vcon.updated_at,
           extensions: vcon.extensions,          // ✅ Added per spec
-          must_support: vcon.must_support,      // ✅ Added per spec
+          critical: vcon.critical,              // ✅ v0.4.0 (was must_support)
           redacted: vcon.redacted || {},
-          appended: vcon.appended || {},        // ✅ Added per spec
+          amended: vcon.amended || {},          // ✅ v0.4.0 (was appended)
           tenant_id: tenantId,                  // ✅ Added for RLS multi-tenant support
         })
         .select('id, uuid')
@@ -671,10 +671,10 @@ export class SupabaseVConQueries implements IVConQueries {
 
       // Reconstruct vCon with all correct field names
       const vcon: VCon = {
-        vcon: vconData.vcon_version as '0.3.0',
+        vcon: (vconData.vcon_version || '0.4.0') as '0.4.0',
         uuid: vconData.uuid,
         extensions: vconData.extensions,
-        must_support: vconData.must_support,
+        critical: vconData.critical,
         created_at: vconData.created_at,
         updated_at: vconData.updated_at,
         subject: vconData.subject,
@@ -1042,7 +1042,7 @@ export class SupabaseVConQueries implements IVConQueries {
 
     if (updates.subject !== undefined) updateData.subject = updates.subject;
     if (updates.extensions !== undefined) updateData.extensions = updates.extensions;
-    if (updates.must_support !== undefined) updateData.must_support = updates.must_support;
+    if (updates.critical !== undefined) updateData.critical = updates.critical;
 
     const { error } = await this.supabase
       .from('vcons')
@@ -1558,3 +1558,6 @@ export class SupabaseVConQueries implements IVConQueries {
       .eq('uuid', vconUuid);
   }
 }
+
+// Alias for backwards compatibility
+export { SupabaseVConQueries as VConQueries };

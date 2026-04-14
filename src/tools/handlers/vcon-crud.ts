@@ -33,7 +33,7 @@ export class CreateVConHandler extends BaseToolHandler {
           subject: args?.subject as string | undefined,
           parties: (args?.parties as any[]) || [],
           extensions: args?.extensions as string[] | undefined,
-          must_support: args?.must_support as string[] | undefined,
+          critical: args?.critical as string[] | undefined,
         },
         {
           requestContext,
@@ -134,8 +134,8 @@ export class UpdateVConHandler extends BaseToolHandler {
     if (Object.prototype.hasOwnProperty.call(updates, 'extensions')) {
       allowed.extensions = updates.extensions;
     }
-    if (Object.prototype.hasOwnProperty.call(updates, 'must_support')) {
-      allowed.must_support = updates.must_support as string[] | undefined;
+    if (Object.prototype.hasOwnProperty.call(updates, 'critical')) {
+      allowed.critical = updates.critical as string[] | undefined;
     }
 
     const requestContext = this.createRequestContext(args);

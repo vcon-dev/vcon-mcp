@@ -16,7 +16,7 @@
  * - Lightweight ID-only discovery
  */
 
-import { VConQueries } from '../db/queries.js';
+import { IVConQueries } from '../db/interfaces.js';
 
 export interface ResourceDescriptor {
   uri: string;
@@ -109,7 +109,7 @@ export function getCoreResources(): ResourceDescriptor[] {
   ];
 }
 
-export async function resolveCoreResource(queries: VConQueries, uri: string): Promise<{ mimeType: string; content: any } | undefined> {
+export async function resolveCoreResource(queries: IVConQueries, uri: string): Promise<{ mimeType: string; content: any } | undefined> {
   const json = (data: any) => ({ mimeType: 'application/json', content: data });
 
   // Handle recent vCons (full data)

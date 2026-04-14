@@ -1,9 +1,11 @@
 # Corrected Supabase Schema for IETF vCon  
-## Compliant with draft-ietf-vcon-vcon-core-00
+## Compliant with draft-ietf-vcon-vcon-core-02 (v0.4.0)
+
+> ⚠️ **Updated for v0.4.0** — Column names `appended` and `must_support` were renamed to `amended` and `critical` in spec v0.4.0. The DDL below reflects the current correct names.
 
 ```sql
 -- Supabase Schema for IETF vCon - CORRECTED VERSION
--- This schema is fully compliant with draft-ietf-vcon-vcon-core-00
+-- This schema is fully compliant with draft-ietf-vcon-vcon-core-02 (v0.4.0)
 -- Changes from original marked with -- CORRECTED comments
 
 -- Enable necessary extensions
@@ -14,7 +16,7 @@ CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 CREATE TABLE vcons (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     uuid UUID UNIQUE NOT NULL, -- The vCon UUID from the original document
-    vcon_version VARCHAR(10) NOT NULL DEFAULT '0.3.0',  -- CORRECTED: Updated to latest spec version
+    vcon_version VARCHAR(10) NOT NULL DEFAULT '0.4.0',  -- CORRECTED: Updated to latest spec version
     subject TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -32,10 +34,10 @@ CREATE TABLE vcons (
     
     -- JSON fields for complex nested data
     redacted JSONB DEFAULT '{}',
-    appended JSONB DEFAULT '{}',  -- CORRECTED: Added appended support per spec
+    amended JSONB DEFAULT '{}',   -- CORRECTED: v0.4.0 renamed from 'appended'
     group_data JSONB DEFAULT '[]',
     extensions TEXT[],  -- CORRECTED: Added extensions array per spec Section 4.1.3
-    must_support TEXT[],  -- CORRECTED: Added must_support array per spec Section 4.1.4
+    critical TEXT[],    -- CORRECTED: v0.4.0 renamed from 'must_support' (Section 4.1.4)
     
     CONSTRAINT valid_uuid CHECK (uuid IS NOT NULL)
 );

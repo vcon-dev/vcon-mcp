@@ -131,4 +131,68 @@ export interface IVConQueries {
         tags?: Record<string, string>;
         limit?: number;
     }): Promise<VCon[]>;
+
+    /**
+     * Get count of vCons matching metadata filters
+     */
+    searchVConsCount(filters: {
+        subject?: string;
+        partyName?: string;
+        partyEmail?: string;
+        partyTel?: string;
+        startDate?: string;
+        endDate?: string;
+        tags?: Record<string, string>;
+    }): Promise<number>;
+
+    /**
+     * Update vCon metadata (subject, extensions, must_support)
+     */
+    updateVCon(uuid: string, updates: Partial<VCon>): Promise<void>;
+
+    // ── Tag Management ────────────────────────────────────────────────────────
+
+    /**
+     * Get all tags for a vCon as a key→value map
+     */
+    getTags(vconUuid: string): Promise<Record<string, string>>;
+
+    /**
+     * Get a single tag value (returns defaultValue if not found)
+     */
+    getTag(vconUuid: string, key: string, defaultValue?: any): Promise<any>;
+
+    /**
+     * Add or update a single tag
+     */
+    addTag(vconUuid: string, key: string, value: string | number | boolean, overwrite?: boolean): Promise<void>;
+
+    /**
+     * Remove a single tag by key
+     */
+    removeTag(vconUuid: string, key: string): Promise<void>;
+
+    /**
+     * Remove all tags from a vCon
+     */
+    removeAllTags(vconUuid: string): Promise<void>;
+
+    /**
+     * Search vCons that have all the given tags (returns UUIDs)
+     */
+    searchByTags(tags: Record<string, string>, limit?: number): Promise<string[]>;
+
+    /**
+     * Get all unique tag keys (and optionally values/counts) across the database
+     */
+    getUniqueTags(options?: {
+        includeCounts?: boolean;
+        keyFilter?: string;
+        minCount?: number;
+    }): Promise<{
+        keys: string[];
+        tagsByKey: Record<string, string[]>;
+        countsPerValue?: Record<string, Record<string, number>>;
+        totalVCons: number;
+    }>;
 }

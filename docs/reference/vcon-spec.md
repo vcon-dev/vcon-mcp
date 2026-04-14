@@ -4,11 +4,11 @@ Complete reference for the IETF vCon (Virtual Conversation) standard.
 
 ## Overview
 
-**Specification:** `draft-ietf-vcon-vcon-core-00`  
-**Version:** 0.3.0  
+**Specification:** `draft-ietf-vcon-vcon-core-02`  
+**Version:** 0.4.0  
 **Working Group:** IETF vCon WG  
 **Status:** Internet-Draft  
-**Full Text:** [../background_docs/draft-ietf-vcon-vcon-core-00.txt](../../background_docs/draft-ietf-vcon-vcon-core-00.txt)
+**Full Text:** [../background_docs/draft-ietf-vcon-vcon-core-00.txt](../../background_docs/draft-ietf-vcon-vcon-core-00.txt) (v0.3.0 reference; v0.4.0 spec in project background-docs)
 
 The vCon (Virtual Conversation) is a standard container format for storing conversation data in a structured, interoperable way. It supports voice calls, video meetings, text chats, emails, and other communication forms.
 
@@ -67,7 +67,7 @@ A vCon is a JSON object that contains:
 ```typescript
 interface VCon {
   // REQUIRED
-  vcon: string;           // Version (e.g., "0.3.0")
+  vcon: string;           // Version (e.g., "0.4.0")
   uuid: string;           // Unique identifier (RFC 4122)
   created_at: string;     // ISO 8601 timestamp
   parties: Party[];       // At least one party required
@@ -89,12 +89,12 @@ interface VCon {
   
   // Optional advanced features
   redacted?: RedactedInfo;    // Redaction information
-  appended?: AppendedInfo;    // Append-only chain info
+  amended?: AmendedInfo;      // Append-only chain info (v0.4.0; was 'appended')
   group?: GroupInfo[];        // Group conversation info
   
   // Extension support (Section 4.1.3, 4.1.4)
   extensions?: string[];      // Extension identifiers
-  must_support?: string[];    // Required extensions
+  critical?: string[];        // Required extensions (v0.4.0; was 'must_support')
 }
 ```
 
@@ -102,11 +102,11 @@ interface VCon {
 
 #### vcon (string, required)
 
-Version of the vCon specification. Current version is `"0.3.0"`.
+Version of the vCon specification. Current version is `"0.4.0"`.
 
 ```json
 {
-  "vcon": "0.3.0"
+  "vcon": "0.4.0"
 }
 ```
 
@@ -150,13 +150,13 @@ Human-readable title or subject for the conversation.
 }
 ```
 
-#### must_support (array, optional)
+#### critical (array, optional)
 
-**Section 4.1.4** - Extensions that MUST be understood to process this vCon.
+**Section 4.1.4** - Extensions that MUST be understood to process this vCon. Renamed from `must_support` in v0.4.0.
 
 ```json
 {
-  "must_support": ["required-extension-v1"]
+  "critical": ["required-extension-v1"]
 }
 ```
 
@@ -248,7 +248,7 @@ interface Dialog {
   originator?: number; // Party index of originator
   
   // Content
-  mimetype?: string;   // Media type
+  mediatype?: string;  // Media type (v0.4.0; was 'mimetype')
   filename?: string;   // Filename
   body?: string;       // Inline content
   encoding?: Encoding; // Content encoding
@@ -257,7 +257,7 @@ interface Dialog {
   // Metadata
   content_hash?: string | string[]; // Content hash
   disposition?: Disposition;  // Call disposition
-  session_id?: string;        // Session identifier (Section 4.3.10)
+  session_id?: { local: string; remote: string }; // Session identifier (v0.4.0; was string)
   application?: string;       // Application name (Section 4.3.13)
   message_id?: string;        // Message ID (Section 4.3.14)
 }
@@ -280,7 +280,7 @@ Audio or video recording of the conversation.
   "duration": 125.4,
   "parties": [0, 1],
   "originator": 0,
-  "mimetype": "audio/wav",
+  "mediatype": "audio/wav",
   "filename": "call-recording.wav",
   "url": "https://storage.example.com/recording.wav"
 }
@@ -344,7 +344,7 @@ interface Attachment {
   dialog?: number;     // Associated dialog index
   
   // Content
-  mimetype?: string;   // Media type
+  mediatype?: string;  // Media type (v0.4.0; was 'mimetype')
   filename?: string;   // Filename
   body?: string;       // Inline content
   encoding?: Encoding; // Content encoding
@@ -424,7 +424,7 @@ interface Analysis {
   schema?: string;    // Schema identifier (Section 4.5.6) ⚠️ NOT schema_version
   
   // Content
-  mimetype?: string;  // Media type
+  mediatype?: string; // Media type (v0.4.0; was 'mimetype')
   filename?: string;  // Filename
   body?: string;      // Analysis result (Section 4.5.7) ⚠️ STRING not object
   encoding?: Encoding; // Content encoding
@@ -543,20 +543,20 @@ List of extension identifiers used in this vCon.
 }
 ```
 
-### must_support Array
+### critical Array
 
-Extensions that MUST be understood to process this vCon correctly.
+Extensions that MUST be understood to process this vCon correctly. Renamed from `must_support` in v0.4.0.
 
 ```json
 {
-  "must_support": [
+  "critical": [
     "required-extension-v1"
   ]
 }
 ```
 
 **Processing Rules:**
-1. If a vCon has `must_support` entries you don't understand, reject it
+1. If a vCon has `critical` entries you don't understand, reject it
 2. If a vCon has `extensions` you don't understand, you MAY process it
 3. Always preserve unrecognized extension data
 
@@ -610,7 +610,7 @@ All content fields (body, url) can have `content_hash` for verification:
 **Minimal vCon:**
 ```json
 {
-  "vcon": "0.3.0",
+  "vcon": "0.4.0",
   "uuid": "01234567-89ab-cdef-0123-456789abcdef",
   "created_at": "2025-01-15T10:30:00Z",
   "parties": [
@@ -625,7 +625,7 @@ All content fields (body, url) can have `content_hash` for verification:
 **Full-featured vCon:**
 ```json
 {
-  "vcon": "0.3.0",
+  "vcon": "0.4.0",
   "uuid": "01234567-89ab-cdef-0123-456789abcdef",
   "created_at": "2025-01-15T10:30:00Z",
   "updated_at": "2025-01-15T10:35:00Z",
@@ -649,7 +649,7 @@ All content fields (body, url) can have `content_hash` for verification:
       "duration": 180,
       "parties": [0, 1],
       "originator": 0,
-      "mimetype": "audio/wav",
+      "mediatype": "audio/wav",
       "url": "https://storage.example.com/call.wav"
     },
     {
@@ -693,7 +693,7 @@ All content fields (body, url) can have `content_hash` for verification:
 
 ### Required Validations
 
-1. ✅ `vcon` field must be `"0.3.0"`
+1. ✅ `vcon` field must be `"0.4.0"`
 2. ✅ `uuid` must be valid UUID format
 3. ✅ `created_at` must be ISO 8601 timestamp
 4. ✅ `parties` array must have at least one party
@@ -726,5 +726,5 @@ All content fields (body, url) can have `content_hash` for verification:
 
 ---
 
-*This reference is based on draft-ietf-vcon-vcon-core-00 and reflects all corrections identified in [IMPLEMENTATION_CORRECTIONS.md](./IMPLEMENTATION_CORRECTIONS.md).*
+*This reference is based on draft-ietf-vcon-vcon-core-02 (v0.4.0) and reflects all corrections identified in [IMPLEMENTATION_CORRECTIONS.md](./IMPLEMENTATION_CORRECTIONS.md).*
 

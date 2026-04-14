@@ -314,7 +314,7 @@ export class VConService {
    */
   private normalizeVCon(data: Partial<VCon>): VCon {
     return {
-      vcon: data.vcon || '0.3.0',
+      vcon: (data.vcon || '0.4.0') as '0.4.0',
       uuid: data.uuid || randomUUID(),
       created_at: data.created_at || new Date().toISOString(),
       updated_at: data.updated_at,
@@ -325,9 +325,9 @@ export class VConService {
       attachments: data.attachments,
       group: data.group,
       extensions: data.extensions,
-      must_support: data.must_support,
+      critical: data.critical,
       redacted: data.redacted,
-      appended: data.appended,
+      amended: data.amended,
     };
   }
 }

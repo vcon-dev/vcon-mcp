@@ -111,7 +111,7 @@ export class MongoVConQueries implements IVConQueries {
             const collection = this.db.collection(this.VCONS_COLLECTION);
             const result = await collection.updateOne(
                 { uuid: vconUuid },
-                { $push: { dialog: dialog } }
+                { $push: { dialog: dialog } as any }
             );
 
             if (result.matchedCount === 0) {
@@ -125,7 +125,7 @@ export class MongoVConQueries implements IVConQueries {
             const collection = this.db.collection(this.VCONS_COLLECTION);
             const result = await collection.updateOne(
                 { uuid: vconUuid },
-                { $push: { analysis: analysis } }
+                { $push: { analysis: analysis } as any }
             );
 
             if (result.matchedCount === 0) {
@@ -139,7 +139,7 @@ export class MongoVConQueries implements IVConQueries {
             const collection = this.db.collection(this.VCONS_COLLECTION);
             const result = await collection.updateOne(
                 { uuid: vconUuid },
-                { $push: { attachments: attachment } }
+                { $push: { attachments: attachment } as any }
             );
 
             if (result.matchedCount === 0) {
@@ -434,5 +434,131 @@ export class MongoVConQueries implements IVConQueries {
             const { _id, ...rest } = r;
             return rest as unknown as VCon;
         });
+    }
+
+    async searchVConsCount(filters: {
+        subject?: string;
+        partyName?: string;
+        partyEmail?: string;
+        partyTel?: string;
+        startDate?: string;
+        endDate?: string;
+        tags?: Record<string, string>;
+    }): Promise<number> {
+        const collection = this.db.collection(this.VCONS_COLLECTION);
+        const query: Record<string, any> = {};
+        if (filters.subject) query['subject'] = { $regex: filters.subject, $options: 'i' };
+        if (filters.startDate) query['created_at'] = { $gte: filters.startDate };
+        if (filters.endDate) query['created_at'] = { ...query['created_at'], $lte: filters.endDate };
+        return collection.countDocuments(query);
+    }
+
+    async updateVCon(uuid: string, updates: Partial<VCon>): Promise<void> {
+        const collection = this.db.collection(this.VCONS_COLLECTION);
+        const updateData: Record<string, any> = { updated_at: new Date().toISOString() };
+        if (updates.subject !== undefined) updateData['subject'] = updates.subject;
+        if (updates.extensions !== undefined) updateData['extensions'] = updates.extensions;
+        if (updates.critical !== undefined) updateData['critical'] = updates.critical;
+        await collection.updateOne({ uuid }, { $set: updateData });
+    }
+
+    async getTags(vconUuid: string): Promise<Record<string, string>> {
+        const vcon = await this.getVCon(vconUuid);
+        const tagsAttachment = (vcon.attachments || []).find((a: any) => a.type === 'tags');
+        if (!tagsAttachment?.body) return {};
+        const arr: string[] = JSON.parse(tagsAttachment.body);
+        const result: Record<string, string> = {};
+        for (const s of arr) {
+            const i = s.indexOf(':');
+            if (i > 0) result[s.slice(0, i)] = s.slice(i + 1);
+        }
+        return result;
+    }
+
+    async getTag(vconUuid: string, key: string, defaultValue: any = null): Promise<any> {
+        const tags = await this.getTags(vconUuid);
+        return tags[key] !== undefined ? tags[key] : defaultValue;
+    }
+
+    async addTag(vconUuid: string, key: string, value: string | number | boolean, overwrite: boolean = true): Promise<void> {
+        const tags = await this.getTags(vconUuid);
+        if (tags[key] !== undefined && !overwrite) {
+            throw new Error(`Tag '${key}' already exists. Set overwrite=true to update.`);
+        }
+        tags[key] = String(value);
+        await this.saveTags(vconUuid, tags);
+    }
+
+    async removeTag(vconUuid: string, key: string): Promise<void> {
+        const tags = await this.getTags(vconUuid);
+        if (tags[key] === undefined) return;
+        delete tags[key];
+        await this.saveTags(vconUuid, tags);
+    }
+
+    async removeAllTags(vconUuid: string): Promise<void> {
+        await this.saveTags(vconUuid, {});
+    }
+
+    private async saveTags(vconUuid: string, tags: Record<string, string>): Promise<void> {
+        const body = JSON.stringify(Object.entries(tags).map(([k, v]) => `${k}:${v}`));
+        const vcon = await this.getVCon(vconUuid);
+        const collection = this.db.collection(this.VCONS_COLLECTION);
+        const attachments = (vcon.attachments || []).filter((a: any) => a.type !== 'tags');
+        attachments.push({ type: 'tags', encoding: 'json', body });
+        await collection.updateOne({ uuid: vconUuid }, { $set: { attachments } });
+    }
+
+    async searchByTags(tags: Record<string, string>, limit: number = 50): Promise<string[]> {
+        const collection = this.db.collection(this.VCONS_COLLECTION);
+        const tagStrings = Object.entries(tags).map(([k, v]) => `${k}:${v}`);
+        const results = await collection
+            .find({ 'attachments': { $elemMatch: { type: 'tags', body: { $all: tagStrings.map(t => new RegExp(t)) } } } })
+            .limit(limit)
+            .project({ uuid: 1 })
+            .toArray();
+        return results.map((r: any) => r.uuid);
+    }
+
+    async getUniqueTags(options?: {
+        includeCounts?: boolean;
+        keyFilter?: string;
+        minCount?: number;
+    }): Promise<{
+        keys: string[];
+        tagsByKey: Record<string, string[]>;
+        countsPerValue?: Record<string, Record<string, number>>;
+        totalVCons: number;
+    }> {
+        const collection = this.db.collection(this.VCONS_COLLECTION);
+        const docs = await collection
+            .find({ 'attachments.type': 'tags' })
+            .project({ 'attachments.$': 1 })
+            .toArray();
+
+        const tagsByKey: Record<string, Set<string>> = {};
+        let totalVCons = 0;
+
+        for (const doc of docs) {
+            const tagsAtt = (doc.attachments || []).find((a: any) => a.type === 'tags');
+            if (!tagsAtt?.body) continue;
+            try {
+                const arr: string[] = JSON.parse(tagsAtt.body);
+                totalVCons++;
+                for (const s of arr) {
+                    const i = s.indexOf(':');
+                    if (i <= 0) continue;
+                    const k = s.slice(0, i);
+                    const v = s.slice(i + 1);
+                    if (options?.keyFilter && !k.toLowerCase().includes(options.keyFilter.toLowerCase())) continue;
+                    if (!tagsByKey[k]) tagsByKey[k] = new Set();
+                    tagsByKey[k].add(v);
+                }
+            } catch { /* skip malformed */ }
+        }
+
+        const result: Record<string, string[]> = {};
+        for (const [k, vs] of Object.entries(tagsByKey)) result[k] = Array.from(vs);
+        return { keys: Object.keys(result), tagsByKey: result, totalVCons };
     }
 }

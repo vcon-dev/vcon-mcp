@@ -10,7 +10,7 @@ import Router from '@koa/router';
 import bodyParser from 'koa-bodyparser';
 import cors from '@koa/cors';
 import type { Context } from 'koa';
-import { VConQueries } from '../db/queries.js';
+import { IVConQueries } from '../db/interfaces.js';
 import { PluginManager } from '../hooks/plugin-manager.js';
 import { logWithContext, recordCounter } from '../observability/instrumentation.js';
 import { VConService, VConValidationError } from '../services/vcon-service.js';
@@ -23,7 +23,7 @@ import { createAuthMiddleware, errorHandler, getAuthConfig, requestLogger } from
 // ============================================================================
 
 export interface RestApiContext {
-  queries: VConQueries;
+  queries: IVConQueries;
   pluginManager: PluginManager;
   supabase: any;
   vconService: VConService;

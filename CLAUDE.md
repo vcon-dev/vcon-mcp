@@ -4,7 +4,7 @@ This document provides comprehensive instructions for coding agents working with
 
 ## Project Overview
 
-This is an MCP (Model Context Protocol) server for managing **vCon** (Virtual Conversation) data stored in Supabase. vCon is an IETF standard (draft-ietf-vcon-vcon-core-00) for representing conversation data.
+This is an MCP (Model Context Protocol) server for managing **vCon** (Virtual Conversation) data stored in Supabase. vCon is an IETF standard (draft-ietf-vcon-vcon-core-02, spec version 0.4.0) for representing conversation data.
 
 **Key Technologies:**
 - TypeScript
@@ -36,13 +36,19 @@ interface AnalysisWrong {
 }
 ```
 
-### Field Name Corrections
+### Field Name Corrections (spec -02 / v0.4.0)
 
 | Wrong | Correct | Notes |
 |-------|---------|-------|
 | `schema_version` | `schema` | Analysis object field |
 | `vendor?: string` | `vendor: string` | Required in Analysis |
-| `body: object` | `body: string` | Supports JSON, CSV, XML, plain text |
+| `body: object` | `body: string` | JSON.stringify objects before storing |
+| `mimetype` | `mediatype` | dialog, analysis, attachments (since v0.0.2) |
+| `appended` | `amended` | vCon top-level (renamed in v0.4.0) |
+| `must_support` | `critical` | vCon top-level (renamed in v0.4.0) |
+| `session_id: string` | `session_id: {local, remote}` | Dialog (changed in v0.4.0) |
+
+**Import note:** Real-world vCon files (e.g. Strolid) may use v0.0.1 field names (`mimetype`, `appended`, `must_support`). The import script handles both old and new field names transparently.
 
 ### Encoding Field
 
@@ -62,7 +68,7 @@ Must be one of: `'recording'`, `'text'`, `'transfer'`, `'incomplete'`
 
 | Table | Description |
 |-------|-------------|
-| `vcons` | Main vCon container (uuid, subject, created_at, extensions, must_support) |
+| `vcons` | Main vCon container (uuid, subject, created_at, extensions, critical, amended) |
 | `parties` | Participants (tel, sip, mailto, name, uuid, did) |
 | `dialog` | Conversation segments (type, start_time, duration, body, encoding) |
 | `analysis` | AI/ML results (type, vendor, schema, body, dialog_indices) |
@@ -268,16 +274,21 @@ npm run lint      # ESLint
 
 - [ ] `analysis.schema` NOT `analysis.schema_version`
 - [ ] `analysis.vendor` is required (no `?`)
-- [ ] `analysis.body` is string type
+- [ ] `analysis.body` is string type (JSON.stringify objects)
 - [ ] No default values for `encoding` fields
 - [ ] Dialog `type` is one of: recording, text, transfer, incomplete
-- [ ] Tags stored as attachment with `type: "tags"`
+- [ ] Use `mediatype` NOT `mimetype` (dialog, analysis, attachments)
+- [ ] Use `amended` NOT `appended` (vCon top-level)
+- [ ] Use `critical` NOT `must_support` (vCon top-level)
+- [ ] `session_id` is `{local: string, remote: string}` NOT a plain string
+- [ ] Tags stored as attachment with `type: "tags"`, `encoding: "json"`
+- [ ] vcon version field is `"0.4.0"`
 
 ---
 
 ## References
 
-- IETF vCon Spec: `background_docs/draft-ietf-vcon-vcon-core-00.txt`
+- IETF vCon Spec: `background_docs/draft-ietf-vcon-vcon-core-00.txt` (v0.3.0 baseline in repo) — v0.4.0 spec available at IETF datatracker: https://datatracker.ietf.org/doc/draft-ietf-vcon-vcon-core/
 - Schema Details: `docs/reference/CORRECTED_SCHEMA.md`
 - Implementation Notes: `docs/reference/IMPLEMENTATION_CORRECTIONS.md`
 - Python vCon Library: `background_docs/LLM_GUIDE.md`
