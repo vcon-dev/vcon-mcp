@@ -466,7 +466,7 @@ export class MongoVConQueries implements IVConQueries {
         const vcon = await this.getVCon(vconUuid);
         const tagsAttachment = (vcon.attachments || []).find((a: any) => a.type === 'tags');
         if (!tagsAttachment?.body) return {};
-        const arr: string[] = JSON.parse(tagsAttachment.body);
+        const arr: string[] = JSON.parse(tagsAttachment.body as string);
         const result: Record<string, string> = {};
         for (const s of arr) {
             const i = s.indexOf(':');

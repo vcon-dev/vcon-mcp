@@ -1,15 +1,16 @@
 /**
  * VCon Service
- * 
+ *
  * Encapsulates vCon lifecycle operations with hooks, validation, and metrics.
  * This service is the single source of truth for vCon CRUD operations,
  * ensuring consistent behavior across MCP tools and REST API.
  */
 
 import { randomUUID } from 'crypto';
+import pLimit from 'p-limit';
 import { IVConQueries } from '../db/interfaces.js';
-import { PluginManager } from '../hooks/plugin-manager.js';
 import { RequestContext } from '../hooks/plugin-interface.js';
+import { PluginManager } from '../hooks/plugin-manager.js';
 import { ATTR_VCON_UUID } from '../observability/attributes.js';
 import { logWithContext, recordCounter } from '../observability/instrumentation.js';
 import { VCon } from '../types/vcon.js';
@@ -94,7 +95,7 @@ export class VConService {
 
   /**
    * Create a new vCon with full lifecycle handling
-   * 
+   *
    * This method:
    * 1. Normalizes the vCon data (generates UUID, timestamps if missing)
    * 2. Executes beforeCreate hooks (can modify or block)
@@ -165,7 +166,7 @@ export class VConService {
 
   /**
    * Create multiple vCons in batch
-   * 
+   *
    * Processes each vCon individually, collecting results.
    * Continues processing even if some fail.
    */
@@ -173,39 +174,36 @@ export class VConService {
     vcons: Partial<VCon>[],
     options: CreateVConOptions = {}
   ): Promise<BatchCreateVConsResult> {
-    const results: BatchCreateResult[] = [];
-    let successCount = 0;
-    let errorCount = 0;
+    // Process all vCons concurrently, capped at 10 in-flight at once.
+    // Promise.allSettled collects every result without short-circuiting on failure.
+    const limit = pLimit(10);
 
-    for (const vconData of vcons) {
-      try {
-        const result = await this.create(vconData, {
-          ...options,
-          source: options.source || 'batch',
-        });
-        results.push({
-          uuid: result.uuid,
-          success: true,
-          id: result.id,
-        });
-        successCount++;
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        results.push({
-          uuid: vconData.uuid || 'unknown',
-          success: false,
-          error: errorMsg,
-        });
-        errorCount++;
+    const settled = await Promise.allSettled(
+      vcons.map((vconData) =>
+        limit(() =>
+          this.create(vconData, {
+            ...options,
+            source: options.source || 'batch',
+          })
+        )
+      )
+    );
+
+    const results: BatchCreateResult[] = settled.map((outcome, i) => {
+      if (outcome.status === 'fulfilled') {
+        return { uuid: outcome.value.uuid, success: true, id: outcome.value.id };
       }
-    }
+      return {
+        uuid: vcons[i].uuid || 'unknown',
+        success: false,
+        error: outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason),
+      };
+    });
 
-    return {
-      total: vcons.length,
-      created: successCount,
-      failed: errorCount,
-      results,
-    };
+    const successCount = results.filter((r) => r.success).length;
+    const errorCount   = results.filter((r) => !r.success).length;
+
+    return { total: vcons.length, created: successCount, failed: errorCount, results };
   }
 
   /**
@@ -236,7 +234,7 @@ export class VConService {
 
   /**
    * Delete a vCon by UUID with hook support
-   * 
+   *
    * @returns true if deleted, false if not found
    */
   async delete(uuid: string, options: DeleteVConOptions = {}): Promise<boolean> {
@@ -349,4 +347,3 @@ export class VConNotFoundError extends Error {
     this.name = 'VConNotFoundError';
   }
 }
-

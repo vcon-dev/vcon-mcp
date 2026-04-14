@@ -16,6 +16,7 @@ import { ATTR_CACHE_HIT, ATTR_DB_OPERATION, ATTR_SEARCH_RESULTS_COUNT, ATTR_SEAR
 import { logWithContext, recordCounter, withSpan } from '../observability/instrumentation.js';
 import { createLogger } from '../observability/logger.js';
 import { Analysis, Attachment, Dialog, VCon } from '../types/vcon.js';
+import { deserializeBody, serializeBody } from '../utils/body-serialization.js';
 
 const logger = createLogger('queries');
 
@@ -82,14 +83,14 @@ export class SupabaseVConQueries implements IVConQueries {
         }
       }
 
-      // Insert main vcon
+      // Upsert main vcon — idempotent on re-submission of same UUID
       // Set id = uuid so they match (id is the PK, uuid is the vCon document UUID)
       const { data: vconData, error: vconError } = await this.supabase
         .from('vcons')
-        .insert({
+        .upsert({
           id: vcon.uuid,     // Explicitly set id to match uuid
           uuid: vcon.uuid,
-          vcon_version: vcon.vcon,
+          vcon_version: vcon.vcon ?? '0.3.0',
           subject: vcon.subject,
           created_at: vcon.created_at,
           updated_at: vcon.updated_at,
@@ -98,7 +99,7 @@ export class SupabaseVConQueries implements IVConQueries {
           redacted: vcon.redacted || {},
           amended: vcon.amended || {},          // ✅ v0.4.0 (was appended)
           tenant_id: tenantId,                  // ✅ Added for RLS multi-tenant support
-        })
+        }, { onConflict: 'id' })
         .select('id, uuid')
         .single();
 
@@ -109,6 +110,14 @@ export class SupabaseVConQueries implements IVConQueries {
         }, 'Database query errors');
         throw vconError;
       }
+
+      // Delete existing child rows so re-submission replaces them cleanly
+      await Promise.all([
+        this.supabase.from('parties').delete().eq('vcon_id', vconData.id),
+        this.supabase.from('dialog').delete().eq('vcon_id', vconData.id),
+        this.supabase.from('analysis').delete().eq('vcon_id', vconData.id),
+        this.supabase.from('attachments').delete().eq('vcon_id', vconData.id),
+      ]);
 
       // Insert parties
       if (vcon.parties.length > 0) {
@@ -136,26 +145,12 @@ export class SupabaseVConQueries implements IVConQueries {
         if (partiesError) throw partiesError;
       }
 
-      // Insert dialog if present
-      if (vcon.dialog && vcon.dialog.length > 0) {
-        for (let i = 0; i < vcon.dialog.length; i++) {
-          await this.addDialog(vconData.uuid, vcon.dialog[i]);
-        }
-      }
-
-      // Insert analysis if present
-      if (vcon.analysis && vcon.analysis.length > 0) {
-        for (let i = 0; i < vcon.analysis.length; i++) {
-          await this.addAnalysis(vconData.uuid, vcon.analysis[i]);
-        }
-      }
-
-      // Insert attachments if present
-      if (vcon.attachments && vcon.attachments.length > 0) {
-        for (let i = 0; i < vcon.attachments.length; i++) {
-          await this.addAttachment(vconData.uuid, vcon.attachments[i]);
-        }
-      }
+      // Insert dialog, analysis, and attachments in parallel across categories.
+      await Promise.all([
+        ...(vcon.dialog ?? []).map((d, i) => this.addDialog(vconData.uuid, d, i)),
+        ...(vcon.analysis ?? []).map((a, i) => this.addAnalysis(vconData.uuid, a, i)),
+        ...(vcon.attachments ?? []).map((att, i) => this.addAttachment(vconData.uuid, att, i)),
+      ]);
 
       // Invalidate cache after creation
       if (this.cacheEnabled && this.redis) {
@@ -353,8 +348,11 @@ export class SupabaseVConQueries implements IVConQueries {
    * ✅ CRITICAL: Uses 'schema' field, NOT 'schema_version'
    * ✅ CRITICAL: 'vendor' is required (NOT NULL)
    * ✅ CRITICAL: 'body' is TEXT type
+   *
+   * @param knownIndex - Pass the index directly (e.g. from createVCon) to skip
+   *                     the SELECT MAX round-trip. Omit for standalone add_analysis calls.
    */
-  async addAnalysis(vconUuid: string, analysis: Analysis): Promise<void> {
+  async addAnalysis(vconUuid: string, analysis: Analysis, knownIndex?: number): Promise<void> {
     // Get vcon_id and created_at
     const { data: vcon, error: vconError } = await this.supabase
       .from('vcons')
@@ -364,17 +362,21 @@ export class SupabaseVConQueries implements IVConQueries {
 
     if (vconError) throw vconError;
 
-    // Get next analysis index
-    const { data: existingAnalysis } = await this.supabase
-      .from('analysis')
-      .select('analysis_index')
-      .eq('vcon_id', vcon.id)
-      .order('analysis_index', { ascending: false })
-      .limit(1);
-
-    const nextIndex = existingAnalysis && existingAnalysis.length > 0
-      ? existingAnalysis[0].analysis_index + 1
-      : 0;
+    // Use provided index or query for the next available one
+    let nextIndex: number;
+    if (knownIndex !== undefined) {
+      nextIndex = knownIndex;
+    } else {
+      const { data: existingAnalysis } = await this.supabase
+        .from('analysis')
+        .select('analysis_index')
+        .eq('vcon_id', vcon.id)
+        .order('analysis_index', { ascending: false })
+        .limit(1);
+      nextIndex = existingAnalysis && existingAnalysis.length > 0
+        ? existingAnalysis[0].analysis_index + 1
+        : 0;
+    }
 
     // ✅ CRITICAL CORRECTIONS:
     // - Uses 'schema' field (NOT 'schema_version')
@@ -394,7 +396,7 @@ export class SupabaseVConQueries implements IVConQueries {
         vendor: analysis.vendor,              // ✅ REQUIRED field
         product: analysis.product,
         schema: analysis.schema,              // ✅ CORRECT: 'schema' NOT 'schema_version'
-        body: analysis.body,                  // ✅ CORRECT: TEXT type, supports all formats
+        body: serializeBody(analysis.body, analysis.encoding),  // Serialize only for encoding='none'
         encoding: analysis.encoding,
         url: analysis.url,
         content_hash: analysis.content_hash,
@@ -407,8 +409,11 @@ export class SupabaseVConQueries implements IVConQueries {
   /**
    * Add dialog to a vCon
    * ✅ Includes new fields: session_id, application, message_id
+   *
+   * @param knownIndex - Pass the index directly (e.g. from createVCon) to skip
+   *                     the SELECT MAX round-trip. Omit for standalone add_dialog calls.
    */
-  async addDialog(vconUuid: string, dialog: Dialog): Promise<void> {
+  async addDialog(vconUuid: string, dialog: Dialog, knownIndex?: number): Promise<void> {
     const { data: vcon, error: vconError } = await this.supabase
       .from('vcons')
       .select('id')
@@ -417,17 +422,21 @@ export class SupabaseVConQueries implements IVConQueries {
 
     if (vconError) throw vconError;
 
-    // Get next dialog index
-    const { data: existingDialog } = await this.supabase
-      .from('dialog')
-      .select('dialog_index')
-      .eq('vcon_id', vcon.id)
-      .order('dialog_index', { ascending: false })
-      .limit(1);
-
-    const nextIndex = existingDialog && existingDialog.length > 0
-      ? existingDialog[0].dialog_index + 1
-      : 0;
+    // Use provided index or query for the next available one
+    let nextIndex: number;
+    if (knownIndex !== undefined) {
+      nextIndex = knownIndex;
+    } else {
+      const { data: existingDialog } = await this.supabase
+        .from('dialog')
+        .select('dialog_index')
+        .eq('vcon_id', vcon.id)
+        .order('dialog_index', { ascending: false })
+        .limit(1);
+      nextIndex = existingDialog && existingDialog.length > 0
+        ? existingDialog[0].dialog_index + 1
+        : 0;
+    }
 
     // Normalize parties array
     let parties = null;
@@ -483,8 +492,11 @@ export class SupabaseVConQueries implements IVConQueries {
   /**
    * Add attachment to a vCon
    * ✅ Includes dialog field per spec Section 4.4.4
+   *
+   * @param knownIndex - Pass the index directly (e.g. from createVCon) to skip
+   *                     the SELECT MAX round-trip. Omit for standalone add_attachment calls.
    */
-  async addAttachment(vconUuid: string, attachment: Attachment): Promise<void> {
+  async addAttachment(vconUuid: string, attachment: Attachment, knownIndex?: number): Promise<void> {
     const { data: vcon, error: vconError } = await this.supabase
       .from('vcons')
       .select('id, created_at')
@@ -493,17 +505,21 @@ export class SupabaseVConQueries implements IVConQueries {
 
     if (vconError) throw vconError;
 
-    // Get next attachment index
-    const { data: existingAttachments } = await this.supabase
-      .from('attachments')
-      .select('attachment_index')
-      .eq('vcon_id', vcon.id)
-      .order('attachment_index', { ascending: false })
-      .limit(1);
-
-    const nextIndex = existingAttachments && existingAttachments.length > 0
-      ? existingAttachments[0].attachment_index + 1
-      : 0;
+    // Use provided index or query for the next available one
+    let nextIndex: number;
+    if (knownIndex !== undefined) {
+      nextIndex = knownIndex;
+    } else {
+      const { data: existingAttachments } = await this.supabase
+        .from('attachments')
+        .select('attachment_index')
+        .eq('vcon_id', vcon.id)
+        .order('attachment_index', { ascending: false })
+        .limit(1);
+      nextIndex = existingAttachments && existingAttachments.length > 0
+        ? existingAttachments[0].attachment_index + 1
+        : 0;
+    }
 
     const { error: attachmentError } = await this.supabase
       .from('attachments')
@@ -516,7 +532,7 @@ export class SupabaseVConQueries implements IVConQueries {
         dialog: attachment.dialog,            // ✅ Added per spec Section 4.4.4
         mimetype: attachment.mediatype,
         filename: attachment.filename,
-        body: attachment.body,
+        body: serializeBody(attachment.body, attachment.encoding),  // Serialize only for encoding='none'
         encoding: attachment.encoding,
         url: attachment.url,
         content_hash: attachment.content_hash,
@@ -641,40 +657,25 @@ export class SupabaseVConQueries implements IVConQueries {
         throw vconError;
       }
 
-      // Get parties
-      const { data: parties } = await this.supabase
-        .from('parties')
-        .select('*')
-        .eq('vcon_id', vconData.id)
-        .order('party_index');
+      // Parallelize child-table queries
+      const [
+        { data: parties },
+        { data: dialogs },
+        { data: analysis },
+        { data: attachments }
+      ] = await Promise.all([
+        this.supabase.from('parties').select('*').eq('vcon_id', vconData.id).order('party_index'),
+        this.supabase.from('dialog').select('*').eq('vcon_id', vconData.id).order('dialog_index'),
+        this.supabase.from('analysis').select('*').eq('vcon_id', vconData.id).order('analysis_index'),
+        this.supabase.from('attachments').select('*').eq('vcon_id', vconData.id).order('attachment_index'),
+      ]);
 
-      // Get dialog
-      const { data: dialogs } = await this.supabase
-        .from('dialog')
-        .select('*')
-        .eq('vcon_id', vconData.id)
-        .order('dialog_index');
-
-      // Get analysis - ✅ Queries 'schema' field (NOT 'schema_version')
-      const { data: analysis } = await this.supabase
-        .from('analysis')
-        .select('*')
-        .eq('vcon_id', vconData.id)
-        .order('analysis_index');
-
-      // Get attachments
-      const { data: attachments } = await this.supabase
-        .from('attachments')
-        .select('*')
-        .eq('vcon_id', vconData.id)
-        .order('attachment_index');
-
-      // Reconstruct vCon with all correct field names
+      // Reconstruct vCon with v0.4.0 field names
       const vcon: VCon = {
-        vcon: (vconData.vcon_version || '0.4.0') as '0.4.0',
+        vcon: vconData.vcon_version || '0.4.0',
         uuid: vconData.uuid,
         extensions: vconData.extensions,
-        critical: vconData.critical,
+        critical: vconData.critical,          // ✅ v0.4.0 (was must_support)
         created_at: vconData.created_at,
         updated_at: vconData.updated_at,
         subject: vconData.subject,
@@ -685,7 +686,7 @@ export class SupabaseVConQueries implements IVConQueries {
           mailto: p.mailto,
           name: p.name,
           did: p.did,
-          uuid: p.uuid,                         // ✅ Correct field
+          uuid: p.uuid,
           validation: p.validation,
           jcard: p.jcard,
           gmlpos: p.gmlpos,
@@ -705,19 +706,19 @@ export class SupabaseVConQueries implements IVConQueries {
           url: d.url,
           content_hash: d.content_hash,
           disposition: d.disposition,
-          session_id: d.session_id,             // ✅ Correct field
-          application: d.application,           // ✅ Correct field
-          message_id: d.message_id,             // ✅ Correct field
+          session_id: d.session_id,
+          application: d.application,
+          message_id: d.message_id,
         })),
         analysis: analysis?.map(a => ({
           type: a.type,
           dialog: a.dialog_indices?.length === 1 ? a.dialog_indices[0] : a.dialog_indices,
           mediatype: a.mediatype,
           filename: a.filename,
-          vendor: a.vendor,                     // ✅ Required field
+          vendor: a.vendor,
           product: a.product,
-          schema: a.schema,                     // ✅ CORRECT: 'schema' NOT 'schema_version'
-          body: a.body,                         // ✅ TEXT type
+          schema: a.schema,                   // ✅ 'schema' NOT 'schema_version'
+          body: deserializeBody(a.body, a.encoding),
           encoding: a.encoding,
           url: a.url,
           content_hash: a.content_hash,
@@ -726,10 +727,10 @@ export class SupabaseVConQueries implements IVConQueries {
           type: att.type,
           start: att.start_time,
           party: att.party,
-          dialog: att.dialog,                   // ✅ Correct field
+          dialog: att.dialog,
           mediatype: att.mimetype,
           filename: att.filename,
-          body: att.body,
+          body: deserializeBody(att.body, att.encoding),
           encoding: att.encoding,
           url: att.url,
           content_hash: att.content_hash,

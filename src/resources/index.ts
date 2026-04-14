@@ -17,6 +17,7 @@
  */
 
 import { IVConQueries } from '../db/interfaces.js';
+import { deserializeBody } from '../utils/body-serialization.js';
 
 export interface ResourceDescriptor {
   uri: string;
@@ -238,8 +239,7 @@ export async function resolveCoreResource(queries: IVConQueries, uri: string): P
     }
     
     try {
-      // Parse the tags body - it should be a JSON array of "key:value" strings
-      const tagsArray = JSON.parse(tagsAttachment.body);
+      const tagsArray = deserializeBody(tagsAttachment.body as string, tagsAttachment.encoding) as string[];
       const tagsObject: Record<string, string> = {};
       
       for (const tagString of tagsArray) {

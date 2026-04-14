@@ -30,9 +30,8 @@ The vCon MCP Server exposes a RESTful HTTP API alongside the MCP transport layer
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `VCON_API_KEYS` | (none) | Comma-separated list of valid API keys |
-| `API_KEYS` | (none) | Alternative to `VCON_API_KEYS` |
-| `API_KEY_HEADER` | `x-api-key` | Header name for API key |
+| `API_KEYS` | (none) | Comma-separated list of valid API keys |
+| `API_KEY_HEADER` | `authorization` | Header for API key; default expects `Authorization: Bearer <token>`. Set to `x-api-key` to use that header instead. |
 | `API_AUTH_REQUIRED` | `true` | Set to `false` to disable authentication |
 
 ### HTTP Transport Variables
@@ -59,7 +58,7 @@ REST_API_BASE_PATH=/api/v1
 REST_API_ENABLED=true
 
 # Configure authentication
-VCON_API_KEYS=key1-abc123,key2-def456
+API_KEYS=key1-abc123,key2-def456
 API_AUTH_REQUIRED=true
 ```
 
@@ -71,9 +70,13 @@ All REST API endpoints (except `/health`) require API key authentication.
 
 ### Request Headers
 
+By default, send your API key in the `Authorization` header:
+
 ```http
-x-api-key: your-api-key-here
+Authorization: Bearer your-api-key-here
 ```
+
+You can use a different header by setting `API_KEY_HEADER` (e.g. `x-api-key`).
 
 ### Authentication Responses
 
@@ -82,7 +85,7 @@ x-api-key: your-api-key-here
 ```json
 {
   "error": "Unauthorized",
-  "message": "Missing x-api-key header"
+  "message": "Missing Authorization: Bearer <token> header"
 }
 ```
 
@@ -101,7 +104,7 @@ x-api-key: your-api-key-here
 {
   "error": "Service Unavailable",
   "message": "API authentication is required but not configured. Please contact the administrator.",
-  "hint": "Set VCON_API_KEYS or API_KEYS env var, or set API_AUTH_REQUIRED=false"
+  "hint": "Set API_KEYS env var, or set API_AUTH_REQUIRED=false"
 }
 ```
 
@@ -160,7 +163,7 @@ Create/ingest a single vCon.
 
 ```http
 Content-Type: application/json
-x-api-key: your-api-key
+Authorization: Bearer your-api-key
 ```
 
 **Request Body:**
@@ -224,7 +227,7 @@ The request body should be the vCon object directly:
 ```bash
 curl -X POST http://localhost:3000/api/v1/vcons \
   -H "Content-Type: application/json" \
-  -H "x-api-key: your-api-key" \
+  -H "Authorization: Bearer your-api-key" \
   -d '{
     "vcon": "0.3.0",
     "subject": "Sales Call",
@@ -249,7 +252,7 @@ Ingest multiple vCons in a single request (up to 100).
 
 ```http
 Content-Type: application/json
-x-api-key: your-api-key
+Authorization: Bearer your-api-key
 ```
 
 **Request Body:**
@@ -345,7 +348,7 @@ Array of vCon objects:
 ```bash
 curl -X POST http://localhost:3000/api/v1/vcons/batch \
   -H "Content-Type: application/json" \
-  -H "x-api-key: your-api-key" \
+  -H "Authorization: Bearer your-api-key" \
   -d '[
     {"vcon": "0.3.0", "subject": "Call 1", "parties": [{"name": "A", "tel": "+1111"}]},
     {"vcon": "0.3.0", "subject": "Call 2", "parties": [{"name": "B", "tel": "+2222"}]}
@@ -399,7 +402,7 @@ Retrieve a vCon by UUID.
 
 ```bash
 curl http://localhost:3000/api/v1/vcons/123e4567-e89b-12d3-a456-426614174000 \
-  -H "x-api-key: your-api-key"
+  -H "Authorization: Bearer your-api-key"
 ```
 
 ---
@@ -449,11 +452,11 @@ List recent vCons with optional limit.
 ```bash
 # Get last 10 vCons (default)
 curl http://localhost:3000/api/v1/vcons \
-  -H "x-api-key: your-api-key"
+  -H "Authorization: Bearer your-api-key"
 
 # Get last 50 vCons
 curl "http://localhost:3000/api/v1/vcons?limit=50" \
-  -H "x-api-key: your-api-key"
+  -H "Authorization: Bearer your-api-key"
 ```
 
 ---
@@ -494,7 +497,7 @@ Delete a vCon by UUID.
 
 ```bash
 curl -X DELETE http://localhost:3000/api/v1/vcons/123e4567-e89b-12d3-a456-426614174000 \
-  -H "x-api-key: your-api-key"
+  -H "Authorization: Bearer your-api-key"
 ```
 
 ---
@@ -598,7 +601,7 @@ The REST API supports CORS with configurable options:
 
 **Allowed Methods:** `GET`, `POST`, `PUT`, `DELETE`, `OPTIONS`
 
-**Allowed Headers:** `Content-Type`, `x-api-key`, `Authorization`
+**Allowed Headers:** `Content-Type`, `Authorization` (Bearer), `x-api-key` (if `API_KEY_HEADER=x-api-key`)
 
 **Configure CORS Origin:**
 
@@ -629,7 +632,7 @@ async function createVCon(vcon) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': API_KEY,
+      'Authorization': `Bearer ${API_KEY}`,
     },
     body: JSON.stringify(vcon),
   });
@@ -639,7 +642,7 @@ async function createVCon(vcon) {
 // Get a vCon
 async function getVCon(uuid) {
   const response = await fetch(`${API_URL}/vcons/${uuid}`, {
-    headers: { 'x-api-key': API_KEY },
+    headers: { 'Authorization': `Bearer ${API_KEY}` },
   });
   return response.json();
 }
@@ -650,7 +653,7 @@ async function batchCreate(vcons) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': API_KEY,
+      'Authorization': `Bearer ${API_KEY}`,
     },
     body: JSON.stringify(vcons),
   });
@@ -680,7 +683,7 @@ API_KEY = 'your-api-key'
 
 headers = {
     'Content-Type': 'application/json',
-    'x-api-key': API_KEY,
+    'Authorization': `Bearer ${API_KEY}`,
 }
 
 # Create a vCon
@@ -720,25 +723,25 @@ curl http://localhost:3000/api/v1/health
 # Create vCon
 curl -X POST http://localhost:3000/api/v1/vcons \
   -H "Content-Type: application/json" \
-  -H "x-api-key: your-key" \
+  -H "Authorization: Bearer your-key" \
   -d '{"vcon":"0.3.0","subject":"Test","parties":[{"name":"Test","tel":"+1111"}]}'
 
 # Get vCon
 curl http://localhost:3000/api/v1/vcons/UUID-HERE \
-  -H "x-api-key: your-key"
+  -H "Authorization: Bearer your-key"
 
 # List vCons
 curl "http://localhost:3000/api/v1/vcons?limit=20" \
-  -H "x-api-key: your-key"
+  -H "Authorization: Bearer your-key"
 
 # Delete vCon
 curl -X DELETE http://localhost:3000/api/v1/vcons/UUID-HERE \
-  -H "x-api-key: your-key"
+  -H "Authorization: Bearer your-key"
 
 # Batch create
 curl -X POST http://localhost:3000/api/v1/vcons/batch \
   -H "Content-Type: application/json" \
-  -H "x-api-key: your-key" \
+  -H "Authorization: Bearer your-key" \
   -d '[{"vcon":"0.3.0","parties":[{"name":"A","tel":"+1"}]},{"vcon":"0.3.0","parties":[{"name":"B","tel":"+2"}]}]'
 ```
 

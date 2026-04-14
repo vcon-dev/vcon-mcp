@@ -11,8 +11,7 @@ import {
   Dialog, 
   Party,
   isValidDialogType,
-  isValidEncoding,
-  isValidDisposition 
+  isValidEncoding
 } from '../types/vcon.js';
 
 export interface ValidationResult {
@@ -32,8 +31,7 @@ export class VConValidator {
     this.errors = [];
     this.warnings = [];
 
-    // Core vCon validation
-    this.validateVConVersion(vcon);
+    // Core vCon validation (vcon version field is deprecated - accept any value or missing)
     this.validateUUID(vcon.uuid);
     this.validateDates(vcon);
     this.validateParties(vcon.parties);
@@ -49,12 +47,6 @@ export class VConValidator {
       errors: this.errors,
       warnings: this.warnings
     };
-  }
-
-  private validateVConVersion(vcon: VCon): void {
-    if (vcon.vcon !== '0.4.0') {
-      this.errors.push(`Invalid vcon version: ${vcon.vcon}. Must be '0.4.0'`);
-    }
   }
 
   private validateUUID(uuid: string): void {
@@ -121,16 +113,13 @@ export class VConValidator {
         );
       }
 
-      // Incomplete dialogs must have disposition
+      // Incomplete dialogs must have disposition (any string is accepted)
       if (dialog.type === 'incomplete' && !dialog.disposition) {
         this.errors.push(`Dialog ${index} is incomplete but has no disposition`);
       }
 
-      // Validate disposition values
-      if (dialog.disposition && !isValidDisposition(dialog.disposition)) {
-        this.errors.push(
-          `Dialog ${index} has invalid disposition: ${dialog.disposition}`
-        );
+      if (dialog.disposition != null && typeof dialog.disposition !== 'string') {
+        this.errors.push(`Dialog ${index} disposition must be a string`);
       }
 
       // Transfer dialogs must have transfer fields
@@ -181,7 +170,11 @@ export class VConValidator {
       // If body and encoding are present, validate they match
       if (analysis.body && analysis.encoding === 'json') {
         try {
-          JSON.parse(analysis.body);
+          // body may already be a parsed object or a JSON string
+          if (typeof analysis.body === 'string') {
+            JSON.parse(analysis.body);
+          }
+          // If it's already an object, it's valid JSON
         } catch (e) {
           this.errors.push(
             `Analysis ${index} has encoding='json' but body is not valid JSON`

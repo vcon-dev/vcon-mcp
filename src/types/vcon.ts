@@ -24,6 +24,7 @@
 // Type Definitions
 // ============================================================================
 
+/** @deprecated Version field is deprecated; any string or missing is accepted. Kept for compatibility. */
 export type VConVersion = '0.4.0';
 export type Encoding = 'base64url' | 'json' | 'none';
 export type DialogType = 'recording' | 'text' | 'transfer' | 'incomplete';
@@ -120,11 +121,11 @@ export interface Dialog {
   url?: string;
   content_hash?: string | string[];
 
-  disposition?: DialogDisposition;
-  session_id?: SessionId;   // ✅ SessionId object (was String pre-0.4.0)
-  party_history?: PartyHistory[];
-  application?: string;     // Section 4.3.13
-  message_id?: string;      // Section 4.3.14
+  disposition?: string;  // Any string accepted; spec suggests no-answer, congestion, failed, busy, hung-up, voicemail-no-message
+  session_id?: string;      // Section 4.3.10 - Session identifier (object in v0.4.0 spec, string for compatibility)
+  party_history?: PartyHistory[];  // Section 4.3.11
+  application?: string;     // Section 4.3.13 - Application identifier
+  message_id?: string;      // Section 4.3.14 - Message identifier
 
   // Transfer-specific (type='transfer' only)
   transferee?: number;
@@ -149,7 +150,7 @@ export interface Attachment {
   dialog?: number;          // Section 4.4.4
   mediatype?: string;       // ✅ 'mediatype' (was 'mimetype' pre-0.0.2)
   filename?: string;
-  body?: string;
+  body?: unknown;           // Can be string, object, or array depending on encoding
   encoding?: Encoding;
   url?: string;
   content_hash?: string | string[];
@@ -175,8 +176,8 @@ export interface Analysis {
   filename?: string;
   vendor: string;           // ✅ REQUIRED — no optional marker
   product?: string;
-  schema?: string;          // ✅ 'schema' NOT 'schema_version'
-  body?: string;            // ✅ Must be string; JSON.stringify objects
+  schema?: string;          // ✅ CORRECT: 'schema' NOT 'schema_version' (Section 4.5.7)
+  body?: unknown;           // Can be string, object, or array depending on content/encoding
   encoding?: Encoding;
   url?: string;
   content_hash?: string | string[];
@@ -230,7 +231,8 @@ export interface Group {
  *   must_support → critical   (v0.4.0)
  */
 export interface VCon {
-  vcon: VConVersion;        // Must be "0.4.0" per spec
+  /** Version string; '0.4.0' per spec. Any value or missing is accepted for compatibility. */
+  vcon?: string;
   uuid: string;
   extensions?: string[];    // Section 4.1.3 - compatible extension names
   critical?: string[];      // ✅ Section 4.1.4 (was 'must_support' pre-0.4.0)
@@ -258,8 +260,12 @@ export function isValidEncoding(encoding: string): encoding is Encoding {
   return ['base64url', 'json', 'none'].includes(encoding);
 }
 
-export function isValidDisposition(disposition: string): disposition is DialogDisposition {
-  return ['no-answer', 'congestion', 'failed', 'busy', 'hung-up', 'voicemail-no-message'].includes(disposition);
+/**
+ * Accept any non-empty string as disposition (forgiving of values outside spec).
+ * Spec suggests: no-answer, congestion, failed, busy, hung-up, voicemail-no-message.
+ */
+export function isValidDisposition(disposition: string): boolean {
+  return typeof disposition === 'string';
 }
 
 export function isValidPartyEvent(event: string): event is PartyEventType {
