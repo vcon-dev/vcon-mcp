@@ -45,6 +45,7 @@
  *   --retry-attempts=N    Max retry attempts for failed files (default: 3)
  *   --retry-delay=N       Delay between retries in ms (default: 1000)
  *   --dry-run             Don't actually load files, just validate
+ *   --skip-embed          Skip automatic embedding generation after import (embeddings run by default)
  *   --hours=N             For S3: import vCons modified in last N hours (default: 24)
  *   --prefix=PREFIX       For S3: filter objects by prefix (optional)
  *   --sync                Enable continuous sync mode (checks for new vCons periodically)
@@ -128,7 +129,8 @@
  */
 
 import { readdir, readFile, stat, writeFile, readFile as readFileSync, mkdtemp, rm, unlink } from 'fs/promises';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { spawn } from 'child_process';
 import { tmpdir } from 'os';
 import dotenv from 'dotenv';
 import { S3Client, ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
@@ -1286,6 +1288,7 @@ async function main() {
   const retryAttempts = parseInt(args.find(arg => arg.startsWith('--retry-attempts='))?.split('=')[1] || '3');
   const retryDelay = parseInt(args.find(arg => arg.startsWith('--retry-delay='))?.split('=')[1] || '1000');
   const dryRun = args.includes('--dry-run');
+  const skipEmbed = args.includes('--skip-embed');
   const hours = parseInt(args.find(arg => arg.startsWith('--hours='))?.split('=')[1] || '24');
   const prefix = args.find(arg => arg.startsWith('--prefix='))?.split('=')[1] || undefined;
   const sync = args.includes('--sync');
@@ -1383,10 +1386,37 @@ async function main() {
   }
 
   await loadVConsFromDirectory(directoryPath, options);
-  
+
   // If sync mode is enabled, start continuous syncing
   if (sync && !dryRun) {
     await startSyncMode(directoryPath, options);
+  }
+
+  // Generate embeddings for newly imported vCons (default behaviour; skip with --skip-embed)
+  if (!dryRun && !skipEmbed) {
+    console.log('\n' + '='.repeat(60));
+    console.log('🔍 Running embeddings for newly imported vCons...');
+    console.log('   (use --skip-embed to disable)');
+    console.log('='.repeat(60) + '\n');
+
+    const embedScript = join(dirname(process.argv[1]), 'embed-vcons.ts');
+
+    await new Promise<void>((resolve) => {
+      const child = spawn(
+        'npx', ['tsx', embedScript, '--continuous', '--limit=500'],
+        { stdio: 'inherit', env: process.env }
+      );
+      child.on('close', (code) => {
+        if (code !== 0) {
+          console.warn(`\n⚠️  embed-vcons.ts exited with code ${code} — embeddings may be incomplete`);
+        }
+        resolve();
+      });
+      child.on('error', (err) => {
+        console.warn(`\n⚠️  Failed to run embed-vcons.ts: ${err.message}`);
+        resolve();
+      });
+    });
   }
 }
 
