@@ -8,7 +8,7 @@
 
 import { randomUUID } from 'crypto';
 import pLimit from 'p-limit';
-import { VConQueries } from '../db/queries.js';
+import { IVConQueries } from '../db/interfaces.js';
 import { RequestContext } from '../hooks/plugin-interface.js';
 import { PluginManager } from '../hooks/plugin-manager.js';
 import { ATTR_VCON_UUID } from '../observability/attributes.js';
@@ -21,7 +21,7 @@ import { validateVCon } from '../utils/validation.js';
 // ============================================================================
 
 export interface VConServiceContext {
-  queries: VConQueries;
+  queries: IVConQueries;
   pluginManager: PluginManager;
 }
 
@@ -77,7 +77,7 @@ export interface DeleteVConOptions {
 // ============================================================================
 
 export class VConService {
-  constructor(private context: VConServiceContext) {}
+  constructor(private context: VConServiceContext) { }
 
   /**
    * Normalize partial RequestContext to full RequestContext
@@ -274,7 +274,7 @@ export class VConService {
    * Search vCons with hook support
    */
   async search(
-    filters: Parameters<VConQueries['searchVCons']>[0],
+    filters: Parameters<IVConQueries['searchVCons']>[0],
     options: { requestContext?: Partial<RequestContext>; skipHooks?: boolean } = {}
   ): Promise<VCon[]> {
     const requestContext = this.normalizeRequestContext(options.requestContext, 'search');
@@ -312,7 +312,7 @@ export class VConService {
    */
   private normalizeVCon(data: Partial<VCon>): VCon {
     return {
-      vcon: data.vcon || '0.3.0',
+      vcon: (data.vcon || '0.4.0') as '0.4.0',
       uuid: data.uuid || randomUUID(),
       created_at: data.created_at || new Date().toISOString(),
       updated_at: data.updated_at,
@@ -323,9 +323,9 @@ export class VConService {
       attachments: data.attachments,
       group: data.group,
       extensions: data.extensions,
-      must_support: data.must_support,
+      critical: data.critical,
       redacted: data.redacted,
-      appended: data.appended,
+      amended: data.amended,
     };
   }
 }

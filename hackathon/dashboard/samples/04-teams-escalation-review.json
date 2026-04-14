@@ -1,0 +1,27 @@
+{
+  "vcon": "0.3.0",
+  "created_at": "2026-03-06T15:00:00Z",
+  "subject": "Teams Meeting: Q1 Customer Escalation Review — Sarah Johnson Account",
+  "parties": [
+    { "mailto": "rachel.kim@techcorp.com", "name": "Rachel Kim", "uuid": "usr-teams-001" },
+    { "mailto": "tom.bradley@techcorp.com", "name": "Tom Bradley", "uuid": "usr-teams-002" },
+    { "mailto": "sarah.johnson@email.com", "name": "Sarah Johnson", "uuid": "usr-teams-003" }
+  ],
+  "dialog": [
+    {
+      "type": "recording", "start": "2026-03-06T14:00:00Z", "duration": 1710, "parties": [0, 1, 2],
+      "mediatype": "audio/wav",
+      "url": "https://teams-recordings.blob.core.windows.net/recordings/call-e3f3a7d1.wav"
+    }
+  ],
+  "analysis": [
+    {
+      "type": "transcript", "vendor": "teams-adapter", "encoding": "none", "dialog": 0,
+      "body": "Rachel Kim: Let's start with the Sarah Johnson escalation. Tom, can you walk us through the timeline?\n\nTom Bradley: Sure. Sarah first contacted us on March 3rd about a duplicate billing charge. Agent Mike Rivera handled the initial call and processed a refund, but the refund didn't go through because of a system flag on her account.\n\nSarah Johnson: Right, and then I called back two days later and was told there was no record of the refund being initiated. That's when I asked to speak with a manager.\n\nRachel Kim: I see. Tom, what happened with the system flag?\n\nTom Bradley: It turns out our fraud detection system flagged the refund because it exceeded the auto-approval threshold. It needed manual approval from finance, but that step was never communicated to the front-line agents.\n\nRachel Kim: That's a process gap we need to fix. Sarah, I want to sincerely apologize for the runaround. We're going to process your refund today with priority handling, and I'm adding a $25 credit to your account.\n\nSarah Johnson: I appreciate that, Rachel. I've been a customer for three years and honestly this experience made me consider switching providers.\n\nRachel Kim: I completely understand. Tom, I want you to draft a process update memo — any refund flagged by fraud detection should generate an automatic notification to the original agent and the customer within 24 hours.\n\nTom Bradley: Got it. I'll have that drafted by end of day.\n\nRachel Kim: Sarah, is there anything else we can do for you?\n\nSarah Johnson: No, I think that covers it. Thank you for taking this seriously.\n\nRachel Kim: Absolutely. We'll follow up via email once the refund is confirmed. Thank you everyone."
+    },
+    { "type": "summary", "vendor": "teams-adapter", "body": "Escalation review: Sarah Johnson's unprocessed refund caused by fraud detection flag blocking auto-approval. Process gap identified. Resolution: priority refund + $25 credit, process update memo to be drafted.", "encoding": "none" },
+    { "type": "sentiment", "vendor": "keyword-heuristic", "body": "{\"overall\": 0.52, \"positive\": 4, \"negative\": 4}", "encoding": "json" },
+    { "type": "topics", "vendor": "keyword-heuristic", "body": "[\"Billing\", \"Escalation\", \"Security\"]", "encoding": "json" },
+    { "type": "source-metadata", "vendor": "teams-adapter", "body": "{\"source\": \"microsoft-teams\", \"callType\": \"groupCall\", \"modalities\": [\"audio\"], \"organizerName\": \"Rachel Kim\"}", "encoding": "json" }
+  ]
+}

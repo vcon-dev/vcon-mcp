@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This document identifies and corrects inconsistencies between the IETF vCon specification (draft-ietf-vcon-vcon-core-00) and the MCP Server implementation specification. These corrections are critical for ensuring compliance with the vCon standard and interoperability with other vCon implementations.
+This document identifies and corrects inconsistencies between the IETF vCon specification (draft-ietf-vcon-vcon-core-02, v0.4.0) and the MCP Server implementation specification. These corrections are critical for ensuring compliance with the vCon standard and interoperability with other vCon implementations.
 
 ## Critical Inconsistencies Found
 
@@ -393,7 +393,7 @@ After applying corrections:
 
 ## References
 
-- IETF vCon Specification: draft-ietf-vcon-vcon-core-00.txt
+- IETF vCon Specification: draft-ietf-vcon-vcon-core-02.txt (v0.4.0)
 - Original Implementation: MCP Server for IETF vCon with Supabase - Complete Implementation Specification.md
 - Related: vcon_adapter_guide.md
 

@@ -1,0 +1,60 @@
+{
+  "id": "e]f3a7d1-2b4c-4e8f-9a1d-3c5e7f9b1d3e",
+  "version": 1,
+  "type": "groupCall",
+  "modalities": ["audio"],
+  "lastModifiedDateTime": "2026-03-06T14:32:00Z",
+  "startDateTime": "2026-03-06T14:00:00Z",
+  "endDateTime": "2026-03-06T14:28:30Z",
+  "joinWebUrl": "https://teams.microsoft.com/l/meetup-join/19%3ameeting_abc123",
+  "organizer": {
+    "user": {
+      "id": "usr-teams-001",
+      "displayName": "Rachel Kim",
+      "userPrincipalName": "rachel.kim@techcorp.com"
+    }
+  },
+  "participants": [
+    {
+      "user": {
+        "id": "usr-teams-001",
+        "displayName": "Rachel Kim",
+        "userPrincipalName": "rachel.kim@techcorp.com"
+      },
+      "role": "organizer"
+    },
+    {
+      "user": {
+        "id": "usr-teams-002",
+        "displayName": "Tom Bradley",
+        "userPrincipalName": "tom.bradley@techcorp.com"
+      },
+      "role": "attendee"
+    },
+    {
+      "user": {
+        "id": "usr-teams-003",
+        "displayName": "Sarah Johnson",
+        "userPrincipalName": "sarah.johnson@email.com"
+      },
+      "role": "attendee"
+    }
+  ],
+  "sessions": [
+    {
+      "id": "sess-001",
+      "startDateTime": "2026-03-06T14:00:00Z",
+      "endDateTime": "2026-03-06T14:28:30Z",
+      "modalities": ["audio"],
+      "caller": {
+        "userAgent": { "applicationVersion": "1416/1.0.0.2026032300", "platform": "Windows" }
+      }
+    }
+  ],
+  "_simulated": {
+    "subject": "Q1 Customer Escalation Review — Sarah Johnson Account",
+    "transcript": "Rachel Kim: Let's start with the Sarah Johnson escalation. Tom, can you walk us through the timeline?\n\nTom Bradley: Sure. Sarah first contacted us on March 3rd about a duplicate billing charge. Agent Mike Rivera handled the initial call and processed a refund, but the refund didn't go through because of a system flag on her account.\n\nSarah Johnson: Right, and then I called back two days later and was told there was no record of the refund being initiated. That's when I asked to speak with a manager.\n\nRachel Kim: I see. Tom, what happened with the system flag?\n\nTom Bradley: It turns out our fraud detection system flagged the refund because it exceeded the auto-approval threshold. It needed manual approval from finance, but that step was never communicated to the front-line agents.\n\nRachel Kim: That's a process gap we need to fix. Sarah, I want to sincerely apologize for the runaround. We're going to process your refund today with priority handling, and I'm adding a $25 credit to your account.\n\nSarah Johnson: I appreciate that, Rachel. I've been a customer for three years and honestly this experience made me consider switching providers.\n\nRachel Kim: I completely understand. Tom, I want you to draft a process update memo — any refund flagged by fraud detection should generate an automatic notification to the original agent and the customer within 24 hours.\n\nTom Bradley: Got it. I'll have that drafted by end of day.\n\nRachel Kim: Sarah, is there anything else we can do for you?\n\nSarah Johnson: No, I think that covers it. Thank you for taking this seriously.\n\nRachel Kim: Absolutely. We'll follow up via email once the refund is confirmed. Thank you everyone.",
+    "recording_url": "https://teams-recordings.blob.core.windows.net/recordings/call-e3f3a7d1.wav",
+    "summary": "Escalation review meeting regarding Sarah Johnson's unprocessed refund due to fraud detection flag. Process gap identified in refund approval workflow. Resolution: priority refund + $25 credit, process update memo to be drafted."
+  }
+}

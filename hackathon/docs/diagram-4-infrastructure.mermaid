@@ -1,0 +1,51 @@
+%% ============================================================================
+%% DIAGRAM 4: Infrastructure / Deployment View
+%% Render at https://mermaid.live
+%% ============================================================================
+
+graph TB
+    subgraph CLIENT["Browser"]
+        DASH["Dashboard\nindex.html\nReact + Tailwind"]
+        INGEST["Ingest Page\ningest.html\n5 Ingestion Modes"]
+    end
+
+    subgraph NODE["Node.js MCP Server :3000"]
+        REST["REST API\nKoa /api/v1/"]
+        VCONS["VConService"]
+        PLUGINS["Plugin Manager\n7 Plugins"]
+    end
+
+    subgraph PYTHON["Python Sidecars"]
+        WHISP["Whisper :8100\nmedium model\nRTX 4090 GPU"]
+        LLAMA["LLaMA :8200\nGroq API\nllama-3.1-8b"]
+    end
+
+    subgraph DOCKER["Docker Containers"]
+        MONGO[("MongoDB :27017")]
+        NEO[("Neo4j :7474 :7687")]
+        MOSQ["Mosquitto\n:1883 TCP\n:9001 WebSocket"]
+        CHROMADB[("ChromaDB :8000")]
+    end
+
+    DASH <-->|"fetch + WebSocket"| REST
+    DASH <-->|"MQTT.js ws://9001"| MOSQ
+    DASH <-->|"HTTP API"| NEO
+    INGEST -->|"POST /api/v1/vcons"| REST
+    INGEST <-->|"POST /transcribe"| WHISP
+
+    REST --> VCONS
+    VCONS --> PLUGINS
+
+    PLUGINS -->|"afterCreate"| MONGO
+    PLUGINS -->|"afterCreate"| NEO
+    PLUGINS -->|"afterCreate"| MOSQ
+    PLUGINS -->|"POST /analyze"| LLAMA
+    PLUGINS -->|"POST /transcribe"| WHISP
+
+    LLAMA -.->|"Groq Cloud"| GROQ["Groq API\nLLaMA 3.1-8B-Instant"]
+
+    style CLIENT fill:#2a2a1c,stroke:#f39c12,stroke-width:2px,color:#fff
+    style NODE fill:#1a3a2c,stroke:#27ae60,stroke-width:2px,color:#fff
+    style PYTHON fill:#2a1a3c,stroke:#8e44ad,stroke-width:2px,color:#fff
+    style DOCKER fill:#0d2137,stroke:#2e75b6,stroke-width:2px,color:#fff
+    style GROQ fill:#1a1a1a,stroke:#e74c3c,stroke-width:2px,color:#fff

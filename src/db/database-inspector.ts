@@ -4,8 +4,10 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 
-export class DatabaseInspector {
-  constructor(private supabase: SupabaseClient) {}
+import { IDatabaseInspector, InspectorOptions, InspectorStatsOptions } from './types.js';
+
+export class SupabaseDatabaseInspector implements IDatabaseInspector {
+  constructor(private supabase: SupabaseClient) { }
 
   /**
    * Get comprehensive database shape information
@@ -330,3 +332,6 @@ export class DatabaseInspector {
     return data && data.length > 0 ? data[0] : null;
   }
 }
+
+// Backward-compatible alias for tests that import the old name
+export const DatabaseInspector = SupabaseDatabaseInspector;

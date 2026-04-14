@@ -20,8 +20,9 @@ import { deserializeBody, serializeBody } from '../utils/body-serialization.js';
 
 const logger = createLogger('queries');
 
+import { IVConQueries } from './interfaces.js';
 
-export class VConQueries {
+export class SupabaseVConQueries implements IVConQueries {
   private redis: Redis | null = null;
   private cacheEnabled: boolean = false;
   private cacheTTL: number = 3600; // Default 1 hour
@@ -43,6 +44,17 @@ export class VConQueries {
         reason: 'Redis not configured',
       });
     }
+  }
+
+  /**
+   * Initialize the database connection
+   * For Supabase, this is mostly a no-op as the client is stateless/HTTP based,
+   * but could be used to verify connection or warm up cache.
+   */
+  async initialize(): Promise<void> {
+    // No specific initialization needed for Supabase REST client
+    // Connection verification is handled by database-health-check
+    return Promise.resolve();
   }
 
   /**
@@ -83,9 +95,9 @@ export class VConQueries {
           created_at: vcon.created_at,
           updated_at: vcon.updated_at,
           extensions: vcon.extensions,          // ✅ Added per spec
-          must_support: vcon.must_support,      // ✅ Added per spec
+          critical: vcon.critical,              // ✅ v0.4.0 (was must_support)
           redacted: vcon.redacted || {},
-          appended: vcon.appended || {},        // ✅ Added per spec
+          amended: vcon.amended || {},          // ✅ v0.4.0 (was appended)
           tenant_id: tenantId,                  // ✅ Added for RLS multi-tenant support
         }, { onConflict: 'id' })
         .select('id, uuid')
@@ -107,40 +119,38 @@ export class VConQueries {
         this.supabase.from('attachments').delete().eq('vcon_id', vconData.id),
       ]);
 
-    // Insert parties
-    if (vcon.parties.length > 0) {
-      const partiesData = vcon.parties.map((party, index) => ({
-        vcon_id: vconData.id,
-        party_index: index,
-        tel: party.tel,
-        sip: party.sip,
-        stir: party.stir,
-        mailto: party.mailto,
-        name: party.name,
-        did: party.did,                       // ✅ Added per spec
-        uuid: party.uuid,                     // ✅ Added per spec Section 4.2.12
-        validation: party.validation,
-        jcard: party.jcard,
-        gmlpos: party.gmlpos,
-        civicaddress: party.civicaddress,
-        timezone: party.timezone,
-      }));
+      // Insert parties
+      if (vcon.parties.length > 0) {
+        const partiesData = vcon.parties.map((party, index) => ({
+          vcon_id: vconData.id,
+          party_index: index,
+          tel: party.tel,
+          sip: party.sip,
+          stir: party.stir,
+          mailto: party.mailto,
+          name: party.name,
+          did: party.did,                       // ✅ Added per spec
+          uuid: party.uuid,                     // ✅ Added per spec Section 4.2.12
+          validation: party.validation,
+          jcard: party.jcard,
+          gmlpos: party.gmlpos,
+          civicaddress: party.civicaddress,
+          timezone: party.timezone,
+        }));
 
-      const { error: partiesError } = await this.supabase
-        .from('parties')
-        .insert(partiesData);
+        const { error: partiesError } = await this.supabase
+          .from('parties')
+          .insert(partiesData);
 
-      if (partiesError) throw partiesError;
-    }
+        if (partiesError) throw partiesError;
+      }
 
-    // Insert dialog, analysis, and attachments in parallel across categories.
-    // Within each category the index is pre-computed from array position (0,1,2...)
-    // since this is a brand-new vCon — no SELECT MAX needed.
-    await Promise.all([
-      ...(vcon.dialog ?? []).map((d, i) => this.addDialog(vconData.uuid, d, i)),
-      ...(vcon.analysis ?? []).map((a, i) => this.addAnalysis(vconData.uuid, a, i)),
-      ...(vcon.attachments ?? []).map((att, i) => this.addAttachment(vconData.uuid, att, i)),
-    ]);
+      // Insert dialog, analysis, and attachments in parallel across categories.
+      await Promise.all([
+        ...(vcon.dialog ?? []).map((d, i) => this.addDialog(vconData.uuid, d, i)),
+        ...(vcon.analysis ?? []).map((a, i) => this.addAnalysis(vconData.uuid, a, i)),
+        ...(vcon.attachments ?? []).map((att, i) => this.addAttachment(vconData.uuid, att, i)),
+      ]);
 
       // Invalidate cache after creation
       if (this.cacheEnabled && this.redis) {
@@ -632,104 +642,128 @@ export class VConQueries {
       }, 'Database query count');
 
       // Cache miss - fetch from Supabase
-    // Get main vcon
-    const { data: vconData, error: vconError } = await this.supabase
-      .from('vcons')
-      .select('*')
-      .eq('uuid', uuid)
-      .single();
+      // Get main vcon
+      const { data: vconData, error: vconError } = await this.supabase
+        .from('vcons')
+        .select('*')
+        .eq('uuid', uuid)
+        .single();
 
-    if (vconError) {
-      // Handle "not found" case (PGRST116: no rows returned)
-      if (vconError.code === 'PGRST116') {
-        throw new Error(`vCon not found: ${uuid}`);
+      if (vconError) {
+        // Handle "not found" case (PGRST116: no rows returned)
+        if (vconError.code === 'PGRST116') {
+          throw new Error(`vCon not found: ${uuid}`);
+        }
+        throw vconError;
       }
-      throw vconError;
-    }
-    //parallelize the query
-    const [
-      {data: parties},
-      {data: dialogs},
-      {data: analysis},
-      {data: attachments}
-    ] = await Promise.all([this.supabase.from('parties').select('*').eq('vcon_id', vconData.id).order('party_index'),
-      this.supabase.from('dialog').select('*').eq('vcon_id', vconData.id).order('dialog_index'),
-      this.supabase.from('analysis').select('*').eq('vcon_id', vconData.id).order('analysis_index'),
-      this.supabase.from('attachments').select('*').eq('vcon_id', vconData.id)
-      .order('attachment_index'),
-    ])
 
-    // Reconstruct vCon with all correct field names
-    const vcon: VCon = {
-      vcon: vconData.vcon_version as '0.3.0',
-      uuid: vconData.uuid,
-      extensions: vconData.extensions,
-      must_support: vconData.must_support,
-      created_at: vconData.created_at,
-      updated_at: vconData.updated_at,
-      subject: vconData.subject,
-      parties: parties?.map(p => ({
-        tel: p.tel,
-        sip: p.sip,
-        stir: p.stir,
-        mailto: p.mailto,
-        name: p.name,
-        did: p.did,
-        uuid: p.uuid,                         // ✅ Correct field
-        validation: p.validation,
-        jcard: p.jcard,
-        gmlpos: p.gmlpos,
-        civicaddress: p.civicaddress,
-        timezone: p.timezone,
-      })) || [],
-      dialog: dialogs?.map(d => ({
-        type: d.type,
-        start: d.start_time,
-        duration: d.duration_seconds,
-        parties: d.parties,
-        originator: d.originator,
-        mediatype: d.mediatype,
-        filename: d.filename,
-        body: d.body,
-        encoding: d.encoding,
-        url: d.url,
-        content_hash: d.content_hash,
-        disposition: d.disposition,
-        session_id: d.session_id,             // ✅ Correct field
-        application: d.application,           // ✅ Correct field
-        message_id: d.message_id,             // ✅ Correct field
-      })),
-      analysis: analysis?.map(a => ({
-        type: a.type,
-        dialog: a.dialog_indices?.length === 1 ? a.dialog_indices[0] : a.dialog_indices,
-        mediatype: a.mediatype,
-        filename: a.filename,
-        vendor: a.vendor,                     // ✅ Required field
-        product: a.product,
-        schema: a.schema,                     // ✅ CORRECT: 'schema' NOT 'schema_version'
-        body: deserializeBody(a.body, a.encoding),   // Parse back to object only for encoding='none'
-        encoding: a.encoding,
-        url: a.url,
-        content_hash: a.content_hash,
-      })),
-      attachments: attachments?.map(att => ({
-        type: att.type,
-        start: att.start_time,
-        party: att.party,
-        dialog: att.dialog,                   // ✅ Correct field
-        mediatype: att.mimetype,
-        filename: att.filename,
-        body: deserializeBody(att.body, att.encoding),  // Parse back to object only for encoding='none'
-        encoding: att.encoding,
-        url: att.url,
-        content_hash: att.content_hash,
-      })),
-    };
+      // Parallelize child-table queries
+      const [
+        { data: parties },
+        { data: dialogs },
+        { data: analysis },
+        { data: attachments }
+      ] = await Promise.all([
+        this.supabase.from('parties').select('*').eq('vcon_id', vconData.id).order('party_index'),
+        this.supabase.from('dialog').select('*').eq('vcon_id', vconData.id).order('dialog_index'),
+        this.supabase.from('analysis').select('*').eq('vcon_id', vconData.id).order('analysis_index'),
+        this.supabase.from('attachments').select('*').eq('vcon_id', vconData.id).order('attachment_index'),
+      ]);
+
+      // Reconstruct vCon with v0.4.0 field names
+      const vcon: VCon = {
+        vcon: vconData.vcon_version || '0.4.0',
+        uuid: vconData.uuid,
+        extensions: vconData.extensions,
+        critical: vconData.critical,          // ✅ v0.4.0 (was must_support)
+        created_at: vconData.created_at,
+        updated_at: vconData.updated_at,
+        subject: vconData.subject,
+        parties: parties?.map(p => ({
+          tel: p.tel,
+          sip: p.sip,
+          stir: p.stir,
+          mailto: p.mailto,
+          name: p.name,
+          did: p.did,
+          uuid: p.uuid,
+          validation: p.validation,
+          jcard: p.jcard,
+          gmlpos: p.gmlpos,
+          civicaddress: p.civicaddress,
+          timezone: p.timezone,
+        })) || [],
+        dialog: dialogs?.map(d => ({
+          type: d.type,
+          start: d.start_time,
+          duration: d.duration_seconds,
+          parties: d.parties,
+          originator: d.originator,
+          mediatype: d.mediatype,
+          filename: d.filename,
+          body: d.body,
+          encoding: d.encoding,
+          url: d.url,
+          content_hash: d.content_hash,
+          disposition: d.disposition,
+          session_id: d.session_id,
+          application: d.application,
+          message_id: d.message_id,
+        })),
+        analysis: analysis?.map(a => ({
+          type: a.type,
+          dialog: a.dialog_indices?.length === 1 ? a.dialog_indices[0] : a.dialog_indices,
+          mediatype: a.mediatype,
+          filename: a.filename,
+          vendor: a.vendor,
+          product: a.product,
+          schema: a.schema,                   // ✅ 'schema' NOT 'schema_version'
+          body: deserializeBody(a.body, a.encoding),
+          encoding: a.encoding,
+          url: a.url,
+          content_hash: a.content_hash,
+        })),
+        attachments: attachments?.map(att => ({
+          type: att.type,
+          start: att.start_time,
+          party: att.party,
+          dialog: att.dialog,
+          mediatype: att.mimetype,
+          filename: att.filename,
+          body: deserializeBody(att.body, att.encoding),
+          encoding: att.encoding,
+          url: att.url,
+          content_hash: att.content_hash,
+        })),
+      };
 
       // Cache the result for future reads
       await this.setCachedVCon(uuid, vcon);
 
       return vcon;
+    });
+  }
+
+  /**
+   * Delete a vCon by UUID
+   */
+  async deleteVCon(uuid: string): Promise<void> {
+    return withSpan('db.deleteVCon', async (span) => {
+      span.setAttributes({
+        [ATTR_VCON_UUID]: uuid,
+        [ATTR_DB_OPERATION]: 'delete',
+      });
+
+      // Get ID first to delete related data if not cascading
+      // Supabase cascade delete should handle related tables if configured
+      const { error } = await this.supabase
+        .from('vcons')
+        .delete()
+        .eq('uuid', uuid);
+
+      if (error) throw error;
+
+      await this.invalidateCachedVCon(uuid);
     });
   }
 
@@ -997,17 +1031,7 @@ export class VConQueries {
   /**
    * Delete a vCon and all related entities
    */
-  async deleteVCon(uuid: string): Promise<void> {
-    const { error } = await this.supabase
-      .from('vcons')
-      .delete()
-      .eq('uuid', uuid);
 
-    if (error) throw error;
-
-    // Invalidate cache
-    await this.invalidateCachedVCon(uuid);
-  }
 
   /**
    * Update vCon metadata
@@ -1019,7 +1043,7 @@ export class VConQueries {
 
     if (updates.subject !== undefined) updateData.subject = updates.subject;
     if (updates.extensions !== undefined) updateData.extensions = updates.extensions;
-    if (updates.must_support !== undefined) updateData.must_support = updates.must_support;
+    if (updates.critical !== undefined) updateData.critical = updates.critical;
 
     const { error } = await this.supabase
       .from('vcons')
@@ -1266,19 +1290,28 @@ export class VConQueries {
       }
 
       // Get UUIDs for matching vcon_ids
+      // Batch the .in() query to avoid "URI too long" when there are many matching IDs
       if (matchingVconIds.size === 0) {
         return [];
       }
 
-      const { data: vcons, error: vconsError } = await this.supabase
-        .from('vcons')
-        .select('uuid')
-        .in('id', Array.from(matchingVconIds))
-        .limit(limit);
+      const idArray = Array.from(matchingVconIds);
+      const batchSize500 = 500;
+      const uuids: string[] = [];
 
-      if (vconsError) throw vconsError;
+      for (let i = 0; i < idArray.length && uuids.length < limit; i += batchSize500) {
+        const chunk = idArray.slice(i, i + batchSize500);
+        const { data: vcons, error: vconsError } = await this.supabase
+          .from('vcons')
+          .select('uuid')
+          .in('id', chunk)
+          .limit(limit - uuids.length);
 
-      return (vcons || []).map(v => v.uuid);
+        if (vconsError) throw vconsError;
+        uuids.push(...(vcons || []).map(v => v.uuid));
+      }
+
+      return uuids;
     };
 
     // If RPC doesn't exist or fails, use fallback
@@ -1535,3 +1568,6 @@ export class VConQueries {
       .eq('uuid', vconUuid);
   }
 }
+
+// Alias for backwards compatibility
+export { SupabaseVConQueries as VConQueries };

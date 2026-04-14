@@ -152,7 +152,11 @@ export const createVConTool = {
 export const getVConTool = {
   name: 'get_vcon',
   category: 'read' as ToolCategory,
-  description: 'Retrieve a complete vCon by its UUID. Returns the full vCon object with all parties, dialog, analysis, and attachments.',
+  description: 'Retrieve a vCon by its UUID. Use response_format to control how much data is returned:\n' +
+    '- "full" (default): complete vCon with all parties, dialog, analysis bodies, and attachments\n' +
+    '- "summary": metadata + parties + only analysis records of type "summary" (compact, fast — use this for browsing or summarizing)\n' +
+    '- "metadata": only vCon metadata and parties, no dialog/analysis/attachments\n' +
+    'For Strolid/Crexendo vCons, "summary" is recommended — transcripts can be 80KB+.',
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -160,6 +164,11 @@ export const getVConTool = {
         type: 'string',
         description: 'UUID of the vCon to retrieve',
         pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      },
+      response_format: {
+        type: 'string',
+        enum: ['full', 'summary', 'metadata'],
+        description: 'How much data to return. "summary" returns only summary-type analysis (recommended for browsing). Default: "full".'
       }
     },
     required: ['uuid']
@@ -237,8 +246,9 @@ export const searchVConsContentTool = {
   name: 'search_vcons_content',
   category: 'read' as ToolCategory,
   description: 'Full-text keyword search across vCon content including subject, dialog, analysis, and party info. ' +
-    'Searches through conversation text, analysis bodies, and participant details. Returns ranked results with snippets. ' +
-    '⚠️ LARGE DATABASE WARNING: Use response_format="snippets" for large result sets to avoid memory issues.',
+    'Searches through conversation text, analysis bodies (transcripts, summaries), and participant details. Returns ranked results with snippets. ' +
+    'After getting vcon_ids from snippets, use get_vcon(uuid, response_format="summary") to read the full summary without loading large transcript bodies (Strolid transcripts can be 80KB+ each). ' +
+    '⚠️ LARGE DATABASE WARNING: Use response_format="snippets" (default) to avoid memory issues.',
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -347,9 +357,10 @@ export const searchVConsHybridTool = {
   name: 'search_vcons_hybrid',
   category: 'read' as ToolCategory,
   description: 'Hybrid search combining keyword and semantic search for comprehensive results. ' +
-    'Uses both full-text matching and AI embeddings to find relevant conversations. ' +
-    'Ideal for complex queries where you want both exact matches and conceptually similar content. ' +
-    '⚠️ LARGE DATABASE WARNING: Use response_format="metadata" for large result sets to avoid memory issues.',
+    'Returns vcon_ids with combined_score, semantic_score, and keyword_score. ' +
+    'NOTE: keyword_score=0 just means the vCon was found semantically (not that billing terms are absent from the DB — semantic results often outnumber keyword results). ' +
+    'After finding IDs, use get_vcon(uuid, response_format="summary") to efficiently read just the summary analysis for each result (saves ~80KB of transcript JSON per vCon). ' +
+    'Ideal for complex queries where you want both exact matches and conceptually similar content.',
   inputSchema: {
     type: 'object' as const,
     properties: {

@@ -40,7 +40,7 @@ export class VConValidator {
     if (vcon.analysis) this.validateAnalysis(vcon.analysis);
     if (vcon.attachments) this.validateAttachments(vcon.attachments);
     if (vcon.extensions) this.validateExtensions(vcon.extensions);
-    if (vcon.must_support) this.validateMustSupport(vcon.must_support, vcon.extensions);
+    if (vcon.critical) this.validateCritical(vcon.critical, vcon.extensions);
 
     return {
       valid: this.errors.length === 0,
@@ -233,18 +233,18 @@ export class VConValidator {
     });
   }
 
-  private validateMustSupport(mustSupport: string[], extensions?: string[]): void {
-    // must_support should reference extensions
+  private validateCritical(critical: string[], extensions?: string[]): void {
+    // critical should reference extensions
     if (extensions) {
-      mustSupport.forEach((ext, index) => {
+      critical.forEach((ext, index) => {
         if (!extensions.includes(ext)) {
           this.warnings.push(
-            `must_support[${index}] references '${ext}' which is not in extensions array`
+            `critical[${index}] references '${ext}' which is not in extensions array`
           );
         }
       });
     } else {
-      this.warnings.push('must_support is set but no extensions are defined');
+      this.warnings.push('critical is set but no extensions are defined');
     }
   }
 }

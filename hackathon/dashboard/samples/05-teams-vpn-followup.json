@@ -1,0 +1,22 @@
+{
+  "vcon": "0.3.0",
+  "created_at": "2026-03-06T16:30:00Z",
+  "subject": "Teams Call: Lisa Park ↔ David Chen — VPN Follow-up",
+  "parties": [
+    { "mailto": "lisa.park@techcorp.com", "name": "Agent Lisa Park", "uuid": "usr-teams-004" },
+    { "mailto": "david.chen@gmail.com", "name": "David Chen", "uuid": "usr-teams-005" }
+  ],
+  "dialog": [
+    { "type": "recording", "start": "2026-03-06T16:15:00Z", "duration": 1638, "parties": [0, 1], "mediatype": "audio/wav", "url": "https://teams-recordings.blob.core.windows.net/recordings/call-b8c2d4e6.wav" }
+  ],
+  "analysis": [
+    {
+      "type": "transcript", "vendor": "teams-adapter", "encoding": "none", "dialog": 0,
+      "body": "Agent Lisa Park: Hi David, thanks for joining the Teams call. I wanted to follow up on the VPN fix from yesterday. How has connectivity been?\n\nDavid Chen: Hi Lisa! It's been rock solid since the update. No disconnections at all.\n\nAgent Lisa Park: That's great to hear. I also wanted to let you know that our network team pushed an additional server-side optimization overnight. You might notice slightly faster connection times.\n\nDavid Chen: Actually, I did notice it connected faster this morning. Good to know that was intentional.\n\nAgent Lisa Park: One more thing — I noticed your account is still on the standard VPN tier. Given that you're fully remote, you might benefit from our priority routing tier. It gives you dedicated bandwidth during peak hours.\n\nDavid Chen: What does that cost?\n\nAgent Lisa Park: It's included in the enterprise plan your company is on. I just need to flip a switch on your profile. Want me to enable it?\n\nDavid Chen: Absolutely, yes please.\n\nAgent Lisa Park: Done. You'll need to reconnect to pick up the new routing. Is there anything else I can help with?\n\nDavid Chen: No, this has been excellent service. Really appreciate the proactive follow-up.\n\nAgent Lisa Park: Happy to help, David. Have a great rest of your day!"
+    },
+    { "type": "summary", "vendor": "teams-adapter", "body": "Proactive follow-up on VPN fix. Connectivity confirmed stable. Upgraded customer to priority routing tier (included in enterprise plan). Customer very satisfied.", "encoding": "none" },
+    { "type": "sentiment", "vendor": "keyword-heuristic", "body": "{\"overall\": 0.88, \"positive\": 5, \"negative\": 0}", "encoding": "json" },
+    { "type": "topics", "vendor": "keyword-heuristic", "body": "[\"Technical Support\", \"Remote Work\", \"Upgrade\"]", "encoding": "json" },
+    { "type": "source-metadata", "vendor": "teams-adapter", "body": "{\"source\": \"microsoft-teams\", \"callType\": \"peerToPeer\", \"modalities\": [\"audio\"], \"organizerName\": \"Agent Lisa Park\"}", "encoding": "json" }
+  ]
+}
