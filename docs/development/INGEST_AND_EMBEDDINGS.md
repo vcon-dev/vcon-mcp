@@ -19,7 +19,7 @@ npm install
   - `SUPABASE_URL`
   - `SUPABASE_SERVICE_ROLE_KEY`
   - `VCON_S3_BUCKET` (optional, for S3 loading)
-  - `OPENAI_API_KEY` or `HF_API_TOKEN` (for embeddings)
+  - One embedding provider (see priority order below): `LITELLM_PROXY_URL`+`LITELLM_MASTER_KEY`, `OPENAI_API_KEY`, Azure vars, or `HF_API_TOKEN`
 
 ---
 
@@ -56,7 +56,7 @@ npm run sync:vcons -- /absolute/path/to/vcons
 Notes:
 - Use absolute directory paths. Files must end with `.vcon` extension.
 - The script is idempotent and skips vCons already in the database.
-- Handles both legacy (0.0.1-0.2.0) and current (0.3.0) vCon specs.
+- Handles both legacy (0.0.1-0.2.0) and current (0.4.0) vCon specs.
 
 ---
 
@@ -76,12 +76,11 @@ Analysis elements with `encoding='none'` are prioritized because they contain pl
 Environment variables (set in `.env` file or exported):
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
-- One provider (choose one):
-  - `OPENAI_API_KEY` (uses `text-embedding-3-small` with `dimensions=384`)
-  - or Azure OpenAI:
-    - `AZURE_OPENAI_EMBEDDING_ENDPOINT` (e.g., `https://your-resource.openai.azure.com`)
-    - `AZURE_OPENAI_EMBEDDING_API_KEY`
-  - or `HF_API_TOKEN` (Hugging Face Inference API with `sentence-transformers/all-MiniLM-L6-v2`)
+- One provider (auto-detected in priority order — first match wins):
+  1. **LiteLLM** (highest priority): `LITELLM_PROXY_URL` + `LITELLM_MASTER_KEY` (or `LITELLM_API_KEY`)
+  2. **Azure OpenAI**: `AZURE_OPENAI_EMBEDDING_ENDPOINT` + `AZURE_OPENAI_EMBEDDING_API_KEY`
+  3. **OpenAI**: `OPENAI_API_KEY` (uses `text-embedding-3-small` with `dimensions=384`)
+  4. **Hugging Face**: `HF_API_TOKEN` (uses `sentence-transformers/all-MiniLM-L6-v2`)
 
 #### Generate Embeddings
 
@@ -100,6 +99,9 @@ For more control, use the script directly:
 ```bash
 # Process 100 units (default)
 npx tsx scripts/embed-vcons.ts
+
+# Process with LiteLLM proxy (set LITELLM_PROXY_URL + LITELLM_MASTER_KEY in .env)
+npx tsx scripts/embed-vcons.ts --limit=500 --provider=litellm
 
 # Process 500 units with OpenAI
 npx tsx scripts/embed-vcons.ts --limit=500 --provider=openai

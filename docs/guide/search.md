@@ -114,8 +114,6 @@ The vCon MCP server provides four search tools with different capabilities, from
 }
 ```
 
-**Note:** Automatic embedding generation from query text is not yet implemented. Use `search_vcons_content` for keyword-based search without embeddings.
-
 **Returns:** Similar conversations ranked by semantic similarity
 
 ---
@@ -287,8 +285,8 @@ Analysis with `encoding='json'` or `encoding='base64url'` typically contains:
 For semantic and hybrid search to work effectively, you need to generate embeddings for your vCons.
 
 See the following guides:
-- [INGEST_AND_EMBEDDINGS.md](./INGEST_AND_EMBEDDINGS.md) - Complete guide to embedding generation
-- [EMBEDDING_STRATEGY_UPGRADE.md](./EMBEDDING_STRATEGY_UPGRADE.md) - Details on which content is embedded
+- [INGEST_AND_EMBEDDINGS.md](../development/INGEST_AND_EMBEDDINGS.md) - Complete guide to embedding generation
+- [EMBEDDING_STRATEGY_UPGRADE.md](../development/EMBEDDING_STRATEGY_UPGRADE.md) - Details on which content is embedded
 
 **Quick start:**
 ```bash
@@ -387,6 +385,6 @@ npm run embeddings:check
 ## Related Documentation
 
 - [QUICK_START.md](../QUICK_START.md) - Getting started with vCon MCP
-- [INGEST_AND_EMBEDDINGS.md](./INGEST_AND_EMBEDDINGS.md) - Embedding generation
+- [INGEST_AND_EMBEDDINGS.md](../development/INGEST_AND_EMBEDDINGS.md) - Embedding generation
 - [SUPABASE_SEMANTIC_SEARCH_GUIDE.md](../SUPABASE_SEMANTIC_SEARCH_GUIDE.md) - Database search implementation
 

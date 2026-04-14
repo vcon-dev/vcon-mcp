@@ -1,9 +1,9 @@
 # Corrected Supabase Schema for IETF vCon  
-## Compliant with draft-ietf-vcon-vcon-core-00
+## Compliant with draft-ietf-vcon-vcon-core-02 (v0.4.0)
 
 ```sql
 -- Supabase Schema for IETF vCon - CORRECTED VERSION
--- This schema is fully compliant with draft-ietf-vcon-vcon-core-00
+-- This schema is fully compliant with draft-ietf-vcon-vcon-core-02 (spec v0.4.0)
 -- Changes from original marked with -- CORRECTED comments
 
 -- Enable necessary extensions
@@ -14,7 +14,7 @@ CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 CREATE TABLE vcons (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     uuid UUID UNIQUE NOT NULL, -- The vCon UUID from the original document
-    vcon_version VARCHAR(10) NOT NULL DEFAULT '0.3.0',  -- CORRECTED: Updated to latest spec version
+    vcon_version VARCHAR(10) NOT NULL DEFAULT '0.4.0',  -- CORRECTED: Updated to spec v0.4.0
     subject TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -32,10 +32,10 @@ CREATE TABLE vcons (
     
     -- JSON fields for complex nested data
     redacted JSONB DEFAULT '{}',
-    appended JSONB DEFAULT '{}',  -- CORRECTED: Added appended support per spec
+    amended JSONB DEFAULT '{}',  -- CORRECTED: v0.4.0 renamed appended→amended (Section 4.1.5)
     group_data JSONB DEFAULT '[]',
     extensions TEXT[],  -- CORRECTED: Added extensions array per spec Section 4.1.3
-    must_support TEXT[],  -- CORRECTED: Added must_support array per spec Section 4.1.4
+    critical TEXT[],  -- CORRECTED: v0.4.0 renamed must_support→critical (Section 4.1.4)
     
     CONSTRAINT valid_uuid CHECK (uuid IS NOT NULL)
 );
@@ -126,7 +126,7 @@ CREATE TABLE attachments (
     dialog INTEGER,  -- CORRECTED: Added dialog reference per spec Section 4.4.4
     
     -- Content fields
-    mimetype TEXT,
+    mediatype TEXT,  -- CORRECTED: v0.0.2+ renamed mimetype→mediatype
     filename TEXT,
     body TEXT,
     encoding TEXT CHECK (encoding IS NULL OR encoding IN ('base64url', 'json', 'none')), -- CORRECTED: Removed default, added constraint
@@ -263,9 +263,9 @@ CREATE INDEX idx_vcons_subject_trgm ON vcons USING gin (subject gin_trgm_ops);
 CREATE INDEX idx_parties_name_trgm ON parties USING gin (name gin_trgm_ops);
 
 -- Comments for documentation
-COMMENT ON TABLE vcons IS 'Main vCon container table - compliant with draft-ietf-vcon-vcon-core-00';
+COMMENT ON TABLE vcons IS 'Main vCon container table - compliant with draft-ietf-vcon-vcon-core-02 (v0.4.0)';
 COMMENT ON COLUMN vcons.extensions IS 'List of vCon extensions used (Section 4.1.3)';
-COMMENT ON COLUMN vcons.must_support IS 'List of incompatible extensions that must be supported (Section 4.1.4)';
+COMMENT ON COLUMN vcons.critical IS 'List of incompatible extensions that must be supported (Section 4.1.4); renamed from must_support in v0.4.0';
 
 COMMENT ON TABLE parties IS 'Party objects from vCon parties array (Section 4.2)';
 COMMENT ON COLUMN parties.uuid IS 'Unique identifier for participant across vCons (Section 4.2.12)';
@@ -320,9 +320,9 @@ BEGIN;
 
 -- 1. Add new required columns
 ALTER TABLE vcons ADD COLUMN IF NOT EXISTS extensions TEXT[];
-ALTER TABLE vcons ADD COLUMN IF NOT EXISTS must_support TEXT[];
-ALTER TABLE vcons ADD COLUMN IF NOT EXISTS appended JSONB DEFAULT '{}';
-ALTER TABLE vcons ALTER COLUMN vcon_version SET DEFAULT '0.3.0';
+ALTER TABLE vcons ADD COLUMN IF NOT EXISTS critical TEXT[];
+ALTER TABLE vcons ADD COLUMN IF NOT EXISTS amended JSONB DEFAULT '{}';
+ALTER TABLE vcons ALTER COLUMN vcon_version SET DEFAULT '0.4.0';
 
 ALTER TABLE parties ADD COLUMN IF NOT EXISTS did TEXT;
 ALTER TABLE parties ADD COLUMN IF NOT EXISTS uuid UUID;
