@@ -9,6 +9,31 @@ import { VCon } from '../../types/vcon.js';
 import { BaseToolHandler, ToolHandlerContext, ToolResponse } from './base.js';
 import { normalizeDateString, requireNonEmptyString } from './validation.js';
 
+async function generateEmbedding(query: string): Promise<number[]> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new McpError(ErrorCode.InvalidParams, 'OPENAI_API_KEY not set — cannot generate query embedding');
+  }
+  const response = await fetch('https://api.openai.com/v1/embeddings', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'text-embedding-3-small',
+      input: query,
+      dimensions: 384,
+    }),
+  });
+  if (!response.ok) {
+    const err = await response.text();
+    throw new McpError(ErrorCode.InternalError, `OpenAI embedding error: ${err}`);
+  }
+  const json = await response.json() as { data: Array<{ embedding: number[] }> };
+  return json.data[0].embedding;
+}
+
 /**
  * Handler for search_vcons tool
  */
@@ -208,13 +233,9 @@ export class SearchVConsSemanticHandler extends BaseToolHandler {
     let embedding = args?.embedding as number[] | undefined;
     const query = args?.query as string | undefined;
 
-    // If no embedding provided but query is, generate embedding
+    // If no embedding provided but query is, generate embedding via OpenAI
     if (!embedding && query) {
-      // For now, require pre-computed embeddings
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        'Embedding generation not yet implemented. Please provide a pre-computed embedding vector (384 dimensions) or use search_vcons_content for keyword search.'
-      );
+      embedding = await generateEmbedding(query);
     }
 
     if (!embedding) {
@@ -268,12 +289,17 @@ export class SearchVConsHybridHandler extends BaseToolHandler {
       throw new McpError(ErrorCode.InvalidParams, 'Embedding must be 384 dimensions');
     }
 
-    // If no embedding provided, use keyword-only search
+    // If no embedding provided, generate one from the query
     if (!embedding) {
-      logWithContext('warn', 'No embedding provided for hybrid search, falling back to keyword-only', {
-        tool_name: this.toolName,
-        query
-      });
+      try {
+        embedding = await generateEmbedding(query);
+      } catch (e) {
+        logWithContext('warn', 'Failed to generate embedding for hybrid search, falling back to keyword-only', {
+          tool_name: this.toolName,
+          query,
+          error: e instanceof Error ? e.message : String(e)
+        });
+      }
     }
 
     const results = await context.queries.hybridSearch({
