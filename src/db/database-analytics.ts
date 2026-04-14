@@ -709,18 +709,19 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
 
   private async getTagStatistics() {
     const query = `
-      WITH tag_data AS (
-        SELECT 
-          key,
-          value,
-          vcon_id
+      WITH filtered AS (
+        SELECT body, vcon_id
         FROM attachments
-        WHERE type = 'application/json' 
+        WHERE type = 'application/json'
           AND body::jsonb ? 'tags'
           AND jsonb_typeof(body::jsonb->'tags') = 'object'
-        CROSS JOIN LATERAL jsonb_each_text(body::jsonb->'tags')
+      ),
+      tag_data AS (
+        SELECT key, value, f.vcon_id
+        FROM filtered f
+        CROSS JOIN LATERAL jsonb_each_text(f.body::jsonb->'tags')
       )
-      SELECT 
+      SELECT
         COUNT(DISTINCT key) as unique_keys,
         COUNT(DISTINCT value) as unique_values,
         COUNT(DISTINCT vcon_id) as vcons_with_tags,
@@ -739,21 +740,25 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
 
   private async getTagFrequencyAnalysis(topNKeys: number, minUsageCount: number) {
     const query = `
-      WITH tag_stats AS (
-        SELECT 
+      WITH filtered AS (
+        SELECT body, vcon_id
+        FROM attachments
+        WHERE type = 'application/json'
+          AND body::jsonb ? 'tags'
+          AND jsonb_typeof(body::jsonb->'tags') = 'object'
+      ),
+      tag_stats AS (
+        SELECT
           key,
           COUNT(*) as usage_count,
           COUNT(DISTINCT value) as unique_values,
-          COUNT(DISTINCT vcon_id) as vcons_with_tag
-        FROM attachments
-        WHERE type = 'application/json' 
-          AND body::jsonb ? 'tags'
-          AND jsonb_typeof(body::jsonb->'tags') = 'object'
-        CROSS JOIN LATERAL jsonb_each_text(body::jsonb->'tags')
+          COUNT(DISTINCT f.vcon_id) as vcons_with_tag
+        FROM filtered f
+        CROSS JOIN LATERAL jsonb_each_text(f.body::jsonb->'tags')
         GROUP BY key
         HAVING COUNT(*) >= ${minUsageCount}
       )
-      SELECT 
+      SELECT
         key,
         usage_count,
         unique_values,
@@ -775,28 +780,29 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
 
   private async getTagValueDistribution(topNKeys: number) {
     const query = `
-      WITH top_keys AS (
-        SELECT key
+      WITH filtered AS (
+        SELECT body, vcon_id
         FROM attachments
-        WHERE type = 'application/json' 
+        WHERE type = 'application/json'
           AND body::jsonb ? 'tags'
           AND jsonb_typeof(body::jsonb->'tags') = 'object'
-        CROSS JOIN LATERAL jsonb_each_text(body::jsonb->'tags')
+      ),
+      top_keys AS (
+        SELECT key
+        FROM filtered f
+        CROSS JOIN LATERAL jsonb_each_text(f.body::jsonb->'tags')
         GROUP BY key
         ORDER BY COUNT(*) DESC
         LIMIT ${topNKeys}
       ),
       tag_values AS (
-        SELECT 
+        SELECT
           t.key,
           t.value,
           COUNT(*) as count
-        FROM attachments a
+        FROM filtered a
         CROSS JOIN LATERAL jsonb_each_text(a.body::jsonb->'tags') t
         INNER JOIN top_keys tk ON t.key = tk.key
-        WHERE a.type = 'application/json' 
-          AND a.body::jsonb ? 'tags'
-          AND jsonb_typeof(a.body::jsonb->'tags') = 'object'
         GROUP BY t.key, t.value
       )
       SELECT 
@@ -819,16 +825,19 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
 
   private async getTagTemporalTrends() {
     const query = `
-      SELECT 
+      SELECT
         DATE_TRUNC('month', a.created_at) as month,
         t.key,
         COUNT(*) as usage_count
-      FROM attachments a
+      FROM (
+        SELECT body, created_at
+        FROM attachments
+        WHERE type = 'application/json'
+          AND body::jsonb ? 'tags'
+          AND jsonb_typeof(body::jsonb->'tags') = 'object'
+          AND created_at >= NOW() - INTERVAL '12 months'
+      ) a
       CROSS JOIN LATERAL jsonb_each_text(a.body::jsonb->'tags') t
-      WHERE a.type = 'application/json' 
-        AND a.body::jsonb ? 'tags'
-        AND jsonb_typeof(a.body::jsonb->'tags') = 'object'
-        AND a.created_at >= NOW() - INTERVAL '12 months'
       GROUP BY DATE_TRUNC('month', a.created_at), t.key
       ORDER BY month, usage_count DESC
     `;
