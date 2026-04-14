@@ -52,22 +52,20 @@ function createRootLogger() {
 
   // Development: Pretty printing
   if (isDevelopment) {
-    return pino(
-      {
-        ...baseConfig,
-        transport: {
-          target: 'pino-pretty',
-          options: {
-            colorize: true,
-            translateTime: 'HH:MM:ss.l',
-            ignore: 'pid,hostname',
-            messageFormat: '{component} - {msg}',
-            singleLine: false,
-          },
+    return pino({
+      ...baseConfig,
+      transport: {
+        target: 'pino-pretty',
+        options: {
+          colorize: true,
+          translateTime: 'HH:MM:ss.l',
+          ignore: 'pid,hostname',
+          messageFormat: '{component} - {msg}',
+          singleLine: false,
+          destination: 2, // stderr — transport runs in worker thread, destination must be set here
         },
       },
-      pino.destination(2) // stderr for MCP
-    );
+    });
   }
 
   // Production: JSON to stderr

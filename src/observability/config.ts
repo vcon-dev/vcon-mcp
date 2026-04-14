@@ -18,11 +18,38 @@ import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentation
 import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { Resource } from '@opentelemetry/resources';
-import { ConsoleMetricExporter, PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
+import { AggregationTemporality, MetricReader, PushMetricExporter } from '@opentelemetry/sdk-metrics';
+import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
 import { NodeSDK } from '@opentelemetry/sdk-node';
-import { ConsoleSpanExporter } from '@opentelemetry/sdk-trace-node';
+import { ReadableSpan, SpanExporter } from '@opentelemetry/sdk-trace-base';
+import { ExportResult, ExportResultCode } from '@opentelemetry/core';
 import { SEMRESATTRS_SERVICE_NAME, SEMRESATTRS_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
 import { logger as pinoLogger } from './logger.js';
+
+/**
+ * Null span exporter — discards all spans without writing to stdout/stderr.
+ * Used when OTEL_EXPORTER_TYPE is not 'otlp' to avoid corrupting MCP stdio.
+ */
+class NullSpanExporter implements SpanExporter {
+  export(_spans: ReadableSpan[], resultCallback: (result: ExportResult) => void): void {
+    resultCallback({ code: ExportResultCode.SUCCESS });
+  }
+  async shutdown(): Promise<void> {}
+}
+
+/**
+ * Null metric exporter — discards all metrics without writing to stdout/stderr.
+ */
+class NullMetricExporter implements PushMetricExporter {
+  async export(_metrics: any, resultCallback: (result: ExportResult) => void): Promise<void> {
+    resultCallback({ code: ExportResultCode.SUCCESS });
+  }
+  async shutdown(): Promise<void> {}
+  async forceFlush(): Promise<void> {}
+  selectAggregationTemporality(): AggregationTemporality {
+    return AggregationTemporality.CUMULATIVE;
+  }
+}
 
 // Use a child logger for observability config
 const logger = pinoLogger.child({ component: 'observability-config' });
@@ -93,8 +120,11 @@ export async function initializeObservability(): Promise<void> {
   }
 
   try {
-    // Set up diagnostic logging
-    diag.setLogger(new DiagConsoleLogger(), config.logLevel);
+    // Set up diagnostic logging — only when using OTLP; DiagConsoleLogger writes to stdout
+    // which corrupts MCP stdio in non-OTLP mode.
+    if (config.exporterType === 'otlp') {
+      diag.setLogger(new DiagConsoleLogger(), config.logLevel);
+    }
 
     // Create resource with service information
     const resource = new Resource({
@@ -113,8 +143,8 @@ export async function initializeObservability(): Promise<void> {
         endpoint: config.endpoint
       }, 'OpenTelemetry traces configured');
     } else {
-      traceExporter = new ConsoleSpanExporter();
-      logger.info({ exporter: 'console' }, 'OpenTelemetry traces configured');
+      traceExporter = new NullSpanExporter();
+      logger.info({ exporter: 'null' }, 'OpenTelemetry traces configured (null exporter — set OTEL_EXPORTER_TYPE=otlp to export)');
     }
 
     // Configure metric exporter
@@ -133,15 +163,15 @@ export async function initializeObservability(): Promise<void> {
         interval_ms: 60000
       }, 'OpenTelemetry metrics configured');
     } else {
-      const metricExporter = new ConsoleMetricExporter();
+      const metricExporter = new NullMetricExporter();
       metricReader = new PeriodicExportingMetricReader({
         exporter: metricExporter,
         exportIntervalMillis: 60000,
       });
       logger.info({
-        exporter: 'console',
+        exporter: 'null',
         interval_ms: 60000
-      }, 'OpenTelemetry metrics configured');
+      }, 'OpenTelemetry metrics configured (null exporter — set OTEL_EXPORTER_TYPE=otlp to export)');
     }
 
     // Initialize SDK
