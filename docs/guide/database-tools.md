@@ -463,7 +463,7 @@ This will:
 ## Related Documentation
 
 - [Database Migrations](../supabase/migrations/) - Database schema
-- [SUPABASE_SEMANTIC_SEARCH_GUIDE.md](../SUPABASE_SEMANTIC_SEARCH_GUIDE.md) - Search performance
+- [Search Optimization Guide](../SEARCH_OPTIMIZATION_GUIDE.md) - Search performance
 - [INGEST_AND_EMBEDDINGS.md](./INGEST_AND_EMBEDDINGS.md) - Data ingestion
 
 ---

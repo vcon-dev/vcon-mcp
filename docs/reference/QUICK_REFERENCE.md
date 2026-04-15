@@ -112,7 +112,7 @@ encoding TEXT CHECK (encoding IN ('base64url', 'json', 'none'))
 
 Before writing ANY code:
 
-- [ ] I have read `CLAUDE_CODE_INSTRUCTIONS.md`
+- [ ] I have read `CLAUDE.md`
 - [ ] I have read `IMPLEMENTATION_CORRECTIONS.md`
 - [ ] I understand `schema` NOT `schema_version`
 - [ ] I understand `vendor` is REQUIRED in analysis
@@ -265,7 +265,7 @@ const wrongAnalysis2: Analysis = {
 
 ## 📚 Quick Links
 
-- Full instructions: `CLAUDE_CODE_INSTRUCTIONS.md`
+- Full instructions: `CLAUDE.md`
 - Detailed corrections: `IMPLEMENTATION_CORRECTIONS.md`
 - Database schema: `CORRECTED_SCHEMA.md`
 - IETF spec: `background_docs/draft-ietf-vcon-vcon-core-00.txt`
@@ -308,12 +308,12 @@ grep -r "vendor\?" src/types/
 3. What is the exact type in the spec?
 
 **Then verify against:**
-- `CLAUDE_CODE_INSTRUCTIONS.md` - Section matching your task
+- `CLAUDE.md` - Section matching your task
 - `IMPLEMENTATION_CORRECTIONS.md` - List of all corrections
 - `draft-ietf-vcon-vcon-core-00.txt` - The authoritative spec
 
 ---
 
-*Last Updated: 2025-10-07*  
-*Spec Version: draft-ietf-vcon-vcon-core-00*  
-*Schema Version: 0.3.0*
+*Last Updated: April 2026*  
+*Spec Version: draft-ietf-vcon-vcon-core-02*  
+*Schema Version: 0.4.0*

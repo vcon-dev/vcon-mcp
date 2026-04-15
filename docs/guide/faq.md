@@ -273,7 +273,7 @@ vCon format is portable - you can move to any system that supports the standard.
 
 This implementation follows **`draft-ietf-vcon-vcon-core-00`**.
 
-**Important:** This implementation corrects several common mistakes found in other implementations. See [Specification Corrections](../reference/corrections.md) for details.
+**Important:** This implementation corrects several common mistakes found in other implementations. See [Implementation Corrections](../reference/IMPLEMENTATION_CORRECTIONS.md) for details.
 
 ---
 

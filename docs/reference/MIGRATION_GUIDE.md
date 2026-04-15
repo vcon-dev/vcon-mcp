@@ -488,11 +488,11 @@ git checkout HEAD -- .
 If you encounter issues:
 
 1. Check `IMPLEMENTATION_CORRECTIONS.md` for detailed explanations
-2. Review `CLAUDE_CODE_INSTRUCTIONS.md` for correct implementations
+2. Review `CLAUDE.md` for correct implementations
 3. Consult IETF spec: `background_docs/draft-ietf-vcon-vcon-core-00.txt`
 4. Run compliance tests to identify specific failures
 
 ---
 
-*Last Updated: 2025-10-07*  
-*For use with: draft-ietf-vcon-vcon-core-00*
+*Last Updated: April 2026*  
+*For use with: draft-ietf-vcon-vcon-core-02 (v0.4.0)*

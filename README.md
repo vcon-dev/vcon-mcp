@@ -224,14 +224,14 @@ npm run db:analyze
 ### Data Loading
 
 ```bash
-# Load recent vCons from S3
-npm run load:s3:recent
+# Sync vCons from S3/legacy sources
+npm run sync:vcons
 
-# Load from S3 with default settings
-npm run load:s3
+# Full sync (vCons + embeddings + tags)
+npm run sync
 
-# Load from local directory
-npm run load:local
+# Continuous sync (watches for new data)
+npm run sync:continuous
 ```
 
 ### Backup & Restore
@@ -878,11 +878,8 @@ vcon-mcp/
 │       ├── CORRECTED_SCHEMA.md
 │       └── MIGRATION_GUIDE.md
 ├── background_docs/         # IETF specs & references
-├── BUILD_GUIDE.md          # Step-by-step implementation guide
-├── GETTING_STARTED.md      # Quick start for developers
-├── OPEN_SOURCE_FEATURES.md # Open source feature set
-├── PORPRIETARY_FEATURES.md # Enterprise features
-├── SUPABASE_SEMANTIC_SEARCH_GUIDE.md
+├── CLAUDE.md               # AI coding agent instructions
+├── DOCUMENTATION_GUIDE.md  # Documentation system guide
 └── README.md               # This file
 ```
 
@@ -890,19 +887,17 @@ vcon-mcp/
 
 ### For Users
 
-- **[Getting Started](GETTING_STARTED.md)** - Quick start guide for using the server
+- **[Getting Started](docs/guide/getting-started.md)** - Quick start guide for using the server
 - **[Docker Deployment](docs/deployment/docker.md)** - Complete Docker deployment guide
 - **[Query Prompts Guide](docs/guide/prompts.md)** - How to use search and retrieval prompts
 - **[Search Tools Guide](docs/guide/search.md)** - Search strategies and tools
 - **[Tag Management Guide](docs/guide/tags.md)** - Tagging and organization
 - **[RLS Multi-Tenant Guide](docs/guide/rls-multi-tenant.md)** - Row Level Security setup for multi-tenant isolation
-- **[Open Source Features](OPEN_SOURCE_FEATURES.md)** - Complete feature reference
-- **[Proprietary Features](PORPRIETARY_FEATURES.md)** - Enterprise and advanced features
 
 ### For Developers
 
-- **[Build Guide](BUILD_GUIDE.md)** - Step-by-step implementation from scratch
-- **[Supabase Semantic Search](SUPABASE_SEMANTIC_SEARCH_GUIDE.md)** - Vector search setup
+- **[Building Guide](docs/development/building.md)** - Step-by-step implementation from scratch
+- **[Search Optimization](docs/SEARCH_OPTIMIZATION_GUIDE.md)** - Vector search performance
 - **[Plugin Development](docs/development/plugins.md)** - Creating custom plugins
 
 ### For LLMs and AI Systems
@@ -991,7 +986,7 @@ The project uses Supabase with a carefully designed schema:
 - **pgvector** for semantic search
 - **Realtime** subscriptions enabled
 
-See [BUILD_GUIDE.md](BUILD_GUIDE.md) for complete database setup instructions.
+See the [Building Guide](docs/development/building.md) for complete database setup instructions.
 See [RLS Multi-Tenant Guide](docs/guide/rls-multi-tenant.md) for enabling multi-tenant isolation.
 
 ## IETF vCon Specification Compliance

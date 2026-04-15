@@ -244,7 +244,7 @@ Expected result: The second query should return 0.
 ## Related Documentation
 
 - [INGEST_AND_EMBEDDINGS.md](./INGEST_AND_EMBEDDINGS.md) - Complete embedding guide
-- [SUPABASE_SEMANTIC_SEARCH_GUIDE.md](../SUPABASE_SEMANTIC_SEARCH_GUIDE.md) - Semantic search implementation
+- [Search Optimization Guide](../SEARCH_OPTIMIZATION_GUIDE.md) - Semantic search implementation
 - [vCon Specification](../background_docs/draft-ietf-vcon-vcon-core-00.txt) - Official vCon standard
 
 ## Version History

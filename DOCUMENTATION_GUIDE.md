@@ -3,7 +3,7 @@
 ## Overview
 
 The vCon MCP Server documentation is organized for easy publishing across multiple platforms:
-- **GitHub Pages** - https://yourusername.github.io/vcon-mcp
+- **GitHub Pages** - https://vcon-dev.github.io/vcon-mcp
 - **npm** - Package documentation
 - **GitBook** - Optional alternative hosting
 - **GitHub README** - Quick start and overview
@@ -115,7 +115,7 @@ See the [API Reference](../api/tools.md) for complete documentation.
 ## Documentation Platforms
 
 ### GitHub Pages
-- **URL**: https://yourusername.github.io/vcon-mcp
+- **URL**: https://vcon-dev.github.io/vcon-mcp
 - **Deploy**: Automatic via GitHub Actions
 - **Source**: `docs/` folder
 - **Build**: VitePress static site
@@ -127,13 +127,13 @@ See the [API Reference](../api/tools.md) for complete documentation.
 - **Include**: Quick start, installation, basic examples
 
 ### GitBook (Optional)
-- **URL**: https://your-org.gitbook.io/vcon-mcp
+- **URL**: https://vcon-dev.gitbook.io/vcon-mcp
 - **Source**: `docs/` folder
 - **Import**: Connect GitHub repository
 - **Sync**: Automatic on push
 
 ### GitHub Repository
-- **URL**: https://github.com/yourusername/vcon-mcp
+- **URL**: https://github.com/vcon-dev/vcon-mcp
 - **Source**: README.md (main page)
 - **Organization**: Clean root with links to full docs
 - **Include**: Badges, quick start, key features

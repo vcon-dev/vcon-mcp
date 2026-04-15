@@ -108,7 +108,7 @@ PostgreSQL/Supabase schema:
 ```typescript
 const result = await callTool("create_vcon", {
   vcon_data: {
-    vcon: "0.3.0",
+    vcon: "0.4.0",
     subject: "Customer Support Call",
     parties: [
       {
@@ -372,7 +372,7 @@ The API follows semantic versioning:
 
 ### vCon Version
 
-Current: **0.3.0**
+Current: **0.4.0**
 
 Follows IETF vCon specification versions.
 

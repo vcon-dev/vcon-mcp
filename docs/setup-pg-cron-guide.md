@@ -23,7 +23,7 @@ The pg_cron approach:
 First, ensure all migrations are applied to your remote database:
 
 ```bash
-cd /Users/thomashowe/Documents/GitHub/vcon-mcp
+cd /path/to/vcon-mcp
 supabase db push
 ```
 
