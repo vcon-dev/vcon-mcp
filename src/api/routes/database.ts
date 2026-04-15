@@ -30,6 +30,7 @@ export function createDatabaseRoutes(apiContext: RestApiContext): Router {
   });
 
   // ── GET /database/stats ───────────────────────────────────────────────────
+  // ── GET /database/stats ───────────────────────────────────────────────────
   router.get('/database/stats', async (ctx: Context) => {
     const result = await apiContext.dbInspector.getDatabaseStats({
       includeQueryStats: parseBoolParam(ctx.query.include_query_stats),

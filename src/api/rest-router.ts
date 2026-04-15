@@ -125,11 +125,11 @@ export function createRestApi(apiContext: RestApiContext, config?: Partial<RestA
 
   // Database operational routes
   const dbRouter = createDatabaseRoutes(apiContext);
-  router.use('/database', dbRouter.routes());
+  router.use(dbRouter.routes());
 
   // Analytics routes
   const analyticsRouter = createAnalyticsRoutes(apiContext);
-  router.use('/analytics', analyticsRouter.routes());
+  router.use(analyticsRouter.routes());
 
   // Apply routes
   app.use(router.routes());
