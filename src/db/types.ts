@@ -73,6 +73,8 @@ export interface ContentAnalyticsOptions {
     includePartyPatterns?: boolean;
     includeConversationMetrics?: boolean;
     includeTemporalContent?: boolean;
+    startDate?: string;
+    endDate?: string;
 }
 
 export interface DatabaseHealthOptions {

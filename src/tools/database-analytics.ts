@@ -62,9 +62,10 @@ export const getDatabaseAnalyticsTool = {
 export const getMonthlyGrowthTool = {
   name: 'get_monthly_growth_analytics',
   category: 'analytics' as ToolCategory,
-  description: 'Get detailed monthly growth analytics including vCon creation trends, ' +
+  description: 'Get detailed growth analytics including vCon creation trends, ' +
     'size growth patterns, content volume changes, and growth projections. ' +
-    'Useful for capacity planning and understanding usage patterns.',
+    'Set granularity to "daily" for exact daily vCon counts (ideal for daily reports). ' +
+    'Useful for capacity planning, usage patterns, and daily activity volume.',
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -183,10 +184,22 @@ export const getContentAnalyticsTool = {
   category: 'analytics' as ToolCategory,
   description: 'Get comprehensive content analytics including dialog types, ' +
     'analysis distribution, party patterns, and conversation characteristics. ' +
-    'Provides insights into the types of conversations being stored.',
+    'Supports optional date filtering to scope analytics to a specific period (e.g. a single day). ' +
+    'For daily activity reports, use start_date/end_date to get exact counts of dialog types, ' +
+    'analysis vendors, party patterns, and vCons without dialog/analysis for just that day.',
   inputSchema: {
     type: 'object' as const,
     properties: {
+      start_date: {
+        type: 'string',
+        description: 'ISO 8601 start date to scope analytics (e.g. "2026-04-13T00:00:00Z"). ' +
+          'When set, all metrics are computed only for vCons created on or after this date.'
+      },
+      end_date: {
+        type: 'string',
+        description: 'ISO 8601 end date (exclusive) to scope analytics (e.g. "2026-04-14T00:00:00Z"). ' +
+          'When set, all metrics are computed only for vCons created before this date.'
+      },
       include_dialog_analysis: {
         type: 'boolean',
         description: 'Include dialog type and content analysis (default: true)',
@@ -204,7 +217,8 @@ export const getContentAnalyticsTool = {
       },
       include_conversation_metrics: {
         type: 'boolean',
-        description: 'Include conversation length, duration, and complexity metrics (default: true)',
+        description: 'Include conversation length, duration, and complexity metrics. ' +
+          'Includes vcons_without_dialog and vcons_without_analysis counts. (default: true)',
         default: true
       },
       include_temporal_content: {

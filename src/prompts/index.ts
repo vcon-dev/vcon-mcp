@@ -181,6 +181,27 @@ export const findSimilarPrompt: PromptDefinition = {
 };
 
 /**
+ * Prompt: Generate Daily Activity Report
+ * Use case: "Generate a report of yesterday's activity" or "What happened on April 13?"
+ */
+export const dailyReportPrompt: PromptDefinition = {
+  name: 'daily_activity_report',
+  description: 'Generate a comprehensive daily activity report for a specific date. Uses analytics tools and targeted searches instead of manual sampling for accurate, efficient reporting.',
+  arguments: [
+    {
+      name: 'date',
+      description: 'The date to report on in YYYY-MM-DD format (e.g., "2026-04-13"). Defaults to yesterday.',
+      required: false
+    },
+    {
+      name: 'focus_areas',
+      description: 'Optional focus areas for the report (e.g., "dealership coverage, notable conversations, agent activity")',
+      required: false
+    }
+  ]
+};
+
+/**
  * Prompt: Analyze Query Strategy
  * Use case: Help users understand which search approach to use
  */
@@ -208,7 +229,8 @@ export const allPrompts: PromptDefinition[] = [
   discoverTagsPrompt,
   complexSearchPrompt,
   findSimilarPrompt,
-  queryStrategyPrompt
+  queryStrategyPrompt,
+  dailyReportPrompt
 ];
 
 /**
@@ -241,6 +263,8 @@ export function generatePromptMessage(name: string, args: Record<string, string>
       return generateFindSimilarMessage(args);
     case 'help_me_search':
       return generateQueryStrategyMessage(args);
+    case 'daily_activity_report':
+      return generateDailyReportMessage(args);
     default:
       return 'Unknown prompt';
   }
@@ -860,4 +884,105 @@ Based on analysis, here's the recommended approach for "${whatYouWant}":
 `;
 }
 
+function generateDailyReportMessage(args: Record<string, string>): string {
+  const date = args.date || 'yesterday';
+  const focusAreas = args.focus_areas || '';
 
+  return `Generate a daily activity report for: ${date}${focusAreas ? `\nFocus areas: ${focusAreas}` : ''}
+
+## Workflow: Daily Activity Report
+
+Follow these steps IN ORDER. Do NOT skip to sampling individual vCons before completing the aggregate steps.
+
+### Step 1: Get Exact Daily Volume (1 tool call)
+Use \`get_monthly_growth_analytics\` to get the precise vCon count for the target date:
+\`\`\`json
+{
+  "granularity": "daily",
+  "months_back": 1
+}
+\`\`\`
+Find the row matching ${date} in the results. This gives you the exact count — do not estimate from samples.
+
+### Step 2: Get Date-Scoped Content Analytics (1 tool call)
+Use \`get_content_analytics\` with date filtering to get aggregate breakdowns for just this day:
+\`\`\`json
+{
+  "start_date": "${date}T00:00:00Z",
+  "end_date": "[next day]T00:00:00Z",
+  "include_dialog_analysis": true,
+  "include_analysis_breakdown": true,
+  "include_party_patterns": true,
+  "include_conversation_metrics": true
+}
+\`\`\`
+This returns:
+- Dialog type breakdown (recording, text, transfer, incomplete)
+- Analysis vendor and type distribution
+- Party role patterns, unique agents, unique customers
+- Average dialogs/analysis per conversation
+- Exact count of vCons without dialog and without analysis (no sampling needed)
+
+### Step 3: Get Metadata for Subject Analysis (1 tool call)
+Use \`search_vcons\` with date filters and metadata format to extract dealership/subject patterns:
+\`\`\`json
+{
+  "start_date": "${date}T00:00:00Z",
+  "end_date": "[next day]T00:00:00Z",
+  "response_format": "metadata",
+  "limit": 200
+}
+\`\`\`
+Parse the subjects to identify dealership coverage and activity categories.
+
+### Step 4: Find Notable Conversations by Theme (2-3 tool calls)
+Use \`search_vcons_content\` with date filters to find interesting conversations by keyword:
+\`\`\`json
+{
+  "query": "test drive appointment scheduled",
+  "start_date": "${date}T00:00:00Z",
+  "end_date": "[next day]T00:00:00Z",
+  "limit": 10
+}
+\`\`\`
+Run 2-3 keyword searches for different themes:
+- Appointments/scheduling: "test drive", "appointment", "scheduled"
+- Customer issues: "complaint", "frustrated", "problem"
+- Deals/pricing: "financing", "pricing", "discount", "purchase"
+
+### Step 5: Read Summaries of Top Hits (5-10 tool calls)
+For the most interesting vCons identified in Step 4, use \`get_vcon\` with SUMMARY format:
+\`\`\`json
+{
+  "uuid": "[vcon_uuid]",
+  "response_format": "summary"
+}
+\`\`\`
+**IMPORTANT**: Use "summary" format, NOT "full". Full format loads complete transcripts (80KB+ each) which wastes context. Summary format returns only analysis summaries, which is all you need for a report.
+
+### Step 6: Synthesize the Report
+Combine:
+- **Volume**: Exact count from Step 1
+- **Content Profile**: Dialog/analysis breakdowns from Step 2
+- **Completeness**: vcons_without_dialog / vcons_without_analysis counts from Step 2 (exact numbers, not estimates)
+- **Dealership Coverage**: Subject patterns from Step 3
+- **Notable Conversations**: Specific examples from Steps 4-5
+
+### Report Structure
+1. **Volume** — Exact daily count with comparison context
+2. **Nature of Activity** — Grounded in aggregate analytics, not sample impressions
+3. **Notable Conversations** — Specific examples found via keyword search
+4. **Dealership Coverage** — Extracted from subjects
+5. **Observations** — Data-backed insights (e.g., "4,312 of 9,232 vCons (47%) had no dialog")
+
+### What NOT to Do
+- Do NOT pull random vCons and generalize from a small sample
+- Do NOT use \`get_vcon\` with "full" format for browsing — use "summary"
+- Do NOT estimate counts when exact counts are available via analytics
+- Do NOT make claims like "roughly a third" when you can compute the exact percentage
+- Do NOT fetch vCon bodies just to read the subject — use search with "metadata" format
+
+### Performance Target
+This workflow should complete in ~15 tool calls total, not dozens of full vCon fetches.
+`;
+}

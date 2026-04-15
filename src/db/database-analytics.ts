@@ -229,10 +229,15 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
       includePartyPatterns = true,
       includeConversationMetrics = true,
       includeTemporalContent = false,
+      startDate,
+      endDate,
     } = options;
+
+    const dateFilter = this.buildDateFilter(startDate, endDate);
 
     const analytics: any = {
       timestamp: new Date().toISOString(),
+      ...(startDate || endDate ? { date_range: { start_date: startDate || null, end_date: endDate || null } } : {}),
       summary: {},
       dialog_analysis: {},
       analysis_breakdown: {},
@@ -242,31 +247,27 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
     };
 
     // Get basic content statistics
-    const contentStats = await this.getContentStatistics();
+    const contentStats = await this.getContentStatistics(dateFilter);
     analytics.summary = contentStats;
 
     // Dialog analysis
     if (includeDialogAnalysis) {
-      const dialogAnalysis = await this.getDialogAnalysis();
-      analytics.dialog_analysis = dialogAnalysis;
+      analytics.dialog_analysis = await this.getDialogAnalysis(dateFilter);
     }
 
     // Analysis breakdown
     if (includeAnalysisBreakdown) {
-      const analysisBreakdown = await this.getAnalysisBreakdown();
-      analytics.analysis_breakdown = analysisBreakdown;
+      analytics.analysis_breakdown = await this.getAnalysisBreakdown(dateFilter);
     }
 
     // Party patterns
     if (includePartyPatterns) {
-      const partyPatterns = await this.getPartyPatterns();
-      analytics.party_patterns = partyPatterns;
+      analytics.party_patterns = await this.getPartyPatterns(dateFilter);
     }
 
     // Conversation metrics
     if (includeConversationMetrics) {
-      const conversationMetrics = await this.getConversationMetrics();
-      analytics.conversation_metrics = conversationMetrics;
+      analytics.conversation_metrics = await this.getConversationMetrics(dateFilter);
     }
 
     // Temporal content
@@ -406,6 +407,16 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
     if (bytes === 0) return '0 Bytes';
     const i = Math.floor(Math.log(bytes) / Math.log(1024));
     return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
+  }
+
+  private buildDateFilter(startDate?: string, endDate?: string): { vconWhere: string } {
+    if (!startDate && !endDate) {
+      return { vconWhere: '' };
+    }
+    const conditions: string[] = [];
+    if (startDate) conditions.push(`v.created_at >= '${startDate}'`);
+    if (endDate) conditions.push(`v.created_at < '${endDate}'`);
+    return { vconWhere: `WHERE ${conditions.join(' AND ')}` };
   }
 
   private async calculateHealthScore(): Promise<number> {
@@ -851,9 +862,22 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
     return data || [];
   }
 
-  private async getContentStatistics() {
-    const query = `
-      SELECT 
+  private async getContentStatistics(dateFilter: { vconWhere: string } = { vconWhere: '' }) {
+    const hasDateFilter = dateFilter.vconWhere !== '';
+    const query = hasDateFilter ? `
+      WITH filtered_vcons AS (
+        SELECT id FROM vcons v ${dateFilter.vconWhere}
+      )
+      SELECT
+        (SELECT COUNT(*) FROM filtered_vcons) as total_vcons,
+        (SELECT COUNT(*) FROM parties WHERE vcon_id IN (SELECT id FROM filtered_vcons)) as total_parties,
+        (SELECT COUNT(*) FROM dialog WHERE vcon_id IN (SELECT id FROM filtered_vcons)) as total_dialogs,
+        (SELECT COUNT(*) FROM analysis WHERE vcon_id IN (SELECT id FROM filtered_vcons)) as total_analysis,
+        (SELECT COUNT(*) FROM attachments WHERE vcon_id IN (SELECT id FROM filtered_vcons)) as total_attachments,
+        (SELECT SUM(COALESCE(duration_seconds, 0)) FROM dialog WHERE vcon_id IN (SELECT id FROM filtered_vcons)) as total_duration_seconds,
+        (SELECT AVG(COALESCE(duration_seconds, 0)) FROM dialog WHERE vcon_id IN (SELECT id FROM filtered_vcons) AND duration_seconds > 0) as avg_duration_seconds
+    ` : `
+      SELECT
         (SELECT COUNT(*) FROM vcons) as total_vcons,
         (SELECT COUNT(*) FROM parties) as total_parties,
         (SELECT COUNT(*) FROM dialog) as total_dialogs,
@@ -872,9 +896,26 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
     return data && data.length > 0 ? data[0] : {};
   }
 
-  private async getDialogAnalysis() {
-    const query = `
-      SELECT 
+  private async getDialogAnalysis(dateFilter: { vconWhere: string } = { vconWhere: '' }) {
+    const hasDateFilter = dateFilter.vconWhere !== '';
+    const query = hasDateFilter ? `
+      WITH filtered_vcons AS (
+        SELECT id FROM vcons v ${dateFilter.vconWhere}
+      )
+      SELECT
+        type,
+        COUNT(*) as count,
+        AVG(COALESCE(duration_seconds, 0)) as avg_duration,
+        SUM(COALESCE(duration_seconds, 0)) as total_duration,
+        SUM(COALESCE(size_bytes, 0)) as total_size,
+        AVG(COALESCE(size_bytes, 0)) as avg_size,
+        COUNT(DISTINCT vcon_id) as unique_vcons
+      FROM dialog
+      WHERE vcon_id IN (SELECT id FROM filtered_vcons)
+      GROUP BY type
+      ORDER BY count DESC
+    ` : `
+      SELECT
         type,
         COUNT(*) as count,
         AVG(COALESCE(duration_seconds, 0)) as avg_duration,
@@ -896,9 +937,24 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
     return data || [];
   }
 
-  private async getAnalysisBreakdown() {
-    const query = `
-      SELECT 
+  private async getAnalysisBreakdown(dateFilter: { vconWhere: string } = { vconWhere: '' }) {
+    const hasDateFilter = dateFilter.vconWhere !== '';
+    const query = hasDateFilter ? `
+      WITH filtered_vcons AS (
+        SELECT id FROM vcons v ${dateFilter.vconWhere}
+      )
+      SELECT
+        type,
+        vendor,
+        COUNT(*) as count,
+        AVG(COALESCE(confidence, 0)) as avg_confidence,
+        COUNT(DISTINCT vcon_id) as unique_vcons
+      FROM analysis
+      WHERE vcon_id IN (SELECT id FROM filtered_vcons)
+      GROUP BY type, vendor
+      ORDER BY count DESC
+    ` : `
+      SELECT
         type,
         vendor,
         COUNT(*) as count,
@@ -918,18 +974,35 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
     return data || [];
   }
 
-  private async getPartyPatterns() {
-    const query = `
-      SELECT 
-        role,
-        COUNT(*) as count,
+  private async getPartyPatterns(dateFilter: { vconWhere: string } = { vconWhere: '' }) {
+    const hasDateFilter = dateFilter.vconWhere !== '';
+    // parties table has no 'role' column — group by identifier type instead
+    const query = hasDateFilter ? `
+      WITH filtered_vcons AS (
+        SELECT id FROM vcons v ${dateFilter.vconWhere}
+      )
+      SELECT
+        COUNT(*) as total_parties,
         COUNT(DISTINCT name) as unique_names,
         COUNT(DISTINCT mailto) as unique_emails,
         COUNT(DISTINCT tel) as unique_phones,
-        COUNT(DISTINCT vcon_id) as unique_vcons
+        COUNT(DISTINCT vcon_id) as unique_vcons,
+        SUM(CASE WHEN tel IS NOT NULL THEN 1 ELSE 0 END) as parties_with_phone,
+        SUM(CASE WHEN mailto IS NOT NULL THEN 1 ELSE 0 END) as parties_with_email,
+        SUM(CASE WHEN name IS NOT NULL THEN 1 ELSE 0 END) as parties_with_name
       FROM parties
-      GROUP BY role
-      ORDER BY count DESC
+      WHERE vcon_id IN (SELECT id FROM filtered_vcons)
+    ` : `
+      SELECT
+        COUNT(*) as total_parties,
+        COUNT(DISTINCT name) as unique_names,
+        COUNT(DISTINCT mailto) as unique_emails,
+        COUNT(DISTINCT tel) as unique_phones,
+        COUNT(DISTINCT vcon_id) as unique_vcons,
+        SUM(CASE WHEN tel IS NOT NULL THEN 1 ELSE 0 END) as parties_with_phone,
+        SUM(CASE WHEN mailto IS NOT NULL THEN 1 ELSE 0 END) as parties_with_email,
+        SUM(CASE WHEN name IS NOT NULL THEN 1 ELSE 0 END) as parties_with_name
+      FROM parties
     `;
 
     const { data, error } = await this.supabase.rpc('exec_sql', {
@@ -941,16 +1014,61 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
     return data || [];
   }
 
-  private async getConversationMetrics() {
-    const query = `
+  private async getConversationMetrics(dateFilter: { vconWhere: string } = { vconWhere: '' }) {
+    const hasDateFilter = dateFilter.vconWhere !== '';
+    // When date-filtered, use pre-aggregated CTEs to avoid cartesian explosion
+    // from 4-way LEFT JOIN. Each child table is aggregated independently first.
+    const query = hasDateFilter ? `
+      WITH filtered_vcons AS (
+        SELECT id FROM vcons v ${dateFilter.vconWhere}
+      ),
+      party_counts AS (
+        SELECT vcon_id, COUNT(*) as cnt
+        FROM parties WHERE vcon_id IN (SELECT id FROM filtered_vcons)
+        GROUP BY vcon_id
+      ),
+      dialog_counts AS (
+        SELECT vcon_id, COUNT(*) as cnt,
+          SUM(COALESCE(duration_seconds, 0)) as dur,
+          SUM(COALESCE(size_bytes, 0)) as sz
+        FROM dialog WHERE vcon_id IN (SELECT id FROM filtered_vcons)
+        GROUP BY vcon_id
+      ),
+      analysis_counts AS (
+        SELECT vcon_id, COUNT(*) as cnt
+        FROM analysis WHERE vcon_id IN (SELECT id FROM filtered_vcons)
+        GROUP BY vcon_id
+      ),
+      attachment_counts AS (
+        SELECT vcon_id, COUNT(*) as cnt
+        FROM attachments WHERE vcon_id IN (SELECT id FROM filtered_vcons)
+        GROUP BY vcon_id
+      )
+      SELECT
+        COUNT(*) as total_conversations,
+        AVG(COALESCE(pc.cnt, 0)) as avg_parties_per_conversation,
+        AVG(COALESCE(dc.cnt, 0)) as avg_dialogs_per_conversation,
+        AVG(COALESCE(ac.cnt, 0)) as avg_analysis_per_conversation,
+        AVG(COALESCE(atc.cnt, 0)) as avg_attachments_per_conversation,
+        AVG(COALESCE(dc.dur, 0)) as avg_duration_per_conversation,
+        AVG(COALESCE(dc.sz, 0)) as avg_size_per_conversation,
+        MAX(COALESCE(pc.cnt, 0)) as max_parties_in_conversation,
+        MAX(COALESCE(dc.cnt, 0)) as max_dialogs_in_conversation,
+        SUM(CASE WHEN COALESCE(dc.cnt, 0) = 0 THEN 1 ELSE 0 END) as vcons_without_dialog,
+        SUM(CASE WHEN COALESCE(ac.cnt, 0) = 0 THEN 1 ELSE 0 END) as vcons_without_analysis
+      FROM filtered_vcons fv
+      LEFT JOIN party_counts pc ON pc.vcon_id = fv.id
+      LEFT JOIN dialog_counts dc ON dc.vcon_id = fv.id
+      LEFT JOIN analysis_counts ac ON ac.vcon_id = fv.id
+      LEFT JOIN attachment_counts atc ON atc.vcon_id = fv.id
+    ` : `
       WITH conversation_metrics AS (
-        SELECT 
+        SELECT
           v.id as vcon_id,
-          v.subject,
           COUNT(DISTINCT p.id) as party_count,
-          COUNT(d.id) as dialog_count,
-          COUNT(an.id) as analysis_count,
-          COUNT(att.id) as attachment_count,
+          COUNT(DISTINCT d.id) as dialog_count,
+          COUNT(DISTINCT an.id) as analysis_count,
+          COUNT(DISTINCT att.id) as attachment_count,
           SUM(COALESCE(d.duration_seconds, 0)) as total_duration,
           SUM(COALESCE(d.size_bytes, 0)) as total_size
         FROM vcons v
@@ -958,9 +1076,9 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
         LEFT JOIN dialog d ON d.vcon_id = v.id
         LEFT JOIN analysis an ON an.vcon_id = v.id
         LEFT JOIN attachments att ON att.vcon_id = v.id
-        GROUP BY v.id, v.subject
+        GROUP BY v.id
       )
-      SELECT 
+      SELECT
         COUNT(*) as total_conversations,
         AVG(party_count) as avg_parties_per_conversation,
         AVG(dialog_count) as avg_dialogs_per_conversation,
@@ -969,7 +1087,9 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
         AVG(total_duration) as avg_duration_per_conversation,
         AVG(total_size) as avg_size_per_conversation,
         MAX(party_count) as max_parties_in_conversation,
-        MAX(dialog_count) as max_dialogs_in_conversation
+        MAX(dialog_count) as max_dialogs_in_conversation,
+        SUM(CASE WHEN dialog_count = 0 THEN 1 ELSE 0 END) as vcons_without_dialog,
+        SUM(CASE WHEN analysis_count = 0 THEN 1 ELSE 0 END) as vcons_without_analysis
       FROM conversation_metrics
     `;
 
