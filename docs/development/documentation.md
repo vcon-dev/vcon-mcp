@@ -103,7 +103,7 @@ To create a vCon, call the `create_vcon` tool with a parties array:
 
 ```typescript
 const vcon = {
-  vcon: '0.3.0',
+  vcon: '0.4.0',
   parties: [{ name: 'Alice' }]
 };
 ```
@@ -186,7 +186,7 @@ Jump to [Creating a Tool](#creating-a-tool) section.
 **External links:**
 
 ```markdown
-Read the [IETF vCon Spec](https://datatracker.ietf.org/doc/html/draft-ietf-vcon-vcon-core-00).
+Read the [IETF vCon Spec](https://datatracker.ietf.org/doc/html/draft-ietf-vcon-vcon-core-02).
 ```
 
 ### Emphasis
@@ -247,7 +247,7 @@ Always specify the language:
 ```typescript
 // TypeScript code
 const vcon: VCon = {
-  vcon: '0.3.0',
+  vcon: '0.4.0',
   uuid: crypto.randomUUID()
 };
 ```
@@ -291,7 +291,7 @@ const supabase = createClient(
 // Create vCon
 async function main() {
   const vcon: VCon = {
-    vcon: '0.3.0',
+    vcon: '0.4.0',
     uuid: crypto.randomUUID(),
     created_at: new Date().toISOString(),
     parties: [

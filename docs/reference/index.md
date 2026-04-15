@@ -188,8 +188,8 @@ This implementation fixes 7 critical issues found in many vCon implementations:
 
 ### Primary Sources
 
-- **IETF vCon Core:** `draft-ietf-vcon-vcon-core-00`
-  - Location: `../background_docs/draft-ietf-vcon-vcon-core-00.txt`
+- **IETF vCon Core:** `draft-ietf-vcon-vcon-core-02`
+  - Location: `../background_docs/draft-ietf-vcon-vcon-core-02.txt`
   - Working Group: https://datatracker.ietf.org/wg/vcon/
 
 - **IETF vCon Privacy Primer:** `draft-ietf-vcon-privacy-primer-00`

@@ -46,7 +46,7 @@ Get the most recently created vCons with full data.
   "limit": 10,
   "vcons": [
     {
-      "vcon": "0.3.0",
+      "vcon": "0.4.0",
       "uuid": "123e4567-e89b-12d3-a456-426614174000",
       "created_at": "2025-10-14T10:30:00Z",
       "subject": "Customer Support Call",
@@ -158,7 +158,7 @@ Retrieve a complete vCon object by UUID.
 
 ```json
 {
-  "vcon": "0.3.0",
+  "vcon": "0.4.0",
   "uuid": "123e4567-e89b-12d3-a456-426614174000",
   "created_at": "2025-10-14T10:30:00Z",
   "updated_at": "2025-10-14T11:00:00Z",
@@ -216,7 +216,7 @@ Get only metadata fields, excluding conversation content arrays.
 
 ```json
 {
-  "vcon": "0.3.0",
+  "vcon": "0.4.0",
   "uuid": "123e4567-e89b-12d3-a456-426614174000",
   "created_at": "2025-10-14T10:30:00Z",
   "updated_at": "2025-10-14T11:00:00Z",

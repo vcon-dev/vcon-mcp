@@ -169,7 +169,7 @@ Start Here
 
 1. Read background material (1 hour)
    - `background_docs/vcon_quickstart_guide.md`
-   - `background_docs/draft-ietf-vcon-vcon-core-00.txt` (introduction)
+   - `background_docs/draft-ietf-vcon-vcon-core-02.txt` (introduction)
 
 2. Understand corrections (30 min)
    - `docs/reference/QUICK_REFERENCE.md`
@@ -270,14 +270,18 @@ Start Here
    - Privacy helpers
    - Serialization
 
-### MCP Tools Provided
+### MCP Tools Provided (30 tools)
 
-- `create_vcon` - Create new vCon
-- `add_analysis` - Add analysis to vCon
-- `add_dialog` - Add dialog to vCon
-- `get_vcon` - Retrieve vCon by UUID
-- `search_vcons` - Search vCon database
-- `update_vcon` - Update vCon fields
+- **CRUD:** `create_vcon`, `get_vcon`, `update_vcon`, `delete_vcon`, `add_dialog`, `add_analysis`, `add_attachment`, `create_vcon_from_template`
+- **Search:** `search_vcons`, `search_vcons_content`, `search_vcons_semantic`, `search_vcons_hybrid`
+- **Tags:** `manage_tag`, `get_tags`, `remove_all_tags`, `search_by_tags`, `get_unique_tags`
+- **Analytics:** `get_database_analytics`, `get_monthly_growth_analytics`, `get_content_analytics`, `get_tag_analytics`, `get_attachment_analytics`, `get_database_health_metrics`
+- **Database:** `get_database_shape`, `get_database_stats`, `analyze_query`, `get_database_size_info`, `get_smart_search_limits`
+- **Schema:** `get_schema`, `get_examples`
+
+### REST API
+
+All MCP tools are also available as REST endpoints at `/api/v1` when running in HTTP transport mode. See the [REST API Reference](../api/rest-api.md) for details.
 
 ### Database Schema
 
@@ -413,7 +417,7 @@ console.log(result.valid ? '✅ Valid' : '❌ Invalid');
 
 ### Spec Questions
 
-- Consult `background_docs/draft-ietf-vcon-vcon-core-00.txt`
+- Consult `background_docs/draft-ietf-vcon-vcon-core-02.txt`
 - Cross-reference section numbers in correction docs
 - Cross-reference the [Implementation Corrections](../reference/IMPLEMENTATION_CORRECTIONS.md) for before/after examples
 

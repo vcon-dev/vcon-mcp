@@ -22,7 +22,7 @@ hero:
 features:
   - icon: 🎯
     title: IETF vCon Compliant
-    details: Implements draft-ietf-vcon-vcon-core-00 specification with full type safety and validation
+    details: Implements draft-ietf-vcon-vcon-core-02 specification with full type safety and validation
     
   - icon: 🤖
     title: AI-Ready Integration

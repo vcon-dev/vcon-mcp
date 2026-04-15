@@ -76,7 +76,7 @@ interface DialogWrong {
 interface Dialog {
   type: 'recording' | 'text' | 'transfer' | 'incomplete';
   start?: string;
-  session_id?: string;      // ADD THIS ✓
+  session_id?: { local: string; remote: string };  // Object in v0.4.0 ✓
   application?: string;     // ADD THIS ✓
   message_id?: string;      // ADD THIS ✓
 }
@@ -131,7 +131,7 @@ Before committing:
 - [ ] Analysis.body is `string` type, not `object` or `any`
 - [ ] Party has `uuid?: string` field
 - [ ] Dialog has `session_id`, `application`, `message_id` fields
-- [ ] VCon has `extensions?: string[]` and `must_support?: string[]`
+- [ ] VCon has `extensions?: string[]` and `critical?: string[]` (renamed from `must_support` in v0.4.0)
 
 ### Database Schema
 - [ ] analysis table has `schema` column (not `schema_version`)
@@ -268,7 +268,7 @@ const wrongAnalysis2: Analysis = {
 - Full instructions: `CLAUDE.md`
 - Detailed corrections: `IMPLEMENTATION_CORRECTIONS.md`
 - Database schema: `CORRECTED_SCHEMA.md`
-- IETF spec: `background_docs/draft-ietf-vcon-vcon-core-00.txt`
+- IETF spec: `background_docs/draft-ietf-vcon-vcon-core-02.txt`
 
 ---
 
@@ -310,7 +310,7 @@ grep -r "vendor\?" src/types/
 **Then verify against:**
 - `CLAUDE.md` - Section matching your task
 - `IMPLEMENTATION_CORRECTIONS.md` - List of all corrections
-- `draft-ietf-vcon-vcon-core-00.txt` - The authoritative spec
+- `draft-ietf-vcon-vcon-core-02.txt` - The authoritative spec
 
 ---
 

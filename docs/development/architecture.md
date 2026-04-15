@@ -12,12 +12,12 @@ The vCon MCP Server is built as a layered architecture connecting AI assistants 
 │              (Claude Desktop, Custom Clients)               │
 └────────────────────┬────────────────────────────────────────┘
                      │ MCP Protocol (stdio/HTTP)
-┌────────────────────▼────────────────────────────────────────┐
-│                  MCP Server Layer                           │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐                 │
-│  │  Tools   │  │Resources │  │ Prompts  │                 │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘                 │
-└───────┼─────────────┼─────────────┼────────────────────────┘
+┌────────────────────▼──────────────────┬─────────────────────┐
+│            MCP Server Layer          │   REST API (Koa)    │
+│  ┌──────────┐ ┌─────────┐ ┌───────┐ │  ┌───────────────┐  │
+│  │  Tools   │ │Resources│ │Prompts│ │  │ 30+ endpoints │  │
+│  └────┬─────┘ └────┬────┘ └───┬───┘ │  └───────┬───────┘  │
+└───────┼────────────┼──────────┼──────┴──────────┼──────────┘
         │             │             │
 ┌───────▼─────────────▼─────────────▼────────────────────────┐
 │                 Business Logic Layer                         │
@@ -41,7 +41,7 @@ The vCon MCP Server is built as a layered architecture connecting AI assistants 
 ## Core Principles
 
 ### 1. Spec Compliance First
-- **IETF vCon Core** (`draft-ietf-vcon-vcon-core-00`) compliance
+- **IETF vCon Core** (`draft-ietf-vcon-vcon-core-02`, v0.4.0) compliance
 - Strict validation of all vCon objects
 - Corrected field names (`schema` not `schema_version`, etc.)
 - Required fields enforced (e.g., `vendor` in Analysis)
@@ -183,7 +183,7 @@ export class VConValidator {
 
 **Validation Checks:**
 
-- ✅ vCon version is `0.3.0`
+- ✅ vCon version is `0.4.0`
 - ✅ UUID is valid RFC 4122 format
 - ✅ At least one party exists
 - ✅ Dialog types are valid
@@ -619,7 +619,7 @@ Cloud Provider (AWS, GCP, Azure)
 
 ## Additional Resources
 
-- [IETF vCon Spec](https://datatracker.ietf.org/doc/html/draft-ietf-vcon-vcon-core-00)
+- [IETF vCon Spec](https://datatracker.ietf.org/doc/html/draft-ietf-vcon-vcon-core-02)
 - [MCP Protocol](https://modelcontextprotocol.io/)
 - [Supabase Architecture](https://supabase.com/docs/guides/platform/architecture)
 - [pgvector](https://github.com/pgvector/pgvector)

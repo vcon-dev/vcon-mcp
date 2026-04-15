@@ -22,7 +22,7 @@ const supabase = createClient(url, key);
 const queries = new VConQueries(supabase);
 
 const vcon = await queries.createVCon({
-  vcon: '0.3.0',
+  vcon: '0.4.0',
   uuid: crypto.randomUUID(),
   created_at: new Date().toISOString(),
   subject: 'Customer Support Call',
@@ -140,7 +140,7 @@ await queries.addTag(callVCon.uuid, 'resolved', true);
 ```typescript
 // Create sales call vCon
 const salesCall = await queries.createVCon({
-  vcon: '0.3.0',
+  vcon: '0.4.0',
   uuid: crypto.randomUUID(),
   created_at: new Date().toISOString(),
   subject: 'Enterprise Demo Call',

@@ -9,6 +9,7 @@ This is an MCP (Model Context Protocol) server for managing **vCon** (Virtual Co
 **Key Technologies:**
 - TypeScript
 - MCP SDK (`@modelcontextprotocol/sdk`)
+- Koa v3 (`koa`, `@koa/router`) for REST API
 - Supabase (PostgreSQL)
 - Zod for validation
 
@@ -228,21 +229,39 @@ const results = await tools.search_vcons_hybrid({
 
 ```
 src/
+├── api/
+│   ├── rest-router.ts    # Koa app assembler (mounts sub-routers)
+│   ├── context.ts        # RestApiContext type (shared deps)
+│   ├── auth.ts           # API key auth middleware
+│   ├── response.ts       # JSON envelope helpers
+│   ├── validation.ts     # HTTP-friendly validation
+│   ├── middleware/        # Pagination, etc.
+│   └── routes/           # Modular route handlers
+│       ├── vcons.ts      # CRUD + sub-resources
+│       ├── tags.ts       # Tag management
+│       ├── search.ts     # Content/semantic/hybrid search
+│       ├── database.ts   # DB ops (shape, stats, health)
+│       ├── analytics.ts  # Growth, content, tag analytics
+│       └── schema.ts     # Health, version, schema, examples
 ├── server/
 │   ├── setup.ts          # MCP server initialization
-│   └── handlers.ts       # Request handlers
+│   └── handlers.ts       # MCP request handlers
+├── services/
+│   └── vcon-service.ts   # Shared business logic (MCP + REST)
 ├── tools/
-│   ├── vcon-crud.ts      # Core vCon tools
+│   ├── vcon-crud.ts      # Core vCon tools (Zod schemas)
 │   ├── tag-tools.ts      # Tag management
 │   ├── database-tools.ts # DB inspection
-│   └── handlers/         # Tool implementations
+│   └── handlers/         # MCP tool implementations
 ├── db/
-│   ├── queries.ts        # Database queries
+│   ├── queries.ts        # Database queries (IVConQueries)
 │   └── database-inspector.ts
 ├── types/
 │   └── vcon.ts           # TypeScript types (IETF compliant)
 ├── prompts/
 │   └── index.ts          # MCP prompts
+├── utils/
+│   └── embeddings.ts     # Shared embedding generation
 └── hooks/
     └── plugin-manager.ts # Plugin system
 

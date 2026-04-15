@@ -260,7 +260,7 @@ type dialogType = ...; // Use PascalCase
 
 ```typescript
 // ✅ Good
-const VCON_VERSION = '0.3.0';
+const VCON_VERSION = '0.4.0';
 const MAX_SEARCH_RESULTS = 1000;
 const DEFAULT_THRESHOLD = 0.7;
 
@@ -436,7 +436,7 @@ All public APIs must have JSDoc comments:
  * @example
  * ```typescript
  * const vcon: VCon = {
- *   vcon: '0.3.0',
+ *   vcon: '0.4.0',
  *   uuid: crypto.randomUUID(),
  *   created_at: new Date().toISOString(),
  *   parties: [{ name: 'Alice' }]
@@ -624,7 +624,7 @@ describe('VConQueries', () => {
     
     it('should reject vCon without parties', async () => {
       const invalidVCon = {
-        vcon: '0.3.0',
+        vcon: '0.4.0',
         uuid: crypto.randomUUID(),
         created_at: new Date().toISOString(),
         parties: []  // Empty - invalid

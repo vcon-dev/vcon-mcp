@@ -684,7 +684,7 @@ API_KEY = 'your-api-key'
 
 headers = {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${API_KEY}`,
+    'Authorization': f'Bearer {API_KEY}',
 }
 
 # Create a vCon

@@ -4,7 +4,7 @@ Complete API documentation for the vCon MCP Server.
 
 ## Overview
 
-The vCon MCP Server provides a comprehensive API for managing virtual conversations through the Model Context Protocol (MCP). All interfaces are fully compliant with [IETF vCon Core](https://datatracker.ietf.org/doc/html/draft-ietf-vcon-vcon-core-00) specification.
+The vCon MCP Server provides a comprehensive API for managing virtual conversations through the Model Context Protocol (MCP). All interfaces are fully compliant with [IETF vCon Core](https://datatracker.ietf.org/doc/html/draft-ietf-vcon-vcon-core-02) specification.
 
 ---
 
@@ -12,14 +12,15 @@ The vCon MCP Server provides a comprehensive API for managing virtual conversati
 
 ### 🌐 [REST API](./rest-api.md)
 
-HTTP REST API for vCon ingestion:
+Full HTTP REST API with parity to all MCP tools (30+ endpoints):
 
-- **POST /vcons** - Create/ingest a single vCon
-- **POST /vcons/batch** - Batch ingest up to 100 vCons
-- **GET /vcons/:uuid** - Get a vCon by UUID
-- **GET /vcons** - List recent vCons
-- **DELETE /vcons/:uuid** - Delete a vCon
-- **GET /health** - Health check endpoint
+- **vCon CRUD** - Create, read, update, delete + batch ingest
+- **Sub-resources** - Append dialog, analysis, attachments
+- **Tags** - Per-vCon tag management + tag discovery
+- **Search** - Keyword, semantic, and hybrid search
+- **Database** - Schema shape, stats, size, health monitoring
+- **Analytics** - Growth, content, tag, and attachment analytics
+- **Infrastructure** - Health, version, schema, examples
 
 [View REST API Reference →](./rest-api.md)
 
@@ -197,13 +198,12 @@ const prompt = await getPrompt("find_by_exact_tags", {
 ┌───────────────▼─────────────────────────────────▼────────────┐
 │                     vCon MCP Server                          │
 │  ┌──────────────────────────┬───────────────────────────┐    │
-│  │   MCP Handlers           │   REST API                │    │
-│  │  - Tools (30+)           │  - POST /vcons            │    │
-│  │  - Resources             │  - POST /vcons/batch      │    │
-│  │  - Prompts               │  - GET /vcons/:uuid       │    │
-│  │                          │  - GET /vcons             │    │
-│  │                          │  - DELETE /vcons/:uuid    │    │
-│  │                          │  - GET /health            │    │
+│  │   MCP Handlers           │   REST API (30+ routes)   │    │
+│  │  - Tools (30+)           │  - CRUD + sub-resources   │    │
+│  │  - Resources             │  - Tags + tag discovery   │    │
+│  │  - Prompts               │  - Search (3 modes)       │    │
+│  │                          │  - Database + analytics   │    │
+│  │                          │  - Health, schema, docs   │    │
 │  └────────────┬─────────────┴────────────┬──────────────┘    │
 │               │                          │                   │
 │  ┌────────────▼──────────────────────────▼──────────────┐    │
@@ -396,7 +396,7 @@ Follows IETF vCon specification versions.
 
 ### Resources
 
-- [IETF vCon Spec](https://datatracker.ietf.org/doc/html/draft-ietf-vcon-vcon-core-00)
+- [IETF vCon Spec](https://datatracker.ietf.org/doc/html/draft-ietf-vcon-vcon-core-02)
 - [Model Context Protocol](https://modelcontextprotocol.io/)
 - [Supabase Docs](https://supabase.com/docs)
 - [pgvector Docs](https://github.com/pgvector/pgvector)

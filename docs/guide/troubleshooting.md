@@ -268,7 +268,7 @@ Error: vCon validation failed: [validation details]
 
 1. Check error message for specific field
 2. Verify required fields:
-   - `vcon` version (e.g., "0.3.0")
+   - `vcon` version (e.g., "0.4.0")
    - `uuid` (valid UUID)
    - `created_at` (ISO 8601 timestamp)
    - At least one `party`
@@ -276,7 +276,7 @@ Error: vCon validation failed: [validation details]
 3. Use valid values:
    ```typescript
    {
-     vcon: "0.3.0",
+     vcon: "0.4.0",
      uuid: "valid-uuid-here",
      created_at: "2025-01-15T10:00:00Z",
      parties: [{

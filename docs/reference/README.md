@@ -77,8 +77,8 @@ This implementation fixes 7 critical issues found in many vCon implementations:
 ## IETF Specification
 
 All corrections are based on:
-- **Specification:** `draft-ietf-vcon-vcon-core-00`
-- **Location:** `../background_docs/draft-ietf-vcon-vcon-core-00.txt`
+- **Specification:** `draft-ietf-vcon-vcon-core-02`
+- **Location:** `../background_docs/draft-ietf-vcon-vcon-core-02.txt`
 - **Working Group:** https://datatracker.ietf.org/wg/vcon/
 
 ## Related Documentation
