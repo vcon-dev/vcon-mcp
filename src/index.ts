@@ -64,12 +64,15 @@ async function main() {
       // HTTP/Streamable HTTP transport with REST API
       const config = getHttpTransportConfig();
       
-      // Add REST API context for vCon ingestion endpoints
+      // Add REST API context for all REST endpoints
       config.restApiContext = {
         queries: serverContext.queries,
         pluginManager: serverContext.pluginManager,
         supabase: serverContext.supabase,
         vconService: serverContext.vconService,
+        dbInspector: serverContext.dbInspector,
+        dbAnalytics: serverContext.dbAnalytics,
+        dbSizeAnalyzer: serverContext.dbSizeAnalyzer,
       };
       
       const transport = createHttpTransport(config);

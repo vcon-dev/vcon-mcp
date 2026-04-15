@@ -394,7 +394,7 @@ describe('VConQueries', () => {
   });
   
   it('should reject invalid vCon', async () => {
-    const invalidVCon = { vcon: '0.3.0' }; // Missing required fields
+    const invalidVCon = { vcon: '0.4.0' }; // Missing required fields
     
     await expect(queries.createVCon(invalidVCon as any))
       .rejects

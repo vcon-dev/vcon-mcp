@@ -27,7 +27,8 @@ The Model Context Protocol (MCP) enables AI assistants to use external tools and
 ## Key Features
 
 - ✅ **IETF vCon Compliant** - Implements `draft-ietf-vcon-vcon-core-02` specification (v0.4.0)
-- ✅ **MCP Integration** - 27+ tools for AI assistants to manage conversation data
+- ✅ **MCP Integration** - 30 tools for AI assistants to manage conversation data
+- ✅ **REST API** - Full HTTP REST API with parity to all MCP tools (CRUD, search, tags, analytics)
 - ✅ **Database Analytics** - Comprehensive analytics for size, growth, content patterns, and health monitoring
 - ✅ **Large Database Support** - Smart response limiting, metadata-only options, and memory-safe queries
 - ✅ **OpenTelemetry Observability** - Full traces, metrics, and structured logs with console or OTLP export
@@ -375,18 +376,21 @@ See [MCP Streamable HTTP Specification](https://modelcontextprotocol.io/specific
 
 ## REST API
 
-When running in HTTP transport mode, the server also exposes a RESTful HTTP API for vCon operations, designed for programmatic integration with external systems.
+When running in HTTP transport mode, the server exposes a full RESTful HTTP API with parity to all MCP tools. Both interfaces share the same `VConService` business logic, plugin hooks, and database queries.
 
-### Endpoints
+### Endpoints (30+)
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v1/health` | Health check (no auth required) |
-| `POST` | `/api/v1/vcons` | Create/ingest a single vCon |
-| `POST` | `/api/v1/vcons/batch` | Batch ingest up to 100 vCons |
-| `GET` | `/api/v1/vcons` | List recent vCons |
-| `GET` | `/api/v1/vcons/:uuid` | Get a vCon by UUID |
-| `DELETE` | `/api/v1/vcons/:uuid` | Delete a vCon |
+| Category | Endpoints | Description |
+|----------|-----------|-------------|
+| **CRUD** | `POST/GET/PATCH/DELETE /vcons` | Create, read, update, delete vCons |
+| **Batch** | `POST /vcons/batch` | Batch ingest up to 100 vCons |
+| **Sub-resources** | `POST /vcons/:uuid/{dialog,analysis,attachments}` | Append dialog, analysis, attachments |
+| **Tags** | `GET/PUT/DELETE /vcons/:uuid/tags` | Per-vCon tag management |
+| **Tag Discovery** | `GET /tags`, `GET /tags/search` | Discover and search by tags |
+| **Search** | `GET /vcons/search/{content,semantic,hybrid}` | Keyword, semantic, and hybrid search |
+| **Database** | `GET /database/{shape,stats,size,health}` | Operational monitoring |
+| **Analytics** | `GET /analytics/{growth,content,tags,attachments}` | Business intelligence |
+| **Infrastructure** | `GET /health`, `/version`, `/schema`, `/examples/:type` | Health, docs |
 
 ### Configuration
 
@@ -394,6 +398,7 @@ When running in HTTP transport mode, the server also exposes a RESTful HTTP API 
 # REST API settings (optional - defaults work for most cases)
 REST_API_BASE_PATH=/api/v1     # Base path for endpoints
 REST_API_ENABLED=true          # Enable/disable REST API
+CORS_ORIGIN=*                  # CORS allowed origins
 
 # API Key Authentication
 API_KEYS=key1,key2             # Comma-separated valid API keys
@@ -410,13 +415,11 @@ curl http://localhost:3000/api/v1/health
 curl -X POST http://localhost:3000/api/v1/vcons \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your-api-key" \
-  -d '{"vcon":"0.3.0","subject":"Support Call","parties":[{"name":"Agent","tel":"+1111"}]}'
+  -d '{"vcon":"0.4.0","subject":"Support Call","parties":[{"name":"Agent","tel":"+1111"}]}'
 
-# Batch create
-curl -X POST http://localhost:3000/api/v1/vcons/batch \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer your-api-key" \
-  -d '[{"vcon":"0.3.0","parties":[{"name":"A","tel":"+1"}]},{"vcon":"0.3.0","parties":[{"name":"B","tel":"+2"}]}]'
+# Search by keyword
+curl "http://localhost:3000/api/v1/vcons/search/content?q=billing+issue" \
+  -H "Authorization: Bearer your-api-key"
 ```
 
 See the complete [REST API Reference](docs/api/rest-api.md) for detailed documentation.
@@ -909,7 +912,7 @@ vcon-mcp/
 
 ### API Reference
 
-- **[REST API](docs/api/rest-api.md)** - HTTP REST API for vCon ingestion
+- **[REST API](docs/api/rest-api.md)** - Full HTTP REST API with parity to all MCP tools
 - **[Tools API](docs/api/tools.md)** - MCP tools reference
 - **[Prompts API](docs/api/prompts.md)** - MCP prompts reference
 - **[Resources API](docs/api/resources.md)** - MCP resources reference

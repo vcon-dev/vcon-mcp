@@ -8,7 +8,7 @@ The vCon MCP Server is a production-ready server that implements the IETF vCon (
 
 ## Key Features
 
-- **IETF vCon Compliant** - Fully implements the draft-ietf-vcon-vcon-core-00 specification
+- **IETF vCon Compliant** - Fully implements the draft-ietf-vcon-vcon-core-02 specification
 - **AI-Ready** - MCP tools for seamless integration with Claude, ChatGPT, and other AI assistants
 - **Advanced Search** - Four search modes including semantic search with AI embeddings
 - **Tag System** - Flexible key-value metadata for organizing conversations

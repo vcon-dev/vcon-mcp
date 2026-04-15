@@ -361,7 +361,7 @@ const plugin = new MyPlugin({
 await plugin.initialize({});
 
 const vcon: VCon = {
-  vcon: '0.3.0',
+  vcon: '0.4.0',
   uuid: '123e4567-e89b-12d3-a456-426614174000',
   created_at: new Date().toISOString(),
   parties: []

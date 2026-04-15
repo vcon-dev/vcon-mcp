@@ -6,33 +6,9 @@ import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { ATTR_SEARCH_TYPE } from '../../observability/attributes.js';
 import { logWithContext, recordCounter } from '../../observability/instrumentation.js';
 import { VCon } from '../../types/vcon.js';
+import { EmbeddingError, generateEmbedding } from '../../utils/embeddings.js';
 import { BaseToolHandler, ToolHandlerContext, ToolResponse } from './base.js';
 import { normalizeDateString, requireNonEmptyString } from './validation.js';
-
-async function generateEmbedding(query: string): Promise<number[]> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new McpError(ErrorCode.InvalidParams, 'OPENAI_API_KEY not set — cannot generate query embedding');
-  }
-  const response = await fetch('https://api.openai.com/v1/embeddings', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'text-embedding-3-small',
-      input: query,
-      dimensions: 384,
-    }),
-  });
-  if (!response.ok) {
-    const err = await response.text();
-    throw new McpError(ErrorCode.InternalError, `OpenAI embedding error: ${err}`);
-  }
-  const json = await response.json() as { data: Array<{ embedding: number[] }> };
-  return json.data[0].embedding;
-}
 
 /**
  * Handler for search_vcons tool

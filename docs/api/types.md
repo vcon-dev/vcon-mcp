@@ -4,7 +4,7 @@ Complete TypeScript type definitions for the vCon MCP Server.
 
 ## Overview
 
-The vCon MCP Server provides full type safety through TypeScript and Zod validation. All types comply with [IETF vCon Core](https://datatracker.ietf.org/doc/html/draft-ietf-vcon-vcon-core-00) specification.
+The vCon MCP Server provides full type safety through TypeScript and Zod validation. All types comply with [IETF vCon Core](https://datatracker.ietf.org/doc/html/draft-ietf-vcon-vcon-core-02) specification.
 
 ---
 
@@ -17,7 +17,7 @@ Main vCon object representing a complete virtual conversation.
 ```typescript
 interface VCon {
   // Core Metadata (Section 4.1)
-  vcon: string;                    // vCon version (e.g., "0.3.0")
+  vcon: string;                    // vCon version (e.g., "0.4.0")
   uuid: string;                    // vCon UUID (RFC 4122)
   created_at: string;              // ISO 8601 timestamp
   updated_at?: string;             // ISO 8601 timestamp
@@ -368,7 +368,7 @@ interface Group {
 ```typescript
 interface CreateVConInput {
   vcon_data: {
-    vcon?: string;                 // Default: "0.3.0"
+    vcon?: string;                 // Default: "0.4.0"
     uuid?: string;                 // Auto-generated if not provided
     subject?: string;
     parties: Party[];              // At least 1 required
@@ -641,7 +641,7 @@ function hasJsonAnalysis(analysis: Analysis): boolean {
 
 ```typescript
 // vCon Version
-export const VCON_VERSION = '0.3.0';
+export const VCON_VERSION = '0.4.0';
 
 // Dialog Types
 export const DIALOG_TYPES = ['recording', 'text', 'transfer', 'incomplete'] as const;
@@ -680,5 +680,5 @@ export const ANALYSIS_TYPES = [
 - See [Tools Reference](./tools.md) for tool definitions
 - See [Database Schema](./schema.md) for database structure
 - See [Examples](/examples/) for usage examples
-- See [vCon Spec](https://datatracker.ietf.org/doc/html/draft-ietf-vcon-vcon-core-00) for full specification
+- See [vCon Spec](https://datatracker.ietf.org/doc/html/draft-ietf-vcon-vcon-core-02) for full specification
 

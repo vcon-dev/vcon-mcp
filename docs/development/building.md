@@ -47,7 +47,7 @@
 An **MCP (Model Context Protocol) Server** that:
 - Stores and manages IETF vCon (Virtual Conversation) data
 - Provides tools for AI assistants to interact with vCons
-- Ensures full compliance with `draft-ietf-vcon-vcon-core-00`
+- Ensures full compliance with `draft-ietf-vcon-vcon-core-02`
 - Uses Supabase (PostgreSQL) as the database backend
 
 ### Key Features
@@ -399,11 +399,11 @@ Create `src/types/vcon.ts`:
 
 ```typescript
 /**
- * IETF vCon Core Types - Compliant with draft-ietf-vcon-vcon-core-00
+ * IETF vCon Core Types - Compliant with draft-ietf-vcon-vcon-core-02
  * CRITICAL: Uses corrected field names per specification
  */
 
-export type VConVersion = '0.3.0';
+export type VConVersion = '0.4.0';
 export type Encoding = 'base64url' | 'json' | 'none';
 export type DialogType = 'recording' | 'text' | 'transfer' | 'incomplete';
 
@@ -684,7 +684,7 @@ export class VConQueries {
 
     // Reconstruct vCon
     return {
-      vcon: vconData.vcon_version as '0.3.0',
+      vcon: vconData.vcon_version as '0.4.0',
       uuid: vconData.uuid,
       extensions: vconData.extensions,
       must_support: vconData.must_support,
@@ -784,7 +784,7 @@ export class VConValidator {
   }
 
   private validateVersion(vcon: VCon): void {
-    if (vcon.vcon !== '0.3.0') {
+    if (vcon.vcon !== '0.4.0') {
       this.errors.push(`Invalid vcon version: ${vcon.vcon}`);
     }
   }
@@ -1022,7 +1022,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     switch (name) {
       case 'create_vcon': {
         const vcon: VCon = {
-          vcon: '0.3.0',
+          vcon: '0.4.0',
           uuid: crypto.randomUUID(),
           created_at: new Date().toISOString(),
           subject: args.subject,
@@ -1172,7 +1172,7 @@ describe('IETF vCon Spec Compliance', () => {
 
   it('should require vendor in analysis', () => {
     const vcon: VCon = {
-      vcon: '0.3.0',
+      vcon: '0.4.0',
       uuid: crypto.randomUUID(),
       created_at: new Date().toISOString(),
       parties: [{ name: 'Test' }],
@@ -1201,7 +1201,7 @@ describe('IETF vCon Spec Compliance', () => {
 
   it('should support party uuid field', () => {
     const vcon: VCon = {
-      vcon: '0.3.0',
+      vcon: '0.4.0',
       uuid: crypto.randomUUID(),
       created_at: new Date().toISOString(),
       parties: [{
@@ -1420,7 +1420,7 @@ npm list @modelcontextprotocol/sdk
 
 ### Learning Resources
 
-- **IETF vCon Spec:** `background_docs/draft-ietf-vcon-vcon-core-00.txt`
+- **IETF vCon Spec:** `background_docs/draft-ietf-vcon-vcon-core-02.txt`
 - **MCP Documentation:** https://modelcontextprotocol.io/
 - **Supabase Docs:** https://supabase.com/docs
 - **Implementation Guide:** `CLAUDE.md`
@@ -1519,6 +1519,6 @@ Your implementation is complete when:
 ---
 
 *Last Updated: October 7, 2025*  
-*Spec Version: draft-ietf-vcon-vcon-core-00*  
-*vCon Schema: 0.3.0*
+*Spec Version: draft-ietf-vcon-vcon-core-02*  
+*vCon Schema: 0.4.0*
 
