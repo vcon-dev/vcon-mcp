@@ -213,10 +213,10 @@ This implementation fixes 7 critical issues found in many vCon implementations:
 ## Version Information
 
 ### Current Version
-- **Server Version:** 1.0.0
-- **vCon Spec Version:** 0.3.0 (draft-ietf-vcon-vcon-core-00)
-- **Schema Version:** 1.0.0
-- **Last Updated:** October 14, 2025
+- **Server Version:** 1.2.0
+- **vCon Spec Version:** 0.4.0 (draft-ietf-vcon-vcon-core-02)
+- **Schema Version:** 1.2.0
+- **Last Updated:** April 2026
 
 ### Version History
 See [Changelog](./CHANGELOG.md) for complete version history.

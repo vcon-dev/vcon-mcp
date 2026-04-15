@@ -43,7 +43,7 @@ Instructions for updating existing codebases that use incorrect field names or t
 
 ### "I'm implementing vCon for the first time"
 1. Read [QUICK_REFERENCE.md](QUICK_REFERENCE.md) - Know what to avoid
-2. Follow main [BUILD_GUIDE.md](../../BUILD_GUIDE.md) - Step-by-step implementation
+2. Follow the [Building Guide](../development/building.md) - Step-by-step implementation
 3. Reference [AGENT_DATABASE_SCHEMA.md](AGENT_DATABASE_SCHEMA.md) - Full database schema; [CORRECTED_SCHEMA.md](CORRECTED_SCHEMA.md) for IETF-oriented DDL
 
 ### "I'm migrating existing vCon code"
@@ -84,8 +84,8 @@ All corrections are based on:
 ## Related Documentation
 
 - **[Main README](../../README.md)** - Project overview and quick start
-- **[BUILD_GUIDE.md](../../BUILD_GUIDE.md)** - Complete build instructions
-- **[GETTING_STARTED.md](../../GETTING_STARTED.md)** - User guide
+- **[Building Guide](../development/building.md)** - Complete build instructions
+- **[Getting Started](../guide/getting-started.md)** - User guide
 - **[Background Docs](../background_docs/)** - IETF specifications
  - **[AGENT_DATABASE_SCHEMA.md](AGENT_DATABASE_SCHEMA.md)** - Embeddings table and vector dimensions
  - **[Search tools guide](../guide/search.md)** - Hybrid and semantic search from MCP

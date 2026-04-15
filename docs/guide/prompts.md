@@ -437,9 +437,9 @@ Combine prompt-guided searches with:
 - **Discover your data:** Use `discover_available_tags` to understand your corpus
 
 For more information:
-- [SEARCH_TOOLS_GUIDE.md](./SEARCH_TOOLS_GUIDE.md) - Detailed search tool documentation
-- [TAG_MANAGEMENT_GUIDE.md](./TAG_MANAGEMENT_GUIDE.md) - Tag system documentation
-- [QUICK_START.md](../QUICK_START.md) - Getting started guide
+- [Search Guide](./search.md) - Detailed search tool documentation
+- [Tags Guide](./tags.md) - Tag system documentation
+- [Getting Started](./getting-started.md) - Getting started guide
 
 
 

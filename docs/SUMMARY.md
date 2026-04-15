@@ -21,8 +21,6 @@
 * [MCP Resources](api/resources.md)
 * [MCP Prompts](api/prompts.md)
 * [TypeScript Types](api/types.md)
-* [Database Schema](api/database.md)
-* [JSON Schema](api/json-schema.md)
 
 ## Development
 
@@ -49,19 +47,19 @@
 
 ## Reference
 
+* [Overview](reference/index.md)
 * [vCon Specification](reference/vcon-spec.md)
-* [Database Schema](reference/schema.md)
-* [Spec Corrections](reference/corrections.md)
-* [Migration Guides](reference/migrations.md)
-* [IETF vCon Core](reference/ietf-vcon-core.md)
-* [Consent Draft](reference/ietf-consent.md)
-* [Lifecycle Draft](reference/ietf-lifecycle.md)
+* [Database Schema](reference/AGENT_DATABASE_SCHEMA.md)
+* [Corrected Schema](reference/CORRECTED_SCHEMA.md)
+* [Implementation Corrections](reference/IMPLEMENTATION_CORRECTIONS.md)
+* [Migration Guide](reference/MIGRATION_GUIDE.md)
+* [Quick Reference](reference/QUICK_REFERENCE.md)
+* [Features](reference/features.md)
+* [Glossary](reference/glossary.md)
+* [Changelog](reference/CHANGELOG.md)
 
 ## Examples
 
 * [Overview](examples/index.md)
-* [Basic Operations](examples/basic-operations.md)
-* [Search Examples](examples/search-examples.md)
-* [Plugin Examples](examples/plugin-examples.md)
-* [Integration Examples](examples/integration-examples.md)
+* [Large Database Optimization](examples/large-database-optimization.md)
 

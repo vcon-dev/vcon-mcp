@@ -124,13 +124,13 @@ npm install @modelcontextprotocol/sdk @supabase/supabase-js zod
 npm install -D typescript @types/node tsx vitest
 
 # 4. Copy example configuration
-# Use the tsconfig.json and package.json from BUILD_GUIDE.md
+# Use the tsconfig.json and package.json from the Building Guide
 
 # 5. Create .env file
 echo "SUPABASE_URL=your-url" > .env
 echo "SUPABASE_ANON_KEY=your-key" >> .env
 
-# 6. Follow BUILD_GUIDE.md from Phase 2 onwards
+# 6. Follow the Building Guide from Phase 2 onwards
 ```
 
 ## 📖 Documentation Map
@@ -408,19 +408,19 @@ console.log(result.valid ? '✅ Valid' : '❌ Invalid');
 ### Documentation Questions
 
 - Check [README.md](./README.md) troubleshooting section
-- Search for your error in [BUILD_GUIDE.md](./BUILD_GUIDE.md)
+- Search for your error in the [Building Guide](../development/building.md)
 - Review relevant correction in [IMPLEMENTATION_CORRECTIONS.md](./IMPLEMENTATION_CORRECTIONS.md)
 
 ### Spec Questions
 
 - Consult `background_docs/draft-ietf-vcon-vcon-core-00.txt`
 - Cross-reference section numbers in correction docs
-- Check [VISUAL_REFERENCE.md](./VISUAL_REFERENCE.md) for before/after examples
+- Cross-reference the [Implementation Corrections](../reference/IMPLEMENTATION_CORRECTIONS.md) for before/after examples
 
 ### Implementation Questions
 
-- Follow [CLAUDE_CODE_INSTRUCTIONS.md](./CLAUDE_CODE_INSTRUCTIONS.md) step-by-step
-- Use code examples from [BUILD_GUIDE.md](./BUILD_GUIDE.md)
+- Follow [CLAUDE.md](../../CLAUDE.md) step-by-step
+- Use code examples from the [Building Guide](../development/building.md)
 - Check [MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md) for specific fixes
 
 ## 🎯 Success Criteria
@@ -467,13 +467,13 @@ Your implementation is successful when:
 - Example code provided
 
 ⏳ **Next Steps:**
-- Follow BUILD_GUIDE.md to implement
+- Follow the Building Guide to implement
 - Run compliance tests
 - Deploy MCP server
 
 ---
 
-**Ready?** Start with **[BUILD_GUIDE.md](./BUILD_GUIDE.md)**
+**Ready?** Start with **[CLAUDE.md](../../CLAUDE.md)**
 
 **Questions?** Check **[README.md](../../README.md)** → Troubleshooting
 

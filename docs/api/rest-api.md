@@ -172,7 +172,7 @@ The request body should be the vCon object directly:
 
 ```json
 {
-  "vcon": "0.3.0",
+  "vcon": "0.4.0",
   "uuid": "optional-custom-uuid",
   "subject": "Customer Support Call",
   "parties": [
@@ -229,7 +229,7 @@ curl -X POST http://localhost:3000/api/v1/vcons \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your-api-key" \
   -d '{
-    "vcon": "0.3.0",
+    "vcon": "0.4.0",
     "subject": "Sales Call",
     "parties": [
       {"name": "Sales Rep", "mailto": "rep@company.com"},
@@ -262,12 +262,12 @@ Array of vCon objects:
 ```json
 [
   {
-    "vcon": "0.3.0",
+    "vcon": "0.4.0",
     "subject": "Call 1",
     "parties": [{"name": "Agent A", "mailto": "a@example.com"}]
   },
   {
-    "vcon": "0.3.0",
+    "vcon": "0.4.0",
     "subject": "Call 2",
     "parties": [{"name": "Agent B", "mailto": "b@example.com"}]
   }
@@ -350,8 +350,8 @@ curl -X POST http://localhost:3000/api/v1/vcons/batch \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your-api-key" \
   -d '[
-    {"vcon": "0.3.0", "subject": "Call 1", "parties": [{"name": "A", "tel": "+1111"}]},
-    {"vcon": "0.3.0", "subject": "Call 2", "parties": [{"name": "B", "tel": "+2222"}]}
+    {"vcon": "0.4.0", "subject": "Call 1", "parties": [{"name": "A", "tel": "+1111"}]},
+    {"vcon": "0.4.0", "subject": "Call 2", "parties": [{"name": "B", "tel": "+2222"}]}
   ]'
 ```
 
@@ -377,7 +377,7 @@ Retrieve a vCon by UUID.
 {
   "success": true,
   "vcon": {
-    "vcon": "0.3.0",
+    "vcon": "0.4.0",
     "uuid": "123e4567-e89b-12d3-a456-426614174000",
     "created_at": "2025-01-02T10:00:00.000Z",
     "subject": "Customer Support Call",
@@ -430,14 +430,14 @@ List recent vCons with optional limit.
   "limit": 10,
   "vcons": [
     {
-      "vcon": "0.3.0",
+      "vcon": "0.4.0",
       "uuid": "uuid-1",
       "created_at": "2025-01-02T10:00:00.000Z",
       "subject": "Call 1",
       "parties": [...]
     },
     {
-      "vcon": "0.3.0",
+      "vcon": "0.4.0",
       "uuid": "uuid-2",
       "created_at": "2025-01-02T09:00:00.000Z",
       "subject": "Call 2",
@@ -662,7 +662,7 @@ async function batchCreate(vcons) {
 
 // Example usage
 const result = await createVCon({
-  vcon: '0.3.0',
+  vcon: '0.4.0',
   subject: 'Support Call',
   parties: [
     { name: 'Agent', mailto: 'agent@company.com' },
@@ -703,7 +703,7 @@ def batch_create(vcons):
 
 # Example usage
 result = create_vcon({
-    'vcon': '0.3.0',
+    'vcon': '0.4.0',
     'subject': 'Support Call',
     'parties': [
         {'name': 'Agent', 'mailto': 'agent@company.com'},
@@ -724,7 +724,7 @@ curl http://localhost:3000/api/v1/health
 curl -X POST http://localhost:3000/api/v1/vcons \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your-key" \
-  -d '{"vcon":"0.3.0","subject":"Test","parties":[{"name":"Test","tel":"+1111"}]}'
+  -d '{"vcon":"0.4.0","subject":"Test","parties":[{"name":"Test","tel":"+1111"}]}'
 
 # Get vCon
 curl http://localhost:3000/api/v1/vcons/UUID-HERE \
@@ -742,7 +742,7 @@ curl -X DELETE http://localhost:3000/api/v1/vcons/UUID-HERE \
 curl -X POST http://localhost:3000/api/v1/vcons/batch \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your-key" \
-  -d '[{"vcon":"0.3.0","parties":[{"name":"A","tel":"+1"}]},{"vcon":"0.3.0","parties":[{"name":"B","tel":"+2"}]}]'
+  -d '[{"vcon":"0.4.0","parties":[{"name":"A","tel":"+1"}]},{"vcon":"0.4.0","parties":[{"name":"B","tel":"+2"}]}]'
 ```
 
 ---

@@ -384,7 +384,7 @@ npm run embeddings:check
 
 ## Related Documentation
 
-- [QUICK_START.md](../QUICK_START.md) - Getting started with vCon MCP
-- [INGEST_AND_EMBEDDINGS.md](../development/INGEST_AND_EMBEDDINGS.md) - Embedding generation
-- [SUPABASE_SEMANTIC_SEARCH_GUIDE.md](../SUPABASE_SEMANTIC_SEARCH_GUIDE.md) - Database search implementation
+- [Getting Started](./getting-started.md) - Getting started with vCon MCP
+- [Ingest and Embeddings](../development/INGEST_AND_EMBEDDINGS.md) - Embedding generation
+- [Search Optimization Guide](../SEARCH_OPTIMIZATION_GUIDE.md) - Database search performance
 

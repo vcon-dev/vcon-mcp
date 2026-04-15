@@ -20,225 +20,93 @@ This format is automatically managed by the tag tools - you don't need to intera
 
 ## Available Tools
 
-### 1. `add_tag` - Add or Update a Single Tag
+### 1. `manage_tag` - Add, Update, or Remove a Single Tag
 
-Add or update a tag on a vCon.
+Manage a single tag on a vCon. Use action `"set"` to add or update, `"remove"` to delete.
 
 **Input:**
 ```typescript
 {
-  vcon_uuid: string;      // UUID of the vCon
-  key: string;            // Tag key/name
-  value: string | number | boolean;  // Tag value
-  overwrite?: boolean;    // Whether to overwrite if exists (default: true)
+  vcon_uuid: string;      // UUID of the vCon (required)
+  action: "set" | "remove";  // Action to perform (required)
+  key: string;            // Tag key/name (required)
+  value?: string | number | boolean;  // Tag value (required when action is "set")
 }
 ```
 
 **Examples:**
 ```javascript
 // Add a string tag
-add_tag({
+manage_tag({
   vcon_uuid: "123e4567-e89b-12d3-a456-426614174000",
+  action: "set",
   key: "department",
   value: "sales"
 })
 
 // Add a number tag
-add_tag({
+manage_tag({
   vcon_uuid: "123e4567-e89b-12d3-a456-426614174000",
+  action: "set",
   key: "priority",
   value: 5
 })
 
 // Add a boolean tag
-add_tag({
+manage_tag({
   vcon_uuid: "123e4567-e89b-12d3-a456-426614174000",
+  action: "set",
   key: "resolved",
   value: true
 })
 
-// Add tag but don't overwrite if it exists
-add_tag({
+// Remove a tag
+manage_tag({
   vcon_uuid: "123e4567-e89b-12d3-a456-426614174000",
-  key: "customer_id",
-  value: "CUST-12345",
-  overwrite: false
-})
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Tag 'department' set on vCon 123e4567-e89b-12d3-a456-426614174000",
-  "key": "department",
-  "value": "sales"
-}
-```
-
----
-
-### 2. `get_tag` - Get a Single Tag Value
-
-Retrieve the value of a specific tag.
-
-**Input:**
-```typescript
-{
-  vcon_uuid: string;      // UUID of the vCon
-  key: string;            // Tag key to retrieve
-  default_value?: any;    // Value to return if tag doesn't exist
-}
-```
-
-**Examples:**
-```javascript
-// Get a tag value
-get_tag({
-  vcon_uuid: "123e4567-e89b-12d3-a456-426614174000",
-  key: "department"
-})
-
-// Get tag with default value
-get_tag({
-  vcon_uuid: "123e4567-e89b-12d3-a456-426614174000",
-  key: "priority",
-  default_value: "normal"
-})
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "key": "department",
-  "value": "sales",
-  "exists": true
-}
-```
-
----
-
-### 3. `get_all_tags` - Get All Tags
-
-Retrieve all tags from a vCon as a key-value object.
-
-**Input:**
-```typescript
-{
-  vcon_uuid: string;      // UUID of the vCon
-}
-```
-
-**Example:**
-```javascript
-get_all_tags({
-  vcon_uuid: "123e4567-e89b-12d3-a456-426614174000"
-})
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "vcon_uuid": "123e4567-e89b-12d3-a456-426614174000",
-  "tags": {
-    "department": "sales",
-    "priority": "high",
-    "status": "open",
-    "customer_id": "CUST-12345"
-  },
-  "count": 4
-}
-```
-
----
-
-### 4. `update_tags` - Update Multiple Tags
-
-Update multiple tags at once.
-
-**Input:**
-```typescript
-{
-  vcon_uuid: string;      // UUID of the vCon
-  tags: {                 // Object with tag key-value pairs
-    [key: string]: string | number | boolean;
-  };
-  merge?: boolean;        // If true, merge with existing tags (default: true)
-}
-```
-
-**Examples:**
-```javascript
-// Merge new tags with existing ones
-update_tags({
-  vcon_uuid: "123e4567-e89b-12d3-a456-426614174000",
-  tags: {
-    region: "west",
-    team: "alpha",
-    priority: "high"
-  },
-  merge: true
-})
-
-// Replace all tags
-update_tags({
-  vcon_uuid: "123e4567-e89b-12d3-a456-426614174000",
-  tags: {
-    status: "archived",
-    archived_at: "2025-10-14"
-  },
-  merge: false  // This removes all existing tags
-})
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Tags merged on vCon 123e4567-e89b-12d3-a456-426614174000",
-  "tags": {
-    "region": "west",
-    "team": "alpha",
-    "priority": "high"
-  }
-}
-```
-
----
-
-### 5. `remove_tag` - Remove a Single Tag
-
-Remove a specific tag from a vCon.
-
-**Input:**
-```typescript
-{
-  vcon_uuid: string;      // UUID of the vCon
-  key: string;            // Tag key to remove
-}
-```
-
-**Example:**
-```javascript
-remove_tag({
-  vcon_uuid: "123e4567-e89b-12d3-a456-426614174000",
+  action: "remove",
   key: "priority"
 })
 ```
 
-**Response:**
-```json
+---
+
+### 2. `get_tags` - Get One or All Tags
+
+Retrieve tags from a vCon. Provide a `key` to get one tag value, or omit `key` to get all tags.
+
+**Input:**
+```typescript
 {
-  "success": true,
-  "message": "Tag 'priority' removed from vCon 123e4567-e89b-12d3-a456-426614174000"
+  vcon_uuid: string;      // UUID of the vCon (required)
+  key?: string;           // Specific tag key to retrieve (omit for all tags)
+  default_value?: string | number | boolean | null;  // Fallback if key not found (default: null)
 }
+```
+
+**Examples:**
+```javascript
+// Get a specific tag
+get_tags({
+  vcon_uuid: "123e4567-e89b-12d3-a456-426614174000",
+  key: "department"
+})
+
+// Get a tag with fallback
+get_tags({
+  vcon_uuid: "123e4567-e89b-12d3-a456-426614174000",
+  key: "priority",
+  default_value: "normal"
+})
+
+// Get all tags
+get_tags({
+  vcon_uuid: "123e4567-e89b-12d3-a456-426614174000"
+})
 ```
 
 ---
 
-### 6. `remove_all_tags` - Remove All Tags
+### 3. `remove_all_tags` - Remove All Tags
 
 Remove all tags from a vCon.
 
@@ -550,14 +418,16 @@ const analysis = get_unique_tags({
 ### 1. Customer Tracking
 ```javascript
 // Tag a vCon with customer information
-add_tag({
+manage_tag({
   vcon_uuid: vcon_uuid,
+  action: "set",
   key: "customer_id",
   value: "CUST-12345"
 })
 
-add_tag({
+manage_tag({
   vcon_uuid: vcon_uuid,
+  action: "set",
   key: "customer_name",
   value: "Acme Corp"
 })
@@ -571,14 +441,9 @@ search_by_tags({
 ### 2. Department Organization
 ```javascript
 // Tag conversations by department
-update_tags({
-  vcon_uuid: vcon_uuid,
-  tags: {
-    department: "sales",
-    team: "enterprise",
-    region: "west"
-  }
-})
+manage_tag({ vcon_uuid: vcon_uuid, action: "set", key: "department", value: "sales" })
+manage_tag({ vcon_uuid: vcon_uuid, action: "set", key: "team", value: "enterprise" })
+manage_tag({ vcon_uuid: vcon_uuid, action: "set", key: "region", value: "west" })
 
 // Find all sales conversations
 search_by_tags({
@@ -589,21 +454,24 @@ search_by_tags({
 ### 3. Status Tracking
 ```javascript
 // Set initial status
-add_tag({
+manage_tag({
   vcon_uuid: vcon_uuid,
+  action: "set",
   key: "status",
   value: "open"
 })
 
 // Update when resolved
-add_tag({
+manage_tag({
   vcon_uuid: vcon_uuid,
+  action: "set",
   key: "status",
   value: "resolved"
 })
 
-add_tag({
+manage_tag({
   vcon_uuid: vcon_uuid,
+  action: "set",
   key: "resolved_at",
   value: new Date().toISOString()
 })
@@ -617,8 +485,9 @@ search_by_tags({
 ### 4. Priority Management
 ```javascript
 // Set priority level
-add_tag({
+manage_tag({
   vcon_uuid: vcon_uuid,
+  action: "set",
   key: "priority",
   value: "high"
 })
@@ -632,14 +501,9 @@ search_by_tags({
 ### 5. Campaign Tracking
 ```javascript
 // Tag conversations from a campaign
-update_tags({
-  vcon_uuid: vcon_uuid,
-  tags: {
-    campaign: "spring_2024",
-    source: "web_chat",
-    promotion: "free_trial"
-  }
-})
+manage_tag({ vcon_uuid: vcon_uuid, action: "set", key: "campaign", value: "spring_2024" })
+manage_tag({ vcon_uuid: vcon_uuid, action: "set", key: "source", value: "web_chat" })
+manage_tag({ vcon_uuid: vcon_uuid, action: "set", key: "promotion", value: "free_trial" })
 
 // Analyze campaign performance
 search_by_tags({
@@ -702,7 +566,7 @@ search_by_tags({
 ### Tag not appearing after adding
 - Check that the vCon UUID is correct
 - Verify the tag was added successfully (check response)
-- Use `get_all_tags` to see all current tags
+- Use `get_tags` (without a key) to see all current tags
 
 ### Search returning unexpected results
 - Remember that `search_by_tags` uses AND logic (all tags must match)
@@ -721,46 +585,31 @@ search_by_tags({
 ### Phone Call Center
 ```javascript
 // Tag incoming calls
-update_tags({
-  vcon_uuid: call_uuid,
-  tags: {
-    call_type: "inbound",
-    department: "support",
-    queue: "technical",
-    wait_time_seconds: "45",
-    handled_by: "agent_123"
-  }
-})
+manage_tag({ vcon_uuid: call_uuid, action: "set", key: "call_type", value: "inbound" })
+manage_tag({ vcon_uuid: call_uuid, action: "set", key: "department", value: "support" })
+manage_tag({ vcon_uuid: call_uuid, action: "set", key: "queue", value: "technical" })
+manage_tag({ vcon_uuid: call_uuid, action: "set", key: "wait_time_seconds", value: "45" })
+manage_tag({ vcon_uuid: call_uuid, action: "set", key: "handled_by", value: "agent_123" })
 ```
 
 ### Chat Support
 ```javascript
 // Tag chat sessions
-update_tags({
-  vcon_uuid: chat_uuid,
-  tags: {
-    channel: "web_chat",
-    topic: "billing",
-    sentiment: "negative",
-    escalated: "true",
-    satisfaction_score: "2"
-  }
-})
+manage_tag({ vcon_uuid: chat_uuid, action: "set", key: "channel", value: "web_chat" })
+manage_tag({ vcon_uuid: chat_uuid, action: "set", key: "topic", value: "billing" })
+manage_tag({ vcon_uuid: chat_uuid, action: "set", key: "sentiment", value: "negative" })
+manage_tag({ vcon_uuid: chat_uuid, action: "set", key: "escalated", value: "true" })
+manage_tag({ vcon_uuid: chat_uuid, action: "set", key: "satisfaction_score", value: "2" })
 ```
 
 ### Email Threads
 ```javascript
 // Tag email conversations
-update_tags({
-  vcon_uuid: email_uuid,
-  tags: {
-    thread_id: "THREAD-789",
-    category: "inquiry",
-    product: "enterprise_plan",
-    responded: "true",
-    response_time_hours: "2.5"
-  }
-})
+manage_tag({ vcon_uuid: email_uuid, action: "set", key: "thread_id", value: "THREAD-789" })
+manage_tag({ vcon_uuid: email_uuid, action: "set", key: "category", value: "inquiry" })
+manage_tag({ vcon_uuid: email_uuid, action: "set", key: "product", value: "enterprise_plan" })
+manage_tag({ vcon_uuid: email_uuid, action: "set", key: "responded", value: "true" })
+manage_tag({ vcon_uuid: email_uuid, action: "set", key: "response_time_hours", value: "2.5" })
 ```
 
 ---
@@ -773,26 +622,16 @@ If you're migrating from systems that use different tag formats:
 ```javascript
 // Old: { metadata: { dept: "sales", pri: 5 } }
 // New:
-update_tags({
-  vcon_uuid: vcon_uuid,
-  tags: {
-    department: "sales",
-    priority: "5"
-  }
-})
+manage_tag({ vcon_uuid: vcon_uuid, action: "set", key: "department", value: "sales" })
+manage_tag({ vcon_uuid: vcon_uuid, action: "set", key: "priority", value: "5" })
 ```
 
 ### From nested structures
 ```javascript
 // Old: { tags: { category: { primary: "support", secondary: "billing" } } }
 // New: Flatten the structure
-update_tags({
-  vcon_uuid: vcon_uuid,
-  tags: {
-    category_primary: "support",
-    category_secondary: "billing"
-  }
-})
+manage_tag({ vcon_uuid: vcon_uuid, action: "set", key: "category_primary", value: "support" })
+manage_tag({ vcon_uuid: vcon_uuid, action: "set", key: "category_secondary", value: "billing" })
 ```
 
 ---

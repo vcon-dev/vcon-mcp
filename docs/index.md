@@ -186,7 +186,7 @@ const queries = new VConQueries(supabase);
 
 // Create a vCon
 const vcon = await queries.createVCon({
-  vcon: '0.3.0',
+  vcon: '0.4.0',
   uuid: crypto.randomUUID(),
   created_at: new Date().toISOString(),
   subject: 'Customer Support Call',
@@ -205,14 +205,14 @@ const results = await queries.searchVCons({
 
 ## Community & Support
 
-- 📧 [GitHub Issues](https://github.com/vcon-mcp/issues) - Bug reports & feature requests
-- 💬 [GitHub Discussions](https://github.com/vcon-mcp/discussions) - Community discussions
+- 📧 [GitHub Issues](https://github.com/vcon-dev/vcon-mcp/issues) - Bug reports & feature requests
+- 💬 [GitHub Discussions](https://github.com/vcon-dev/vcon-mcp/discussions) - Community discussions
 - 📚 [Documentation](https://mcp.conserver.io/) - Complete guides and reference
 - 🌐 [IETF vCon Working Group](https://datatracker.ietf.org/wg/vcon/) - Specification development
 
 ## License
 
-Released under the [MIT License](https://github.com/vcon-mcp/blob/main/LICENSE).
+Released under the [MIT License](https://github.com/vcon-dev/vcon-mcp/blob/main/LICENSE).
 
 ## Acknowledgments
 
