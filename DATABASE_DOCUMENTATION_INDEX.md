@@ -9,6 +9,11 @@
 
 This project includes comprehensive documentation designed specifically for LLMs and AI systems to understand how the vCon database is organized, how it works, and how to build applications that interact with it.
 
+### Authoritative schema for coding agents (start here)
+
+**File:** `docs/reference/AGENT_DATABASE_SCHEMA.md`  
+**Purpose:** Describes the **deployed** PostgreSQL schema as defined by `supabase/migrations/` (tables, tenant columns, embeddings, materialized views, RLS, legacy dual columns). **Prefer this** over older monolithic schema pages that may drift.
+
 The vCon database implements the IETF vCon (Virtual Conversation) specification in a PostgreSQL database with advanced features like semantic search, multi-tenant isolation, and GDPR compliance.
 
 ---

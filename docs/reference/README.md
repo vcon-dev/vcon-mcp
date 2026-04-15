@@ -4,6 +4,13 @@ This directory contains technical reference documentation for IETF vCon specific
 
 ## Reference Documents
 
+### [AGENT_DATABASE_SCHEMA.md](AGENT_DATABASE_SCHEMA.md)
+**Purpose:** Authoritative PostgreSQL schema for coding agents (matches `supabase/migrations/`)  
+**Audience:** Implementers, DBAs, AI agents  
+**Time:** 25 minutes
+
+Tables, views, tenant columns, embeddings, tag materialized view, RLS summary, and common pitfalls. Prefer this over ad-hoc schema excerpts elsewhere.
+
 ### [QUICK_REFERENCE.md](QUICK_REFERENCE.md)
 **Purpose:** Quick lookup for critical vCon spec corrections  
 **Audience:** All developers  
@@ -23,7 +30,7 @@ Complete documentation of all known issues in common vCon implementations and ho
 **Audience:** Database administrators, backend developers  
 **Time:** 20 minutes
 
-The correct PostgreSQL schema for vCon data storage, including all field name corrections, proper types, and constraints. Use this as the authoritative database schema.
+Corrected DDL focused on IETF field names and types. For the **full deployed** schema (including operational tables and legacy dual columns), use [AGENT_DATABASE_SCHEMA.md](AGENT_DATABASE_SCHEMA.md).
 
 ### [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md)
 **Purpose:** Step-by-step guide for migrating existing vCon implementations  
@@ -37,7 +44,7 @@ Instructions for updating existing codebases that use incorrect field names or t
 ### "I'm implementing vCon for the first time"
 1. Read [QUICK_REFERENCE.md](QUICK_REFERENCE.md) - Know what to avoid
 2. Follow main [BUILD_GUIDE.md](../../BUILD_GUIDE.md) - Step-by-step implementation
-3. Reference [CORRECTED_SCHEMA.md](CORRECTED_SCHEMA.md) - Database schema
+3. Reference [AGENT_DATABASE_SCHEMA.md](AGENT_DATABASE_SCHEMA.md) - Full database schema; [CORRECTED_SCHEMA.md](CORRECTED_SCHEMA.md) for IETF-oriented DDL
 
 ### "I'm migrating existing vCon code"
 1. Read [IMPLEMENTATION_CORRECTIONS.md](IMPLEMENTATION_CORRECTIONS.md) - Identify issues
@@ -47,7 +54,7 @@ Instructions for updating existing codebases that use incorrect field names or t
 ### "I'm reviewing vCon code"
 1. Check [QUICK_REFERENCE.md](QUICK_REFERENCE.md) - Quick verification
 2. Reference [IMPLEMENTATION_CORRECTIONS.md](IMPLEMENTATION_CORRECTIONS.md) - Known issues
-3. Verify against [CORRECTED_SCHEMA.md](CORRECTED_SCHEMA.md) - Database compliance
+3. Verify against [AGENT_DATABASE_SCHEMA.md](AGENT_DATABASE_SCHEMA.md) and [CORRECTED_SCHEMA.md](CORRECTED_SCHEMA.md) - Database compliance
 
 ### "I'm troubleshooting vCon issues"
 1. Check [IMPLEMENTATION_CORRECTIONS.md](IMPLEMENTATION_CORRECTIONS.md) - Common mistakes
@@ -80,7 +87,8 @@ All corrections are based on:
 - **[BUILD_GUIDE.md](../../BUILD_GUIDE.md)** - Complete build instructions
 - **[GETTING_STARTED.md](../../GETTING_STARTED.md)** - User guide
 - **[Background Docs](../background_docs/)** - IETF specifications
- - **[SUPABASE_SEMANTIC_SEARCH_GUIDE.md](../../SUPABASE_SEMANTIC_SEARCH_GUIDE.md)** - Vector search & hybrid search
+ - **[AGENT_DATABASE_SCHEMA.md](AGENT_DATABASE_SCHEMA.md)** - Embeddings table and vector dimensions
+ - **[Search tools guide](../guide/search.md)** - Hybrid and semantic search from MCP
 
 ---
 

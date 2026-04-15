@@ -6,7 +6,7 @@ export default defineConfig({
     environment: 'node',
     setupFiles: ['dotenv/config'],
     // Exclude e2e tests from regular test run (use test:e2e script)
-    exclude: ['tests/e2e/**', 'node_modules/**'],
+    exclude: ['tests/e2e/**', 'tests/stress/**', 'node_modules/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

@@ -90,7 +90,7 @@ export class SupabaseVConQueries implements IVConQueries {
         .upsert({
           id: vcon.uuid,     // Explicitly set id to match uuid
           uuid: vcon.uuid,
-          vcon_version: vcon.vcon ?? '0.3.0',
+          vcon_version: vcon.vcon ?? '0.4.0',
           subject: vcon.subject,
           created_at: vcon.created_at,
           updated_at: vcon.updated_at,
