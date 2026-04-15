@@ -2,6 +2,8 @@
 
 **Purpose**: Visual database schema diagram for quick reference.
 
+> **Accuracy:** This file is not auto-generated. For **current** columns and tables (including `critical`/`amended` alongside legacy columns, operational tables, and MVs), use **`docs/reference/AGENT_DATABASE_SCHEMA.md`** and **`supabase/migrations/`**. Diagrams below may omit or simplify newer fields.
+
 ---
 
 ## Complete Entity Relationship Diagram

@@ -95,6 +95,30 @@ REDIS_URL=redis://localhost:6379
 | `npm run test:search` | Test search functionality |
 | `npm run test:tags` | Test tag system |
 | `npm run test:tenant` | Test tenant isolation (RLS) |
+| `npm run test:stress` | Simulated MCP clients, load tests, and oracle checks against the real DB (see below) |
+
+### Stress tests (`npm run test:stress`)
+
+These tests spawn real MCP server processes over stdio (`node dist/index.js`), call tools/resources/prompts, and compare `search_vcons` / `search_vcons_content` / `get_vcon` results to `VConQueries` using the same Supabase credentials.
+
+`tests/stress/full-coverage.test.ts` walks **every core-registered tool** (same manifest as the server), **every** `getCoreResources()` URI pattern (including UUID subresources using a fixture vCon), and **every** prompt via `getPrompt`. Database inspection and analytics tools are invoked with best-effort success (warnings only if your Postgres catalog or RPCs differ). Plugin-injected tools are listed and logged when present but are not called (schemas are unknown).
+
+**Requirements:** `npm run build`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and a populated database (optional but recommended).
+
+**Tiers:**
+
+- **Default (Tier A):** Read-only and abuse cases. Safe against production-like data.
+- **Tier B (writes):** Set `STRESS_ALLOW_WRITES=true` to run concurrent `create_vcon` / `add_dialog` tests; fixtures use a `[STRESS-…]` subject prefix and are deleted in cleanup.
+
+**Environment:**
+
+| Variable | Description |
+|----------|-------------|
+| `STRESS_CONCURRENCY` | Parallel stdio clients (default `4`, max `32`) |
+| `STRESS_ALLOW_WRITES` | Set to `true` to enable Tier B write tests |
+| `OPENAI_API_KEY` | Optional; enables semantic/hybrid search smoke checks |
+
+Hosted Supabase may rate-limit heavy runs.
 
 ## Individual Scripts
 

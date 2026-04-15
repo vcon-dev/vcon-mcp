@@ -1,6 +1,8 @@
 # Corrected Supabase Schema for IETF vCon  
 ## Compliant with draft-ietf-vcon-vcon-core-02 (v0.4.0)
 
+> **Deployed database:** For the **full** Supabase schema (tenant IDs, `vcon_embeddings`, `vcon_tags_mv`, RLS, dual legacy columns, `parties.uuid` as TEXT, etc.), use **[AGENT_DATABASE_SCHEMA.md](./AGENT_DATABASE_SCHEMA.md)**. The DDL below is an **IETF-oriented** baseline and does not list every operational column or table.
+
 > ⚠️ **Updated for v0.4.0** — Column names `appended` and `must_support` were renamed to `amended` and `critical` in spec v0.4.0. The DDL below reflects the current correct names.
 
 ```sql
