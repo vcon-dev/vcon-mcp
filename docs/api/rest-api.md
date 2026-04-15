@@ -551,7 +551,8 @@ The REST API integrates with the vCon MCP Server's plugin system. All vCon opera
 |-----------|-----------------|
 | Create vCon | `beforeCreate`, `afterCreate` |
 | Get vCon | `beforeRead`, `afterRead` |
-| List vCons | `beforeSearch`, `afterSearch` |
+| Update vCon | `beforeUpdate`, `afterUpdate` |
+| List/Search vCons | `beforeSearch`, `afterSearch` |
 | Delete vCon | `beforeDelete`, `afterDelete` |
 
 This ensures consistent behavior between MCP tools and REST API operations, including:
@@ -599,7 +600,7 @@ Response logging includes duration:
 
 The REST API supports CORS with configurable options:
 
-**Allowed Methods:** `GET`, `POST`, `PUT`, `DELETE`, `OPTIONS`
+**Allowed Methods:** `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`
 
 **Allowed Headers:** `Content-Type`, `Authorization` (Bearer), `x-api-key` (if `API_KEY_HEADER=x-api-key`)
 
@@ -747,30 +748,84 @@ curl -X POST http://localhost:3000/api/v1/vcons/batch \
 
 ---
 
+## Full Endpoint Reference
+
+The REST API now has full parity with MCP tools. All endpoints use `/api/v1` as the default base path.
+
+### vCon CRUD & Sub-resources
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/vcons` | Create a vCon |
+| POST | `/vcons/batch` | Batch create (up to 100) |
+| GET | `/vcons` | List/search vCons (filter with query params) |
+| GET | `/vcons/:uuid` | Get vCon by UUID (`?format=full\|summary\|metadata`) |
+| PATCH | `/vcons/:uuid` | Update vCon metadata (subject, extensions, critical) |
+| DELETE | `/vcons/:uuid` | Delete a vCon |
+| POST | `/vcons/:uuid/dialog` | Add dialog to a vCon |
+| POST | `/vcons/:uuid/analysis` | Add analysis to a vCon |
+| POST | `/vcons/:uuid/attachments` | Add attachment to a vCon |
+
+### Tags
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/vcons/:uuid/tags` | Get all tags (or single via `?key=`) |
+| PUT | `/vcons/:uuid/tags/:key` | Set a tag (body: `{"value": "..."}`) |
+| DELETE | `/vcons/:uuid/tags/:key` | Remove a tag |
+| DELETE | `/vcons/:uuid/tags` | Remove all tags |
+| GET | `/tags` | Discover unique tags across DB |
+| GET | `/tags/search` | Search vCons by tags (`?tags={"key":"value"}`) |
+
+### Search
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/vcons/search/content` | Keyword/full-text search (`?q=`) |
+| GET | `/vcons/search/semantic` | Semantic/embedding search (`?q=`) |
+| GET | `/vcons/search/hybrid` | Combined keyword + semantic search (`?q=`) |
+
+### Database & Analytics
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/database/shape` | Database schema shape |
+| GET | `/database/stats` | Performance statistics |
+| GET | `/database/size` | Size info and recommendations |
+| GET | `/database/health` | Health metrics |
+| POST | `/database/analyze` | Analyze a SQL query plan |
+| GET | `/analytics` | Full analytics dashboard |
+| GET | `/analytics/growth` | Growth trends |
+| GET | `/analytics/content` | Content analytics |
+| GET | `/analytics/tags` | Tag analytics |
+| GET | `/analytics/attachments` | Attachment analytics |
+
+### Infrastructure
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/health` | Health check (no auth) |
+| GET | `/version` | Version info (no auth) |
+| GET | `/schema` | vCon JSON Schema (no auth) |
+| GET | `/examples/:type` | Example vCons (no auth) |
+
+---
+
 ## Comparison: REST API vs MCP Tools
 
 | Feature | REST API | MCP Tools |
 |---------|----------|-----------|
 | Protocol | HTTP/JSON | MCP (stdio/HTTP) |
-| Auth | API Key | MCP client auth |
-| Best for | External integrations | AI assistants |
-| Operations | CRUD only | Full toolkit (30+ tools) |
-| Search | List only | 4 search modes |
+| Auth | API Key (Bearer) | MCP client auth |
+| Best for | External integrations, scripts | AI assistants |
+| Operations | Full CRUD + sub-resources | Full toolkit (30+ tools) |
+| Search | 4 modes (list, keyword, semantic, hybrid) | 4 search modes |
+| Tags | Full tag management | Full tag management |
+| Analytics | Full analytics suite | Full analytics suite |
 | Batch | Yes (100 max) | No |
 | Streaming | No | Yes (SSE) |
 
-Use the **REST API** for:
-- External system integrations
-- Batch ingestion pipelines
-- Simple CRUD operations
-- Webhook receivers
-
-Use **MCP Tools** for:
-- AI assistant integrations
-- Advanced search (semantic, hybrid)
-- Tag management
-- Database analytics
-- Schema/examples
+Both interfaces share the same `VConService` business logic layer, plugin hooks, and database queries. Choose based on your integration pattern.
 
 ---
 

@@ -63,6 +63,17 @@ export interface GetVConOptions {
   requestContext?: Partial<RequestContext>;
 }
 
+export interface UpdateVConOptions {
+  /** Skip beforeUpdate/afterUpdate hooks */
+  skipHooks?: boolean;
+  /** Custom request context for hooks (timestamp auto-populated if missing) */
+  requestContext?: Partial<RequestContext>;
+  /** Source identifier for metrics */
+  source?: string;
+  /** Return the updated vCon (default: true) */
+  returnUpdated?: boolean;
+}
+
 export interface DeleteVConOptions {
   /** Skip beforeDelete/afterDelete hooks */
   skipHooks?: boolean;
@@ -230,6 +241,63 @@ export class VConService {
     }
 
     return vcon;
+  }
+
+  /**
+   * Update a vCon's metadata with full lifecycle handling
+   *
+   * Only whitelisted fields (subject, extensions, critical) can be updated.
+   * Executes beforeUpdate/afterUpdate hooks for plugin integration.
+   *
+   * @returns the updated vCon if returnUpdated is true, otherwise void
+   */
+  async update(
+    uuid: string,
+    updates: Partial<VCon>,
+    options: UpdateVConOptions = {}
+  ): Promise<VCon | undefined> {
+    const source = options.source || 'unknown';
+    const requestContext = this.normalizeRequestContext(options.requestContext, source);
+    const returnUpdated = options.returnUpdated ?? true;
+
+    // Whitelist allowed fields
+    const allowed: Partial<VCon> = {} as Partial<VCon>;
+    if (Object.prototype.hasOwnProperty.call(updates, 'subject')) {
+      allowed.subject = updates.subject;
+    }
+    if (Object.prototype.hasOwnProperty.call(updates, 'extensions')) {
+      allowed.extensions = updates.extensions;
+    }
+    if (Object.prototype.hasOwnProperty.call(updates, 'critical')) {
+      allowed.critical = updates.critical as string[] | undefined;
+    }
+
+    // Hook: beforeUpdate
+    if (!options.skipHooks) {
+      await this.context.pluginManager.executeHook('beforeUpdate', uuid, allowed, requestContext);
+    }
+
+    await this.context.queries.updateVCon(uuid, allowed);
+
+    // Hook: afterUpdate
+    let updated: VCon | undefined;
+    if (returnUpdated || !options.skipHooks) {
+      updated = await this.context.queries.getVCon(uuid);
+      if (!options.skipHooks) {
+        const modified = await this.context.pluginManager.executeHook<VCon>(
+          'afterUpdate', updated, requestContext
+        );
+        if (modified) updated = modified;
+      }
+    }
+
+    // Record metrics
+    recordCounter('vcon.updated.count', 1, {
+      [ATTR_VCON_UUID]: uuid,
+      source,
+    }, 'vCon update count');
+
+    return returnUpdated ? updated : undefined;
   }
 
   /**
