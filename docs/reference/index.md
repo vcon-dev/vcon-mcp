@@ -31,8 +31,9 @@ This reference section provides authoritative technical documentation for:
 |----------|---------|------|----------|
 | [IETF vCon Core](./vcon-spec.md) | Complete vCon specification | 45 min | Implementers |
 | [MCP Protocol](./mcp-protocol.md) | Model Context Protocol details | 30 min | Integrators |
-| [Database Schema](./CORRECTED_SCHEMA.md) | PostgreSQL schema reference | 20 min | DBAs |
-| [Search RPC Functions](./search-rpcs.md) | Keyword, semantic, hybrid search | 15 min | Developers |
+| [Agent database schema](./AGENT_DATABASE_SCHEMA.md) | Full PostgreSQL schema (matches migrations) | 25 min | DBAs, agents |
+| [Corrected schema (IETF)](./CORRECTED_SCHEMA.md) | IETF-oriented DDL narrative | 20 min | DBAs |
+| [Search tools](../guide/search.md) | MCP search tools and behavior | 15 min | Developers |
 
 ### 🔧 Implementation References
 
@@ -58,7 +59,7 @@ This reference section provides authoritative technical documentation for:
 
 1. **Start here:** [Quick Reference](./QUICK_REFERENCE.md) - Know what to avoid
 2. **Read:** [IETF vCon Core](./vcon-spec.md) - Understand the standard
-3. **Reference:** [Database Schema](./CORRECTED_SCHEMA.md) - Implement storage
+3. **Reference:** [Agent database schema](./AGENT_DATABASE_SCHEMA.md) - Implement storage
 4. **Verify:** [Implementation Corrections](./IMPLEMENTATION_CORRECTIONS.md) - Check for issues
 
 ### 🔄 "I'm migrating existing vCon code"
@@ -72,7 +73,7 @@ This reference section provides authoritative technical documentation for:
 
 1. **Quick check:** [Quick Reference](./QUICK_REFERENCE.md) - Fast verification
 2. **Deep check:** [Implementation Corrections](./IMPLEMENTATION_CORRECTIONS.md) - Known issues
-3. **Schema check:** [Database Schema](./CORRECTED_SCHEMA.md) - Database compliance
+3. **Schema check:** [Agent database schema](./AGENT_DATABASE_SCHEMA.md) - Database compliance
 4. **Standards check:** [vCon Spec](./vcon-spec.md) - Spec adherence
 
 ### 🛠️ "I'm integrating with MCP"
@@ -125,23 +126,16 @@ This reference section provides authoritative technical documentation for:
 
 ### 🗄️ Database & Storage
 
-- **[Database Schema](./CORRECTED_SCHEMA.md)** - Complete PostgreSQL schema
-  - Table definitions
-  - Indexes and constraints
-  - Foreign key relationships
-  - Migration scripts
+- **[Agent database schema](./AGENT_DATABASE_SCHEMA.md)** - Deployed PostgreSQL schema (authoritative for agents)
+  - Core and operational tables, MVs, tenant columns, RLS summary
+  - Pointers to migrations for RPC signatures
 
-- **[Search RPC Functions](./search-rpcs.md)** - Search implementation
-  - `search_vcons_keyword` - Full-text search with pg_trgm
-  - `search_vcons_semantic` - Vector similarity with pgvector
-  - `search_vcons_hybrid` - Combined keyword + semantic
-  - Performance tuning
+- **[Corrected schema](./CORRECTED_SCHEMA.md)** - IETF-oriented DDL (not the full catalog)
 
-- **[Vector Search Guide](./vector-search.md)** - Semantic search details
-  - Embedding generation
-  - pgvector configuration
-  - HNSW indexing
-  - Similarity metrics
+- **[Search tools](../guide/search.md)** - MCP search tools
+  - Keyword, semantic, hybrid, tags
+
+- **Migrations** under `supabase/migrations/` - Source of truth for `search_vcons_*` SQL functions and index definitions
 
 ### 🔧 Implementation Guides
 
@@ -289,10 +283,10 @@ See [Contributing Guide](../development/contributing.md) for details.
 ### By Role
 
 **Developers:**
-[Quick Reference](./QUICK_REFERENCE.md) → [vCon Spec](./vcon-spec.md) → [Database Schema](./CORRECTED_SCHEMA.md) → [API Docs](../api/)
+[Quick Reference](./QUICK_REFERENCE.md) → [vCon Spec](./vcon-spec.md) → [Agent database schema](./AGENT_DATABASE_SCHEMA.md) → [API Docs](../api/)
 
 **DBAs:**
-[Database Schema](./CORRECTED_SCHEMA.md) → [Search RPCs](./search-rpcs.md) → [Performance Tuning](./performance.md)
+[Agent database schema](./AGENT_DATABASE_SCHEMA.md) → [Search tools](../guide/search.md) → [Performance Tuning](./performance.md)
 
 **Integrators:**
 [MCP Protocol](./mcp-protocol.md) → [API Reference](../api/tools.md) → [Integration Guide](./mcp-integration.md)
@@ -303,7 +297,7 @@ See [Contributing Guide](../development/contributing.md) for details.
 ### By Task
 
 **Setting up:**
-[Quick Start](../guide/getting-started.md) → [Database Schema](./CORRECTED_SCHEMA.md) → [Testing](./testing-reference.md)
+[Quick Start](../guide/getting-started.md) → [Agent database schema](./AGENT_DATABASE_SCHEMA.md) → [Testing](./testing-reference.md)
 
 **Migrating:**
 [Implementation Corrections](./IMPLEMENTATION_CORRECTIONS.md) → [Migration Guide](./MIGRATION_GUIDE.md) → [Testing](./testing-reference.md)

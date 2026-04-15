@@ -2,6 +2,8 @@
 
 **Purpose**: This document describes the complete database architecture for the vCon MCP Server project. It is designed for AI systems and future developers who need to understand how to build applications that interact with this database.
 
+> **Schema accuracy:** For **current table columns, types, tenant fields, and auxiliary tables**, use **`docs/reference/AGENT_DATABASE_SCHEMA.md`** (kept aligned with `supabase/migrations/`). This architecture guide may still show older example snippets (for example v0.3.0 field names in JSON samples); treat the agent schema doc plus migrations as authoritative for DDL.
+
 **Last Updated**: November 19, 2025  
 **Database**: PostgreSQL (Supabase)  
 **Specification Compliance**: IETF draft-ietf-vcon-vcon-core-00

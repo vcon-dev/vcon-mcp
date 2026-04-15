@@ -64,6 +64,8 @@ Must be one of: `'recording'`, `'text'`, `'transfer'`, `'incomplete'`
 
 ## Database Schema
 
+**Full reference (PostgreSQL, migrations-aligned):** [`docs/reference/AGENT_DATABASE_SCHEMA.md`](docs/reference/AGENT_DATABASE_SCHEMA.md)
+
 ### Core Tables
 
 | Table | Description |

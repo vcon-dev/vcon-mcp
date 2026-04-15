@@ -8,6 +8,10 @@
  *   npx tsx scripts/import-vcon-files.ts /Volumes/T9/test-vcons/strolid/2026/04
  *   npx tsx scripts/import-vcon-files.ts /Volumes/T9/test-vcons/strolid/2026/04/01
  *
+ * Options:
+ *   --skip-embed        Skip embedding backfill after import (runs by default if API keys set)
+ *   --skip-tags         Skip vcon_tags_mv refresh after import (runs by default)
+ *
  * Options (env vars):
  *   CONCURRENCY=20      parallel inserts (default: 20)
  *   SKIP_EXISTING=true  skip UUIDs already in DB (default: true)
@@ -17,9 +21,13 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -41,6 +49,49 @@ if (!SUPABASE_KEY) {
 }
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+function hasEmbeddingCredentials(): boolean {
+  return !!(process.env.OPENAI_API_KEY || process.env.HF_API_TOKEN || process.env.AZURE_OPENAI_EMBEDDING_API_KEY);
+}
+
+async function runEmbedContinuous(): Promise<void> {
+  const embedScript = path.join(__dirname, 'embed-vcons.ts');
+  await new Promise<void>((resolve) => {
+    const child = spawn(
+      'npx',
+      ['tsx', embedScript, '--continuous', '--limit=500', '--delay=2'],
+      { stdio: 'inherit', env: process.env }
+    );
+    child.on('close', (code) => {
+      if (code !== 0) {
+        console.warn(`\n⚠️  embed-vcons.ts exited with code ${code} — embeddings may be incomplete`);
+      }
+      resolve();
+    });
+    child.on('error', (err) => {
+      console.warn(`\n⚠️  Failed to run embed-vcons.ts: ${err.message}`);
+      resolve();
+    });
+  });
+}
+
+async function refreshTagsMaterializedView(db: SupabaseClient): Promise<void> {
+  console.log('\n' + '='.repeat(60));
+  console.log('🏷️  Refreshing vcon_tags_mv materialized view...');
+  console.log('='.repeat(60) + '\n');
+  const { error } = await db.rpc('refresh_vcon_tags_mv');
+  if (error) {
+    if (error.message.includes('does not exist') || error.code === '42883') {
+      console.warn('⚠️  refresh_vcon_tags_mv not found — run migrations if tag search is required.');
+    } else {
+      console.warn(`⚠️  refresh_vcon_tags_mv failed: ${error.message}`);
+      console.warn('     Run manually: REFRESH MATERIALIZED VIEW CONCURRENTLY vcon_tags_mv;');
+    }
+    return;
+  }
+  const { count } = await db.from('vcon_tags_mv').select('*', { count: 'exact', head: true });
+  console.log(`✅ vcon_tags_mv refreshed (${count?.toLocaleString() ?? '?'} rows)\n`);
+}
 
 // ─── Body normalisation ───────────────────────────────────────────────────────
 
@@ -249,16 +300,25 @@ async function runPool(
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
-  const dir = process.argv[2];
+  const args = process.argv.slice(2);
+  const skipEmbed = args.includes('--skip-embed');
+  const skipTags = args.includes('--skip-tags');
+  const dir = args.find(a => !a.startsWith('--'));
   if (!dir || !fs.existsSync(dir)) {
-    console.error(`Usage: npx tsx scripts/import-vcon-files.ts <path/to/vcon/folder>\nDirectory not found: ${dir}`);
+    console.error(
+      `Usage: npx tsx scripts/import-vcon-files.ts <path/to/vcon/folder> [--skip-embed] [--skip-tags]\n` +
+        (dir ? `Directory not found: ${dir}` : 'Missing directory argument.')
+    );
     process.exit(1);
   }
 
   console.log(`\nvCon Bulk Importer`);
   console.log(`  Source:      ${dir}`);
   console.log(`  Database:    ${SUPABASE_URL}`);
-  console.log(`  Concurrency: ${CONCURRENCY}  |  Skip existing: ${SKIP_EXISTING}  |  Dry run: ${DRY_RUN}\n`);
+  console.log(
+    `  Concurrency: ${CONCURRENCY}  |  Skip existing: ${SKIP_EXISTING}  |  Dry run: ${DRY_RUN}  |  ` +
+      `Post-import embed: ${skipEmbed || DRY_RUN ? 'no' : 'yes'}  |  Post-import tags MV: ${skipTags || DRY_RUN ? 'no' : 'yes'}\n`
+  );
 
   process.stdout.write('Scanning .vcon files... ');
   const allFiles = findVConFiles(dir);
@@ -270,7 +330,13 @@ async function main() {
   const skipped  = allFiles.length - toImport.length;
   console.log(`Importing ${toImport.length.toLocaleString()} files (${skipped.toLocaleString()} already in DB)\n`);
 
-  if (!toImport.length) { console.log('Nothing to import.'); return; }
+  if (!toImport.length) {
+    console.log('Nothing to import.');
+    if (!DRY_RUN) {
+      await postImportPipeline(skipEmbed, skipTags);
+    }
+    return;
+  }
 
   const start = Date.now();
   let done = 0, errors = 0;
@@ -312,6 +378,26 @@ async function main() {
   if (!DRY_RUN) {
     const { count } = await supabase.from('vcons').select('*', { count: 'exact', head: true });
     console.log(`\n   Total vCons in DB: ${count?.toLocaleString()}`);
+    await postImportPipeline(skipEmbed, skipTags);
+  }
+}
+
+async function postImportPipeline(skipEmbed: boolean, skipTags: boolean): Promise<void> {
+  if (!skipEmbed) {
+    if (hasEmbeddingCredentials()) {
+      console.log('\n' + '='.repeat(60));
+      console.log('🔮 Running embedding backfill (continuous until caught up)...');
+      console.log('   (use --skip-embed to disable)');
+      console.log('='.repeat(60));
+      await runEmbedContinuous();
+    } else {
+      console.log('\n⚠️  Skipping embeddings: set OPENAI_API_KEY or HF_API_TOKEN (or Azure embedding vars).');
+      console.log('   Use --skip-embed to silence this message when keys are intentionally omitted.\n');
+    }
+  }
+
+  if (!skipTags) {
+    await refreshTagsMaterializedView(supabase);
   }
 }
 
