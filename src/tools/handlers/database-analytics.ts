@@ -107,6 +107,8 @@ export class GetContentAnalyticsHandler extends BaseToolHandler {
       includePartyPatterns: args?.include_party_patterns as boolean | undefined,
       includeConversationMetrics: args?.include_conversation_metrics as boolean | undefined,
       includeTemporalContent: args?.include_temporal_content as boolean | undefined,
+      startDate: args?.start_date as string | undefined,
+      endDate: args?.end_date as string | undefined,
     };
 
     const analytics = await context.dbAnalytics.getContentAnalytics(options);

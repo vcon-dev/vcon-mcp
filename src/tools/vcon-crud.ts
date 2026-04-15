@@ -181,9 +181,10 @@ export const getVConTool = {
 export const searchVConsTool = {
   name: 'search_vcons',
   category: 'read' as ToolCategory,
-  description: 'Search for vCons using various criteria including tags. Returns an array of matching vCons. ' +
+  description: 'Search for vCons using various criteria including tags, date ranges, and party info. Returns matching vCons. ' +
     'For full-text or semantic search of conversation content, use search_vcons_content instead. ' +
-    '⚠️ LARGE DATABASE WARNING: Use response_format="metadata" for large result sets to avoid memory issues.',
+    'For daily reports: use start_date/end_date with response_format="metadata" to get subjects and counts without loading bodies. ' +
+    '⚠️ LARGE DATABASE WARNING: Use response_format="metadata" or "ids_only" for large result sets to avoid memory issues.',
   inputSchema: {
     type: 'object' as const,
     properties: {
