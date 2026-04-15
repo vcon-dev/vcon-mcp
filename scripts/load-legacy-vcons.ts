@@ -45,7 +45,8 @@
  *   --retry-attempts=N    Max retry attempts for failed files (default: 3)
  *   --retry-delay=N       Delay between retries in ms (default: 1000)
  *   --dry-run             Don't actually load files, just validate
- *   --skip-embed          Skip automatic embedding generation after import (embeddings run by default)
+ *   --skip-embed          Skip automatic embedding generation after import (embeddings run by default when API keys are set)
+ *   --skip-tags           Skip vcon_tags_mv refresh after import (refresh runs by default)
  *   --hours=N             For S3: import vCons modified in last N hours (default: 24)
  *   --prefix=PREFIX       For S3: filter objects by prefix (optional)
  *   --sync                Enable continuous sync mode (checks for new vCons periodically)
@@ -1289,6 +1290,7 @@ async function main() {
   const retryDelay = parseInt(args.find(arg => arg.startsWith('--retry-delay='))?.split('=')[1] || '1000');
   const dryRun = args.includes('--dry-run');
   const skipEmbed = args.includes('--skip-embed');
+  const skipTags = args.includes('--skip-tags');
   const hours = parseInt(args.find(arg => arg.startsWith('--hours='))?.split('=')[1] || '24');
   const prefix = args.find(arg => arg.startsWith('--prefix='))?.split('=')[1] || undefined;
   const sync = args.includes('--sync');
@@ -1392,10 +1394,47 @@ async function main() {
     await startSyncMode(directoryPath, options);
   }
 
-  // Refresh vcon_tags_mv materialized view so tag-based searches stay accurate
-  if (!dryRun) {
+  const hasEmbeddingCredentials =
+    !!(process.env.OPENAI_API_KEY || process.env.HF_API_TOKEN || process.env.AZURE_OPENAI_EMBEDDING_API_KEY);
+
+  // Generate embeddings (default; skip with --skip-embed). Runs before tags MV refresh (same order as sync-all).
+  if (!dryRun && !skipEmbed) {
+    if (hasEmbeddingCredentials) {
+      console.log('\n' + '='.repeat(60));
+      console.log('🔍 Running embeddings until caught up...');
+      console.log('   (use --skip-embed to disable)');
+      console.log('='.repeat(60) + '\n');
+
+      const embedScript = join(dirname(process.argv[1]), 'embed-vcons.ts');
+
+      await new Promise<void>((resolve) => {
+        const child = spawn(
+          'npx',
+          ['tsx', embedScript, '--continuous', '--limit=500', '--delay=2'],
+          { stdio: 'inherit', env: process.env }
+        );
+        child.on('close', (code) => {
+          if (code !== 0) {
+            console.warn(`\n⚠️  embed-vcons.ts exited with code ${code} — embeddings may be incomplete`);
+          }
+          resolve();
+        });
+        child.on('error', (err) => {
+          console.warn(`\n⚠️  Failed to run embed-vcons.ts: ${err.message}`);
+          resolve();
+        });
+      });
+    } else {
+      console.log('\n⚠️  Skipping embeddings: set OPENAI_API_KEY or HF_API_TOKEN (or Azure embedding vars).');
+      console.log('   Use --skip-embed to silence this message when keys are intentionally omitted.\n');
+    }
+  }
+
+  // Refresh vcon_tags_mv so tag-based searches stay accurate (default; skip with --skip-tags)
+  if (!dryRun && !skipTags) {
     console.log('\n' + '='.repeat(60));
     console.log('🏷️  Refreshing vcon_tags_mv materialized view...');
+    console.log('   (use --skip-tags to disable)');
     console.log('='.repeat(60) + '\n');
     try {
       const supabaseUrlForRefresh = process.env.SUPABASE_URL!;
@@ -1405,13 +1444,11 @@ async function main() {
       });
       const { error: mvError } = await supabaseForRefresh.rpc('refresh_vcon_tags_mv');
       if (mvError) {
-        // Fallback: try direct SQL via pg_catalog (service role only)
         console.warn(`⚠️  RPC refresh failed (${mvError.message}), trying direct SQL...`);
         const { error: sqlError } = await supabaseForRefresh
           .from('vcons')
-          .select('id', { count: 'exact', head: true }); // no-op to test connection
+          .select('id', { count: 'exact', head: true });
         if (!sqlError) {
-          // Can't run DDL through PostgREST — warn and continue
           console.warn('⚠️  Cannot refresh materialized view via PostgREST — run manually:');
           console.warn('     REFRESH MATERIALIZED VIEW vcon_tags_mv;');
         }
@@ -1422,33 +1459,6 @@ async function main() {
       console.warn(`⚠️  Failed to refresh vcon_tags_mv: ${mvRefreshError.message}`);
       console.warn('     Run manually: REFRESH MATERIALIZED VIEW vcon_tags_mv;');
     }
-  }
-
-  // Generate embeddings for newly imported vCons (default behaviour; skip with --skip-embed)
-  if (!dryRun && !skipEmbed) {
-    console.log('\n' + '='.repeat(60));
-    console.log('🔍 Running embeddings for newly imported vCons...');
-    console.log('   (use --skip-embed to disable)');
-    console.log('='.repeat(60) + '\n');
-
-    const embedScript = join(dirname(process.argv[1]), 'embed-vcons.ts');
-
-    await new Promise<void>((resolve) => {
-      const child = spawn(
-        'npx', ['tsx', embedScript, '--continuous', '--limit=500'],
-        { stdio: 'inherit', env: process.env }
-      );
-      child.on('close', (code) => {
-        if (code !== 0) {
-          console.warn(`\n⚠️  embed-vcons.ts exited with code ${code} — embeddings may be incomplete`);
-        }
-        resolve();
-      });
-      child.on('error', (err) => {
-        console.warn(`\n⚠️  Failed to run embed-vcons.ts: ${err.message}`);
-        resolve();
-      });
-    });
   }
 }
 
