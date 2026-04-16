@@ -1,0 +1,24 @@
+# .vcon-meta.yaml — vCon Ecosystem Repo Self-Descriptor
+# Schema: https://github.com/vconic/vconic-docs/blob/main/schema/repo-descriptor.schema.json
+
+name: vcon-mcp
+category: ai-ml
+tags: [mcp, supabase, typescript, ietf-vcon, ai-agent]
+description: "Model Context Protocol (MCP) server for AI agents to access vCon data"
+spec_version: "0.4.0"
+
+relationships:
+  - type: depends-on
+    target: vcon-dev/vcon-js
+    note: "Uses vcon-js types"
+  - type: extends
+    target: vcon-dev/vcon-server
+    note: "MCP interface to vcon-server data"
+  - type: related-to
+    target: vcon-dev/modelcontextprotocol
+    note: "Implements MCP spec"
+
+entry_points:
+  readme: README.md
+  claude_md: CLAUDE.md
+  api_docs: null
