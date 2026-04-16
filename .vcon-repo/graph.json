@@ -1,0 +1,2091 @@
+{
+  "schema_version": "1.0.0",
+  "repo": "vcon-mcp",
+  "repo_version": "1.2.0",
+  "archetype": "mcp-server",
+  "generated_at": "2026-04-16T15:15:46.214193+00:00",
+  "stats": {
+    "node_count": 270,
+    "edge_count": 42
+  },
+  "nodes": [
+    {
+      "id": "tool:get_database_analytics",
+      "type": "tool",
+      "name": "get_database_analytics",
+      "description": "Get comprehensive database analytics including total size, monthly growth trends, ",
+      "category": "analytics",
+      "file": "src/tools/database-analytics.ts"
+    },
+    {
+      "id": "tool:get_monthly_growth_analytics",
+      "type": "tool",
+      "name": "get_monthly_growth_analytics",
+      "description": "Get detailed growth analytics including vCon creation trends, ",
+      "category": "analytics",
+      "file": "src/tools/database-analytics.ts"
+    },
+    {
+      "id": "tool:get_attachment_analytics",
+      "type": "tool",
+      "name": "get_attachment_analytics",
+      "description": "Get comprehensive attachment analytics including file type distribution, ",
+      "category": "analytics",
+      "file": "src/tools/database-analytics.ts"
+    },
+    {
+      "id": "tool:get_tag_analytics",
+      "type": "tool",
+      "name": "get_tag_analytics",
+      "description": "Get comprehensive tag analytics including usage patterns, ",
+      "category": "analytics",
+      "file": "src/tools/database-analytics.ts"
+    },
+    {
+      "id": "tool:get_content_analytics",
+      "type": "tool",
+      "name": "get_content_analytics",
+      "description": "Get comprehensive content analytics including dialog types, ",
+      "category": "analytics",
+      "file": "src/tools/database-analytics.ts"
+    },
+    {
+      "id": "tool:get_database_health_metrics",
+      "type": "tool",
+      "name": "get_database_health_metrics",
+      "description": "Get database health metrics including performance indicators, ",
+      "category": "analytics",
+      "file": "src/tools/database-analytics.ts"
+    },
+    {
+      "id": "tool:get_database_size_info",
+      "type": "tool",
+      "name": "get_database_size_info",
+      "description": "Get database size information and smart recommendations for query limits. ",
+      "category": "infra",
+      "file": "src/tools/database-size-tools.ts"
+    },
+    {
+      "id": "tool:get_smart_search_limits",
+      "type": "tool",
+      "name": "get_smart_search_limits",
+      "description": "Get smart search limits based on database size and query complexity. ",
+      "category": "infra",
+      "file": "src/tools/database-size-tools.ts"
+    },
+    {
+      "id": "tool:get_database_shape",
+      "type": "tool",
+      "name": "get_database_shape",
+      "description": "Get comprehensive database structure information including tables, indexes, sizes, and relationships. ",
+      "category": "infra",
+      "file": "src/tools/database-tools.ts"
+    },
+    {
+      "id": "tool:get_database_stats",
+      "type": "tool",
+      "name": "get_database_stats",
+      "description": "Get database performance and usage statistics including query performance, cache hit ratios, ",
+      "category": "infra",
+      "file": "src/tools/database-tools.ts"
+    },
+    {
+      "id": "tool:analyze_query",
+      "type": "tool",
+      "name": "analyze_query",
+      "description": "Analyze a SQL query to understand its execution plan and performance characteristics. ",
+      "category": "infra",
+      "file": "src/tools/database-tools.ts"
+    },
+    {
+      "id": "tool:get_schema",
+      "type": "tool",
+      "name": "get_schema",
+      "description": "Get vCon schema definition in the requested format (json_schema or typescript).",
+      "category": "schema",
+      "file": "src/tools/schema-tools.ts"
+    },
+    {
+      "id": "tool:get_examples",
+      "type": "tool",
+      "name": "get_examples",
+      "description": "Get example vCons (minimal, phone_call, chat, email, video, full_featured) as JSON or YAML.",
+      "category": "schema",
+      "file": "src/tools/schema-tools.ts"
+    },
+    {
+      "id": "tool:manage_tag",
+      "type": "tool",
+      "name": "manage_tag",
+      "description": "Add, update, or remove a single tag on a vCon. Tags are key-value pairs for categorization and filtering. ",
+      "category": "write",
+      "file": "src/tools/tag-tools.ts"
+    },
+    {
+      "id": "tool:get_tags",
+      "type": "tool",
+      "name": "get_tags",
+      "description": "Retrieve tags from a vCon. Provide a specific key to get one tag value, or omit key to get all tags as an object.",
+      "category": "read",
+      "file": "src/tools/tag-tools.ts"
+    },
+    {
+      "id": "tool:remove_all_tags",
+      "type": "tool",
+      "name": "remove_all_tags",
+      "description": "Remove all tags from a vCon.",
+      "category": "write",
+      "file": "src/tools/tag-tools.ts"
+    },
+    {
+      "id": "tool:search_by_tags",
+      "type": "tool",
+      "name": "search_by_tags",
+      "description": "Search for vCons that have specific tag values. All specified tags must match (AND logic). REQUIRED: You must provide the tags parameter as an object with at least one key-value pair.",
+      "category": "read",
+      "file": "src/tools/tag-tools.ts"
+    },
+    {
+      "id": "tool:get_unique_tags",
+      "type": "tool",
+      "name": "get_unique_tags",
+      "description": "Get a list of all unique tag keys and their possible values across all vCons. ",
+      "category": "read",
+      "file": "src/tools/tag-tools.ts"
+    },
+    {
+      "id": "tool:create_vcon_from_template",
+      "type": "tool",
+      "name": "create_vcon_from_template",
+      "description": "Create a new vCon from a predefined template (phone_call, chat_conversation, email_thread, video_meeting, custom).",
+      "category": "write",
+      "file": "src/tools/templates.ts"
+    },
+    {
+      "id": "tool:create_vcon",
+      "type": "tool",
+      "name": "create_vcon",
+      "description": "Create a new vCon compliant with IETF draft-ietf-vcon-vcon-core-00. ",
+      "category": "write",
+      "file": "src/tools/vcon-crud.ts"
+    },
+    {
+      "id": "tool:get_vcon",
+      "type": "tool",
+      "name": "get_vcon",
+      "description": "Retrieve a vCon by its UUID. Use response_format to control how much data is returned:\\n",
+      "category": "read",
+      "file": "src/tools/vcon-crud.ts"
+    },
+    {
+      "id": "tool:search_vcons",
+      "type": "tool",
+      "name": "search_vcons",
+      "description": "Search for vCons using various criteria including tags, date ranges, and party info. Returns matching vCons. ",
+      "category": "read",
+      "file": "src/tools/vcon-crud.ts"
+    },
+    {
+      "id": "tool:search_vcons_content",
+      "type": "tool",
+      "name": "search_vcons_content",
+      "description": "Full-text keyword search across vCon content including subject, dialog, analysis, and party info. ",
+      "category": "read",
+      "file": "src/tools/vcon-crud.ts"
+    },
+    {
+      "id": "tool:search_vcons_semantic",
+      "type": "tool",
+      "name": "search_vcons_semantic",
+      "description": "Semantic search using AI embeddings to find conversations by meaning, not just keywords. ",
+      "category": "read",
+      "file": "src/tools/vcon-crud.ts"
+    },
+    {
+      "id": "tool:search_vcons_hybrid",
+      "type": "tool",
+      "name": "search_vcons_hybrid",
+      "description": "Hybrid search combining keyword and semantic search for comprehensive results. ",
+      "category": "read",
+      "file": "src/tools/vcon-crud.ts"
+    },
+    {
+      "id": "tool:add_analysis",
+      "type": "tool",
+      "name": "add_analysis",
+      "description": "Add analysis to an existing vCon. Analysis represents AI/ML processing results like transcripts, summaries, or sentiment. ",
+      "category": "write",
+      "file": "src/tools/vcon-crud.ts"
+    },
+    {
+      "id": "tool:add_dialog",
+      "type": "tool",
+      "name": "add_dialog",
+      "description": "Add a dialog (conversation segment) to an existing vCon. Dialog can be a recording, text, transfer, or incomplete.",
+      "category": "write",
+      "file": "src/tools/vcon-crud.ts"
+    },
+    {
+      "id": "tool:add_attachment",
+      "type": "tool",
+      "name": "add_attachment",
+      "description": "Add an attachment to an existing vCon. Attachments can be files, documents, or other data related to the conversation.",
+      "category": "write",
+      "file": "src/tools/vcon-crud.ts"
+    },
+    {
+      "id": "tool:delete_vcon",
+      "type": "tool",
+      "name": "delete_vcon",
+      "description": "Delete a vCon and all its related data (parties, dialog, analysis, attachments). This operation cannot be undone.",
+      "category": "write",
+      "file": "src/tools/vcon-crud.ts"
+    },
+    {
+      "id": "tool:update_vcon",
+      "type": "tool",
+      "name": "update_vcon",
+      "description": "Update top-level vCon metadata (subject, extensions, must_support). For dialog, analysis, attachments use their specific tools.",
+      "category": "write",
+      "file": "src/tools/vcon-crud.ts"
+    },
+    {
+      "id": "handler:GetDatabaseAnalyticsHandler",
+      "type": "handler",
+      "name": "GetDatabaseAnalyticsHandler",
+      "tool_name": "get_database_analytics",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/database-analytics.ts"
+    },
+    {
+      "id": "handler:GetMonthlyGrowthAnalyticsHandler",
+      "type": "handler",
+      "name": "GetMonthlyGrowthAnalyticsHandler",
+      "tool_name": "get_monthly_growth_analytics",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/database-analytics.ts"
+    },
+    {
+      "id": "handler:GetAttachmentAnalyticsHandler",
+      "type": "handler",
+      "name": "GetAttachmentAnalyticsHandler",
+      "tool_name": "get_attachment_analytics",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/database-analytics.ts"
+    },
+    {
+      "id": "handler:GetTagAnalyticsHandler",
+      "type": "handler",
+      "name": "GetTagAnalyticsHandler",
+      "tool_name": "get_tag_analytics",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/database-analytics.ts"
+    },
+    {
+      "id": "handler:GetContentAnalyticsHandler",
+      "type": "handler",
+      "name": "GetContentAnalyticsHandler",
+      "tool_name": "get_content_analytics",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/database-analytics.ts"
+    },
+    {
+      "id": "handler:GetDatabaseHealthMetricsHandler",
+      "type": "handler",
+      "name": "GetDatabaseHealthMetricsHandler",
+      "tool_name": "get_database_health_metrics",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/database-analytics.ts"
+    },
+    {
+      "id": "handler:GetDatabaseSizeInfoHandler",
+      "type": "handler",
+      "name": "GetDatabaseSizeInfoHandler",
+      "tool_name": "get_database_size_info",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/database-size.ts"
+    },
+    {
+      "id": "handler:GetSmartSearchLimitsHandler",
+      "type": "handler",
+      "name": "GetSmartSearchLimitsHandler",
+      "tool_name": "get_smart_search_limits",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/database-size.ts"
+    },
+    {
+      "id": "handler:GetDatabaseShapeHandler",
+      "type": "handler",
+      "name": "GetDatabaseShapeHandler",
+      "tool_name": "get_database_shape",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/database.ts"
+    },
+    {
+      "id": "handler:GetDatabaseStatsHandler",
+      "type": "handler",
+      "name": "GetDatabaseStatsHandler",
+      "tool_name": "get_database_stats",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/database.ts"
+    },
+    {
+      "id": "handler:AnalyzeQueryHandler",
+      "type": "handler",
+      "name": "AnalyzeQueryHandler",
+      "tool_name": "analyze_query",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/database.ts"
+    },
+    {
+      "id": "handler:GetSchemaHandler",
+      "type": "handler",
+      "name": "GetSchemaHandler",
+      "tool_name": "get_schema",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/schema.ts"
+    },
+    {
+      "id": "handler:GetExamplesHandler",
+      "type": "handler",
+      "name": "GetExamplesHandler",
+      "tool_name": "get_examples",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/schema.ts"
+    },
+    {
+      "id": "handler:SearchVConsHandler",
+      "type": "handler",
+      "name": "SearchVConsHandler",
+      "tool_name": "search_vcons",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/search.ts"
+    },
+    {
+      "id": "handler:SearchVConsContentHandler",
+      "type": "handler",
+      "name": "SearchVConsContentHandler",
+      "tool_name": "search_vcons_content",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/search.ts"
+    },
+    {
+      "id": "handler:SearchVConsSemanticHandler",
+      "type": "handler",
+      "name": "SearchVConsSemanticHandler",
+      "tool_name": "search_vcons_semantic",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/search.ts"
+    },
+    {
+      "id": "handler:SearchVConsHybridHandler",
+      "type": "handler",
+      "name": "SearchVConsHybridHandler",
+      "tool_name": "search_vcons_hybrid",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/search.ts"
+    },
+    {
+      "id": "handler:ManageTagHandler",
+      "type": "handler",
+      "name": "ManageTagHandler",
+      "tool_name": "manage_tag",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/tags.ts"
+    },
+    {
+      "id": "handler:GetTagsHandler",
+      "type": "handler",
+      "name": "GetTagsHandler",
+      "tool_name": "get_tags",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/tags.ts"
+    },
+    {
+      "id": "handler:RemoveAllTagsHandler",
+      "type": "handler",
+      "name": "RemoveAllTagsHandler",
+      "tool_name": "remove_all_tags",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/tags.ts"
+    },
+    {
+      "id": "handler:SearchByTagsHandler",
+      "type": "handler",
+      "name": "SearchByTagsHandler",
+      "tool_name": "search_by_tags",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/tags.ts"
+    },
+    {
+      "id": "handler:GetUniqueTagsHandler",
+      "type": "handler",
+      "name": "GetUniqueTagsHandler",
+      "tool_name": "get_unique_tags",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/tags.ts"
+    },
+    {
+      "id": "handler:CreateVConHandler",
+      "type": "handler",
+      "name": "CreateVConHandler",
+      "tool_name": "create_vcon",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/vcon-crud.ts"
+    },
+    {
+      "id": "handler:CreateVConFromTemplateHandler",
+      "type": "handler",
+      "name": "CreateVConFromTemplateHandler",
+      "tool_name": "create_vcon_from_template",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/vcon-crud.ts"
+    },
+    {
+      "id": "handler:GetVConHandler",
+      "type": "handler",
+      "name": "GetVConHandler",
+      "tool_name": "get_vcon",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/vcon-crud.ts"
+    },
+    {
+      "id": "handler:UpdateVConHandler",
+      "type": "handler",
+      "name": "UpdateVConHandler",
+      "tool_name": "update_vcon",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/vcon-crud.ts"
+    },
+    {
+      "id": "handler:DeleteVConHandler",
+      "type": "handler",
+      "name": "DeleteVConHandler",
+      "tool_name": "delete_vcon",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/vcon-crud.ts"
+    },
+    {
+      "id": "handler:AddAnalysisHandler",
+      "type": "handler",
+      "name": "AddAnalysisHandler",
+      "tool_name": "add_analysis",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/vcon-crud.ts"
+    },
+    {
+      "id": "handler:AddDialogHandler",
+      "type": "handler",
+      "name": "AddDialogHandler",
+      "tool_name": "add_dialog",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/vcon-crud.ts"
+    },
+    {
+      "id": "handler:AddAttachmentHandler",
+      "type": "handler",
+      "name": "AddAttachmentHandler",
+      "tool_name": "add_attachment",
+      "base_class": "BaseToolHandler",
+      "file": "src/tools/handlers/vcon-crud.ts"
+    },
+    {
+      "id": "resource:vcon://v1/vcons/recent",
+      "type": "resource",
+      "name": "Get recent vCons",
+      "uri": "vcon://v1/vcons/recent",
+      "file": "src/resources/index.ts"
+    },
+    {
+      "id": "resource:vcon://v1/vcons/recent/ids",
+      "type": "resource",
+      "name": "Get recent vCon IDs",
+      "uri": "vcon://v1/vcons/recent/ids",
+      "file": "src/resources/index.ts"
+    },
+    {
+      "id": "resource:vcon://v1/vcons/ids",
+      "type": "resource",
+      "name": "List all vCon IDs",
+      "uri": "vcon://v1/vcons/ids",
+      "file": "src/resources/index.ts"
+    },
+    {
+      "id": "resource:vcon://v1/vcons/{uuid}",
+      "type": "resource",
+      "name": "Get vCon by UUID",
+      "uri": "vcon://v1/vcons/{uuid}",
+      "file": "src/resources/index.ts"
+    },
+    {
+      "id": "resource:vcon://v1/vcons/{uuid}/metadata",
+      "type": "resource",
+      "name": "Get vCon metadata",
+      "uri": "vcon://v1/vcons/{uuid}/metadata",
+      "file": "src/resources/index.ts"
+    },
+    {
+      "id": "resource:vcon://v1/vcons/{uuid}/parties",
+      "type": "resource",
+      "name": "Get vCon parties",
+      "uri": "vcon://v1/vcons/{uuid}/parties",
+      "file": "src/resources/index.ts"
+    },
+    {
+      "id": "resource:vcon://v1/vcons/{uuid}/dialog",
+      "type": "resource",
+      "name": "Get vCon dialog",
+      "uri": "vcon://v1/vcons/{uuid}/dialog",
+      "file": "src/resources/index.ts"
+    },
+    {
+      "id": "resource:vcon://v1/vcons/{uuid}/analysis",
+      "type": "resource",
+      "name": "Get vCon analysis",
+      "uri": "vcon://v1/vcons/{uuid}/analysis",
+      "file": "src/resources/index.ts"
+    },
+    {
+      "id": "resource:vcon://v1/vcons/{uuid}/attachments",
+      "type": "resource",
+      "name": "Get vCon attachments",
+      "uri": "vcon://v1/vcons/{uuid}/attachments",
+      "file": "src/resources/index.ts"
+    },
+    {
+      "id": "resource:vcon://v1/vcons/{uuid}/transcript",
+      "type": "resource",
+      "name": "Get vCon transcript",
+      "uri": "vcon://v1/vcons/{uuid}/transcript",
+      "file": "src/resources/index.ts"
+    },
+    {
+      "id": "resource:vcon://v1/vcons/{uuid}/summary",
+      "type": "resource",
+      "name": "Get vCon summary",
+      "uri": "vcon://v1/vcons/{uuid}/summary",
+      "file": "src/resources/index.ts"
+    },
+    {
+      "id": "resource:vcon://v1/vcons/{uuid}/tags",
+      "type": "resource",
+      "name": "Get vCon tags",
+      "uri": "vcon://v1/vcons/{uuid}/tags",
+      "file": "src/resources/index.ts"
+    },
+    {
+      "id": "prompt:find_by_exact_tags",
+      "type": "prompt",
+      "name": "find_by_exact_tags",
+      "description": "Find vCons using exact tag matches. Perfect for precise queries like ",
+      "file": "src/prompts/index.ts"
+    },
+    {
+      "id": "prompt:tag_criteria",
+      "type": "prompt",
+      "name": "tag_criteria",
+      "description": "Natural language description of tags to match (e.g., ",
+      "file": "src/prompts/index.ts"
+    },
+    {
+      "id": "prompt:date_range",
+      "type": "prompt",
+      "name": "date_range",
+      "description": "Optional date range description (e.g., ",
+      "file": "src/prompts/index.ts"
+    },
+    {
+      "id": "prompt:find_by_semantic_search",
+      "type": "prompt",
+      "name": "find_by_semantic_search",
+      "description": "Find vCons using semantic search to understand meaning and intent. Perfect for natural language queries like ",
+      "file": "src/prompts/index.ts"
+    },
+    {
+      "id": "prompt:search_description",
+      "type": "prompt",
+      "name": "search_description",
+      "description": "Natural language description of what you are looking for (e.g., ",
+      "file": "src/prompts/index.ts"
+    },
+    {
+      "id": "prompt:date_range",
+      "type": "prompt",
+      "name": "date_range",
+      "description": "Optional date range description (e.g., ",
+      "file": "src/prompts/index.ts"
+    },
+    {
+      "id": "prompt:find_by_keywords",
+      "type": "prompt",
+      "name": "find_by_keywords",
+      "description": "Find vCons containing specific keywords or phrases in the conversation content. Perfect for exact word matching like ",
+      "file": "src/prompts/index.ts"
+    },
+    {
+      "id": "prompt:keywords",
+      "type": "prompt",
+      "name": "keywords",
+      "description": "Keywords or phrases to search for (e.g., ",
+      "file": "src/prompts/index.ts"
+    },
+    {
+      "id": "prompt:filters",
+      "type": "prompt",
+      "name": "filters",
+      "description": "Optional additional filters like date ranges, tags, or party information",
+      "file": "src/prompts/index.ts"
+    },
+    {
+      "id": "prompt:find_recent_by_topic",
+      "type": "prompt",
+      "name": "find_recent_by_topic",
+      "description": "Find recent vCons filtered by topic or category. Perfect for queries like ",
+      "file": "src/prompts/index.ts"
+    },
+    {
+      "id": "prompt:topic",
+      "type": "prompt",
+      "name": "topic",
+      "description": "Topic or category to search for (e.g., ",
+      "file": "src/prompts/index.ts"
+    },
+    {
+      "id": "prompt:timeframe",
+      "type": "prompt",
+      "name": "timeframe",
+      "description": "Recency timeframe (e.g., ",
+      "file": "src/prompts/index.ts"
+    },
+    {
+      "id": "prompt:find_by_customer",
+      "type": "prompt",
+      "name": "find_by_customer",
+      "description": "Find all vCons involving a specific customer, party, or participant. Perfect for queries like ",
+      "file": "src/prompts/index.ts"
+    },
+    {
+      "id": "prompt:party_identifier",
+      "type": "prompt",
+      "name": "party_identifier",
+      "description": "Customer/party identifier: name, email, or phone number",
+      "file": "src/prompts/index.ts"
+    },
+    {
+      "id": "prompt:date_range",
+      "type": "prompt",
+      "name": "date_range",
+      "description": "Optional date range to filter results",
+      "file": "src/prompts/index.ts"
+    },
+    {
+      "id": "prompt:discover_available_tags",
+      "type": "prompt",
+      "name": "discover_available_tags",
+      "description": "Discover what tags are available in the system for filtering. Perfect for exploring your data and understanding what categories, departments, priorities, or other metadata exists.",
+      "file": "src/prompts/index.ts"
+    },
+    {
+      "id": "prompt:tag_category",
+      "type": "prompt",
+      "name": "tag_category",
+      "description": "Optional: Focus on specific tag category (e.g., ",
+      "file": "src/prompts/index.ts"
+    },
+    {
+      "id": "prompt:complex_search",
+      "type": "prompt",
+      "name": "complex_search",
+      "description": "Perform complex searches combining multiple criteria: tags, keywords, dates, and semantic meaning. Perfect for queries like ",
+      "file": "src/prompts/index.ts"
+    },
+    {
+      "id": "prompt:search_criteria",
+      "type": "prompt",
+      "name": "search_criteria",
+      "description": "Complete search description including all criteria (e.g., ",
+      "file": "src/prompts/index.ts"
+    },
+    {
+      "id": "prompt:find_similar_conversations",
+      "type": "prompt",
+      "name": "find_similar_conversations",
+      "description": "Find conversations similar to a specific vCon or topic. Uses semantic search to find conceptually related conversations.",
+      "file": "src/prompts/index.ts"
+    },
+    {
+      "id": "prompt:reference",
+      "type": "prompt",
+      "name": "reference",
+      "description": "Either a vCon UUID to find similar conversations, or a description of the topic",
+      "file": "src/prompts/index.ts"
+    },
+    {
+      "id": "prompt:limit",
+      "type": "prompt",
+      "name": "limit",
+      "description": "Number of similar conversations to return (default: 10)",
+      "file": "src/prompts/index.ts"
+    },
+    {
+      "id": "prompt:daily_activity_report",
+      "type": "prompt",
+      "name": "daily_activity_report",
+      "description": "Generate a comprehensive daily activity report for a specific date. Uses analytics tools and targeted searches instead of manual sampling for accurate, efficient reporting.",
+      "file": "src/prompts/index.ts"
+    },
+    {
+      "id": "prompt:date",
+      "type": "prompt",
+      "name": "date",
+      "description": "The date to report on in YYYY-MM-DD format (e.g., ",
+      "file": "src/prompts/index.ts"
+    },
+    {
+      "id": "prompt:focus_areas",
+      "type": "prompt",
+      "name": "focus_areas",
+      "description": "Optional focus areas for the report (e.g., ",
+      "file": "src/prompts/index.ts"
+    },
+    {
+      "id": "prompt:help_me_search",
+      "type": "prompt",
+      "name": "help_me_search",
+      "description": "Get guidance on the best way to search for vCons based on your needs. Explains which search tool to use (exact tags, keywords, semantic, or hybrid) and how to structure your query.",
+      "file": "src/prompts/index.ts"
+    },
+    {
+      "id": "prompt:what_you_want",
+      "type": "prompt",
+      "name": "what_you_want",
+      "description": "Describe what you are trying to find in natural language",
+      "file": "src/prompts/index.ts"
+    },
+    {
+      "id": "query:createVCon",
+      "type": "query",
+      "name": "createVCon",
+      "file": "src/db/interfaces.ts",
+      "interface": "IVConQueries"
+    },
+    {
+      "id": "query:getVCon",
+      "type": "query",
+      "name": "getVCon",
+      "file": "src/db/interfaces.ts",
+      "interface": "IVConQueries"
+    },
+    {
+      "id": "query:addDialog",
+      "type": "query",
+      "name": "addDialog",
+      "file": "src/db/interfaces.ts",
+      "interface": "IVConQueries"
+    },
+    {
+      "id": "query:addAnalysis",
+      "type": "query",
+      "name": "addAnalysis",
+      "file": "src/db/interfaces.ts",
+      "interface": "IVConQueries"
+    },
+    {
+      "id": "query:deleteVCon",
+      "type": "query",
+      "name": "deleteVCon",
+      "file": "src/db/interfaces.ts",
+      "interface": "IVConQueries"
+    },
+    {
+      "id": "query:addAttachment",
+      "type": "query",
+      "name": "addAttachment",
+      "file": "src/db/interfaces.ts",
+      "interface": "IVConQueries"
+    },
+    {
+      "id": "query:keywordSearch",
+      "type": "query",
+      "name": "keywordSearch",
+      "file": "src/db/interfaces.ts",
+      "interface": "IVConQueries"
+    },
+    {
+      "id": "query:keywordSearchCount",
+      "type": "query",
+      "name": "keywordSearchCount",
+      "file": "src/db/interfaces.ts",
+      "interface": "IVConQueries"
+    },
+    {
+      "id": "query:semanticSearch",
+      "type": "query",
+      "name": "semanticSearch",
+      "file": "src/db/interfaces.ts",
+      "interface": "IVConQueries"
+    },
+    {
+      "id": "query:hybridSearch",
+      "type": "query",
+      "name": "hybridSearch",
+      "file": "src/db/interfaces.ts",
+      "interface": "IVConQueries"
+    },
+    {
+      "id": "query:searchVCons",
+      "type": "query",
+      "name": "searchVCons",
+      "file": "src/db/interfaces.ts",
+      "interface": "IVConQueries"
+    },
+    {
+      "id": "query:searchVConsCount",
+      "type": "query",
+      "name": "searchVConsCount",
+      "file": "src/db/interfaces.ts",
+      "interface": "IVConQueries"
+    },
+    {
+      "id": "query:updateVCon",
+      "type": "query",
+      "name": "updateVCon",
+      "file": "src/db/interfaces.ts",
+      "interface": "IVConQueries"
+    },
+    {
+      "id": "query:getTags",
+      "type": "query",
+      "name": "getTags",
+      "file": "src/db/interfaces.ts",
+      "interface": "IVConQueries"
+    },
+    {
+      "id": "query:getTag",
+      "type": "query",
+      "name": "getTag",
+      "file": "src/db/interfaces.ts",
+      "interface": "IVConQueries"
+    },
+    {
+      "id": "query:addTag",
+      "type": "query",
+      "name": "addTag",
+      "file": "src/db/interfaces.ts",
+      "interface": "IVConQueries"
+    },
+    {
+      "id": "query:removeTag",
+      "type": "query",
+      "name": "removeTag",
+      "file": "src/db/interfaces.ts",
+      "interface": "IVConQueries"
+    },
+    {
+      "id": "query:removeAllTags",
+      "type": "query",
+      "name": "removeAllTags",
+      "file": "src/db/interfaces.ts",
+      "interface": "IVConQueries"
+    },
+    {
+      "id": "query:searchByTags",
+      "type": "query",
+      "name": "searchByTags",
+      "file": "src/db/interfaces.ts",
+      "interface": "IVConQueries"
+    },
+    {
+      "id": "query:getUniqueTags",
+      "type": "query",
+      "name": "getUniqueTags",
+      "file": "src/db/interfaces.ts",
+      "interface": "IVConQueries"
+    },
+    {
+      "id": "route:GET /analytics",
+      "type": "route",
+      "name": "GET /analytics",
+      "method": "GET",
+      "path": "/analytics",
+      "file": "src/api/routes/analytics.ts"
+    },
+    {
+      "id": "route:GET /analytics/growth",
+      "type": "route",
+      "name": "GET /analytics/growth",
+      "method": "GET",
+      "path": "/analytics/growth",
+      "file": "src/api/routes/analytics.ts"
+    },
+    {
+      "id": "route:GET /analytics/content",
+      "type": "route",
+      "name": "GET /analytics/content",
+      "method": "GET",
+      "path": "/analytics/content",
+      "file": "src/api/routes/analytics.ts"
+    },
+    {
+      "id": "route:GET /analytics/tags",
+      "type": "route",
+      "name": "GET /analytics/tags",
+      "method": "GET",
+      "path": "/analytics/tags",
+      "file": "src/api/routes/analytics.ts"
+    },
+    {
+      "id": "route:GET /analytics/attachments",
+      "type": "route",
+      "name": "GET /analytics/attachments",
+      "method": "GET",
+      "path": "/analytics/attachments",
+      "file": "src/api/routes/analytics.ts"
+    },
+    {
+      "id": "route:GET /database/shape",
+      "type": "route",
+      "name": "GET /database/shape",
+      "method": "GET",
+      "path": "/database/shape",
+      "file": "src/api/routes/database.ts"
+    },
+    {
+      "id": "route:GET /database/stats",
+      "type": "route",
+      "name": "GET /database/stats",
+      "method": "GET",
+      "path": "/database/stats",
+      "file": "src/api/routes/database.ts"
+    },
+    {
+      "id": "route:GET /database/size",
+      "type": "route",
+      "name": "GET /database/size",
+      "method": "GET",
+      "path": "/database/size",
+      "file": "src/api/routes/database.ts"
+    },
+    {
+      "id": "route:GET /database/health",
+      "type": "route",
+      "name": "GET /database/health",
+      "method": "GET",
+      "path": "/database/health",
+      "file": "src/api/routes/database.ts"
+    },
+    {
+      "id": "route:POST /database/analyze",
+      "type": "route",
+      "name": "POST /database/analyze",
+      "method": "POST",
+      "path": "/database/analyze",
+      "file": "src/api/routes/database.ts"
+    },
+    {
+      "id": "route:GET /health",
+      "type": "route",
+      "name": "GET /health",
+      "method": "GET",
+      "path": "/health",
+      "file": "src/api/routes/schema.ts"
+    },
+    {
+      "id": "route:GET /version",
+      "type": "route",
+      "name": "GET /version",
+      "method": "GET",
+      "path": "/version",
+      "file": "src/api/routes/schema.ts"
+    },
+    {
+      "id": "route:GET /schema",
+      "type": "route",
+      "name": "GET /schema",
+      "method": "GET",
+      "path": "/schema",
+      "file": "src/api/routes/schema.ts"
+    },
+    {
+      "id": "route:GET /examples/:type",
+      "type": "route",
+      "name": "GET /examples/:type",
+      "method": "GET",
+      "path": "/examples/:type",
+      "file": "src/api/routes/schema.ts"
+    },
+    {
+      "id": "route:GET /vcons/search/content",
+      "type": "route",
+      "name": "GET /vcons/search/content",
+      "method": "GET",
+      "path": "/vcons/search/content",
+      "file": "src/api/routes/search.ts"
+    },
+    {
+      "id": "route:GET /vcons/search/semantic",
+      "type": "route",
+      "name": "GET /vcons/search/semantic",
+      "method": "GET",
+      "path": "/vcons/search/semantic",
+      "file": "src/api/routes/search.ts"
+    },
+    {
+      "id": "route:GET /vcons/search/hybrid",
+      "type": "route",
+      "name": "GET /vcons/search/hybrid",
+      "method": "GET",
+      "path": "/vcons/search/hybrid",
+      "file": "src/api/routes/search.ts"
+    },
+    {
+      "id": "route:GET /vcons/:uuid/tags",
+      "type": "route",
+      "name": "GET /vcons/:uuid/tags",
+      "method": "GET",
+      "path": "/vcons/:uuid/tags",
+      "file": "src/api/routes/tags.ts"
+    },
+    {
+      "id": "route:PUT /vcons/:uuid/tags/:key",
+      "type": "route",
+      "name": "PUT /vcons/:uuid/tags/:key",
+      "method": "PUT",
+      "path": "/vcons/:uuid/tags/:key",
+      "file": "src/api/routes/tags.ts"
+    },
+    {
+      "id": "route:DELETE /vcons/:uuid/tags/:key",
+      "type": "route",
+      "name": "DELETE /vcons/:uuid/tags/:key",
+      "method": "DELETE",
+      "path": "/vcons/:uuid/tags/:key",
+      "file": "src/api/routes/tags.ts"
+    },
+    {
+      "id": "route:DELETE /vcons/:uuid/tags",
+      "type": "route",
+      "name": "DELETE /vcons/:uuid/tags",
+      "method": "DELETE",
+      "path": "/vcons/:uuid/tags",
+      "file": "src/api/routes/tags.ts"
+    },
+    {
+      "id": "route:GET /tags",
+      "type": "route",
+      "name": "GET /tags",
+      "method": "GET",
+      "path": "/tags",
+      "file": "src/api/routes/tags.ts"
+    },
+    {
+      "id": "route:GET /tags/search",
+      "type": "route",
+      "name": "GET /tags/search",
+      "method": "GET",
+      "path": "/tags/search",
+      "file": "src/api/routes/tags.ts"
+    },
+    {
+      "id": "route:POST /vcons",
+      "type": "route",
+      "name": "POST /vcons",
+      "method": "POST",
+      "path": "/vcons",
+      "file": "src/api/routes/vcons.ts"
+    },
+    {
+      "id": "route:POST /vcons/batch",
+      "type": "route",
+      "name": "POST /vcons/batch",
+      "method": "POST",
+      "path": "/vcons/batch",
+      "file": "src/api/routes/vcons.ts"
+    },
+    {
+      "id": "route:GET /vcons",
+      "type": "route",
+      "name": "GET /vcons",
+      "method": "GET",
+      "path": "/vcons",
+      "file": "src/api/routes/vcons.ts"
+    },
+    {
+      "id": "route:GET /vcons/:uuid",
+      "type": "route",
+      "name": "GET /vcons/:uuid",
+      "method": "GET",
+      "path": "/vcons/:uuid",
+      "file": "src/api/routes/vcons.ts"
+    },
+    {
+      "id": "route:PATCH /vcons/:uuid",
+      "type": "route",
+      "name": "PATCH /vcons/:uuid",
+      "method": "PATCH",
+      "path": "/vcons/:uuid",
+      "file": "src/api/routes/vcons.ts"
+    },
+    {
+      "id": "route:DELETE /vcons/:uuid",
+      "type": "route",
+      "name": "DELETE /vcons/:uuid",
+      "method": "DELETE",
+      "path": "/vcons/:uuid",
+      "file": "src/api/routes/vcons.ts"
+    },
+    {
+      "id": "route:POST /vcons/:uuid/dialog",
+      "type": "route",
+      "name": "POST /vcons/:uuid/dialog",
+      "method": "POST",
+      "path": "/vcons/:uuid/dialog",
+      "file": "src/api/routes/vcons.ts"
+    },
+    {
+      "id": "route:POST /vcons/:uuid/analysis",
+      "type": "route",
+      "name": "POST /vcons/:uuid/analysis",
+      "method": "POST",
+      "path": "/vcons/:uuid/analysis",
+      "file": "src/api/routes/vcons.ts"
+    },
+    {
+      "id": "route:POST /vcons/:uuid/attachments",
+      "type": "route",
+      "name": "POST /vcons/:uuid/attachments",
+      "method": "POST",
+      "path": "/vcons/:uuid/attachments",
+      "file": "src/api/routes/vcons.ts"
+    },
+    {
+      "id": "config:API_AUTH_REQUIRED",
+      "type": "config",
+      "name": "API_AUTH_REQUIRED",
+      "file": "src/api/auth.ts"
+    },
+    {
+      "id": "config:API_KEYS",
+      "type": "config",
+      "name": "API_KEYS",
+      "file": "src/api/auth.ts"
+    },
+    {
+      "id": "config:API_KEY_HEADER",
+      "type": "config",
+      "name": "API_KEY_HEADER",
+      "file": "src/api/auth.ts"
+    },
+    {
+      "id": "config:AWS_REGION",
+      "type": "config",
+      "name": "AWS_REGION",
+      "file": "src/utils/media-storage.ts"
+    },
+    {
+      "id": "config:CORS_ORIGIN",
+      "type": "config",
+      "name": "CORS_ORIGIN",
+      "file": "src/api/rest-router.ts"
+    },
+    {
+      "id": "config:CURRENT_TENANT_ID",
+      "type": "config",
+      "name": "CURRENT_TENANT_ID",
+      "file": "src/config/tenant-config.ts"
+    },
+    {
+      "id": "config:DB_TYPE",
+      "type": "config",
+      "name": "DB_TYPE",
+      "file": "src/server/setup.ts"
+    },
+    {
+      "id": "config:LOG_LEVEL",
+      "type": "config",
+      "name": "LOG_LEVEL",
+      "file": "src/observability/logger.ts"
+    },
+    {
+      "id": "config:MCP_DEBUG",
+      "type": "config",
+      "name": "MCP_DEBUG",
+      "file": "src/server/setup.ts"
+    },
+    {
+      "id": "config:MCP_DISABLED_CATEGORIES",
+      "type": "config",
+      "name": "MCP_DISABLED_CATEGORIES",
+      "file": "src/config/tools.ts"
+    },
+    {
+      "id": "config:MCP_DISABLED_TOOLS",
+      "type": "config",
+      "name": "MCP_DISABLED_TOOLS",
+      "file": "src/config/tools.ts"
+    },
+    {
+      "id": "config:MCP_ENABLED_CATEGORIES",
+      "type": "config",
+      "name": "MCP_ENABLED_CATEGORIES",
+      "file": "src/config/tools.ts"
+    },
+    {
+      "id": "config:MCP_HTTP_ALLOWED_HOSTS",
+      "type": "config",
+      "name": "MCP_HTTP_ALLOWED_HOSTS",
+      "file": "src/transport/http.ts"
+    },
+    {
+      "id": "config:MCP_HTTP_ALLOWED_ORIGINS",
+      "type": "config",
+      "name": "MCP_HTTP_ALLOWED_ORIGINS",
+      "file": "src/transport/http.ts"
+    },
+    {
+      "id": "config:MCP_HTTP_DNS_PROTECTION",
+      "type": "config",
+      "name": "MCP_HTTP_DNS_PROTECTION",
+      "file": "src/transport/http.ts"
+    },
+    {
+      "id": "config:MCP_HTTP_HOST",
+      "type": "config",
+      "name": "MCP_HTTP_HOST",
+      "file": "src/index.ts"
+    },
+    {
+      "id": "config:MCP_HTTP_JSON_ONLY",
+      "type": "config",
+      "name": "MCP_HTTP_JSON_ONLY",
+      "file": "src/transport/http.ts"
+    },
+    {
+      "id": "config:MCP_HTTP_PORT",
+      "type": "config",
+      "name": "MCP_HTTP_PORT",
+      "file": "src/index.ts"
+    },
+    {
+      "id": "config:MCP_HTTP_STATELESS",
+      "type": "config",
+      "name": "MCP_HTTP_STATELESS",
+      "file": "src/transport/http.ts"
+    },
+    {
+      "id": "config:MCP_TOOLS_PROFILE",
+      "type": "config",
+      "name": "MCP_TOOLS_PROFILE",
+      "file": "src/config/tools.ts"
+    },
+    {
+      "id": "config:MCP_TRANSPORT",
+      "type": "config",
+      "name": "MCP_TRANSPORT",
+      "file": "src/index.ts"
+    },
+    {
+      "id": "config:MONGO_DB_NAME",
+      "type": "config",
+      "name": "MONGO_DB_NAME",
+      "file": "src/db/mongo-client.ts"
+    },
+    {
+      "id": "config:MONGO_URL",
+      "type": "config",
+      "name": "MONGO_URL",
+      "file": "src/db/mongo-client.ts"
+    },
+    {
+      "id": "config:NODE_ENV",
+      "type": "config",
+      "name": "NODE_ENV",
+      "file": "src/api/auth.ts"
+    },
+    {
+      "id": "config:OPENAI_API_KEY",
+      "type": "config",
+      "name": "OPENAI_API_KEY",
+      "file": "src/utils/embeddings.ts"
+    },
+    {
+      "id": "config:OTEL_ENABLED",
+      "type": "config",
+      "name": "OTEL_ENABLED",
+      "file": "src/observability/config.ts"
+    },
+    {
+      "id": "config:OTEL_ENDPOINT",
+      "type": "config",
+      "name": "OTEL_ENDPOINT",
+      "file": "src/observability/config.ts"
+    },
+    {
+      "id": "config:OTEL_EXPORTER_TYPE",
+      "type": "config",
+      "name": "OTEL_EXPORTER_TYPE",
+      "file": "src/observability/config.ts"
+    },
+    {
+      "id": "config:OTEL_LOG_LEVEL",
+      "type": "config",
+      "name": "OTEL_LOG_LEVEL",
+      "file": "src/observability/config.ts"
+    },
+    {
+      "id": "config:OTEL_SERVICE_NAME",
+      "type": "config",
+      "name": "OTEL_SERVICE_NAME",
+      "file": "src/observability/config.ts"
+    },
+    {
+      "id": "config:OTEL_SERVICE_VERSION",
+      "type": "config",
+      "name": "OTEL_SERVICE_VERSION",
+      "file": "src/observability/config.ts"
+    },
+    {
+      "id": "config:REDIS_URL",
+      "type": "config",
+      "name": "REDIS_URL",
+      "file": "src/db/client.ts"
+    },
+    {
+      "id": "config:REST_API_BASE_PATH",
+      "type": "config",
+      "name": "REST_API_BASE_PATH",
+      "file": "src/api/rest-router.ts"
+    },
+    {
+      "id": "config:REST_API_ENABLED",
+      "type": "config",
+      "name": "REST_API_ENABLED",
+      "file": "src/api/rest-router.ts"
+    },
+    {
+      "id": "config:RLS_DEBUG",
+      "type": "config",
+      "name": "RLS_DEBUG",
+      "file": "src/server/setup.ts"
+    },
+    {
+      "id": "config:RLS_ENABLED",
+      "type": "config",
+      "name": "RLS_ENABLED",
+      "file": "src/config/tenant-config.ts"
+    },
+    {
+      "id": "config:SUPABASE_ANON_KEY",
+      "type": "config",
+      "name": "SUPABASE_ANON_KEY",
+      "file": "src/db/client.ts"
+    },
+    {
+      "id": "config:SUPABASE_SERVICE_ROLE_KEY",
+      "type": "config",
+      "name": "SUPABASE_SERVICE_ROLE_KEY",
+      "file": "src/db/client.ts"
+    },
+    {
+      "id": "config:SUPABASE_URL",
+      "type": "config",
+      "name": "SUPABASE_URL",
+      "file": "src/db/client.ts"
+    },
+    {
+      "id": "config:TENANT_ATTACHMENT_TYPE",
+      "type": "config",
+      "name": "TENANT_ATTACHMENT_TYPE",
+      "file": "src/config/tenant-config.ts"
+    },
+    {
+      "id": "config:TENANT_JSON_PATH",
+      "type": "config",
+      "name": "TENANT_JSON_PATH",
+      "file": "src/config/tenant-config.ts"
+    },
+    {
+      "id": "config:VCON_LICENSE_KEY",
+      "type": "config",
+      "name": "VCON_LICENSE_KEY",
+      "file": "src/server/setup.ts"
+    },
+    {
+      "id": "config:VCON_MCP_BUILD_TIME",
+      "type": "config",
+      "name": "VCON_MCP_BUILD_TIME",
+      "file": "src/observability/logger.ts"
+    },
+    {
+      "id": "config:VCON_MCP_GIT_COMMIT",
+      "type": "config",
+      "name": "VCON_MCP_GIT_COMMIT",
+      "file": "src/observability/logger.ts"
+    },
+    {
+      "id": "config:VCON_MCP_VERSION",
+      "type": "config",
+      "name": "VCON_MCP_VERSION",
+      "file": "src/observability/logger.ts"
+    },
+    {
+      "id": "config:VCON_OFFLINE_MODE",
+      "type": "config",
+      "name": "VCON_OFFLINE_MODE",
+      "file": "src/server/setup.ts"
+    },
+    {
+      "id": "config:VCON_PLUGINS_PATH",
+      "type": "config",
+      "name": "VCON_PLUGINS_PATH",
+      "file": "src/server/setup.ts"
+    },
+    {
+      "id": "config:VCON_REDIS_EXPIRY",
+      "type": "config",
+      "name": "VCON_REDIS_EXPIRY",
+      "file": "src/db/queries.ts"
+    },
+    {
+      "id": "migration:20251007184415_initial_vcon_schema",
+      "type": "migration",
+      "name": "20251007184415_initial_vcon_schema",
+      "file": "supabase/migrations/20251007184415_initial_vcon_schema.sql"
+    },
+    {
+      "id": "datastore:vcons",
+      "type": "datastore",
+      "name": "vcons table"
+    },
+    {
+      "id": "datastore:parties",
+      "type": "datastore",
+      "name": "parties table"
+    },
+    {
+      "id": "datastore:dialog",
+      "type": "datastore",
+      "name": "dialog table"
+    },
+    {
+      "id": "datastore:party_history",
+      "type": "datastore",
+      "name": "party_history table"
+    },
+    {
+      "id": "datastore:attachments",
+      "type": "datastore",
+      "name": "attachments table"
+    },
+    {
+      "id": "datastore:analysis",
+      "type": "datastore",
+      "name": "analysis table"
+    },
+    {
+      "id": "datastore:groups",
+      "type": "datastore",
+      "name": "groups table"
+    },
+    {
+      "id": "datastore:privacy_requests",
+      "type": "datastore",
+      "name": "privacy_requests table"
+    },
+    {
+      "id": "migration:20251010120000_search_and_embeddings",
+      "type": "migration",
+      "name": "20251010120000_search_and_embeddings",
+      "file": "supabase/migrations/20251010120000_search_and_embeddings.sql"
+    },
+    {
+      "id": "datastore:vcon_embeddings",
+      "type": "datastore",
+      "name": "vcon_embeddings table"
+    },
+    {
+      "id": "migration:20251010121000_vcon_tags_mv",
+      "type": "migration",
+      "name": "20251010121000_vcon_tags_mv",
+      "file": "supabase/migrations/20251010121000_vcon_tags_mv.sql"
+    },
+    {
+      "id": "migration:20251010121500_update_rpcs_use_tags_mv",
+      "type": "migration",
+      "name": "20251010121500_update_rpcs_use_tags_mv",
+      "file": "supabase/migrations/20251010121500_update_rpcs_use_tags_mv.sql"
+    },
+    {
+      "id": "migration:20251010123000_switch_embeddings_to_384",
+      "type": "migration",
+      "name": "20251010123000_switch_embeddings_to_384",
+      "file": "supabase/migrations/20251010123000_switch_embeddings_to_384.sql"
+    },
+    {
+      "id": "migration:20251010130000_fix_keyword_rank_type",
+      "type": "migration",
+      "name": "20251010130000_fix_keyword_rank_type",
+      "file": "supabase/migrations/20251010130000_fix_keyword_rank_type.sql"
+    },
+    {
+      "id": "migration:20251010140000_embedding_queue_and_trigger",
+      "type": "migration",
+      "name": "20251010140000_embedding_queue_and_trigger",
+      "file": "supabase/migrations/20251010140000_embedding_queue_and_trigger.sql"
+    },
+    {
+      "id": "datastore:embedding_queue",
+      "type": "datastore",
+      "name": "embedding_queue table"
+    },
+    {
+      "id": "migration:20251012150000_exec_sql_rpc",
+      "type": "migration",
+      "name": "20251012150000_exec_sql_rpc",
+      "file": "supabase/migrations/20251012150000_exec_sql_rpc.sql"
+    },
+    {
+      "id": "migration:20251014000000_fix_search_types",
+      "type": "migration",
+      "name": "20251014000000_fix_search_types",
+      "file": "supabase/migrations/20251014000000_fix_search_types.sql"
+    },
+    {
+      "id": "migration:20251015000000_fix_tags_encoding",
+      "type": "migration",
+      "name": "20251015000000_fix_tags_encoding",
+      "file": "supabase/migrations/20251015000000_fix_tags_encoding.sql"
+    },
+    {
+      "id": "migration:20251016000000_add_search_vcons_by_tags",
+      "type": "migration",
+      "name": "20251016000000_add_search_vcons_by_tags",
+      "file": "supabase/migrations/20251016000000_add_search_vcons_by_tags.sql"
+    },
+    {
+      "id": "migration:20251016000001_fix_vcon_tags_mv_index",
+      "type": "migration",
+      "name": "20251016000001_fix_vcon_tags_mv_index",
+      "file": "supabase/migrations/20251016000001_fix_vcon_tags_mv_index.sql"
+    },
+    {
+      "id": "migration:20251110132000_s3_sync_tracking",
+      "type": "migration",
+      "name": "20251110132000_s3_sync_tracking",
+      "file": "supabase/migrations/20251110132000_s3_sync_tracking.sql"
+    },
+    {
+      "id": "datastore:s3_sync_tracking",
+      "type": "datastore",
+      "name": "s3_sync_tracking table"
+    },
+    {
+      "id": "migration:20251111182435_remote_migration",
+      "type": "migration",
+      "name": "20251111182435_remote_migration",
+      "file": "supabase/migrations/20251111182435_remote_migration.sql"
+    },
+    {
+      "id": "migration:20251111183320_remote_migration",
+      "type": "migration",
+      "name": "20251111183320_remote_migration",
+      "file": "supabase/migrations/20251111183320_remote_migration.sql"
+    },
+    {
+      "id": "migration:20251111183350_remote_migration",
+      "type": "migration",
+      "name": "20251111183350_remote_migration",
+      "file": "supabase/migrations/20251111183350_remote_migration.sql"
+    },
+    {
+      "id": "migration:20251111220707_remote_migration",
+      "type": "migration",
+      "name": "20251111220707_remote_migration",
+      "file": "supabase/migrations/20251111220707_remote_migration.sql"
+    },
+    {
+      "id": "migration:20251111222241_remote_migration",
+      "type": "migration",
+      "name": "20251111222241_remote_migration",
+      "file": "supabase/migrations/20251111222241_remote_migration.sql"
+    },
+    {
+      "id": "migration:20251112164958_remote_migration",
+      "type": "migration",
+      "name": "20251112164958_remote_migration",
+      "file": "supabase/migrations/20251112164958_remote_migration.sql"
+    },
+    {
+      "id": "migration:20251120150000_vcon_spec_01_alignment",
+      "type": "migration",
+      "name": "20251120150000_vcon_spec_01_alignment",
+      "file": "supabase/migrations/20251120150000_vcon_spec_01_alignment.sql"
+    },
+    {
+      "id": "datastore:migration_reports",
+      "type": "datastore",
+      "name": "migration_reports table"
+    },
+    {
+      "id": "migration:20251120150100_field_renames",
+      "type": "migration",
+      "name": "20251120150100_field_renames",
+      "file": "supabase/migrations/20251120150100_field_renames.sql"
+    },
+    {
+      "id": "migration:20251120150200_data_migration",
+      "type": "migration",
+      "name": "20251120150200_data_migration",
+      "file": "supabase/migrations/20251120150200_data_migration.sql"
+    },
+    {
+      "id": "migration:20251122175914_add_tenant_id_to_child_tables",
+      "type": "migration",
+      "name": "20251122175914_add_tenant_id_to_child_tables",
+      "file": "supabase/migrations/20251122175914_add_tenant_id_to_child_tables.sql"
+    },
+    {
+      "id": "migration:20251122175915_create_tenant_id_indexes",
+      "type": "migration",
+      "name": "20251122175915_create_tenant_id_indexes",
+      "file": "supabase/migrations/20251122175915_create_tenant_id_indexes.sql"
+    },
+    {
+      "id": "migration:20251122175916_update_get_current_tenant_id",
+      "type": "migration",
+      "name": "20251122175916_update_get_current_tenant_id",
+      "file": "supabase/migrations/20251122175916_update_get_current_tenant_id.sql"
+    },
+    {
+      "id": "migration:20251122175917_backfill_tenant_ids",
+      "type": "migration",
+      "name": "20251122175917_backfill_tenant_ids",
+      "file": "supabase/migrations/20251122175917_backfill_tenant_ids.sql"
+    },
+    {
+      "id": "migration:20251122175918_create_tenant_rls_policies",
+      "type": "migration",
+      "name": "20251122175918_create_tenant_rls_policies",
+      "file": "supabase/migrations/20251122175918_create_tenant_rls_policies.sql"
+    },
+    {
+      "id": "migration:20251122175919_create_tenant_triggers",
+      "type": "migration",
+      "name": "20251122175919_create_tenant_triggers",
+      "file": "supabase/migrations/20251122175919_create_tenant_triggers.sql"
+    },
+    {
+      "id": "migration:20251125160000_optimize_search_indexes",
+      "type": "migration",
+      "name": "20251125160000_optimize_search_indexes",
+      "file": "supabase/migrations/20251125160000_optimize_search_indexes.sql"
+    },
+    {
+      "id": "migration:20251125160001_optimize_search_functions",
+      "type": "migration",
+      "name": "20251125160001_optimize_search_functions",
+      "file": "supabase/migrations/20251125160001_optimize_search_functions.sql"
+    },
+    {
+      "id": "migration:20251201120000_fix_vcon_tags_mv_body_type",
+      "type": "migration",
+      "name": "20251201120000_fix_vcon_tags_mv_body_type",
+      "file": "supabase/migrations/20251201120000_fix_vcon_tags_mv_body_type.sql"
+    },
+    {
+      "id": "migration:20251202120000_fix_vcon_tags_mv_cast",
+      "type": "migration",
+      "name": "20251202120000_fix_vcon_tags_mv_cast",
+      "file": "supabase/migrations/20251202120000_fix_vcon_tags_mv_cast.sql"
+    },
+    {
+      "id": "migration:20251202130000_diagnose_and_fix_vcon_tags_mv",
+      "type": "migration",
+      "name": "20251202130000_diagnose_and_fix_vcon_tags_mv",
+      "file": "supabase/migrations/20251202130000_diagnose_and_fix_vcon_tags_mv.sql"
+    },
+    {
+      "id": "migration:20251202150000_enable_rls_migration_reports",
+      "type": "migration",
+      "name": "20251202150000_enable_rls_migration_reports",
+      "file": "supabase/migrations/20251202150000_enable_rls_migration_reports.sql"
+    },
+    {
+      "id": "migration:20251202160000_optimize_tenant_indexes",
+      "type": "migration",
+      "name": "20251202160000_optimize_tenant_indexes",
+      "file": "supabase/migrations/20251202160000_optimize_tenant_indexes.sql"
+    },
+    {
+      "id": "migration:20251202170000_add_set_tenant_context_rpc",
+      "type": "migration",
+      "name": "20251202170000_add_set_tenant_context_rpc",
+      "file": "supabase/migrations/20251202170000_add_set_tenant_context_rpc.sql"
+    },
+    {
+      "id": "migration:20251202180000_backfill_tenant_ids",
+      "type": "migration",
+      "name": "20251202180000_backfill_tenant_ids",
+      "file": "supabase/migrations/20251202180000_backfill_tenant_ids.sql"
+    },
+    {
+      "id": "migration:20251210120000_optimize_mv_tags_timestamps",
+      "type": "migration",
+      "name": "20251210120000_optimize_mv_tags_timestamps",
+      "file": "supabase/migrations/20251210120000_optimize_mv_tags_timestamps.sql"
+    },
+    {
+      "id": "migration:20251212210000_fix_exec_sql_and_embeddings_384",
+      "type": "migration",
+      "name": "20251212210000_fix_exec_sql_and_embeddings_384",
+      "file": "supabase/migrations/20251212210000_fix_exec_sql_and_embeddings_384.sql"
+    },
+    {
+      "id": "migration:20251212213000_fix_search_rpcs",
+      "type": "migration",
+      "name": "20251212213000_fix_search_rpcs",
+      "file": "supabase/migrations/20251212213000_fix_search_rpcs.sql"
+    },
+    {
+      "id": "migration:20251216120226_add_created_at_to_attachments",
+      "type": "migration",
+      "name": "20251216120226_add_created_at_to_attachments",
+      "file": "supabase/migrations/20251216120226_add_created_at_to_attachments.sql"
+    },
+    {
+      "id": "migration:20260105000000_party_uuid_to_text",
+      "type": "migration",
+      "name": "20260105000000_party_uuid_to_text",
+      "file": "supabase/migrations/20260105000000_party_uuid_to_text.sql"
+    },
+    {
+      "id": "migration:20260226120000_dialog_disposition_allow_any_string",
+      "type": "migration",
+      "name": "20260226120000_dialog_disposition_allow_any_string",
+      "file": "supabase/migrations/20260226120000_dialog_disposition_allow_any_string.sql"
+    },
+    {
+      "id": "migration:20260414000000_fix_keyword_search_snippet_size",
+      "type": "migration",
+      "name": "20260414000000_fix_keyword_search_snippet_size",
+      "file": "supabase/migrations/20260414000000_fix_keyword_search_snippet_size.sql"
+    },
+    {
+      "id": "migration:20260414000001_fix_search_rpcs_return_vcon_uuid",
+      "type": "migration",
+      "name": "20260414000001_fix_search_rpcs_return_vcon_uuid",
+      "file": "supabase/migrations/20260414000001_fix_search_rpcs_return_vcon_uuid.sql"
+    },
+    {
+      "id": "component:api",
+      "type": "component",
+      "name": "api",
+      "file": "src/api",
+      "description": "13 TypeScript files"
+    },
+    {
+      "id": "component:config",
+      "type": "component",
+      "name": "config",
+      "file": "src/config",
+      "description": "2 TypeScript files"
+    },
+    {
+      "id": "component:db",
+      "type": "component",
+      "name": "db",
+      "file": "src/db",
+      "description": "14 TypeScript files"
+    },
+    {
+      "id": "component:hooks",
+      "type": "component",
+      "name": "hooks",
+      "file": "src/hooks",
+      "description": "3 TypeScript files"
+    },
+    {
+      "id": "component:jsonld",
+      "type": "component",
+      "name": "jsonld",
+      "file": "src/jsonld",
+      "description": "4 TypeScript files"
+    },
+    {
+      "id": "component:observability",
+      "type": "component",
+      "name": "observability",
+      "file": "src/observability",
+      "description": "4 TypeScript files"
+    },
+    {
+      "id": "component:prompts",
+      "type": "component",
+      "name": "prompts",
+      "file": "src/prompts",
+      "description": "1 TypeScript files"
+    },
+    {
+      "id": "component:resources",
+      "type": "component",
+      "name": "resources",
+      "file": "src/resources",
+      "description": "1 TypeScript files"
+    },
+    {
+      "id": "component:server",
+      "type": "component",
+      "name": "server",
+      "file": "src/server",
+      "description": "2 TypeScript files"
+    },
+    {
+      "id": "component:services",
+      "type": "component",
+      "name": "services",
+      "file": "src/services",
+      "description": "2 TypeScript files"
+    },
+    {
+      "id": "component:tools",
+      "type": "component",
+      "name": "tools",
+      "file": "src/tools",
+      "description": "18 TypeScript files"
+    },
+    {
+      "id": "component:transport",
+      "type": "component",
+      "name": "transport",
+      "file": "src/transport",
+      "description": "3 TypeScript files"
+    },
+    {
+      "id": "component:types",
+      "type": "component",
+      "name": "types",
+      "file": "src/types",
+      "description": "1 TypeScript files"
+    },
+    {
+      "id": "component:utils",
+      "type": "component",
+      "name": "utils",
+      "file": "src/utils",
+      "description": "6 TypeScript files"
+    }
+  ],
+  "edges": [
+    {
+      "from": "datastore:vcons",
+      "to": "migration:20251007184415_initial_vcon_schema",
+      "type": "created_by"
+    },
+    {
+      "from": "datastore:parties",
+      "to": "migration:20251007184415_initial_vcon_schema",
+      "type": "created_by"
+    },
+    {
+      "from": "datastore:dialog",
+      "to": "migration:20251007184415_initial_vcon_schema",
+      "type": "created_by"
+    },
+    {
+      "from": "datastore:party_history",
+      "to": "migration:20251007184415_initial_vcon_schema",
+      "type": "created_by"
+    },
+    {
+      "from": "datastore:attachments",
+      "to": "migration:20251007184415_initial_vcon_schema",
+      "type": "created_by"
+    },
+    {
+      "from": "datastore:analysis",
+      "to": "migration:20251007184415_initial_vcon_schema",
+      "type": "created_by"
+    },
+    {
+      "from": "datastore:groups",
+      "to": "migration:20251007184415_initial_vcon_schema",
+      "type": "created_by"
+    },
+    {
+      "from": "datastore:privacy_requests",
+      "to": "migration:20251007184415_initial_vcon_schema",
+      "type": "created_by"
+    },
+    {
+      "from": "datastore:vcon_embeddings",
+      "to": "migration:20251010120000_search_and_embeddings",
+      "type": "created_by"
+    },
+    {
+      "from": "datastore:embedding_queue",
+      "to": "migration:20251010140000_embedding_queue_and_trigger",
+      "type": "created_by"
+    },
+    {
+      "from": "datastore:s3_sync_tracking",
+      "to": "migration:20251110132000_s3_sync_tracking",
+      "type": "created_by"
+    },
+    {
+      "from": "datastore:migration_reports",
+      "to": "migration:20251120150000_vcon_spec_01_alignment",
+      "type": "created_by"
+    },
+    {
+      "from": "tool:get_database_analytics",
+      "to": "handler:GetDatabaseAnalyticsHandler",
+      "type": "implemented_by"
+    },
+    {
+      "from": "tool:get_monthly_growth_analytics",
+      "to": "handler:GetMonthlyGrowthAnalyticsHandler",
+      "type": "implemented_by"
+    },
+    {
+      "from": "tool:get_attachment_analytics",
+      "to": "handler:GetAttachmentAnalyticsHandler",
+      "type": "implemented_by"
+    },
+    {
+      "from": "tool:get_tag_analytics",
+      "to": "handler:GetTagAnalyticsHandler",
+      "type": "implemented_by"
+    },
+    {
+      "from": "tool:get_content_analytics",
+      "to": "handler:GetContentAnalyticsHandler",
+      "type": "implemented_by"
+    },
+    {
+      "from": "tool:get_database_health_metrics",
+      "to": "handler:GetDatabaseHealthMetricsHandler",
+      "type": "implemented_by"
+    },
+    {
+      "from": "tool:get_database_size_info",
+      "to": "handler:GetDatabaseSizeInfoHandler",
+      "type": "implemented_by"
+    },
+    {
+      "from": "tool:get_smart_search_limits",
+      "to": "handler:GetSmartSearchLimitsHandler",
+      "type": "implemented_by"
+    },
+    {
+      "from": "tool:get_database_shape",
+      "to": "handler:GetDatabaseShapeHandler",
+      "type": "implemented_by"
+    },
+    {
+      "from": "tool:get_database_stats",
+      "to": "handler:GetDatabaseStatsHandler",
+      "type": "implemented_by"
+    },
+    {
+      "from": "tool:analyze_query",
+      "to": "handler:AnalyzeQueryHandler",
+      "type": "implemented_by"
+    },
+    {
+      "from": "tool:get_schema",
+      "to": "handler:GetSchemaHandler",
+      "type": "implemented_by"
+    },
+    {
+      "from": "tool:get_examples",
+      "to": "handler:GetExamplesHandler",
+      "type": "implemented_by"
+    },
+    {
+      "from": "tool:search_vcons",
+      "to": "handler:SearchVConsHandler",
+      "type": "implemented_by"
+    },
+    {
+      "from": "tool:search_vcons_content",
+      "to": "handler:SearchVConsContentHandler",
+      "type": "implemented_by"
+    },
+    {
+      "from": "tool:search_vcons_semantic",
+      "to": "handler:SearchVConsSemanticHandler",
+      "type": "implemented_by"
+    },
+    {
+      "from": "tool:search_vcons_hybrid",
+      "to": "handler:SearchVConsHybridHandler",
+      "type": "implemented_by"
+    },
+    {
+      "from": "tool:manage_tag",
+      "to": "handler:ManageTagHandler",
+      "type": "implemented_by"
+    },
+    {
+      "from": "tool:get_tags",
+      "to": "handler:GetTagsHandler",
+      "type": "implemented_by"
+    },
+    {
+      "from": "tool:remove_all_tags",
+      "to": "handler:RemoveAllTagsHandler",
+      "type": "implemented_by"
+    },
+    {
+      "from": "tool:search_by_tags",
+      "to": "handler:SearchByTagsHandler",
+      "type": "implemented_by"
+    },
+    {
+      "from": "tool:get_unique_tags",
+      "to": "handler:GetUniqueTagsHandler",
+      "type": "implemented_by"
+    },
+    {
+      "from": "tool:create_vcon",
+      "to": "handler:CreateVConHandler",
+      "type": "implemented_by"
+    },
+    {
+      "from": "tool:create_vcon_from_template",
+      "to": "handler:CreateVConFromTemplateHandler",
+      "type": "implemented_by"
+    },
+    {
+      "from": "tool:get_vcon",
+      "to": "handler:GetVConHandler",
+      "type": "implemented_by"
+    },
+    {
+      "from": "tool:update_vcon",
+      "to": "handler:UpdateVConHandler",
+      "type": "implemented_by"
+    },
+    {
+      "from": "tool:delete_vcon",
+      "to": "handler:DeleteVConHandler",
+      "type": "implemented_by"
+    },
+    {
+      "from": "tool:add_analysis",
+      "to": "handler:AddAnalysisHandler",
+      "type": "implemented_by"
+    },
+    {
+      "from": "tool:add_dialog",
+      "to": "handler:AddDialogHandler",
+      "type": "implemented_by"
+    },
+    {
+      "from": "tool:add_attachment",
+      "to": "handler:AddAttachmentHandler",
+      "type": "implemented_by"
+    }
+  ],
+  "subsystems": []
+}
