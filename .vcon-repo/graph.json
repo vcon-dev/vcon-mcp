@@ -3,9 +3,9 @@
   "repo": "vcon-mcp",
   "repo_version": "1.2.0",
   "archetype": "mcp-server",
-  "generated_at": "2026-04-16T15:15:46.214193+00:00",
+  "generated_at": "2026-04-17T12:29:51.024455+00:00",
   "stats": {
-    "node_count": 270,
+    "node_count": 273,
     "edge_count": 42
   },
   "nodes": [
@@ -1775,6 +1775,24 @@
       "type": "migration",
       "name": "20260414000001_fix_search_rpcs_return_vcon_uuid",
       "file": "supabase/migrations/20260414000001_fix_search_rpcs_return_vcon_uuid.sql"
+    },
+    {
+      "id": "migration:20260416000000_add_partial_index_attachments_tags",
+      "type": "migration",
+      "name": "20260416000000_add_partial_index_attachments_tags",
+      "file": "supabase/migrations/20260416000000_add_partial_index_attachments_tags.sql"
+    },
+    {
+      "id": "migration:20260416000001_add_explain_query_rpc",
+      "type": "migration",
+      "name": "20260416000001_add_explain_query_rpc",
+      "file": "supabase/migrations/20260416000001_add_explain_query_rpc.sql"
+    },
+    {
+      "id": "migration:20260417000000_add_database_health_stats_rpc",
+      "type": "migration",
+      "name": "20260417000000_add_database_health_stats_rpc",
+      "file": "supabase/migrations/20260417000000_add_database_health_stats_rpc.sql"
     },
     {
       "id": "component:api",
