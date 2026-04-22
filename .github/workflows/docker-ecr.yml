@@ -193,19 +193,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Dispatch test server update
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        uses: peter-evans/repository-dispatch@v3
-        with:
-          token: ${{ secrets.ENVIRONMENTS_DISPATCH_TOKEN }}
-          repository: vconic/vconic-ops-test-environments
-          event-type: test-deploy
-          client-payload: >
-            {
-              "service": "mcp",
-              "image": "${{ env.IMAGE_NAME }}:${{ steps.calver.outputs.calver_version }}"
-            }
-
       - name: Output image digest
         if: github.event_name != 'pull_request'
         run: |
