@@ -407,6 +407,64 @@ describe('VConQueries', () => {
     });
   });
 
+  describe('getTags', () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+    });
+
+    // Stubs the two-query sequence getTags() runs:
+    //   1. from('vcons').select('id').eq('uuid', uuid).single()
+    //   2. from('attachments').select('body').eq('vcon_id', id).eq('type', 'tags')
+    // The 3rd `.eq(...)` call is awaited, so it must resolve with { data, error }.
+    const stubGetTagsQuery = (attachmentsBody: string | null | undefined) => {
+      mockSupabase.single.mockResolvedValueOnce({ data: { id: 1 }, error: null });
+      mockSupabase.eq
+        .mockReturnValueOnce(mockSupabase)  // .eq('uuid', uuid)
+        .mockReturnValueOnce(mockSupabase)  // .eq('vcon_id', id)
+        .mockReturnValueOnce({              // .eq('type', 'tags') — awaited
+          data: attachmentsBody === undefined
+            ? []
+            : [{ body: attachmentsBody }],
+          error: null,
+        });
+    };
+
+    it('returns {} when the vCon has no tags attachment', async () => {
+      stubGetTagsQuery(undefined);
+      const result = await queries.getTags(randomUUID());
+      expect(result).toEqual({});
+    });
+
+    it('parses a well-formed tags attachment into a key-value map', async () => {
+      stubGetTagsQuery('["department:sales","priority:high"]');
+      const result = await queries.getTags(randomUUID());
+      expect(result).toEqual({ department: 'sales', priority: 'high' });
+    });
+
+    // Regression: "tagsArray is not iterable" from manage_tag / get_tags.
+    // A tags attachment row whose body parses to a non-array (null literal,
+    // object, primitive) previously crashed the for...of loop. getTags must
+    // treat any non-array body as "no tags" so manage_tag can seed the first
+    // tag on a vCon in that state.
+    it('returns {} when the tags attachment body is the JSON literal "null"', async () => {
+      stubGetTagsQuery('null');
+      const result = await queries.getTags(randomUUID());
+      expect(result).toEqual({});
+    });
+
+    it('returns {} when the tags attachment body is an empty string', async () => {
+      stubGetTagsQuery('');
+      const result = await queries.getTags(randomUUID());
+      expect(result).toEqual({});
+    });
+
+    it('returns {} when the tags attachment body is an object, not an array', async () => {
+      stubGetTagsQuery('{"department":"sales"}');
+      const result = await queries.getTags(randomUUID());
+      expect(result).toEqual({});
+    });
+  });
+
   describe('getUniqueTags', () => {
     beforeEach(() => {
       // Reset mocks for getUniqueTags tests
