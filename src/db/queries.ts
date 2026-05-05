@@ -1086,11 +1086,17 @@ export class SupabaseVConQueries implements IVConQueries {
       return {};
     }
 
-    // Parse tags from body (array of "key:value" strings)
-    const tagsArray = JSON.parse(attachments[0].body || '[]');
+    // Parse tags from body (array of "key:value" strings). Legacy rows can
+    // hold the literal "null", "{}", or other non-array bodies — iterating
+    // those directly throws "tagsArray is not iterable", which previously
+    // surfaced from manage_tag / get_tags on vCons whose tags attachment
+    // was never populated with a proper JSON array.
+    const parsed = JSON.parse(attachments[0].body || '[]');
+    const tagsArray: unknown[] = Array.isArray(parsed) ? parsed : [];
     const tagsObject: Record<string, string> = {};
 
     for (const tagString of tagsArray) {
+      if (typeof tagString !== 'string') continue;
       const colonIndex = tagString.indexOf(':');
       if (colonIndex > 0) {
         const key = tagString.substring(0, colonIndex);
