@@ -2,7 +2,7 @@
 
 > A Model Context Protocol (MCP) server for storing, managing, and analyzing IETF vCon (Virtual Conversation) data with AI assistants.
 
-![Version](https://img.shields.io/badge/version-1.0.1-blue)
+![Version](https://img.shields.io/npm/v/vcon-mcp?label=version)
 ![IETF Spec](https://img.shields.io/badge/IETF%20vCon-draft--02%20v0.4.0-green)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
@@ -49,7 +49,7 @@ The Model Context Protocol (MCP) enables AI assistants to use external tools and
   - Hybrid search (combines keyword and semantic)
 - ✅ **Tag Filtering** - Filter search results by tags via `attachments` of type `tags`
 - ✅ **Content Indexing** - Searches dialog bodies and analysis content (encoding='none')
-- ✅ **Real-time** - Supabase realtime subscriptions for live updates
+- ✅ **Real-time-ready** - Supabase realtime subscriptions are available at the database layer (not yet exposed via MCP tools)
 - ✅ **Conserver Integration** - Compatible with vCon conserver for chain processing
 
 ## Quick Start
@@ -106,6 +106,8 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 ```
 
 **Note**: `REDIS_URL` is optional. If provided, enables high-performance caching for 20-50x faster reads. See [Redis-Supabase Integration Guide](docs/guide/redis-supabase-integration.md).
+
+**Database backend**: Defaults to Supabase (`DB_TYPE=supabase`). MongoDB is also supported via `DB_TYPE=mongodb` — see [docs/mongodb/setup.md](docs/mongodb/setup.md).
 
 Restart Claude Desktop and start using vCon tools!
 
@@ -248,11 +250,8 @@ npm run db:restore
 ### Embeddings Management
 
 ```bash
-# Backfill missing embeddings
-npm run embeddings:backfill
-
-# Generate embeddings locally
-npm run embeddings:generate
+# Continuously generate embeddings for vCons missing them
+npm run sync:embeddings
 
 # Check embedding coverage
 npm run embeddings:check
@@ -378,6 +377,8 @@ See [MCP Streamable HTTP Specification](https://modelcontextprotocol.io/specific
 
 When running in HTTP transport mode, the server exposes a full RESTful HTTP API with parity to all MCP tools. Both interfaces share the same `VConService` business logic, plugin hooks, and database queries.
 
+> **Path layout:** the MCP HTTP endpoint is mounted at `/` (root), and the REST API is mounted at `REST_API_BASE_PATH` (default `/api/v1`). They share the same port — that's why the curl examples above hit `/` for MCP but `/api/v1/...` for REST.
+
 ### Endpoints (30+)
 
 | Category | Endpoints | Description |
@@ -426,195 +427,67 @@ See the complete [REST API Reference](docs/api/rest-api.md) for detailed documen
 
 ## Available MCP Tools
 
-### 1. **create_vcon**
-
-Create a new vCon with parties and optional initial data.
-
-```
-Create a vCon for a customer support call between Alice and Bob
-```
-
-### 2. **get_vcon**
-
-Retrieve a complete vCon by UUID.
-
-```
-Get the vCon with UUID abc-123-def
-```
-
-### 3. **search_vcons**
-
-Search vCons by subject, party name, or date range (basic filtering).
-
-```
-Find all vCons from last week about billing
-```
-
-### 3a. **search_vcons_content**
-
-Full-text keyword search across dialog, analysis, and party content.
-
-```
-Search for conversations mentioning "refund request"
-```
-
-### 3b. **search_vcons_semantic**
-
-AI-powered semantic search to find conversations by meaning (requires embeddings).
-
-```
-Find conversations where customers were frustrated with delivery times
-```
-
-### 3c. **search_vcons_hybrid**
-
-Combined keyword and semantic search for comprehensive results.
-
-```
-Search for billing disputes using both exact matches and similar concepts
-```
-
-### 4. **add_analysis**
-
-Add AI/ML analysis results to a vCon.
-
-```
-Add sentiment analysis showing positive sentiment to vCon abc-123
-```
-
-### 5. **add_dialog**
-
-Add a conversation segment (recording, text, video, etc.).
-
-```
-Add a text dialog from Alice saying "Hello, how can I help you?"
-```
-
-### 6. **add_attachment**
-
-Attach files, documents, or supporting materials.
-
-```
-Attach the customer's invoice PDF to this vCon
-```
-
-### 7. **delete_vcon**
-
-Delete a vCon and all related data.
-
-```
-Delete the vCon abc-123
-```
-
-### 8. **get_database_analytics**
-
-Get comprehensive database analytics including size, growth trends, and content distribution.
-
-```
-Get database analytics for the last 6 months
-```
-
-### 9. **get_monthly_growth_analytics**
-
-Get detailed monthly growth patterns and projections.
-
-```
-Show me monthly growth trends for the past year
-```
-
-### 10. **get_attachment_analytics**
-
-Analyze attachment types, sizes, and storage patterns.
-
-```
-What types of files are being stored and how much space do they use?
-```
-
-### 11. **get_tag_analytics**
-
-Analyze tag usage patterns and value distribution.
-
-```
-Show me the most commonly used tags and their values
-```
-
-### 12. **get_content_analytics**
-
-Get insights into conversation content, dialog types, and party patterns.
-
-```
-Analyze the types of conversations and content being stored
-```
-
-### 13. **get_database_health_metrics**
-
-Monitor database performance and get optimization recommendations.
-
-```
-Check database health and performance metrics
-```
-
-### 14. **get_database_size_info**
-
-Get database size information and smart recommendations for large datasets.
-
-```
-Get database size info and recommendations for query limits
-```
-
-### 15. **get_smart_search_limits**
-
-Get smart search limits based on database size to prevent memory issues.
-
-```
-Get recommended limits for content search on this large database
-```
-
-### 16. **update_vcon**
-
-Update top-level vCon metadata (subject, extensions, must_support).
-
-```
-Update vCon 01f3-... with subject "Updated Subject"
-```
-
-### 9. **create_vcon_from_template**
-
-Create a new vCon from a predefined template (phone_call, chat_conversation, email_thread, video_meeting, custom).
-
-```
-Create a phone_call vCon with two parties and subject "Onboarding"
-```
-
-### 10. **get_schema**
-
-Get vCon schema (json_schema or typescript).
-
-```
-Get the vCon JSON Schema
-```
-
-### 11. **get_examples**
-
-Get example vCons (minimal, phone_call, chat, email, video, full_featured) in JSON or YAML.
-
-## Database Inspection Tools
-
-### 12. **get_database_shape**
-
-Get comprehensive database structure information including tables, indexes, sizes, and relationships. Useful for debugging and understanding your database schema.
-
-### 13. **get_database_stats**
-
-Get database performance and usage statistics including cache hit ratios, table access patterns, and index usage. Essential for performance monitoring and optimization.
-
-### 14. **analyze_query**
-
-Analyze SQL query execution plans for performance optimization (limited support).
-
-```
-Show a minimal example vCon as JSON
-```
+The server exposes 30 MCP tools, grouped by purpose. See [docs/api/tools.md](docs/api/tools.md) for full schemas.
+
+### CRUD
+
+| Tool | Description |
+|------|-------------|
+| `create_vcon` | Create a new vCon with parties and optional initial data |
+| `create_vcon_from_template` | Create a vCon from a template (phone_call, chat_conversation, email_thread, video_meeting, custom) |
+| `get_vcon` | Retrieve a complete vCon by UUID |
+| `update_vcon` | Update top-level vCon metadata (subject, extensions, critical) |
+| `delete_vcon` | Delete a vCon and all related data |
+| `add_dialog` | Add a conversation segment (recording, text, transfer, incomplete) |
+| `add_analysis` | Add AI/ML analysis results (vendor required) |
+| `add_attachment` | Attach files, documents, or supporting materials |
+
+### Search
+
+| Tool | Description |
+|------|-------------|
+| `search_vcons` | Filter by subject, party, date range |
+| `search_vcons_content` | Full-text keyword search across dialog, analysis, parties |
+| `search_vcons_semantic` | AI embedding similarity search (requires embeddings) |
+| `search_vcons_hybrid` | Combined keyword + semantic |
+
+### Tags
+
+| Tool | Description |
+|------|-------------|
+| `manage_tag` | Add, update, or remove a single tag |
+| `get_tags` | Get one or all tags for a vCon |
+| `remove_all_tags` | Clear all tags from a vCon |
+| `search_by_tags` | Find vCons by tag values |
+| `get_unique_tags` | Discover available tag keys/values |
+
+### Analytics
+
+| Tool | Description |
+|------|-------------|
+| `get_database_analytics` | Size, growth trends, content distribution |
+| `get_monthly_growth_analytics` | Monthly growth patterns and projections |
+| `get_attachment_analytics` | Attachment types, sizes, storage patterns |
+| `get_tag_analytics` | Tag usage patterns and value distribution |
+| `get_content_analytics` | Dialog types, party patterns, content insights |
+| `get_database_health_metrics` | Performance and optimization recommendations |
+
+### Schema & Examples
+
+| Tool | Description |
+|------|-------------|
+| `get_schema` | Get vCon schema (json_schema or typescript) |
+| `get_examples` | Get example vCons (minimal, phone_call, chat, email, video, full_featured) |
+
+### Database Inspection
+
+| Tool | Description |
+|------|-------------|
+| `get_database_shape` | Tables, indexes, sizes, relationships |
+| `get_database_stats` | Cache hit ratios, table access, index usage |
+| `analyze_query` | SQL query execution plan analysis (limited support) |
+| `get_database_size_info` | Size info and smart recommendations for large datasets |
+| `get_smart_search_limits` | Recommended search limits to prevent memory issues |
 
 ## Tool Categories & Configuration
 
@@ -857,34 +730,7 @@ See [Observability Guide](docs/guide/observability.md) for complete documentatio
 
 ## Project Structure
 
-```
-vcon-mcp/
-├── src/
-│   ├── index.ts              # MCP server entry point
-│   ├── types/
-│   │   └── vcon.ts          # IETF vCon type definitions
-│   ├── db/
-│   │   ├── client.ts        # Supabase client
-│   │   └── queries.ts       # Database operations
-│   ├── tools/
-│   │   └── vcon-crud.ts     # MCP tool definitions
-│   └── utils/
-│       └── validation.ts    # vCon validation
-├── supabase/
-│   └── migrations/          # Database migrations
-├── tests/
-│   └── vcon-compliance.test.ts
-├── docs/
-│   └── reference/           # Technical reference docs
-│       ├── QUICK_REFERENCE.md
-│       ├── IMPLEMENTATION_CORRECTIONS.md
-│       ├── CORRECTED_SCHEMA.md
-│       └── MIGRATION_GUIDE.md
-├── background_docs/         # IETF specs & references
-├── CLAUDE.md               # AI coding agent instructions
-├── DOCUMENTATION_GUIDE.md  # Documentation system guide
-└── README.md               # This file
-```
+For the authoritative source layout (including `src/api/`, `src/server/`, `src/services/`, `src/prompts/`, `src/hooks/` and the route/handler split), see the **File Structure** section in [CLAUDE.md](CLAUDE.md). That document is kept in sync with the code; this README intentionally does not duplicate the tree.
 
 ## Documentation
 
@@ -927,7 +773,8 @@ vcon-mcp/
 
 ### IETF Specifications
 
-- **[IETF vCon Core Spec](background_docs/draft-ietf-vcon-vcon-core-00.txt)** - Official specification
+- **[IETF vCon Core Spec (-00, in repo)](background_docs/draft-ietf-vcon-vcon-core-00.txt)** - v0.3.0 baseline shipped with this repo
+- **[IETF vCon Core Spec (current draft)](https://datatracker.ietf.org/doc/draft-ietf-vcon-vcon-core/)** - Latest `-02` (v0.4.0) on the IETF datatracker
 - **[vCon Consent Draft](background_docs/draft-howe-vcon-consent-00.txt)** - Privacy and consent
 - **[vCon Lifecycle Draft](background_docs/draft-howe-vcon-lifecycle-00.txt)** - Lifecycle management
 - **[vCon Quick Start](background_docs/vcon_quickstart_guide.md)** - vCon basics
@@ -994,7 +841,7 @@ See [RLS Multi-Tenant Guide](docs/guide/rls-multi-tenant.md) for enabling multi-
 
 ## IETF vCon Specification Compliance
 
-This implementation is fully compliant with `draft-ietf-vcon-vcon-core-00`, including:
+This implementation targets `draft-ietf-vcon-vcon-core-02` (vCon v0.4.0), including:
 
 ### Core Objects
 
@@ -1153,7 +1000,7 @@ export async function handleGetAnalytics(input: any): Promise<ToolResponse> {
 ### Quick Start: Create a Plugin
 
 ```typescript
-import { VConPlugin, RequestContext } from '@vcon/mcp-server/hooks';
+import { VConPlugin, RequestContext } from 'vcon-mcp/hooks';
 
 export default class MyPlugin implements VConPlugin {
   name = 'my-plugin';
@@ -1235,10 +1082,9 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 ## Support
 
-- 📧 **Email**: ohjesus@doesanyoneemail.anymore
-- 💬 **Discord**: [Join our community](https://discord.gg/example)
-- 📖 **Documentation**: [Full docs](https://docs.example.com)
 - 🐛 **Bug Reports**: [GitHub Issues](https://github.com/vcon-dev/vcon-mcp/issues)
+- 💬 **Discussions**: [GitHub Discussions](https://github.com/vcon-dev/vcon-mcp/discussions)
+- 📖 **Documentation**: [mcp.conserver.io](https://mcp.conserver.io/)
 
 ## Acknowledgments
 

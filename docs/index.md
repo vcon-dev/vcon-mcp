@@ -74,15 +74,15 @@ features:
 ::: code-group
 
 ```bash [npm]
-npm install @vcon/mcp-server
+npm install vcon-mcp
 ```
 
 ```bash [yarn]
-yarn add @vcon/mcp-server
+yarn add vcon-mcp
 ```
 
 ```bash [pnpm]
-pnpm add @vcon/mcp-server
+pnpm add vcon-mcp
 ```
 
 :::
@@ -105,7 +105,7 @@ The Model Context Protocol (MCP) enables AI assistants to use external tools and
 
 ### Core Capabilities
 
-- ✅ **15+ MCP Tools** - Complete CRUD operations, search, tagging, templates
+- ✅ **30 MCP Tools** - Complete CRUD operations, search, tagging, templates, analytics
 - ✅ **9 Query Prompts** - Guide AI assistants to search effectively
 - ✅ **4 Search Modes** - Basic, keyword, semantic, and hybrid search
 - ✅ **Tag System** - Flexible key-value metadata for organization
@@ -178,7 +178,7 @@ Then ask Claude:
 ### Programmatic Usage
 
 ```typescript
-import { VConQueries } from '@vcon/mcp-server';
+import { VConQueries } from 'vcon-mcp';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(url, key);

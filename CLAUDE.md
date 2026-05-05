@@ -141,6 +141,17 @@ Format: `"key:value"` strings in a JSON array.
 | `search_by_tags` | Find vCons by tag values |
 | `get_unique_tags` | Discover available tags |
 
+### Analytics Tools
+
+| Tool | Description |
+|------|-------------|
+| `get_database_analytics` | Size, growth trends, content distribution |
+| `get_monthly_growth_analytics` | Monthly growth patterns and projections |
+| `get_attachment_analytics` | Attachment types, sizes, storage |
+| `get_tag_analytics` | Tag usage patterns and value distribution |
+| `get_content_analytics` | Dialog types, party patterns, content insights |
+| `get_database_health_metrics` | Performance and optimization recommendations |
+
 ### Database Tools
 
 | Tool | Description |
@@ -148,6 +159,8 @@ Format: `"key:value"` strings in a JSON array.
 | `get_database_shape` | Tables, indexes, sizes |
 | `get_database_stats` | Performance statistics |
 | `analyze_query` | Query execution plan |
+| `get_database_size_info` | Size info and smart recommendations for large datasets |
+| `get_smart_search_limits` | Recommended limits to prevent memory issues |
 
 ---
 

@@ -242,7 +242,7 @@ const party: Party = {
 // This should compile without errors
 const dialog: Dialog = {
   type: 'recording',
-  session_id: 'session-123',
+  session_id: { local: 'session-local-123', remote: 'session-remote-123' },
   application: 'TestApp'
 };
 
@@ -268,7 +268,8 @@ const wrongAnalysis2: Analysis = {
 - Full instructions: `CLAUDE.md`
 - Detailed corrections: `IMPLEMENTATION_CORRECTIONS.md`
 - Database schema: `CORRECTED_SCHEMA.md`
-- IETF spec: `background_docs/draft-ietf-vcon-vcon-core-02.txt`
+- IETF spec (in repo, v0.3.0 baseline): `background_docs/draft-ietf-vcon-vcon-core-00.txt`
+- IETF spec (current draft -02 / v0.4.0): https://datatracker.ietf.org/doc/draft-ietf-vcon-vcon-core/
 
 ---
 
@@ -310,7 +311,7 @@ grep -r "vendor\?" src/types/
 **Then verify against:**
 - `CLAUDE.md` - Section matching your task
 - `IMPLEMENTATION_CORRECTIONS.md` - List of all corrections
-- `draft-ietf-vcon-vcon-core-02.txt` - The authoritative spec
+- `background_docs/draft-ietf-vcon-vcon-core-00.txt` (in repo) — and the current `-02` draft on the IETF datatracker for the authoritative spec
 
 ---
 
