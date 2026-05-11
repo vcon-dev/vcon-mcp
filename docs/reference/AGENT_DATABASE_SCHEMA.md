@@ -138,6 +138,8 @@ Unique: `(vcon_id, dialog_index)`.
 
 Unique: `(vcon_id, attachment_index)`.
 
+**Partial index:** `idx_attachments_tags_partial ON attachments (vcon_id, body) WHERE type = 'tags'` — speeds up tag scans and `getUniqueTags` fallback path (migration `20260416000000`).
+
 ---
 
 ### `analysis`
@@ -271,6 +273,9 @@ Main user-facing RPCs (signatures evolve; confirm in latest migration):
 - `search_vcons_keyword`, `search_vcons_semantic` (**`vector(384)`**), `search_vcons_hybrid`
 - `search_vcons_by_tags` (may include time filters)
 - `backfill_search_vector_batch` for tsvector backfill
+- `explain_query(q text, run_analyze boolean DEFAULT false)` → `SETOF text` — runs `EXPLAIN` or `EXPLAIN (ANALYZE, BUFFERS)` on a SELECT query and returns the plan as text lines. Cannot use `exec_sql` for this because `exec_sql` wraps queries in `SELECT jsonb_agg(...) FROM (...) t`, making EXPLAIN a subquery (migration `20260416000001`). **Note:** parameter is `run_analyze`, not `analyze` — `analyze` is a PostgreSQL reserved word.
+- `exec_sql(q text, params jsonb DEFAULT '{}')` — general dynamic SQL RPC; wraps query as `SELECT jsonb_agg(row_to_json(t)) FROM (<q>) t`; cannot be used for statements like EXPLAIN
+- `refresh_vcon_tags_mv()` — refreshes the `vcon_tags_mv` materialized view concurrently
 
 Semantic search joins **`vcon_tags_mv`** for tag filtering in current implementations.
 

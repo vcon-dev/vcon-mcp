@@ -134,13 +134,14 @@ async function fetchExistingUUIDs(): Promise<Set<string>> {
   const existing = new Set<string>();
   if (!SKIP_EXISTING) return existing;
   process.stdout.write('Fetching existing UUIDs from DB... ');
+  const PAGE = 1000; // Supabase PostgREST default max rows per request
   let offset = 0;
   while (true) {
-    const { data, error } = await supabase.from('vcons').select('uuid').range(offset, offset + 4999);
+    const { data, error } = await supabase.from('vcons').select('uuid').range(offset, offset + PAGE - 1);
     if (error) throw error;
     if (!data?.length) break;
     data.forEach(r => existing.add(r.uuid));
-    if (data.length < 5000) break;
+    if (data.length < PAGE) break; // last page
     offset += data.length;
   }
   console.log(`${existing.size.toLocaleString()} already in DB`);

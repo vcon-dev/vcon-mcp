@@ -209,9 +209,7 @@ Lists indexes that have never been used since stats reset.
 
 ### 3. `analyze_query` - Query Performance Analysis
 
-Analyze SQL query execution plans to understand performance characteristics.
-
-**Note:** This tool has limitations with the current database setup. The `exec_sql` RPC may not support EXPLAIN statements. For full query analysis, use direct database access.
+Analyze SQL query execution plans to understand performance characteristics. Uses the dedicated `explain_query` database function — both modes are fully supported.
 
 **Use Cases:**
 - Understanding query performance
@@ -222,25 +220,32 @@ Analyze SQL query execution plans to understand performance characteristics.
 **Parameters:**
 ```json
 {
-  "query": "SELECT ...",          // SQL query to analyze
+  "query": "SELECT ...",          // SQL query to analyze (SELECT only)
   "analyze_mode": "explain"       // "explain" or "explain_analyze"
 }
 ```
 
 **Modes:**
-- `explain`: Generate execution plan without running query (fast, safe)
-- `explain_analyze`: Run query and measure actual performance (slower, provides real metrics)
+- `explain`: Generate execution plan without running the query (fast, safe)
+- `explain_analyze`: Execute the query and measure actual performance — use with care on large tables, as it runs the full query
 
-**Limitations:**
-- Only SELECT queries are allowed (for safety)
-- May not work with all database configurations
-- Requires exec_sql RPC support for EXPLAIN
+**Restrictions:**
+- Only SELECT queries are allowed (enforced server-side)
 
-**Alternative Approach:**
-If this tool doesn't work in your environment, you can:
-1. Connect directly to the database with `psql`
-2. Run `EXPLAIN (ANALYZE, BUFFERS) your_query;`
-3. Analyze the output manually
+**Reading the output:**
+- `cost=X..Y` — estimated startup and total cost (arbitrary units, lower is better)
+- `actual time=X..Y` — real milliseconds for first row..last row
+- `Buffers: shared hit=N read=M` — N pages from cache, M from disk; high hit ratio means good caching
+- `Index Scan` / `Index Only Scan` — query is using an index (good); `Seq Scan` on large tables may indicate a missing index
+
+**Example output:**
+```
+Limit  (cost=0.42..6.12 rows=100 width=77) (actual time=1.4..2.3 rows=100 loops=1)
+  ->  Index Scan Backward using idx_vcons_created_at on vcons
+        Buffers: shared hit=95 read=3
+Planning Time: 0.4 ms
+Execution Time: 2.3 ms
+```
 
 ---
 

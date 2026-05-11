@@ -787,9 +787,13 @@ export class SupabaseVConQueries implements IVConQueries {
     let candidateVconIds: Set<number> | null = null;
 
     if (filters.partyName || filters.partyEmail || filters.partyTel) {
+      // Explicit limit (PostgREST default cap is typically 1000 rows, which
+      // can silently truncate a name/email filter before it reaches the
+      // specific vCon the caller was looking for).
       let partyQuery = this.supabase
         .from('parties')
-        .select('vcon_id');
+        .select('vcon_id')
+        .limit(10000);
 
       if (filters.partyName) {
         partyQuery = partyQuery.ilike('name', `%${filters.partyName}%`);
@@ -812,44 +816,64 @@ export class SupabaseVConQueries implements IVConQueries {
       candidateVconIds = new Set(partyData.map(p => p.vcon_id));
     }
 
-    // Build the main vcons query
-    let query = this.supabase
-      .from('vcons')
-      .select('uuid, id');
-
-    // If we have party-filtered candidates, constrain to those vcon IDs
-    if (candidateVconIds !== null) {
-      query = query.in('id', Array.from(candidateVconIds));
-    }
-
-    if (filters.subject) {
-      query = query.ilike('subject', `%${filters.subject}%`);
-    }
-
-    if (filters.startDate) {
-      query = query.gte('created_at', filters.startDate);
-    }
-
-    if (filters.endDate) {
-      query = query.lte('created_at', filters.endDate);
-    }
-
-    query = query.order('created_at', { ascending: false });
-
-    // Apply limit after all filters (tag filter may reduce further)
-    // If we have tag filters, fetch more initially to allow for filtering
+    // If we have tag filters, fetch more initially to allow for filtering.
     const initialLimit = (filters.tags && Object.keys(filters.tags).length > 0)
-      ? Math.max(limit * 10, 1000)  // Fetch more to account for tag filtering
+      ? Math.max(limit * 10, 1000)
       : limit;
-    query = query.limit(initialLimit);
 
-    let data, error;
+    // Common per-query filter application. Shared by the single-shot and the
+    // batched-IN code paths so both honor the same subject/date filters.
+    const applyFilters = <Q extends { ilike: any; gte: any; lte: any; order: any; limit: any }>(
+      q: Q,
+      withLimit: boolean,
+    ): Q => {
+      let out: any = q;
+      if (filters.subject) out = out.ilike('subject', `%${filters.subject}%`);
+      if (filters.startDate) out = out.gte('created_at', filters.startDate);
+      if (filters.endDate) out = out.lte('created_at', filters.endDate);
+      out = out.order('created_at', { ascending: false });
+      if (withLimit) out = out.limit(initialLimit);
+      return out;
+    };
+
+    let data: Array<{ uuid: string; id: any; created_at?: string }> | null = null;
+    let error: any = null;
+
     try {
-      const result = await query;
-      data = result.data;
-      error = result.error;
+      if (candidateVconIds !== null) {
+        // Batched path. The party-match set may be arbitrarily large; PostgREST
+        // encodes `.in()` into the URL so 400 UUIDs is the safe ceiling. Walk
+        // the full candidate set in chunks, then sort/limit in JS to produce
+        // the same top-N-by-created_at ordering as the single-shot path below.
+        const idArray = Array.from(candidateVconIds);
+        const IN_BATCH = 100;
+        const accumulated: Array<{ uuid: string; id: any; created_at: string }> = [];
+        for (let i = 0; i < idArray.length; i += IN_BATCH) {
+          const chunk = idArray.slice(i, i + IN_BATCH);
+          const chunkQuery = applyFilters(
+            this.supabase.from('vcons').select('uuid, id, created_at').in('id', chunk),
+            false,
+          );
+          const res = await chunkQuery;
+          if (res.error) { error = res.error; break; }
+          accumulated.push(...((res.data || []) as any));
+        }
+        if (!error) {
+          accumulated.sort((a, b) =>
+            (b.created_at || '').localeCompare(a.created_at || ''),
+          );
+          data = accumulated.slice(0, initialLimit);
+        }
+      } else {
+        const query = applyFilters(
+          this.supabase.from('vcons').select('uuid, id'),
+          true,
+        );
+        const result = await query;
+        data = result.data as any;
+        error = result.error;
+      }
     } catch (fetchError: any) {
-      // Handle network/connection errors
       if (fetchError instanceof TypeError && fetchError.message.includes('fetch failed')) {
         throw new Error(
           `Database connection failed: Unable to reach Supabase. ` +
@@ -868,9 +892,12 @@ export class SupabaseVConQueries implements IVConQueries {
     let vconUuids = data.map(v => v.uuid);
 
     if (filters.partyName || filters.partyEmail || filters.partyTel) {
+      // Same explicit limit rationale as the pre-filter block above — avoid
+      // silent PostgREST row truncation when names/emails match many rows.
       let partyQuery = this.supabase
         .from('parties')
-        .select('vcon_id');
+        .select('vcon_id')
+        .limit(10000);
 
       if (filters.partyName) {
         partyQuery = partyQuery.ilike('name', `%${filters.partyName}%`);
@@ -887,20 +914,31 @@ export class SupabaseVConQueries implements IVConQueries {
 
       const partyVconIds = new Set(partyData.map(p => p.vcon_id));
 
-      // Get UUIDs for matching vcon_ids
-      const { data: matchingVcons } = await this.supabase
-        .from('vcons')
-        .select('uuid, id')
-        .in('id', Array.from(partyVconIds));
+      // Batch the .in() to avoid "URI too long" when partyVconIds is large.
+      // PostgREST encodes .in() as a URL parameter; arrays > ~400 items can
+      // exceed HTTP header/URL size limits.
+      const partyIdArray = Array.from(partyVconIds);
+      const IN_BATCH = 400;
+      const matchingUuidSet = new Set<string>();
+      for (let i = 0; i < partyIdArray.length; i += IN_BATCH) {
+        const chunk = partyIdArray.slice(i, i + IN_BATCH);
+        const { data: batchVcons } = await this.supabase
+          .from('vcons')
+          .select('uuid, id')
+          .in('id', chunk);
+        (batchVcons || []).forEach(v => matchingUuidSet.add(v.uuid));
+      }
 
-      vconUuids = vconUuids.filter(uuid =>
-        matchingVcons?.some(v => v.uuid === uuid)
-      );
+      vconUuids = vconUuids.filter(uuid => matchingUuidSet.has(uuid));
     }
 
-    // If tag filters, get matching UUIDs and intersect with current results
+    // If tag filters, get matching UUIDs and intersect with current results.
+    // Use the date-aware RPC when a date range is set so we don't intersect
+    // an undated 10k-UUID list against a date-truncated candidate set.
     if (filters.tags && Object.keys(filters.tags).length > 0) {
-      const tagMatchingUuids = await this.searchByTags(filters.tags, 10000);
+      const tagMatchingUuids = (filters.startDate || filters.endDate)
+        ? await this.searchByTagsAndDate(filters.tags, filters.startDate, filters.endDate, 100000)
+        : await this.searchByTags(filters.tags, 10000);
       const tagMatchingSet = new Set(tagMatchingUuids);
       vconUuids = vconUuids.filter(uuid => tagMatchingSet.has(uuid));
     }
@@ -991,38 +1029,91 @@ export class SupabaseVConQueries implements IVConQueries {
       const { count, error: countError } = await vconQuery;
       if (countError) throw countError;
 
-      // If tag filters, intersect with tag matching UUIDs
+      // If tag filters, get the date+tag-matching UUIDs from the RPC
+      // (which honors v.created_at) and count the intersection with the
+      // party-filtered set. Subject filter falls back to JS filtering since
+      // the RPC doesn't accept it.
       if (filters.tags && Object.keys(filters.tags).length > 0) {
-        const tagMatchingUuids = await this.searchByTags(filters.tags, 10000);
-        const tagMatchingSet = new Set(tagMatchingUuids);
+        const tagAndDateUuids = await this.searchByTagsAndDate(
+          filters.tags,
+          filters.startDate,
+          filters.endDate,
+          100000,
+        );
+        const tagAndDateSet = new Set(tagAndDateUuids);
 
-        // Get UUIDs for the party-filtered vcons and count intersection
-        const { data: vconData } = await this.supabase
-          .from('vcons')
-          .select('uuid')
-          .in('id', Array.from(partyVconIds));
-
-        const matchingUuids = vconData?.filter(v => tagMatchingSet.has(v.uuid)).map(v => v.uuid) || [];
-        return matchingUuids.length;
+        const partyIdArray = Array.from(partyVconIds);
+        const IN_BATCH = 400;
+        let matched = 0;
+        for (let i = 0; i < partyIdArray.length; i += IN_BATCH) {
+          const chunk = partyIdArray.slice(i, i + IN_BATCH);
+          let chunkQuery = this.supabase.from('vcons').select('uuid').in('id', chunk);
+          if (filters.subject) chunkQuery = chunkQuery.ilike('subject', `%${filters.subject}%`);
+          const { data: batchVcons } = await chunkQuery;
+          for (const v of batchVcons || []) {
+            if (tagAndDateSet.has(v.uuid)) matched++;
+          }
+        }
+        return matched;
       }
 
       return count || 0;
     }
 
-    // If tag filters but no party filters, get tag matching UUIDs and count intersection
+    // If tag filters but no party filters, push the count down into the RPC
+    // so it executes as a single SQL join instead of a JS intersection over
+    // a PostgREST page-truncated result set.
     if (filters.tags && Object.keys(filters.tags).length > 0) {
-      const tagMatchingUuids = await this.searchByTags(filters.tags, 10000);
-      const tagMatchingSet = new Set(tagMatchingUuids);
+      // Subject filter is rare in this path; if present we have to fall back
+      // to UUID intersection because the RPC doesn't accept it.
+      if (filters.subject) {
+        const tagAndDateUuids = await this.searchByTagsAndDate(
+          filters.tags,
+          filters.startDate,
+          filters.endDate,
+          100000,
+        );
+        if (tagAndDateUuids.length === 0) return 0;
+        const tagAndDateSet = new Set(tagAndDateUuids);
 
-      // Get all UUIDs from the base query (with subject/date filters)
-      const { data: vconData } = await query.select('uuid');
-      if (!vconData) return 0;
+        // Walk vcons in batches matching the subject filter and intersect.
+        const uuidArray = Array.from(tagAndDateSet);
+        const IN_BATCH = 400;
+        let matched = 0;
+        for (let i = 0; i < uuidArray.length; i += IN_BATCH) {
+          const chunk = uuidArray.slice(i, i + IN_BATCH);
+          const { data: batchVcons } = await this.supabase
+            .from('vcons')
+            .select('uuid')
+            .in('uuid', chunk)
+            .ilike('subject', `%${filters.subject}%`);
+          matched += (batchVcons || []).length;
+        }
+        return matched;
+      }
 
-      const matchingUuids = vconData.filter(v => tagMatchingSet.has(v.uuid));
-      return matchingUuids.length;
+      return await this.countByTagsAndDate(
+        filters.tags,
+        filters.startDate,
+        filters.endDate,
+      );
     }
 
-    // For non-party, non-tag filters, use the simple count query
+    // Date-only path: route through the RPC (with empty tag_filter) so the
+    // count runs as a server-side COUNT(*) instead of a PostgREST exact count.
+    // The PostgREST count path silently degrades to the corpus total on wider
+    // windows (~7-day windows on a 250k-row table observed returning the
+    // full corpus). The RPC handles tag_filter='{}'::jsonb as "no tag
+    // restriction" and uses a plain index-backed range scan on created_at.
+    if ((filters.startDate || filters.endDate) && !filters.subject) {
+      return await this.countByTagsAndDate(
+        {},
+        filters.startDate,
+        filters.endDate,
+      );
+    }
+
+    // Subject-filter or fully-unfiltered path: PostgREST exact count is fine.
     const { count, error } = await query;
     if (error) throw error;
     return count || 0;
@@ -1183,6 +1274,45 @@ export class SupabaseVConQueries implements IVConQueries {
    */
   async removeAllTags(vconUuid: string): Promise<void> {
     await this.saveTags(vconUuid, {});
+  }
+
+  /**
+   * Search vCons by tags AND vcon.created_at in a single SQL query.
+   * Uses the search_vcons_by_tags_and_date RPC so the intersection happens
+   * in Postgres rather than via JS over a PostgREST page-truncated set.
+   */
+  async searchByTagsAndDate(
+    tags: Record<string, string>,
+    startDate: string | undefined,
+    endDate: string | undefined,
+    limit: number = 1000,
+  ): Promise<string[]> {
+    const { data, error } = await this.supabase.rpc('search_vcons_by_tags_and_date', {
+      tag_filter: tags || {},
+      vcon_created_after: startDate ?? null,
+      vcon_created_before: endDate ?? null,
+      max_results: limit,
+    });
+    if (error) throw error;
+    return (data || []).map((r: any) => r.vcon_uuid as string);
+  }
+
+  /**
+   * Count of vCons matching tags AND vcon.created_at in a single SQL query.
+   */
+  async countByTagsAndDate(
+    tags: Record<string, string>,
+    startDate: string | undefined,
+    endDate: string | undefined,
+  ): Promise<number> {
+    const { data, error } = await this.supabase.rpc('search_vcons_by_tags_and_date_count', {
+      tag_filter: tags || {},
+      vcon_created_after: startDate ?? null,
+      vcon_created_before: endDate ?? null,
+    });
+    if (error) throw error;
+    // RPC returns bigint as a number/string depending on driver
+    return typeof data === 'number' ? data : Number(data ?? 0);
   }
 
   /**
@@ -1363,11 +1493,80 @@ export class SupabaseVConQueries implements IVConQueries {
     const keyFilter = options?.keyFilter?.toLowerCase();
     const minCount = options?.minCount ?? 1;
 
-    // Get all tags attachments (use pagination to bypass Supabase's 1000 row default limit)
-    // Note: We look for type='tags' regardless of encoding to handle legacy data
-    // Tags should have encoding='json', but we're lenient to find tags that may have wrong encoding
+    // ── Fast path: aggregate in SQL using the vcon_tags_mv materialized view ──
+    // This replaces the old approach of fetching 100k+ rows in JS batches
+    // (which caused 9–15s query times). Falls back to JS batch scan if the
+    // view or exec_sql RPC is unavailable.
+    try {
+      // Sanitize keyFilter for safe interpolation (no parameterized exec_sql support)
+      const keyLike = keyFilter
+        ? `'${keyFilter.replace(/'/g, "''").replace(/%/g, '\\%').replace(/_/g, '\\_')}%'`
+        : null;
+      const keyWhere = keyLike ? `AND lower(key) LIKE ${keyLike}` : '';
+      const havingClause = minCount > 1 ? `HAVING COUNT(*) >= ${minCount}` : '';
 
-    // First, get the total count
+      const aggQuery = `
+        SELECT key, value, COUNT(*)::integer AS cnt
+        FROM vcon_tags_mv,
+             LATERAL jsonb_each_text(tags) AS t(key, value)
+        WHERE true ${keyWhere}
+        GROUP BY key, value
+        ${havingClause}
+        ORDER BY key, cnt DESC
+      `;
+      const totalQuery = `SELECT COUNT(DISTINCT vcon_id)::integer AS total FROM vcon_tags_mv`;
+
+      const [{ data: rows, error: rowsErr }, { data: totalData, error: totalErr }] =
+        await Promise.all([
+          this.supabase.rpc('exec_sql', { q: aggQuery, params: {} }),
+          this.supabase.rpc('exec_sql', { q: totalQuery, params: {} }),
+        ]);
+
+      if (rowsErr) throw rowsErr;
+      if (totalErr) throw totalErr;
+
+      const allTags: Record<string, Set<string>> = {};
+      const tagCounts: Record<string, Record<string, number>> = {};
+
+      for (const row of rows || []) {
+        const { key, value, cnt } = row as { key: string; value: string; cnt: number };
+        if (!allTags[key]) allTags[key] = new Set<string>();
+        allTags[key].add(value);
+        if (includeCounts) {
+          if (!tagCounts[key]) tagCounts[key] = {};
+          tagCounts[key][value] = cnt;
+        }
+      }
+
+      const tagsByKey: Record<string, string[]> = {};
+      for (const [key, vals] of Object.entries(allTags)) {
+        tagsByKey[key] = Array.from(vals).sort();
+      }
+
+      const result: any = {
+        keys: Object.keys(tagsByKey).sort(),
+        tagsByKey,
+        totalVCons: (totalData as any)?.[0]?.total ?? 0,
+      };
+      if (includeCounts) result.countsPerValue = tagCounts;
+      return result;
+
+    } catch (fastErr: any) {
+      // Fall back to JS batch scan when exec_sql or vcon_tags_mv is unavailable
+      const isExpected =
+        fastErr?.code === '42P01' ||       // relation does not exist
+        fastErr?.code === 'PGRST202' ||    // RPC not found
+        fastErr?.message?.includes('does not exist') ||
+        fastErr?.message?.includes('Could not find');
+      if (!isExpected) throw fastErr;
+      logWithContext('warn', 'getUniqueTags SQL fast path unavailable, using JS batch fallback', {
+        reason: fastErr.message
+      });
+    }
+
+    // ── Fallback: JS batch scan of attachments table ──────────────────────────
+    // Note: We look for type='tags' regardless of encoding to handle legacy data.
+
     const { count, error: countError } = await this.supabase
       .from('attachments')
       .select('*', { count: 'exact', head: true })
@@ -1375,7 +1574,6 @@ export class SupabaseVConQueries implements IVConQueries {
 
     if (countError) throw countError;
 
-    // Fetch all attachments in batches (Supabase defaults to 1000 rows per query)
     const batchSize = 1000;
     const totalBatches = Math.ceil((count || 0) / batchSize);
     const attachments: any[] = [];
@@ -1383,130 +1581,77 @@ export class SupabaseVConQueries implements IVConQueries {
     for (let i = 0; i < totalBatches; i++) {
       const from = i * batchSize;
       const to = Math.min(from + batchSize - 1, (count || 0) - 1);
-
       const { data: batch, error } = await this.supabase
         .from('attachments')
         .select('vcon_id, body, encoding')
         .eq('type', 'tags')
         .range(from, to);
-
       if (error) throw error;
       if (batch) attachments.push(...batch);
     }
 
-    const allTags: Record<string, Set<string>> = {};
-    const tagCounts: Record<string, Record<string, number>> = {};
+    const allTagsFb: Record<string, Set<string>> = {};
+    const tagCountsFb: Record<string, Record<string, number>> = {};
     const vconIds = new Set<number>();
-
-    // Parse all tags
     let tagsWithWrongEncoding = 0;
-    for (const attachment of attachments || []) {
-      vconIds.add(attachment.vcon_id);
 
-      // Warn if encoding is not 'json' (tags should have encoding='json')
+    for (const attachment of attachments) {
+      vconIds.add(attachment.vcon_id);
       if (attachment.encoding !== 'json') {
         tagsWithWrongEncoding++;
         if (tagsWithWrongEncoding === 1) {
-          // Only log once to avoid spam
           logWithContext('warn', 'Found tags attachments with incorrect encoding', {
             encoding: attachment.encoding || 'NULL',
             suggestion: 'Run migration script: npx tsx scripts/migrate-tags-encoding.ts'
           });
         }
       }
-
       try {
         const tagsArray = JSON.parse(attachment.body || '[]');
-
-        if (!Array.isArray(tagsArray)) {
-          logWithContext('warn', 'Tags attachment body is not an array', {
-            vcon_id: attachment.vcon_id,
-            encoding: attachment.encoding
-          });
-          continue;
-        }
-
+        if (!Array.isArray(tagsArray)) continue;
         for (const tagString of tagsArray) {
-          if (typeof tagString !== 'string') {
-            continue;
-          }
-
+          if (typeof tagString !== 'string') continue;
           const colonIndex = tagString.indexOf(':');
-          if (colonIndex > 0) {
-            const key = tagString.substring(0, colonIndex);
-            const value = tagString.substring(colonIndex + 1);
-
-            // Apply key filter if provided
-            if (keyFilter && !key.toLowerCase().includes(keyFilter)) {
-              continue;
-            }
-
-            // Initialize structures
-            if (!allTags[key]) {
-              allTags[key] = new Set<string>();
-            }
-            if (includeCounts) {
-              if (!tagCounts[key]) {
-                tagCounts[key] = {};
-              }
-              tagCounts[key][value] = (tagCounts[key][value] || 0) + 1;
-            }
-
-            allTags[key].add(value);
+          if (colonIndex <= 0) continue;
+          const key = tagString.substring(0, colonIndex);
+          const value = tagString.substring(colonIndex + 1);
+          if (keyFilter && !key.toLowerCase().includes(keyFilter)) continue;
+          if (!allTagsFb[key]) allTagsFb[key] = new Set<string>();
+          if (includeCounts) {
+            if (!tagCountsFb[key]) tagCountsFb[key] = {};
+            tagCountsFb[key][value] = (tagCountsFb[key][value] || 0) + 1;
           }
+          allTagsFb[key].add(value);
         }
-      } catch (parseError) {
-        logWithContext('error', 'Failed to parse tags attachment', {
-          vcon_id: attachment.vcon_id,
-          encoding: attachment.encoding,
-          error: parseError instanceof Error ? parseError.message : String(parseError)
-        });
-        // Continue processing other attachments
+      } catch {
+        // skip unparseable attachments
       }
     }
 
-    if (tagsWithWrongEncoding > 0) {
-      logWithContext('info', `Processed ${tagsWithWrongEncoding} tags attachments with incorrect encoding`, {
-        total_tags: attachments?.length || 0,
-        wrong_encoding_count: tagsWithWrongEncoding
-      });
-    }
-
-    // Convert sets to arrays and apply min count filter
-    const tagsByKey: Record<string, string[]> = {};
+    const tagsByKeyFb: Record<string, string[]> = {};
     const filteredCounts: Record<string, Record<string, number>> = {};
 
-    for (const [key, valuesSet] of Object.entries(allTags)) {
+    for (const [key, valuesSet] of Object.entries(allTagsFb)) {
       const values: string[] = [];
-
       for (const value of valuesSet) {
-        const count = tagCounts[key]?.[value] ?? 1;
-        if (count >= minCount) {
+        const cnt = tagCountsFb[key]?.[value] ?? 1;
+        if (cnt >= minCount) {
           values.push(value);
-          if (includeCounts && tagCounts[key]) {
-            if (!filteredCounts[key]) {
-              filteredCounts[key] = {};
-            }
-            filteredCounts[key][value] = count;
+          if (includeCounts) {
+            if (!filteredCounts[key]) filteredCounts[key] = {};
+            filteredCounts[key][value] = cnt;
           }
         }
       }
-
-      if (values.length > 0) {
-        tagsByKey[key] = values.sort();
-      }
+      if (values.length > 0) tagsByKeyFb[key] = values.sort();
     }
 
     const result: any = {
-      keys: Object.keys(tagsByKey).sort(),
-      tagsByKey,
-      totalVCons: vconIds.size
+      keys: Object.keys(tagsByKeyFb).sort(),
+      tagsByKey: tagsByKeyFb,
+      totalVCons: vconIds.size,
     };
-
-    if (includeCounts) {
-      result.countsPerValue = filteredCounts;
-    }
-
+    if (includeCounts) result.countsPerValue = filteredCounts;
     return result;
   }
 

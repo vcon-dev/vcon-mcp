@@ -28,7 +28,7 @@ export const createFromTemplateTool = {
 export function buildTemplateVCon(template: string, subject: string | undefined, parties: any[]): VCon {
   const now = new Date().toISOString();
   const base: VCon = {
-    vcon: '0.3.0',
+    vcon: '0.4.0',
     uuid: randomUUID(),
     created_at: now,
     subject,

@@ -128,26 +128,33 @@ describe('Search Count Limit Validation', () => {
   });
 
   describe('searchVConsCount', () => {
-    it('should use count query instead of fetching all rows', async () => {
-      // Mock the count query response
-      mockSupabase.setResult({ count: 2500, error: null });
+    it('routes date-only counts through search_vcons_by_tags_and_date_count RPC', async () => {
+      // Date-only path now uses the RPC (with empty tag_filter) so PostgREST's
+      // exact-count fallback can't silently degrade to corpus total on wider
+      // windows. See queries.ts comment for context.
+      mockSupabase.rpc.mockResolvedValueOnce({ data: 2500, error: null });
 
       const count = await queries.searchVConsCount({
         startDate: '2025-01-01T00:00:00Z',
         endDate: '2025-12-31T23:59:59Z',
       });
 
-      // Verify it uses count: 'exact', head: true
-      expect(mockSupabase._calls.select).toHaveBeenCalledWith('*', { count: 'exact', head: true });
+      expect(mockSupabase.rpc).toHaveBeenCalledWith(
+        'search_vcons_by_tags_and_date_count',
+        {
+          tag_filter: {},
+          vcon_created_after: '2025-01-01T00:00:00Z',
+          vcon_created_before: '2025-12-31T23:59:59Z',
+        },
+      );
       expect(count).toBe(2500);
     });
 
     it('should return counts greater than 1000', async () => {
-      // Test that counts can exceed 1000
       const largeCounts = [1500, 5000, 10000, 50000];
-      
+
       for (const expectedCount of largeCounts) {
-        mockSupabase.setResult({ count: expectedCount, error: null });
+        mockSupabase.rpc.mockResolvedValueOnce({ data: expectedCount, error: null });
 
         const count = await queries.searchVConsCount({
           startDate: '2025-01-01T00:00:00Z',
@@ -203,39 +210,41 @@ describe('Search Count Limit Validation', () => {
       expect(mockSupabase._calls.ilike).toHaveBeenCalledWith('subject', '%billing%');
     });
 
-    it('should handle tag filters', async () => {
-      const testUuid1 = randomUUID();
-      const testUuid2 = randomUUID();
-      
-      // Mock searchByTags to return matching UUIDs
-      vi.spyOn(queries, 'searchByTags').mockResolvedValue([testUuid1, testUuid2]);
-      
-      // Mock the base query to return UUIDs
-      mockSupabase.setResult({
-        data: [{ uuid: testUuid1 }, { uuid: testUuid2 }, { uuid: randomUUID() }],
-        error: null
-      });
+    it('should handle tag filters via the date+tag RPC', async () => {
+      // Tag-only counts now route through search_vcons_by_tags_and_date_count
+      // so the join executes server-side instead of intersecting in JS.
+      mockSupabase.rpc.mockResolvedValueOnce({ data: 2, error: null });
 
       const count = await queries.searchVConsCount({
         tags: { department: 'sales' },
       });
 
-      expect(queries.searchByTags).toHaveBeenCalledWith({ department: 'sales' }, 10000);
-      expect(count).toBe(2); // Only 2 match the tag filter
+      expect(mockSupabase.rpc).toHaveBeenCalledWith(
+        'search_vcons_by_tags_and_date_count',
+        {
+          tag_filter: { department: 'sales' },
+          vcon_created_after: null,
+          vcon_created_before: null,
+        },
+      );
+      expect(count).toBe(2);
     });
 
-    it('should combine tag filters with other filters', async () => {
+    it('should combine tag filters with party + subject', async () => {
       const testUuid = randomUUID();
-      
-      // Mock searchByTags
-      vi.spyOn(queries, 'searchByTags').mockResolvedValue([testUuid, randomUUID()]);
-      
-      // Mock sequential queries: party query, then UUID query
+
+      // The new path: party query → vcon-count query → tag+date RPC →
+      // batched .in() to intersect tag UUIDs with party-vcon UUIDs.
       const mockPartyData = [{ vcon_id: 1 }, { vcon_id: 2 }];
       mockSupabase.setResults([
-        { data: mockPartyData, error: null },           // Party query result
-        { data: [{ uuid: testUuid }], error: null }     // UUID query result
+        { data: mockPartyData, error: null },          // parties query
+        { count: 2, error: null },                     // vcon count (date/subject)
+        { data: [{ uuid: testUuid }], error: null },   // batched .in() chunk
       ]);
+      mockSupabase.rpc.mockResolvedValueOnce({
+        data: [{ vcon_uuid: testUuid }, { vcon_uuid: randomUUID() }],
+        error: null,
+      });
 
       const count = await queries.searchVConsCount({
         tags: { department: 'sales' },
@@ -243,25 +252,24 @@ describe('Search Count Limit Validation', () => {
         subject: 'Test',
       });
 
-      expect(queries.searchByTags).toHaveBeenCalledWith({ department: 'sales' }, 10000);
-      expect(count).toBe(1); // Only 1 matches both party and tag filters
+      expect(mockSupabase.rpc).toHaveBeenCalledWith(
+        'search_vcons_by_tags_and_date',
+        expect.objectContaining({ tag_filter: { department: 'sales' } }),
+      );
+      expect(count).toBe(1);
     });
 
     it('should return 0 when tag filter matches no vCons', async () => {
-      // Mock searchByTags to return empty array
-      vi.spyOn(queries, 'searchByTags').mockResolvedValue([]);
-      
-      // Mock the base query
-      mockSupabase.setResult({
-        data: [{ uuid: randomUUID() }],
-        error: null
-      });
+      mockSupabase.rpc.mockResolvedValueOnce({ data: 0, error: null });
 
       const count = await queries.searchVConsCount({
         tags: { department: 'nonexistent' },
       });
 
-      expect(queries.searchByTags).toHaveBeenCalledWith({ department: 'nonexistent' }, 10000);
+      expect(mockSupabase.rpc).toHaveBeenCalledWith(
+        'search_vcons_by_tags_and_date_count',
+        expect.objectContaining({ tag_filter: { department: 'nonexistent' } }),
+      );
       expect(count).toBe(0);
     });
   });
@@ -432,6 +440,126 @@ describe('Search Count Limit Validation', () => {
 
       // Should return 0 when no parties match
       expect(count).toBe(0);
+    });
+  });
+
+  // Regression: combining tags + date range previously routed through a JS
+  // intersection over a PostgREST page-truncated UUID set, returning the
+  // same total for every distinct tag in a fan-out (e.g. all themes → 0
+  // for a single-day window, or all themes → full-corpus count for a week
+  // window). These tests pin the new RPC-backed path.
+  describe('searchVConsCount: tags + date filter (regression)', () => {
+    it('routes tag + date count through search_vcons_by_tags_and_date_count RPC', async () => {
+      mockSupabase.rpc.mockResolvedValueOnce({ data: 42, error: null });
+
+      const count = await queries.searchVConsCount({
+        startDate: '2026-04-01T00:00:00Z',
+        endDate: '2026-04-30T23:59:59Z',
+        tags: { portal: 'X' },
+      });
+
+      expect(count).toBe(42);
+      expect(mockSupabase.rpc).toHaveBeenCalledWith(
+        'search_vcons_by_tags_and_date_count',
+        {
+          tag_filter: { portal: 'X' },
+          vcon_created_after: '2026-04-01T00:00:00Z',
+          vcon_created_before: '2026-04-30T23:59:59Z',
+        },
+      );
+    });
+
+    it('returns distinct counts for distinct tags (no fan-out cross-talk)', async () => {
+      mockSupabase.rpc.mockResolvedValueOnce({ data: 7023, error: null });
+      const a = await queries.searchVConsCount({
+        startDate: '2026-04-15T00:00:00Z',
+        endDate: '2026-04-15T23:59:59Z',
+        tags: { portal: 'A' },
+      });
+
+      mockSupabase.rpc.mockResolvedValueOnce({ data: 311, error: null });
+      const b = await queries.searchVConsCount({
+        startDate: '2026-04-15T00:00:00Z',
+        endDate: '2026-04-15T23:59:59Z',
+        tags: { portal: 'B' },
+      });
+
+      expect(a).toBe(7023);
+      expect(b).toBe(311);
+      expect(a).not.toBe(b);
+    });
+
+    it('coerces bigint string returns to number', async () => {
+      mockSupabase.rpc.mockResolvedValueOnce({ data: '49069', error: null });
+
+      const count = await queries.searchVConsCount({
+        startDate: '2026-04-01T00:00:00Z',
+        endDate: '2026-04-07T23:59:59Z',
+        tags: { portal: 'X' },
+      });
+
+      expect(count).toBe(49069);
+    });
+  });
+
+  // Regression: date-only counts on wider windows previously silently
+  // returned the corpus total (PostgREST exact count fallback on a
+  // 250k-row table). The new path routes through the RPC so SQL
+  // COUNT(*) is authoritative. Ignored arg `tags: {}` from callers
+  // (e.g. apps/web Pulse aggregations) must be treated as "no tag
+  // restriction" — the same code path as omitting `tags` entirely.
+  describe('searchVConsCount: date-only count regression', () => {
+    it('treats empty tags object the same as no tag filter', async () => {
+      mockSupabase.rpc.mockResolvedValueOnce({ data: 13891, error: null });
+
+      const count = await queries.searchVConsCount({
+        startDate: '2026-04-29T00:00:00Z',
+        endDate: '2026-04-30T23:59:59Z',
+        tags: {},
+      });
+
+      expect(mockSupabase.rpc).toHaveBeenCalledWith(
+        'search_vcons_by_tags_and_date_count',
+        expect.objectContaining({ tag_filter: {} }),
+      );
+      expect(count).toBe(13891);
+    });
+
+    it('returns distinct counts for distinct date windows (no degradation)', async () => {
+      mockSupabase.rpc.mockResolvedValueOnce({ data: 7023, error: null });
+      const oneDay = await queries.searchVConsCount({
+        startDate: '2026-04-30T00:00:00Z',
+        endDate: '2026-04-30T23:59:59Z',
+      });
+
+      mockSupabase.rpc.mockResolvedValueOnce({ data: 13891, error: null });
+      const twoDay = await queries.searchVConsCount({
+        startDate: '2026-04-29T00:00:00Z',
+        endDate: '2026-04-30T23:59:59Z',
+      });
+
+      mockSupabase.rpc.mockResolvedValueOnce({ data: 49069, error: null });
+      const sevenDay = await queries.searchVConsCount({
+        startDate: '2026-04-24T00:00:00Z',
+        endDate: '2026-04-30T23:59:59Z',
+      });
+
+      expect(oneDay).toBe(7023);
+      expect(twoDay).toBe(13891);
+      expect(sevenDay).toBe(49069);
+      expect(twoDay).toBeGreaterThan(oneDay);
+      expect(sevenDay).toBeGreaterThan(twoDay);
+    });
+
+    it('subject-only count keeps PostgREST exact count path', async () => {
+      // Subject filter has no RPC equivalent yet; verify we still take the
+      // direct count path so this isn't accidentally broken.
+      mockSupabase.setResult({ count: 42, error: null });
+
+      const count = await queries.searchVConsCount({ subject: 'billing' });
+
+      expect(mockSupabase._calls.ilike).toHaveBeenCalledWith('subject', '%billing%');
+      expect(count).toBe(42);
     });
   });
 });

@@ -282,30 +282,44 @@ export class SupabaseDatabaseInspector implements IDatabaseInspector {
       throw new Error('Only SELECT queries are allowed for analysis');
     }
 
-    // Use text format instead of JSON for better compatibility
-    const explainQuery = analyzeMode === 'explain_analyze'
-      ? `EXPLAIN (ANALYZE, BUFFERS) ${query}`
-      : `EXPLAIN ${query}`;
+    // exec_sql cannot run EXPLAIN — it wraps every query as
+    //   SELECT jsonb_agg(...) FROM (<query>) t
+    // making EXPLAIN a subquery, which PostgreSQL rejects (42601).
+    // Use the dedicated explain_query(q, analyze) RPC instead.
+    const useAnalyze = analyzeMode === 'explain_analyze';
 
-    const { data, error } = await this.supabase.rpc('exec_sql', {
-      q: explainQuery,
-      params: {}
+    const { data: planRows, error } = await this.supabase.rpc('explain_query', {
+      q: query,
+      run_analyze: useAnalyze,
     });
 
-    if (error) throw error;
+    // If ANALYZE is blocked (permissions / read-only replica), retry without it
+    let data: any = planRows;
+    if (error && useAnalyze &&
+        (error.code === '42601' || error.code === '25006' ||
+         error.message?.includes('syntax error') || error.message?.includes('read-only'))) {
+      analyzeMode = 'explain';
+      const { data: fallbackRows, error: fallbackErr } = await this.supabase.rpc('explain_query', {
+        q: query,
+        run_analyze: false,
+      });
+      if (fallbackErr) throw fallbackErr;
+      data = fallbackRows;
+    } else if (error) {
+      throw error;
+    }
 
-    // The result is an array of rows with the explain output
-    const planText = data?.map((row: any) => {
-      // Each row might have different keys, try common ones
-      return row['QUERY PLAN'] || row.plan || Object.values(row)[0];
-    }).join('\n');
+    // explain_query returns SETOF text — each element is one plan line
+    const planText = Array.isArray(data)
+      ? data.join('\n')
+      : String(data ?? '');
 
     return {
       timestamp: new Date().toISOString(),
       query: query,
       mode: analyzeMode,
       plan_text: planText,
-      plan_rows: data,
+      plan_rows: Array.isArray(data) ? data : [],
       executed: analyzeMode === 'explain_analyze',
     };
   }

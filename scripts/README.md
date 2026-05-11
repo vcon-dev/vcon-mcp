@@ -127,7 +127,7 @@ Hosted Supabase may rate-limit heavy runs.
 | Script | Description |
 |--------|-------------|
 | `sync-all.ts` | Unified sync: vCons + embeddings + tags |
-| `import-vcon-files.ts` | Bulk import real `.vcon` files from a local directory (93k+ files supported) |
+| `import-vcon-files.ts` | Bulk import real `.vcon` files from a local directory (115k+ files tested) |
 | `load-legacy-vcons.ts` | Load vCons from S3 or local directory (legacy sync) |
 | `embed-vcons.ts` | Generate embeddings for vCons |
 | `check-db-status.ts` | Database status with table counts |
@@ -167,9 +167,11 @@ SKIP_EXISTING=true      # Skip UUIDs already in DB (default: true)
 DRY_RUN=true            # Validate without inserting
 ```
 
-Errors are logged to `import-errors.log`. Expected rate: ~220 vCons/sec with CONCURRENCY=20.
+Errors are logged to `import-errors.log`. Expected rate: ~100–220 vCons/sec with CONCURRENCY=20.
 
-> **Note:** Before re-importing after a failed run, truncate the DB: `psql ... -c "TRUNCATE vcons CASCADE;"`
+> **Re-runs are safe.** `SKIP_EXISTING=true` (default) fetches all existing UUIDs from the DB and skips files already imported. No truncation needed — just re-run the same command.
+>
+> **Note:** UUID de-duplication pages through the DB in batches of 1000 (Supabase PostgREST default max). Large databases (100k+ vCons) are handled automatically.
 
 ---
 

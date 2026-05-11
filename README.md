@@ -346,7 +346,7 @@ The server will start on `http://127.0.0.1:3000` (default) and log:
 curl -i -X POST http://127.0.0.1:3000 \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"my-client","version":"1.0.0"}}}'
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"my-client","version":"1.0.0"}}}'
 
 # Extract the Mcp-Session-Id from response headers
 

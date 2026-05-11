@@ -131,7 +131,21 @@ export class SearchByTagsHandler extends BaseToolHandler {
       );
     }
 
-    const vconUuids = await context.queries.searchByTags(tags, limit);
+    // Ensure all tag values are primitives — passing an object produces
+    // "invalid input syntax for type uuid: [object Object]" in PostgreSQL.
+    const sanitizedTags: Record<string, string> = {};
+    for (const [key, value] of Object.entries(tags)) {
+      if (value !== null && typeof value === 'object') {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `Tag value for key "${key}" must be a string, not an object. ` +
+          `Got: ${JSON.stringify(value)}. Example: {"${key}": "some-value"}`
+        );
+      }
+      sanitizedTags[key] = String(value);
+    }
+
+    const vconUuids = await context.queries.searchByTags(sanitizedTags, limit);
 
     // Determine if we should return full vCons
     const shouldReturnFull = returnFullVCons ?? (vconUuids.length <= 20);

@@ -434,8 +434,8 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
           DATE_TRUNC('month', v.created_at) as month,
           COUNT(*) as vcon_count,
           COUNT(DISTINCT v.id) as unique_vcons,
-          SUM(COALESCE(d.size_bytes, 0)) as dialog_size,
-          SUM(COALESCE(a.size_bytes, 0)) as attachment_size,
+          SUM(COALESCE(d.size_bytes, octet_length(d.body), 0)) as dialog_size,
+          SUM(COALESCE(a.size_bytes, octet_length(a.body), 0)) as attachment_size,
           COUNT(d.id) as dialog_count,
           COUNT(a.id) as attachment_count
         FROM vcons v
@@ -502,8 +502,8 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
       WITH size_trends AS (
         SELECT 
           DATE_TRUNC('${dateTrunc}', v.created_at) as period,
-          SUM(COALESCE(d.size_bytes, 0)) as dialog_size,
-          SUM(COALESCE(a.size_bytes, 0)) as attachment_size,
+          SUM(COALESCE(d.size_bytes, octet_length(d.body), 0)) as dialog_size,
+          SUM(COALESCE(a.size_bytes, octet_length(a.body), 0)) as attachment_size,
           COUNT(d.id) as dialog_count,
           COUNT(a.id) as attachment_count
         FROM vcons v
@@ -620,10 +620,10 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
     const query = `
       SELECT 
         COUNT(*) as total_attachments,
-        SUM(COALESCE(size_bytes, 0)) as total_size,
-        AVG(COALESCE(size_bytes, 0)) as avg_size,
-        MIN(COALESCE(size_bytes, 0)) as min_size,
-        MAX(COALESCE(size_bytes, 0)) as max_size,
+        SUM(COALESCE(size_bytes, octet_length(body), 0)) as total_size,
+        AVG(COALESCE(size_bytes, octet_length(body), 0)) as avg_size,
+        MIN(COALESCE(size_bytes, octet_length(body), 0)) as min_size,
+        MAX(COALESCE(size_bytes, octet_length(body), 0)) as max_size,
         COUNT(DISTINCT type) as unique_types,
         COUNT(DISTINCT vcon_id) as vcons_with_attachments
       FROM attachments
@@ -643,8 +643,8 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
       SELECT 
         type,
         COUNT(*) as count,
-        SUM(COALESCE(size_bytes, 0)) as total_size,
-        AVG(COALESCE(size_bytes, 0)) as avg_size,
+        SUM(COALESCE(size_bytes, octet_length(body), 0)) as total_size,
+        AVG(COALESCE(size_bytes, octet_length(body), 0)) as avg_size,
         ROUND(COUNT(*)::numeric / SUM(COUNT(*)) OVER () * 100, 2) as percentage
       FROM attachments
       GROUP BY type
@@ -663,19 +663,23 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
 
   private async getAttachmentSizeDistribution() {
     const query = `
-      WITH size_buckets AS (
-        SELECT 
-          CASE 
-            WHEN size_bytes < 1024 THEN '< 1KB'
-            WHEN size_bytes < 1024*1024 THEN '1KB - 1MB'
-            WHEN size_bytes < 10*1024*1024 THEN '1MB - 10MB'
-            WHEN size_bytes < 100*1024*1024 THEN '10MB - 100MB'
+      WITH sized AS (
+        SELECT COALESCE(size_bytes, octet_length(body), 0) AS sz
+        FROM attachments
+        WHERE body IS NOT NULL OR size_bytes IS NOT NULL
+      ),
+      size_buckets AS (
+        SELECT
+          CASE
+            WHEN sz < 1024 THEN '< 1KB'
+            WHEN sz < 1024*1024 THEN '1KB - 1MB'
+            WHEN sz < 10*1024*1024 THEN '1MB - 10MB'
+            WHEN sz < 100*1024*1024 THEN '10MB - 100MB'
             ELSE '> 100MB'
           END as size_bucket,
           COUNT(*) as count,
-          SUM(COALESCE(size_bytes, 0)) as total_size
-        FROM attachments
-        WHERE size_bytes IS NOT NULL
+          SUM(sz) as total_size
+        FROM sized
         GROUP BY 1
       )
       SELECT 
@@ -701,8 +705,8 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
       SELECT 
         DATE_TRUNC('month', created_at) as month,
         COUNT(*) as attachment_count,
-        SUM(COALESCE(size_bytes, 0)) as total_size,
-        AVG(COALESCE(size_bytes, 0)) as avg_size
+        SUM(COALESCE(size_bytes, octet_length(body), 0)) as total_size,
+        AVG(COALESCE(size_bytes, octet_length(body), 0)) as avg_size
       FROM attachments
       WHERE created_at >= NOW() - INTERVAL '12 months'
       GROUP BY DATE_TRUNC('month', created_at)
@@ -720,17 +724,10 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
 
   private async getTagStatistics() {
     const query = `
-      WITH filtered AS (
-        SELECT body, vcon_id
-        FROM attachments
-        WHERE type = 'application/json'
-          AND body::jsonb ? 'tags'
-          AND jsonb_typeof(body::jsonb->'tags') = 'object'
-      ),
-      tag_data AS (
-        SELECT key, value, f.vcon_id
-        FROM filtered f
-        CROSS JOIN LATERAL jsonb_each_text(f.body::jsonb->'tags')
+      WITH tag_data AS (
+        SELECT t.key, t.value, mv.vcon_id
+        FROM vcon_tags_mv mv
+        CROSS JOIN LATERAL jsonb_each_text(mv.tags) AS t(key, value)
       )
       SELECT
         COUNT(DISTINCT key) as unique_keys,
@@ -751,22 +748,15 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
 
   private async getTagFrequencyAnalysis(topNKeys: number, minUsageCount: number) {
     const query = `
-      WITH filtered AS (
-        SELECT body, vcon_id
-        FROM attachments
-        WHERE type = 'application/json'
-          AND body::jsonb ? 'tags'
-          AND jsonb_typeof(body::jsonb->'tags') = 'object'
-      ),
-      tag_stats AS (
+      WITH tag_stats AS (
         SELECT
-          key,
+          t.key,
           COUNT(*) as usage_count,
-          COUNT(DISTINCT value) as unique_values,
-          COUNT(DISTINCT f.vcon_id) as vcons_with_tag
-        FROM filtered f
-        CROSS JOIN LATERAL jsonb_each_text(f.body::jsonb->'tags')
-        GROUP BY key
+          COUNT(DISTINCT t.value) as unique_values,
+          COUNT(DISTINCT mv.vcon_id) as vcons_with_tag
+        FROM vcon_tags_mv mv
+        CROSS JOIN LATERAL jsonb_each_text(mv.tags) AS t(key, value)
+        GROUP BY t.key
         HAVING COUNT(*) >= ${minUsageCount}
       )
       SELECT
@@ -774,7 +764,7 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
         usage_count,
         unique_values,
         vcons_with_tag,
-        ROUND(usage_count::numeric / unique_values, 2) as avg_values_per_key
+        ROUND(usage_count::numeric / NULLIF(unique_values, 0), 2) as avg_values_per_key
       FROM tag_stats
       ORDER BY usage_count DESC
       LIMIT ${topNKeys}
@@ -791,18 +781,11 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
 
   private async getTagValueDistribution(topNKeys: number) {
     const query = `
-      WITH filtered AS (
-        SELECT body, vcon_id
-        FROM attachments
-        WHERE type = 'application/json'
-          AND body::jsonb ? 'tags'
-          AND jsonb_typeof(body::jsonb->'tags') = 'object'
-      ),
-      top_keys AS (
-        SELECT key
-        FROM filtered f
-        CROSS JOIN LATERAL jsonb_each_text(f.body::jsonb->'tags')
-        GROUP BY key
+      WITH top_keys AS (
+        SELECT t.key
+        FROM vcon_tags_mv mv
+        CROSS JOIN LATERAL jsonb_each_text(mv.tags) AS t(key, value)
+        GROUP BY t.key
         ORDER BY COUNT(*) DESC
         LIMIT ${topNKeys}
       ),
@@ -811,16 +794,16 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
           t.key,
           t.value,
           COUNT(*) as count
-        FROM filtered a
-        CROSS JOIN LATERAL jsonb_each_text(a.body::jsonb->'tags') t
+        FROM vcon_tags_mv mv
+        CROSS JOIN LATERAL jsonb_each_text(mv.tags) AS t(key, value)
         INNER JOIN top_keys tk ON t.key = tk.key
         GROUP BY t.key, t.value
       )
-      SELECT 
+      SELECT
         key,
         value,
         count,
-        ROUND(count::numeric / SUM(count) OVER (PARTITION BY key) * 100, 2) as percentage
+        ROUND(count::numeric / NULLIF(SUM(count) OVER (PARTITION BY key), 0) * 100, 2) as percentage
       FROM tag_values
       ORDER BY key, count DESC
     `;
@@ -840,15 +823,11 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
         DATE_TRUNC('month', a.created_at) as month,
         t.key,
         COUNT(*) as usage_count
-      FROM (
-        SELECT body, created_at
-        FROM attachments
-        WHERE type = 'application/json'
-          AND body::jsonb ? 'tags'
-          AND jsonb_typeof(body::jsonb->'tags') = 'object'
-          AND created_at >= NOW() - INTERVAL '12 months'
-      ) a
-      CROSS JOIN LATERAL jsonb_each_text(a.body::jsonb->'tags') t
+      FROM attachments a
+      JOIN vcon_tags_mv mv ON mv.vcon_id = a.vcon_id
+      CROSS JOIN LATERAL jsonb_each_text(mv.tags) AS t(key, value)
+      WHERE a.type = 'tags'
+        AND a.created_at >= NOW() - INTERVAL '12 months'
       GROUP BY DATE_TRUNC('month', a.created_at), t.key
       ORDER BY month, usage_count DESC
     `;
@@ -907,8 +886,8 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
         COUNT(*) as count,
         AVG(COALESCE(duration_seconds, 0)) as avg_duration,
         SUM(COALESCE(duration_seconds, 0)) as total_duration,
-        SUM(COALESCE(size_bytes, 0)) as total_size,
-        AVG(COALESCE(size_bytes, 0)) as avg_size,
+        SUM(COALESCE(size_bytes, octet_length(body), 0)) as total_size,
+        AVG(COALESCE(size_bytes, octet_length(body), 0)) as avg_size,
         COUNT(DISTINCT vcon_id) as unique_vcons
       FROM dialog
       WHERE vcon_id IN (SELECT id FROM filtered_vcons)
@@ -920,8 +899,8 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
         COUNT(*) as count,
         AVG(COALESCE(duration_seconds, 0)) as avg_duration,
         SUM(COALESCE(duration_seconds, 0)) as total_duration,
-        SUM(COALESCE(size_bytes, 0)) as total_size,
-        AVG(COALESCE(size_bytes, 0)) as avg_size,
+        SUM(COALESCE(size_bytes, octet_length(body), 0)) as total_size,
+        AVG(COALESCE(size_bytes, octet_length(body), 0)) as avg_size,
         COUNT(DISTINCT vcon_id) as unique_vcons
       FROM dialog
       GROUP BY type
@@ -1030,7 +1009,7 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
       dialog_counts AS (
         SELECT vcon_id, COUNT(*) as cnt,
           SUM(COALESCE(duration_seconds, 0)) as dur,
-          SUM(COALESCE(size_bytes, 0)) as sz
+          SUM(COALESCE(size_bytes, octet_length(body), 0)) as sz
         FROM dialog WHERE vcon_id IN (SELECT id FROM filtered_vcons)
         GROUP BY vcon_id
       ),
@@ -1070,7 +1049,7 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
           COUNT(DISTINCT an.id) as analysis_count,
           COUNT(DISTINCT att.id) as attachment_count,
           SUM(COALESCE(d.duration_seconds, 0)) as total_duration,
-          SUM(COALESCE(d.size_bytes, 0)) as total_size
+          SUM(COALESCE(d.size_bytes, octet_length(d.body), 0)) as total_size
         FROM vcons v
         LEFT JOIN parties p ON p.vcon_id = v.id
         LEFT JOIN dialog d ON d.vcon_id = v.id
@@ -1130,109 +1109,30 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
   }
 
   private async getPerformanceMetrics() {
-    const query = `
-      SELECT 
-        schemaname,
-        tablename,
-        seq_scan,
-        seq_tup_read,
-        idx_scan,
-        idx_tup_fetch,
-        n_tup_ins as inserts,
-        n_tup_upd as updates,
-        n_tup_del as deletes,
-        n_live_tup as live_rows,
-        n_dead_tup as dead_rows,
-        ROUND(n_dead_tup::numeric / NULLIF(n_live_tup, 0) * 100, 2) as dead_row_percentage,
-        ROUND(idx_scan::numeric / NULLIF(seq_scan + idx_scan, 0) * 100, 2) as index_usage_ratio
-      FROM pg_stat_user_tables
-      WHERE schemaname = 'public'
-      ORDER BY seq_scan + idx_scan DESC
-    `;
-
-    const { data, error } = await this.supabase.rpc('exec_sql', {
-      q: query,
-      params: {}
-    });
-
+    // Uses get_performance_metrics() RPC (migration 20260417000000). The
+    // generic exec_sql RPC can't serialize rows from pg_stat_user_tables
+    // cleanly, so health queries get dedicated JSON-safe wrappers.
+    const { data, error } = await this.supabase.rpc('get_performance_metrics');
     if (error) throw error;
-    return data || [];
+    return Array.isArray(data) ? data : [];
   }
 
   private async getStorageEfficiency() {
-    const query = `
-      SELECT 
-        schemaname,
-        tablename,
-        pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) as total_size,
-        pg_size_pretty(pg_relation_size(schemaname||'.'||tablename)) as table_size,
-        pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename) - pg_relation_size(schemaname||'.'||tablename)) as index_size,
-        ROUND(
-          (pg_total_relation_size(schemaname||'.'||tablename) - pg_relation_size(schemaname||'.'||tablename))::numeric / 
-          NULLIF(pg_total_relation_size(schemaname||'.'||tablename), 0) * 100, 2
-        ) as index_size_percentage
-      FROM pg_tables
-      WHERE schemaname = 'public'
-      ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC
-    `;
-
-    const { data, error } = await this.supabase.rpc('exec_sql', {
-      q: query,
-      params: {}
-    });
-
+    const { data, error } = await this.supabase.rpc('get_storage_efficiency');
     if (error) throw error;
-    return data || [];
+    return Array.isArray(data) ? data : [];
   }
 
   private async getIndexHealth() {
-    const query = `
-      SELECT 
-        schemaname,
-        tablename,
-        indexname,
-        idx_scan as scans,
-        idx_tup_read as rows_read,
-        idx_tup_fetch as rows_fetched,
-        pg_size_pretty(pg_relation_size(schemaname||'.'||indexname)) as index_size,
-        CASE 
-          WHEN idx_scan = 0 AND indexname NOT LIKE '%_pkey' THEN 'UNUSED'
-          WHEN idx_scan < 10 THEN 'LOW_USAGE'
-          ELSE 'ACTIVE'
-        END as health_status
-      FROM pg_stat_user_indexes
-      WHERE schemaname = 'public'
-      ORDER BY idx_scan DESC
-    `;
-
-    const { data, error } = await this.supabase.rpc('exec_sql', {
-      q: query,
-      params: {}
-    });
-
+    const { data, error } = await this.supabase.rpc('get_index_health');
     if (error) throw error;
-    return data || [];
+    return Array.isArray(data) ? data : [];
   }
 
   private async getConnectionMetrics() {
-    const query = `
-      SELECT 
-        sum(heap_blks_read) as heap_read,
-        sum(heap_blks_hit) as heap_hit,
-        sum(heap_blks_hit) / NULLIF((sum(heap_blks_hit) + sum(heap_blks_read)), 0) as cache_hit_ratio,
-        sum(idx_blks_read) as idx_read,
-        sum(idx_blks_hit) as idx_hit,
-        sum(idx_blks_hit) / NULLIF((sum(idx_blks_hit) + sum(idx_blks_read)), 0) as idx_cache_hit_ratio
-      FROM pg_statio_user_tables
-    `;
-
-    const { data, error } = await this.supabase.rpc('exec_sql', {
-      q: query,
-      params: {}
-    });
-
+    const { data, error } = await this.supabase.rpc('get_connection_metrics');
     if (error) throw error;
-    return data && data.length > 0 ? data[0] : {};
+    return data && typeof data === 'object' ? data : {};
   }
 
   private async generateRecommendations(metrics: any) {
