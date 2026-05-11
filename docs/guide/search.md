@@ -2,7 +2,52 @@
 
 ## Overview
 
-The vCon MCP server provides four search tools with different capabilities, from simple filtering to advanced semantic search.
+The vCon MCP server now exposes a recommended unified search surface plus the older specialized search tools.
+
+For new clients, prefer `vcon_search` first. It gives you one predictable response envelope, explicit `include` groups, cursor pagination, and response-size budgeting. The older search tools are still available and still useful for compatibility or specialized flows.
+
+## Recommended Starting Point
+
+### `vcon_search` - Unified Search
+
+**Best for:** New clients that want one search entry point with predictable parsing
+
+**Modes:**
+- `metadata`
+- `keyword`
+- `semantic`
+- `hybrid`
+
+**Key advantages:**
+- Stable `{ok, items, page}` envelope
+- Explicit `include` groups such as `core`, `summary`, `tags`, and `dealer`
+- Cursor pagination instead of mixed ad hoc paging behavior
+- Explicit `max_response_bytes` so oversized responses fail loudly with `RESPONSE_TOO_LARGE`
+
+**Example:**
+```json
+{
+  "mode": "keyword",
+  "query": "billing dispute",
+  "filters": {
+    "tags": {
+      "portal": "negative_experience"
+    }
+  },
+  "include": ["core", "summary", "dealer", "tags"],
+  "limit": 25,
+  "max_response_bytes": 120000
+}
+```
+
+**Typical companion tools:**
+- `vcon_capabilities` to discover supported modes, includes, and byte budgets
+- `vcon_taxonomy` to discover the portal taxonomy and preferred dealer source
+- `vcon_fetch` to expand a selected result with additional include groups
+
+## Legacy Search Tools
+
+The tools below remain supported and useful. They are especially helpful for older clients, direct low-level access, or cases where you intentionally want their narrower behavior.
 
 ## Available Search Tools
 
@@ -233,17 +278,19 @@ Analysis with `encoding='json'` or `encoding='base64url'` typically contains:
 
 ## Search Comparison
 
-| Feature | search_vcons | search_vcons_content | search_vcons_semantic | search_vcons_hybrid |
-|---------|--------------|---------------------|----------------------|---------------------|
-| Subject | ✅ Filter | ✅ Search | ✅ Search | ✅ Search |
-| Dialog | ❌ | ✅ Search | ✅ Search | ✅ Search |
-| Analysis | ❌ | ✅ Search | ✅ (encoding=none) | ✅ All |
-| Attachments | ❌ | ❌ | ❌ | ❌ |
-| Party Info | ✅ Filter | ✅ Search | ❌ | ✅ Search |
-| Tags | ❌ | ✅ Filter | ✅ Filter | ✅ Filter |
-| Ranking | ❌ | ✅ Relevance | ✅ Similarity | ✅ Combined |
-| Snippets | ❌ | ✅ Yes | ❌ | ❌ |
-| Requires Embeddings | ❌ | ❌ | ✅ | ⚠️ Optional |
+| Feature | vcon_search | search_vcons | search_vcons_content | search_vcons_semantic | search_vcons_hybrid |
+|---------|-------------|--------------|---------------------|----------------------|---------------------|
+| Subject | ✅ Depends on mode | ✅ Filter | ✅ Search | ✅ Search | ✅ Search |
+| Dialog | ✅ Depends on mode/include | ❌ | ✅ Search | ✅ Search | ✅ Search |
+| Analysis | ✅ Depends on mode/include | ❌ | ✅ Search | ✅ (encoding=none) | ✅ All |
+| Attachments | ✅ Via explicit include groups on fetch/search results | ❌ | ❌ | ❌ | ❌ |
+| Party Info | ✅ Depends on mode/include | ✅ Filter | ✅ Search | ❌ | ✅ Search |
+| Tags | ✅ Filter and return | ❌ | ✅ Filter | ✅ Filter | ✅ Filter |
+| Ranking | ✅ Depends on mode | ❌ | ✅ Relevance | ✅ Similarity | ✅ Combined |
+| Snippets | ❌ | ❌ | ✅ Yes | ❌ | ❌ |
+| Requires Embeddings | Only for semantic/hybrid mode | ❌ | ❌ | ✅ | ⚠️ Optional |
+| Cursor Pagination | ✅ Yes | ❌ | ❌ | ❌ | ❌ |
+| Response Budgeting | ✅ `max_response_bytes` | ❌ | ❌ | ❌ | ❌ |
 
 ---
 
@@ -251,22 +298,27 @@ Analysis with `encoding='json'` or `encoding='base64url'` typically contains:
 
 ### When to Use Each Tool
 
-1. **`search_vcons`**: Quick metadata lookups
+1. **`vcon_search`**: Default choice for new clients
+   - "Use one parser for metadata, keyword, semantic, and hybrid search"
+   - "Return lightweight summaries plus dealer info"
+   - "Fail loudly instead of silently returning oversized payloads"
+
+2. **`search_vcons`**: Quick metadata lookups in older clients
    - "Find vCons with party email john@example.com"
    - "Show me vCons from last week"
    - "List vCons with subject containing 'urgent'"
 
-2. **`search_vcons_content`**: Keyword-based content search
+3. **`search_vcons_content`**: Keyword-based content search
    - "Find conversations mentioning 'refund'"
    - "Search for 'technical support' in dialog"
    - "Find analysis containing 'positive sentiment'"
 
-3. **`search_vcons_semantic`**: Concept-based search
+4. **`search_vcons_semantic`**: Concept-based search
    - "Find conversations where customer was unhappy"
    - "Show me calls about payment issues"
    - "Find similar conversations to this one"
 
-4. **`search_vcons_hybrid`**: Comprehensive search
+5. **`search_vcons_hybrid`**: Comprehensive search
    - "Find all billing-related conversations" (gets both exact matches and related topics)
    - "Search for customer complaints" (finds variations and synonyms)
    - Best when you want both precision and recall

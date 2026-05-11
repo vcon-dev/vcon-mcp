@@ -6,6 +6,8 @@ Complete API documentation for the vCon MCP Server.
 
 The vCon MCP Server provides a comprehensive API for managing virtual conversations through the Model Context Protocol (MCP). All interfaces are fully compliant with [IETF vCon Core](https://datatracker.ietf.org/doc/html/draft-ietf-vcon-vcon-core-02) specification.
 
+For new MCP clients, start with the redesigned contract surface: `vcon_capabilities`, `vcon_taxonomy`, `vcon_search`, `vcon_fetch`, and `describe_response_shape`. The older tools remain available for backward compatibility and specialized workflows.
+
 ---
 
 ## API Components
@@ -28,8 +30,9 @@ Full HTTP REST API with parity to all MCP tools (30+ endpoints):
 
 ### 🛠️ [Tools](./tools.md)
 
-20+ MCP tools for vCon operations:
+35 MCP tools for vCon operations:
 
+- **Redesigned Contract Tools** - Discovery-first search and fetch with predictable envelopes
 - **Core Operations** - Create, read, update, delete vCons
 - **Component Management** - Add dialog, analysis, attachments
 - **Search & Query** - Keyword, semantic, and hybrid search
@@ -130,26 +133,21 @@ console.log("Created vCon:", result.uuid);
 ### Search vCons
 
 ```typescript
-// Keyword search
-const keywordResults = await callTool("search_vcons_content", {
+// Discover search modes and include groups first
+const capabilities = await callTool("vcon_capabilities", {});
+
+// Unified keyword search
+const results = await callTool("vcon_search", {
+  mode: "keyword",
   query: "billing issue refund",
-  limit: 20
-});
-
-// Semantic search
-const semanticResults = await callTool("search_vcons_semantic", {
-  query: "frustrated customers complaining about delays",
-  threshold: 0.75,
-  limit: 20
-});
-
-// Tag search
-const tagResults = await callTool("search_by_tags", {
-  tags: {
-    department: "support",
-    priority: "high"
+  filters: {
+    tags: {
+      department: "support",
+      priority: "high"
+    }
   },
-  limit: 50
+  include: ["core", "summary", "dealer", "tags"],
+  limit: 20
 });
 ```
 

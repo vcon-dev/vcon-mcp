@@ -20,6 +20,7 @@ import { logWithContext } from '../observability/instrumentation.js';
 import { RequestContext } from '../hooks/plugin-interface.js';
 import type { ToolHandlerContext } from '../tools/handlers/index.js';
 import { allTools } from '../tools/vcon-crud.js';
+import { allContractTools } from '../tools/vcon-contract.js';
 import { createFromTemplateTool } from '../tools/templates.js';
 import { getSchemaTool, getExamplesTool } from '../tools/schema-tools.js';
 import { allDatabaseTools } from '../tools/database-tools.js';
@@ -65,6 +66,7 @@ export function registerHandlers(context: ServerContext): void {
     // Combine all tools with their categories
     const allToolsWithCategories: ToolDefinition[] = [
       ...allTools,
+      ...allContractTools,
       createFromTemplateTool,
       getSchemaTool,
       getExamplesTool,
@@ -107,6 +109,7 @@ export function registerHandlers(context: ServerContext): void {
     // Check if tool is disabled by configuration
     const allToolsWithCategories: ToolDefinition[] = [
       ...allTools,
+      ...allContractTools,
       createFromTemplateTool,
       getSchemaTool,
       getExamplesTool,

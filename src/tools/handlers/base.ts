@@ -10,7 +10,16 @@ import { RequestContext } from '../../hooks/plugin-interface.js';
 import type { ServerContext } from '../../server/setup.js';
 import { withSpan, recordCounter, recordHistogram, logWithContext, attachErrorToSpan } from '../../observability/instrumentation.js';
 import { ATTR_TOOL_NAME, ATTR_TOOL_SUCCESS } from '../../observability/attributes.js';
-import { createTextResponse, createSuccessResponse } from '../../utils/responses.js';
+import {
+  createTextResponse,
+  createSuccessResponse,
+  createOkItemResponse,
+  createOkListResponse,
+  createErrorEnvelopeResponse,
+  type EnvelopeError,
+  type EnvelopePage,
+  type EnvelopeRate,
+} from '../../utils/responses.js';
 import { extractErrorMessage, createMcpError } from '../../utils/errors.js';
 
 /**
@@ -180,6 +189,46 @@ export abstract class BaseToolHandler implements ToolHandler {
    */
   protected createSuccessResponse(data: any = {}): ToolResponse {
     return createSuccessResponse(data);
+  }
+
+  /**
+   * Create a redesigned ok/item envelope response.
+   */
+  protected createOkItemResponse(
+    item: unknown,
+    options?: {
+      rate?: EnvelopeRate;
+      [key: string]: unknown;
+    }
+  ): ToolResponse {
+    return createOkItemResponse(item, options);
+  }
+
+  /**
+   * Create a redesigned ok/items envelope response.
+   */
+  protected createOkListResponse(
+    items: unknown[],
+    page?: EnvelopePage,
+    options?: {
+      rate?: EnvelopeRate;
+      [key: string]: unknown;
+    }
+  ): ToolResponse {
+    return createOkListResponse(items, page, options);
+  }
+
+  /**
+   * Create a redesigned ok:false envelope response.
+   */
+  protected createErrorEnvelopeResponse(
+    error: EnvelopeError,
+    options?: {
+      rate?: EnvelopeRate;
+      [key: string]: unknown;
+    }
+  ): ToolResponse {
+    return createErrorEnvelopeResponse(error, options);
   }
 }
 

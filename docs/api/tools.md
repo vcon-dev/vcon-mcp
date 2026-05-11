@@ -4,8 +4,9 @@ Complete reference for all Model Context Protocol (MCP) tools provided by the vC
 
 ## Overview
 
-The vCon MCP Server provides 30 tools organized into these functional groups:
+The vCon MCP Server provides 35 tools organized into these functional groups:
 
+- **[Redesigned Contract Tools](#redesigned-contract-tools)** - Recommended discovery, fetch, and search surface for new clients
 - **[Core Operations](#core-operations)** - Create, read, update, delete vCons
 - **[Component Management](#component-management)** - Add dialog, analysis, attachments
 - **[Search & Query](#search--query)** - Four search modes with different capabilities
@@ -15,6 +16,24 @@ The vCon MCP Server provides 30 tools organized into these functional groups:
 - **[Database Size Tools](#database-size-tools)** - Smart limits and size awareness for large databases
 - **[Schema & Examples](#schema--examples)** - Get schemas and example vCons
 
+## Recommended Starting Point
+
+If you are building a new client, especially an LLM-generated one, start with the redesigned additive tool family:
+
+- `vcon_capabilities`
+- `vcon_taxonomy`
+- `vcon_search`
+- `vcon_fetch`
+- `describe_response_shape`
+
+These tools were added to address undocumented limits, inconsistent envelopes, and hard-to-predict payloads in the older tool set.
+
+## Are The Older Tools Still Useful?
+
+Yes. The older tools are still useful for backward compatibility, narrow workflows, and incremental migration. Existing clients built around `get_vcon`, `search_vcons`, `search_vcons_content`, `search_vcons_semantic`, `search_vcons_hybrid`, and `search_by_tags` can keep working while new clients adopt the redesigned surface.
+
+For new client work, prefer the redesigned tools first. Treat the older tools as compatibility and specialized interfaces rather than the default entry point.
+
 ---
 
 ## Tool Categories
@@ -23,7 +42,7 @@ Tools are organized into **5 categories** that can be enabled or disabled for di
 
 | Category | Tools | Description |
 |----------|-------|-------------|
-| `read` | `get_vcon`, `search_vcons`, `search_vcons_content`, `search_vcons_semantic`, `search_vcons_hybrid`, `get_tags`, `search_by_tags`, `get_unique_tags` | All read operations |
+| `read` | `get_vcon`, `vcon_fetch`, `vcon_capabilities`, `vcon_search`, `vcon_taxonomy`, `describe_response_shape`, `search_vcons`, `search_vcons_content`, `search_vcons_semantic`, `search_vcons_hybrid`, `get_tags`, `search_by_tags`, `get_unique_tags` | All read operations |
 | `write` | `create_vcon`, `update_vcon`, `delete_vcon`, `add_analysis`, `add_dialog`, `add_attachment`, `create_vcon_from_template`, `manage_tag`, `remove_all_tags` | All mutating operations |
 | `schema` | `get_schema`, `get_examples` | Documentation helpers |
 | `analytics` | `get_database_analytics`, `get_monthly_growth_analytics`, `get_attachment_analytics`, `get_tag_analytics`, `get_content_analytics`, `get_database_health_metrics` | Business intelligence |
@@ -58,6 +77,75 @@ MCP_DISABLED_TOOLS=delete_vcon,analyze_query
 | `minimal` | read, write | Basic CRUD only |
 
 See the [Configuration Guide](../guide/configuration.md) for more details.
+
+## Redesigned Contract Tools
+
+These tools are additive. They do not replace the legacy tools immediately, but they are the recommended surface for new client development.
+
+### vcon_capabilities
+
+Discover supported include groups, search modes, cursor semantics, byte-budget defaults, and migration hints before building a client.
+
+**Use first when:**
+- You need to inspect limits before making calls
+- You are generating a client from tool descriptions
+- You want to know which include groups and search modes are supported
+
+### vcon_taxonomy
+
+Return dataset-specific guidance, including the portal taxonomy and preferred data sources.
+
+**Important dataset hints surfaced by this tool:**
+- Use `tags.portal` values like `negative_experience`, `dnc_request`, and `bad_call_quality` before semantic search for "bad call" or upset-customer views
+- Prefer `attachment:strolid_dealer` over sparse `dealer_name` tags for dealer-aware interfaces
+
+### vcon_search
+
+Unified metadata, keyword, semantic, and hybrid search with one stable response shape:
+
+```json
+{
+  "ok": true,
+  "items": [...],
+  "page": {
+    "count": 25,
+    "total": 187,
+    "next_cursor": "..."
+  }
+}
+```
+
+**Highlights:**
+- `mode`: `metadata`, `keyword`, `semantic`, or `hybrid`
+- `include`: explicit field groups such as `core`, `summary`, `dealer`, `tags`
+- cursor pagination via `page.next_cursor`
+- explicit response budgeting with `max_response_bytes`
+- loud failure with `RESPONSE_TOO_LARGE` instead of silent truncation
+
+### vcon_fetch
+
+Single-record fetch with one stable response shape:
+
+```json
+{
+  "ok": true,
+  "item": {
+    "id": "...",
+    "summary": [...],
+    "dealer": {...}
+  }
+}
+```
+
+**Highlights:**
+- explicit `include` groups instead of `response_format`
+- normalized primary identifier field: `id`
+- useful lightweight pattern: `include=["core","summary","dealer"]`
+- explicit response budgeting with `max_response_bytes`
+
+### describe_response_shape
+
+Return the published JSON schema plus one concrete example for redesigned and legacy tools. Use this when a client needs to probe actual envelope structure before wiring a parser.
 
 ---
 

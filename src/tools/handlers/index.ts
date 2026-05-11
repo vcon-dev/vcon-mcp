@@ -29,6 +29,15 @@ import {
   SearchVConsHybridHandler,
 } from './search.js';
 
+// Contract handlers
+import {
+  VConFetchHandler,
+  VConCapabilitiesHandler,
+  VConSearchHandler,
+  VConTaxonomyHandler,
+  DescribeResponseShapeHandler,
+} from './vcon-contract.js';
+
 // Tag handlers
 import {
   ManageTagHandler,
@@ -86,6 +95,13 @@ export function createHandlerRegistry(): ToolHandlerRegistry {
   registry.register(new SearchVConsContentHandler());
   registry.register(new SearchVConsSemanticHandler());
   registry.register(new SearchVConsHybridHandler());
+
+  // Register redesigned contract handlers
+  registry.register(new VConFetchHandler());
+  registry.register(new VConCapabilitiesHandler());
+  registry.register(new VConSearchHandler());
+  registry.register(new VConTaxonomyHandler());
+  registry.register(new DescribeResponseShapeHandler());
 
   // Register tag handlers
   registry.register(new ManageTagHandler());
