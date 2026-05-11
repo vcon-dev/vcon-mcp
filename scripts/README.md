@@ -23,6 +23,12 @@ npm run sync:embeddings
 # Refresh tags materialized view only
 npm run sync:tags
 
+# Strolid month/day pipeline: S3 → /Volumes/T9 → DB import → embeddings
+npm run sync:strolid -- 2026-05            # full month
+npm run sync:strolid -- 2026-05-10         # single day
+npm run sync:strolid -- 2026-05 --no-s3    # skip S3 download
+npm run sync:strolid -- 2026-05 --no-embed # skip embeddings
+
 # Check database status
 npm run db:status
 

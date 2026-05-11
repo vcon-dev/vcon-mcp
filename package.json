@@ -34,6 +34,7 @@
     "sync:vcons": "tsx scripts/load-legacy-vcons.ts",
     "sync:embeddings": "tsx scripts/embed-vcons.ts --continuous --limit=500 --provider=openai --delay=2",
     "sync:tags": "tsx scripts/sync-all.ts --no-vcons --no-embeddings",
+    "sync:strolid": "./scripts/sync-strolid.sh",
     "embeddings:check": "tsx scripts/check-embedding-coverage.ts",
     "test:db": "tsx scripts/test-database-tools.ts",
     "test:mcp": "tsx scripts/test-mcp-tools.ts",
