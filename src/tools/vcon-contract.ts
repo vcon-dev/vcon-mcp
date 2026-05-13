@@ -115,14 +115,22 @@ export const vconSearchTool = {
       },
       filters: {
         type: 'object',
-        description: 'Structured metadata filters for subject, dates, and party fields.',
+        description: 'Structured metadata filters for subject, dates, party fields, and strolid dealer attachment.',
         properties: {
           subject: { type: 'string' },
           start_date: { type: 'string' },
           end_date: { type: 'string' },
           party_name: { type: 'string' },
           party_email: { type: 'string' },
-          party_tel: { type: 'string' }
+          party_tel: { type: 'string' },
+          dealer_id: {
+            type: 'string',
+            description: 'Match strolid_dealer attachment id (use string form, for example "1174").',
+          },
+          dealer_name: {
+            type: 'string',
+            description: 'Case-insensitive substring match against strolid_dealer attachment name.',
+          },
         }
       },
       include: {
@@ -168,6 +176,53 @@ export const vconSearchTool = {
   }
 };
 
+export const vconAggregateTool = {
+  name: 'vcon_aggregate',
+  category: 'read' as ToolCategory,
+  description:
+    'Server-side rollup for analyst questions such as top dealers by portal-tag rate. ' +
+    'Groups vCons that carry a strolid_dealer attachment by dealer id, returning filtered_count (rows matching tags) and baseline_count (all rows in the group) so clients can divide for a rate in one round trip. ' +
+    'Requires Postgres RPC aggregate_vcons_by_dealer_stats from the latest migration.',
+  inputSchema: {
+    type: 'object' as const,
+    properties: {
+      group_by: {
+        type: 'string',
+        enum: ['dealer'],
+        description: 'Only "dealer" is supported in this release.',
+        default: 'dealer',
+      },
+      tags: {
+        type: 'object',
+        description: 'Tag filter for the numerator (same shape as vcon_search tags). Pass {} for baseline-only ranking.',
+        additionalProperties: { type: 'string' },
+      },
+      filters: {
+        type: 'object',
+        description: 'Optional created_at window on vcons.created_at.',
+        properties: {
+          start_date: { type: 'string' },
+          end_date: { type: 'string' },
+        },
+      },
+      having: {
+        type: 'object',
+        description: 'Optional HAVING-style floor on baseline_count per dealer.',
+        properties: {
+          min_count: { type: 'number', minimum: 1, default: 1 },
+        },
+      },
+      limit: {
+        type: 'number',
+        description: 'Maximum number of dealer rows to return. Default 20, max 500.',
+        minimum: 1,
+        maximum: 500,
+        default: 20,
+      },
+    },
+  },
+};
+
 export const describeResponseShapeTool = {
   name: 'describe_response_shape',
   category: 'read' as ToolCategory,
@@ -181,7 +236,7 @@ export const describeResponseShapeTool = {
       tool_name: {
         type: 'string',
         description:
-          'Tool name to describe. Supported values include vcon_fetch, vcon_capabilities, vcon_search, vcon_taxonomy, describe_response_shape, get_vcon, search_vcons, search_by_tags, search_vcons_content, search_vcons_semantic, and search_vcons_hybrid.'
+          'Tool name to describe. Supported values include vcon_fetch, vcon_capabilities, vcon_search, vcon_taxonomy, vcon_aggregate, describe_response_shape, get_vcon, search_vcons, search_by_tags, search_vcons_content, search_vcons_semantic, and search_vcons_hybrid.'
       },
       include_example: {
         type: 'boolean',
@@ -197,5 +252,6 @@ export const allContractTools = [
   vconCapabilitiesTool,
   vconTaxonomyTool,
   vconSearchTool,
+  vconAggregateTool,
   describeResponseShapeTool,
 ];

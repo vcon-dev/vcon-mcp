@@ -4,7 +4,7 @@
 
 import { Db, ObjectId } from 'mongodb';
 import { Analysis, Attachment, Dialog, VCon } from '../types/vcon.js';
-import { IVConQueries } from './interfaces.js';
+import { DistinctValuesResult, IVConQueries } from './interfaces.js';
 import { logWithContext, recordCounter, withSpan } from '../observability/instrumentation.js';
 import { ATTR_DB_OPERATION, ATTR_SEARCH_RESULTS_COUNT, ATTR_SEARCH_THRESHOLD, ATTR_SEARCH_TYPE, ATTR_VCON_UUID } from '../observability/attributes.js';
 
@@ -399,6 +399,8 @@ export class MongoVConQueries implements IVConQueries {
         startDate?: string;
         endDate?: string;
         tags?: Record<string, string>;
+        dealerId?: string;
+        dealerName?: string;
         limit?: number;
     }): Promise<VCon[]> {
         const collection = this.db.collection(this.VCONS_COLLECTION);
@@ -444,6 +446,8 @@ export class MongoVConQueries implements IVConQueries {
         startDate?: string;
         endDate?: string;
         tags?: Record<string, string>;
+        dealerId?: string;
+        dealerName?: string;
     }): Promise<number> {
         const collection = this.db.collection(this.VCONS_COLLECTION);
         const query: Record<string, any> = {};
@@ -520,6 +524,67 @@ export class MongoVConQueries implements IVConQueries {
         return results.map((r: any) => r.uuid);
     }
 
+    private async getDistinctArrayValues(
+        arrayField: 'attachments' | 'analysis',
+        valueField: 'type' | 'purpose',
+        options?: {
+            includeCounts?: boolean;
+            minCount?: number;
+        }
+    ): Promise<DistinctValuesResult> {
+        const collection = this.db.collection(this.VCONS_COLLECTION);
+        const docs = await collection
+            .find({})
+            .project({ uuid: 1, [arrayField]: 1 })
+            .toArray();
+
+        const includeCounts = options?.includeCounts ?? false;
+        const minCount = options?.minCount ?? 1;
+        const values = new Set<string>();
+        const countsPerValue: Record<string, number> = {};
+        const vconIds = new Set<string>();
+
+        for (const doc of docs) {
+            const entries = Array.isArray((doc as any)[arrayField]) ? (doc as any)[arrayField] : [];
+            let hasValueForDoc = false;
+
+            for (const entry of entries) {
+                const rawValue = entry?.[valueField];
+                const value = typeof rawValue === 'string' ? rawValue.trim() : '';
+                if (!value) continue;
+
+                values.add(value);
+                countsPerValue[value] = (countsPerValue[value] || 0) + 1;
+                hasValueForDoc = true;
+            }
+
+            if (hasValueForDoc && typeof (doc as any).uuid === 'string') {
+                vconIds.add((doc as any).uuid);
+            }
+        }
+
+        const sortedValues = Array.from(values)
+            .filter((value) => countsPerValue[value] >= minCount)
+            .sort((a, b) => {
+                const countDiff = countsPerValue[b] - countsPerValue[a];
+                return countDiff !== 0 ? countDiff : a.localeCompare(b);
+            });
+
+        const result: DistinctValuesResult = {
+            values: sortedValues,
+            totalVCons: vconIds.size,
+        };
+
+        if (includeCounts) {
+            result.countsPerValue = {};
+            for (const value of sortedValues) {
+                result.countsPerValue[value] = countsPerValue[value];
+            }
+        }
+
+        return result;
+    }
+
     async getUniqueTags(options?: {
         includeCounts?: boolean;
         keyFilter?: string;
@@ -560,5 +625,55 @@ export class MongoVConQueries implements IVConQueries {
         const result: Record<string, string[]> = {};
         for (const [k, vs] of Object.entries(tagsByKey)) result[k] = Array.from(vs);
         return { keys: Object.keys(result), tagsByKey: result, totalVCons };
+    }
+
+    async getUniqueAttachmentTypes(options?: {
+        includeCounts?: boolean;
+        minCount?: number;
+    }): Promise<DistinctValuesResult> {
+        return this.getDistinctArrayValues('attachments', 'type', options);
+    }
+
+    async getUniqueAttachmentPurposes(options?: {
+        includeCounts?: boolean;
+        minCount?: number;
+    }): Promise<DistinctValuesResult> {
+        return this.getDistinctArrayValues('attachments', 'purpose', options);
+    }
+
+    async getUniqueAnalysisTypes(options?: {
+        includeCounts?: boolean;
+        minCount?: number;
+    }): Promise<DistinctValuesResult> {
+        return this.getDistinctArrayValues('analysis', 'type', options);
+    }
+
+    async aggregateVconsByDealerStats(_params: {
+        tagFilter: Record<string, string>;
+        startDate?: string;
+        endDate?: string;
+        minBaseline: number;
+        limit: number;
+    }): Promise<Array<{
+        dealer_id: string;
+        dealer_name: string | null;
+        team_id: number | null;
+        team_name: string | null;
+        filtered_count: number;
+        baseline_count: number;
+    }>> {
+        return [];
+    }
+
+    async getTaxonomyCoverageSnapshot(): Promise<{
+        vcons_total: number | null;
+        with_strolid_dealer_attachment_pct: number | null;
+        with_dealer_name_tag_pct: number | null;
+    }> {
+        return {
+            vcons_total: null,
+            with_strolid_dealer_attachment_pct: null,
+            with_dealer_name_tag_pct: null,
+        };
     }
 }
