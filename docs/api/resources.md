@@ -4,27 +4,34 @@ Resources provide URI-based access to vCon data through the Model Context Protoc
 
 ## Overview
 
-Resources use a versioned URI scheme (`vcon://v1/vcons/...`) to access vCon data:
+Resources use versioned URI schemes to access vCon data:
 
 - **Browsing** - List recent conversations
 - **Lookup** - Fetch specific vCons by UUID
-- **Discovery** - Get lightweight ID lists for navigation
+- **Discovery** - Get lightweight ID lists and live attachment or analysis categories
 - **Subresources** - Access specific vCon components (parties, dialog, analysis, attachments)
-- **Derived** - Get filtered data (transcripts, summaries, tags)
+- **Derived** - Get filtered data (transcripts, summaries, tags, and generic category-backed reads)
 
-For complex operations like filtering, searching, and modifications, use [MCP Tools](./tools.md) instead.
+For complex searches and modifications, use [MCP Tools](./tools.md) instead.
 
 ---
 
 ## Resource Namespace
 
-All resources use the versioned namespace:
+All resources use versioned namespaces:
 
 ```
+vcon://v1/discovery/...
 vcon://v1/vcons/...
 ```
 
 This allows for future schema evolution without breaking existing clients.
+
+When a classification lives in attachments or analysis, prefer this flow:
+
+1. Discover available `type` or `purpose` values.
+2. Read the matching filtered resource for a specific vCon.
+3. Fall back to tags only when the classification really lives in the tags attachment.
 
 ---
 
@@ -222,7 +229,7 @@ Get only metadata fields, excluding conversation content arrays.
   "updated_at": "2025-10-14T11:00:00Z",
   "subject": "Customer Support Call",
   "extensions": [],
-  "must_support": []
+  "critical": []
 }
 ```
 
@@ -380,9 +387,105 @@ Get only the attachments array from a vCon.
 
 ---
 
+## Discovery Resources
+
+Use these resources to discover live attachment and analysis categories before reading a specific vCon by the matching field. For attachments, `purpose` is canonical and `type` is compatibility-only.
+
+### vcon://v1/discovery/attachments/types
+
+List discovered legacy attachment `type` values with counts.
+
+Use this only when you are working with older datasets that still classify attachments through `type`. For spec-facing clients, prefer `vcon://v1/discovery/attachments/purposes`.
+
+**Response:**
+
+```json
+{
+  "count": 2,
+  "attachment_types": [
+    { "value": "document", "count": 14 },
+    { "value": "tags", "count": 8 }
+  ]
+}
+```
+
+### vcon://v1/discovery/attachments/purposes
+
+List discovered attachment `purpose` values with counts.
+
+This is the canonical spec-facing attachment discovery surface.
+
+**Response:**
+
+```json
+{
+  "count": 2,
+  "attachment_purposes": [
+    { "value": "dealer_info", "count": 5 },
+    { "value": "classification", "count": 3 }
+  ]
+}
+```
+
+### vcon://v1/discovery/analysis/types
+
+List discovered analysis `type` values with counts.
+
+**Response:**
+
+```json
+{
+  "count": 2,
+  "analysis_types": [
+    { "value": "summary", "count": 11 },
+    { "value": "transcript", "count": 9 }
+  ]
+}
+```
+
+---
+
+## Generic Filtered Resources
+
+These resources expose attachment and analysis categories as first-class read surfaces instead of requiring special-case resource definitions.
+
+### vcon://v1/vcons/{uuid}/attachments/type/{type}
+
+Read attachments filtered by legacy attachment `type`.
+
+Use this only for compatibility with older data. New clients should prefer the purpose-based resource below.
+
+### vcon://v1/vcons/{uuid}/attachments/purpose/{purpose}
+
+Read attachments filtered by attachment `purpose`.
+
+This is the canonical spec-facing attachment read path.
+
+### vcon://v1/vcons/{uuid}/analysis/type/{type}
+
+Read analysis filtered by analysis `type`.
+
+**Example response:**
+
+```json
+{
+  "count": 1,
+  "purpose": "dealer_info",
+  "attachments": [
+    {
+      "type": "document",
+      "purpose": "dealer_info",
+      "filename": "dealer.json"
+    }
+  ]
+}
+```
+
+---
+
 ## Derived Resources
 
-These resources filter and transform vCon data for specific use cases.
+These resources filter and transform vCon data for specific use cases. Internally they follow the same shared filtering path as the generic category-backed resources.
 
 ### vcon://v1/vcons/{uuid}/transcript
 
@@ -482,7 +585,7 @@ Get tags from a vCon (filters attachments where type='tags' and parses as object
 
 ✅ **Browsing** - Viewing recent or all vCons  
 ✅ **Lookup** - Fetching specific vCon by UUID  
-✅ **Simple** - No filtering or complex queries  
+✅ **Simple** - Browsing, lookup, and category-backed reads after discovery  
 ✅ **Read-only** - Just retrieving data  
 ✅ **Subcomponents** - Accessing specific vCon arrays  
 
@@ -510,6 +613,14 @@ const vcon = await readResource("vcon://v1/vcons/123e4567-e89b-12d3-a456-4266141
 
 // Get just parties
 const parties = await readResource("vcon://v1/vcons/123e4567-e89b-12d3-a456-426614174000/parties");
+
+// Discover live attachment purposes
+const purposes = await readResource("vcon://v1/discovery/attachments/purposes");
+
+// Read only dealer info attachments
+const dealerInfo = await readResource(
+  "vcon://v1/vcons/123e4567-e89b-12d3-a456-426614174000/attachments/purpose/dealer_info"
+);
 
 // Get summary
 const summary = await readResource("vcon://v1/vcons/123e4567-e89b-12d3-a456-426614174000/summary");

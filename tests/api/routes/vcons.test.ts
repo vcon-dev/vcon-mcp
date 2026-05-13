@@ -198,6 +198,92 @@ describe('vCon CRUD Routes', () => {
     });
   });
 
+  describe('GET /vcons/:uuid/analysis', () => {
+    it('should return all analysis when no filter is provided', async () => {
+      const uuid = randomUUID();
+      const vcon = sampleVCon({
+        uuid,
+        analysis: [
+          { type: 'summary', vendor: 'test', body: 'summary' } as any,
+          { type: 'transcript', vendor: 'test', body: 'transcript' } as any,
+        ],
+      });
+      ctx.mocks.vconService.get.mockResolvedValueOnce(vcon);
+
+      const res = await request(ctx.app.callback())
+        .get(`${BASE}/vcons/${uuid}/analysis`)
+        .expect(200);
+
+      expect(res.body.count).toBe(2);
+      expect(res.body.analysis).toHaveLength(2);
+    });
+
+    it('should filter analysis by type', async () => {
+      const uuid = randomUUID();
+      const vcon = sampleVCon({
+        uuid,
+        analysis: [
+          { type: 'summary', vendor: 'test', body: 'summary' } as any,
+          { type: 'transcript', vendor: 'test', body: 'transcript' } as any,
+        ],
+      });
+      ctx.mocks.vconService.get.mockResolvedValueOnce(vcon);
+
+      const res = await request(ctx.app.callback())
+        .get(`${BASE}/vcons/${uuid}/analysis?type=summary`)
+        .expect(200);
+
+      expect(res.body.count).toBe(1);
+      expect(res.body.type).toBe('summary');
+      expect(res.body.analysis).toHaveLength(1);
+      expect(res.body.analysis[0].type).toBe('summary');
+    });
+  });
+
+  describe('GET /vcons/:uuid/attachments', () => {
+    it('should return all attachments when no filter is provided', async () => {
+      const uuid = randomUUID();
+      const vcon = sampleVCon({
+        uuid,
+        attachments: [
+          { type: 'document', purpose: 'dealer_info', body: 'dealer', encoding: 'none' } as any,
+          { type: 'tags', purpose: 'classification', body: '["priority:high"]', encoding: 'json' } as any,
+        ],
+      });
+      ctx.mocks.vconService.get.mockResolvedValueOnce(vcon);
+
+      const res = await request(ctx.app.callback())
+        .get(`${BASE}/vcons/${uuid}/attachments`)
+        .expect(200);
+
+      expect(res.body.count).toBe(2);
+      expect(res.body.attachments).toHaveLength(2);
+    });
+
+    it('should filter attachments by type and purpose', async () => {
+      const uuid = randomUUID();
+      const vcon = sampleVCon({
+        uuid,
+        attachments: [
+          { type: 'document', purpose: 'dealer_info', body: 'dealer', encoding: 'none' } as any,
+          { type: 'document', purpose: 'invoice', body: 'invoice', encoding: 'none' } as any,
+          { type: 'tags', purpose: 'classification', body: '["priority:high"]', encoding: 'json' } as any,
+        ],
+      });
+      ctx.mocks.vconService.get.mockResolvedValueOnce(vcon);
+
+      const res = await request(ctx.app.callback())
+        .get(`${BASE}/vcons/${uuid}/attachments?type=document&purpose=dealer_info`)
+        .expect(200);
+
+      expect(res.body.count).toBe(1);
+      expect(res.body.type).toBe('document');
+      expect(res.body.purpose).toBe('dealer_info');
+      expect(res.body.attachments).toHaveLength(1);
+      expect(res.body.attachments[0].purpose).toBe('dealer_info');
+    });
+  });
+
   // ── PATCH /vcons/:uuid ──────────────────────────────────────────────────
 
   describe('PATCH /vcons/:uuid', () => {

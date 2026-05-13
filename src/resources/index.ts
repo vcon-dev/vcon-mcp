@@ -17,7 +17,13 @@
  */
 
 import { IVConQueries } from '../db/interfaces.js';
-import { deserializeBody } from '../utils/body-serialization.js';
+import {
+  extractTags,
+  filterAnalysis,
+  filterAttachments,
+  getVConMetadata,
+  toDiscoveryValues,
+} from '../utils/read-surfaces.js';
 
 export interface ResourceDescriptor {
   uri: string;
@@ -87,6 +93,53 @@ export function getCoreResources(): ResourceDescriptor[] {
       description: 'Retrieve only the attachments array from a vCon. Returns all attached files and metadata.',
       mimeType: 'application/json' 
     },
+
+    // Discovery resources
+    {
+      uri: 'vcon://v1/discovery/attachments/types',
+      name: 'Discover legacy attachment types',
+      description: 'List discovered legacy attachment type values across the database, with counts. Prefer attachment purposes for spec-compliant discovery; use types only for compatibility with older datasets.',
+      mimeType: 'application/json'
+    },
+    {
+      uri: 'vcon://v1/discovery/attachments/purposes',
+      name: 'Discover attachment purposes',
+      description: 'List discovered attachment purpose values across the database, with counts. This is the canonical spec-facing attachment classification surface; prefer it before tags or legacy attachment types.',
+      mimeType: 'application/json'
+    },
+    {
+      uri: 'vcon://v1/discovery/analysis/types',
+      name: 'Discover analysis types',
+      description: 'List discovered analysis type values across the database, with counts. Use this before reading a vCon by analysis type.',
+      mimeType: 'application/json'
+    },
+    {
+      uri: 'vcon://v1/graph/shape',
+      name: 'vCon shape graph (OSS)',
+      description:
+        'Default corpus-level graph from vCon structure only: analysis types, attachment purposes, legacy attachment types without purpose, tag keys, and bounded co-occurrence edges (analysis type with attachment purpose). No business ontology. Prefer this resource after vcon_capabilities when teaching an LLM what evidence exists in the corpus.',
+      mimeType: 'application/json'
+    },
+
+    // Generic filtered resources
+    {
+      uri: 'vcon://v1/vcons/{uuid}/attachments/type/{type}',
+      name: 'Get attachments by legacy type',
+      description: 'Retrieve attachments on a vCon filtered by legacy attachment type. Prefer the purpose-based resource for spec-compliant clients and use this type-based path only for compatibility with older data.',
+      mimeType: 'application/json'
+    },
+    {
+      uri: 'vcon://v1/vcons/{uuid}/attachments/purpose/{purpose}',
+      name: 'Get attachments by purpose',
+      description: 'Retrieve attachments on a vCon filtered by attachment purpose. This is the canonical spec-facing attachment read path; replace {purpose} with a discovered attachment purpose value.',
+      mimeType: 'application/json'
+    },
+    {
+      uri: 'vcon://v1/vcons/{uuid}/analysis/type/{type}',
+      name: 'Get analysis by type',
+      description: 'Retrieve analysis entries on a vCon filtered by analysis type. Replace {type} with a discovered analysis type value.',
+      mimeType: 'application/json'
+    },
     
     // Derived resources
     { 
@@ -112,6 +165,35 @@ export function getCoreResources(): ResourceDescriptor[] {
 
 export async function resolveCoreResource(queries: IVConQueries, uri: string): Promise<{ mimeType: string; content: any } | undefined> {
   const json = (data: any) => ({ mimeType: 'application/json', content: data });
+
+  if (uri === 'vcon://v1/discovery/attachments/types') {
+    const result = await queries.getUniqueAttachmentTypes({ includeCounts: true });
+    return json({
+      count: result.values.length,
+      attachment_types: toDiscoveryValues(result),
+    });
+  }
+
+  if (uri === 'vcon://v1/discovery/attachments/purposes') {
+    const result = await queries.getUniqueAttachmentPurposes({ includeCounts: true });
+    return json({
+      count: result.values.length,
+      attachment_purposes: toDiscoveryValues(result),
+    });
+  }
+
+  if (uri === 'vcon://v1/discovery/analysis/types') {
+    const result = await queries.getUniqueAnalysisTypes({ includeCounts: true });
+    return json({
+      count: result.values.length,
+      analysis_types: toDiscoveryValues(result),
+    });
+  }
+
+  if (uri === 'vcon://v1/graph/shape') {
+    const graph = await queries.getVconShapeGraph();
+    return json(graph);
+  }
 
   // Handle recent vCons (full data)
   const matchRecent = uri.match(/^vcon:\/\/v1\/vcons\/recent(?:\/(\d+))?$/);
@@ -194,8 +276,7 @@ export async function resolveCoreResource(queries: IVConQueries, uri: string): P
 
   // Metadata (excludes arrays)
   if (suffix === '/metadata') {
-    const { parties, dialog, analysis, attachments, ...meta } = vcon as any;
-    return json(meta);
+    return json(getVConMetadata(vcon));
   }
 
   // Subresources - return specific arrays
@@ -215,9 +296,42 @@ export async function resolveCoreResource(queries: IVConQueries, uri: string): P
     return json({ attachments: vcon.attachments || [] });
   }
 
+  const matchAttachmentType = suffix.match(/^\/attachments\/type\/(.+)$/);
+  if (matchAttachmentType) {
+    const type = decodeURIComponent(matchAttachmentType[1]);
+    const attachments = filterAttachments(vcon, { type });
+    return json({
+      count: attachments.length,
+      type,
+      attachments,
+    });
+  }
+
+  const matchAttachmentPurpose = suffix.match(/^\/attachments\/purpose\/(.+)$/);
+  if (matchAttachmentPurpose) {
+    const purpose = decodeURIComponent(matchAttachmentPurpose[1]);
+    const attachments = filterAttachments(vcon, { purpose });
+    return json({
+      count: attachments.length,
+      purpose,
+      attachments,
+    });
+  }
+
+  const matchAnalysisType = suffix.match(/^\/analysis\/type\/(.+)$/);
+  if (matchAnalysisType) {
+    const type = decodeURIComponent(matchAnalysisType[1]);
+    const analysis = filterAnalysis(vcon, { type });
+    return json({
+      count: analysis.length,
+      type,
+      analysis,
+    });
+  }
+
   // Derived resources - filter by type
   if (suffix === '/transcript') {
-    const transcripts = (vcon.analysis || []).filter(a => a.type === 'transcript');
+    const transcripts = filterAnalysis(vcon, { type: 'transcript' });
     return json({ 
       count: transcripts.length,
       transcripts: transcripts 
@@ -225,7 +339,7 @@ export async function resolveCoreResource(queries: IVConQueries, uri: string): P
   }
 
   if (suffix === '/summary') {
-    const summaries = (vcon.analysis || []).filter(a => a.type === 'summary');
+    const summaries = filterAnalysis(vcon, { type: 'summary' });
     return json({ 
       count: summaries.length,
       summaries: summaries 
@@ -233,30 +347,7 @@ export async function resolveCoreResource(queries: IVConQueries, uri: string): P
   }
 
   if (suffix === '/tags') {
-    const tagsAttachment = (vcon.attachments || []).find(a => a.type === 'tags');
-    if (!tagsAttachment || !tagsAttachment.body) {
-      return json({ tags: {} });
-    }
-    
-    try {
-      const tagsArray = JSON.parse(tagsAttachment.body as string) as string[];
-      const tagsObject: Record<string, string> = {};
-      
-      for (const tagString of tagsArray) {
-        if (typeof tagString !== 'string') continue;
-        const colonIndex = tagString.indexOf(':');
-        if (colonIndex === -1) continue;
-        
-        const key = tagString.substring(0, colonIndex);
-        const value = tagString.substring(colonIndex + 1);
-        tagsObject[key] = value;
-      }
-      
-      return json({ tags: tagsObject });
-    } catch (error) {
-      // If parsing fails, return empty tags
-      return json({ tags: {} });
-    }
+    return json({ tags: extractTags(vcon) });
   }
 
   // Unknown subresource

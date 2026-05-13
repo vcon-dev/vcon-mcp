@@ -6,6 +6,7 @@
  */
 
 import { Analysis, Attachment, Dialog, VCon } from '../types/vcon.js';
+import type { VconShapeGraphPayload } from '../types/vcon-shape-graph.js';
 
 export interface SearchResult {
     vcon_id: string;
@@ -260,4 +261,11 @@ export interface IVConQueries {
         includeCounts?: boolean;
         minCount?: number;
     }): Promise<DistinctValuesResult>;
+
+    /**
+     * Default OSS "shape graph": distinct vCon incidence for analysis types,
+     * attachment purposes, legacy attachment types (no purpose), tag keys,
+     * and bounded analysis-type to attachment-purpose co-occurrence edges.
+     */
+    getVconShapeGraph(): Promise<VconShapeGraphPayload>;
 }

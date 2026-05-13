@@ -286,6 +286,8 @@ describe.skipIf(!runStress)('stress: full tool + resource coverage', () => {
     await readOk(`${base}/summary`);
     await readOk(`${base}/tags`);
 
+    await readOk('vcon://v1/graph/shape');
+
     // Prompts: get each
     for (const p of allPrompts) {
       const prompt = await ctx.client.getPrompt({

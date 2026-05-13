@@ -9,6 +9,7 @@ This section provides real-world examples of:
 - Search and query patterns
 - Plugin development
 - System integration
+- System instruction assets for Claude and other agents
 
 ## Quick Examples
 
@@ -98,6 +99,12 @@ await queries.addAnalysis(vconUuid, {
 - Webhook integration
 - CRM integration
 - Real-time updates
+
+### [System Instruction Assets](./system-instruction-assets.md)
+- Long reusable system instruction block
+- Short reusable system instruction block
+- Compact `CLAUDE.md` version
+- Stricter policy-style version
 
 ## Use Case Examples
 
@@ -194,4 +201,5 @@ npx tsx examples/plugin-demo.ts
 - Explore [Search Examples](./search-examples.md)
 - Build your own [Plugin](./plugin-examples.md)
 - See [Integration Examples](./integration-examples.md)
+- Reuse the [System Instruction Assets](./system-instruction-assets.md)
 

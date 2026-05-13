@@ -56,6 +56,16 @@ export function createMockQueries() {
     removeAllTags: vi.fn(),
     searchByTags: vi.fn().mockResolvedValue([]),
     getUniqueTags: vi.fn().mockResolvedValue({ keys: [], tagsByKey: {}, totalVCons: 0 }),
+    getUniqueAttachmentTypes: vi.fn().mockResolvedValue({ values: [], totalVCons: 0 }),
+    getUniqueAttachmentPurposes: vi.fn().mockResolvedValue({ values: [], totalVCons: 0 }),
+    getUniqueAnalysisTypes: vi.fn().mockResolvedValue({ values: [], totalVCons: 0 }),
+    getVconShapeGraph: vi.fn().mockResolvedValue({
+      schema_version: '1.0.0',
+      generated_at: new Date().toISOString(),
+      corpus: { notes: [] },
+      nodes: [],
+      edges: [],
+    }),
   };
 }
 

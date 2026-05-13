@@ -33,6 +33,7 @@ import {
 import {
   VConFetchHandler,
   VConCapabilitiesHandler,
+  VConGraphShapeHandler,
   VConSearchHandler,
   VConTaxonomyHandler,
   VConAggregateHandler,
@@ -100,6 +101,7 @@ export function createHandlerRegistry(): ToolHandlerRegistry {
   // Register redesigned contract handlers
   registry.register(new VConFetchHandler());
   registry.register(new VConCapabilitiesHandler());
+  registry.register(new VConGraphShapeHandler());
   registry.register(new VConSearchHandler());
   registry.register(new VConTaxonomyHandler());
   registry.register(new VConAggregateHandler());

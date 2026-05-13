@@ -16,6 +16,7 @@ import { createAuthMiddleware, errorHandler, getAuthConfig, requestLogger } from
 import type { RestApiContext } from './context.js';
 import { createAnalyticsRoutes } from './routes/analytics.js';
 import { createDatabaseRoutes } from './routes/database.js';
+import { createDiscoveryRoutes } from './routes/discovery.js';
 import { createSchemaRoutes } from './routes/schema.js';
 import { createSearchRoutes } from './routes/search.js';
 import { createTagRoutes } from './routes/tags.js';
@@ -114,6 +115,10 @@ export function createRestApi(apiContext: RestApiContext, config?: Partial<RestA
   // Search routes — MUST be before /vcons/:uuid to avoid "search" matching as UUID
   const searchRouter = createSearchRoutes(apiContext);
   router.use(searchRouter.routes());
+
+  // Discovery routes for live attachment and analysis categories
+  const discoveryRouter = createDiscoveryRoutes(apiContext);
+  router.use(discoveryRouter.routes());
 
   // Tag collection routes (/tags, /tags/search)
   const tagRouter = createTagRoutes(apiContext);

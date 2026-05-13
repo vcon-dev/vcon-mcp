@@ -46,7 +46,7 @@ describe('Templates', () => {
     it('should build phone_call template', () => {
       const vcon = buildTemplateVCon('phone_call', 'Test Call', mockParties);
 
-      expect(vcon.vcon).toBe('0.3.0');
+      expect(vcon.vcon).toBe('0.4.0');
       expect(vcon.uuid).toBeDefined();
       expect(vcon.created_at).toBeDefined();
       expect(vcon.subject).toBe('Test Call');
@@ -58,7 +58,7 @@ describe('Templates', () => {
     it('should build chat_conversation template', () => {
       const vcon = buildTemplateVCon('chat_conversation', 'Test Chat', mockParties);
 
-      expect(vcon.vcon).toBe('0.3.0');
+      expect(vcon.vcon).toBe('0.4.0');
       expect(vcon.subject).toBe('Test Chat');
       expect(vcon.parties).toEqual(mockParties);
       expect(vcon.dialog).toBeDefined();
@@ -68,7 +68,7 @@ describe('Templates', () => {
     it('should build email_thread template', () => {
       const vcon = buildTemplateVCon('email_thread', 'Test Email', mockParties);
 
-      expect(vcon.vcon).toBe('0.3.0');
+      expect(vcon.vcon).toBe('0.4.0');
       expect(vcon.subject).toBe('Test Email');
       expect(vcon.parties).toEqual(mockParties);
       expect(vcon.attachments).toBeDefined();
@@ -78,7 +78,7 @@ describe('Templates', () => {
     it('should build video_meeting template', () => {
       const vcon = buildTemplateVCon('video_meeting', 'Test Meeting', mockParties);
 
-      expect(vcon.vcon).toBe('0.3.0');
+      expect(vcon.vcon).toBe('0.4.0');
       expect(vcon.subject).toBe('Test Meeting');
       expect(vcon.parties).toEqual(mockParties);
       expect(vcon.dialog).toBeDefined();
@@ -88,7 +88,7 @@ describe('Templates', () => {
     it('should build custom template', () => {
       const vcon = buildTemplateVCon('custom', 'Test Custom', mockParties);
 
-      expect(vcon.vcon).toBe('0.3.0');
+      expect(vcon.vcon).toBe('0.4.0');
       expect(vcon.subject).toBe('Test Custom');
       expect(vcon.parties).toEqual(mockParties);
     });
@@ -96,7 +96,7 @@ describe('Templates', () => {
     it('should handle default/unknown template as custom', () => {
       const vcon = buildTemplateVCon('unknown_template' as any, 'Test', mockParties);
 
-      expect(vcon.vcon).toBe('0.3.0');
+      expect(vcon.vcon).toBe('0.4.0');
       expect(vcon.subject).toBe('Test');
       expect(vcon.parties).toEqual(mockParties);
     });

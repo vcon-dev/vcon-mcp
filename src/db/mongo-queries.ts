@@ -4,6 +4,11 @@
 
 import { Db, ObjectId } from 'mongodb';
 import { Analysis, Attachment, Dialog, VCon } from '../types/vcon.js';
+import {
+    VCON_SHAPE_GRAPH_SCHEMA_VERSION,
+    type VconShapeGraphNode,
+    type VconShapeGraphPayload,
+} from '../types/vcon-shape-graph.js';
 import { DistinctValuesResult, IVConQueries } from './interfaces.js';
 import { logWithContext, recordCounter, withSpan } from '../observability/instrumentation.js';
 import { ATTR_DB_OPERATION, ATTR_SEARCH_RESULTS_COUNT, ATTR_SEARCH_THRESHOLD, ATTR_SEARCH_TYPE, ATTR_VCON_UUID } from '../observability/attributes.js';
@@ -646,6 +651,71 @@ export class MongoVConQueries implements IVConQueries {
         minCount?: number;
     }): Promise<DistinctValuesResult> {
         return this.getDistinctArrayValues('analysis', 'type', options);
+    }
+
+    async getVconShapeGraph(): Promise<VconShapeGraphPayload> {
+        const notes: string[] = [
+            'MongoDB backend: vcon_count on analysis and attachment nodes reflects tallied rows across documents, not guaranteed distinct vCon UUIDs. Tag vcon_count sums value-level counts.',
+        ];
+        const generated_at = new Date().toISOString();
+        const nodes: VconShapeGraphNode[] = [];
+        const nodeId = (kind: VconShapeGraphNode['kind'], label: string) =>
+            `${kind}:${encodeURIComponent(label)}`;
+
+        const [analysis, purposes, types, tags] = await Promise.all([
+            this.getUniqueAnalysisTypes({ includeCounts: true }),
+            this.getUniqueAttachmentPurposes({ includeCounts: true }),
+            this.getUniqueAttachmentTypes({ includeCounts: true }),
+            this.getUniqueTags({ includeCounts: true }),
+        ]);
+
+        for (const v of analysis.values) {
+            nodes.push({
+                id: nodeId('analysis_type', v),
+                kind: 'analysis_type',
+                label: v,
+                ...(analysis.countsPerValue ? { vcon_count: analysis.countsPerValue[v] } : {}),
+            });
+        }
+        for (const v of purposes.values) {
+            nodes.push({
+                id: nodeId('attachment_purpose', v),
+                kind: 'attachment_purpose',
+                label: v,
+                ...(purposes.countsPerValue ? { vcon_count: purposes.countsPerValue[v] } : {}),
+            });
+        }
+        for (const v of types.values) {
+            nodes.push({
+                id: nodeId('attachment_type_legacy', v),
+                kind: 'attachment_type_legacy',
+                label: v,
+                ...(types.countsPerValue ? { vcon_count: types.countsPerValue[v] } : {}),
+            });
+        }
+        for (const k of tags.keys) {
+            let approx: number | undefined;
+            if (tags.countsPerValue?.[k]) {
+                approx = Object.values(tags.countsPerValue[k]).reduce((a, b) => a + b, 0);
+            }
+            nodes.push({
+                id: nodeId('tag_key', k),
+                kind: 'tag_key',
+                label: k,
+                ...(approx !== undefined ? { vcon_count: approx } : {}),
+            });
+        }
+
+        return {
+            schema_version: VCON_SHAPE_GRAPH_SCHEMA_VERSION,
+            generated_at,
+            corpus: {
+                vcons_with_tags_mv: tags.totalVCons,
+                notes,
+            },
+            nodes,
+            edges: [],
+        };
     }
 
     async aggregateVconsByDealerStats(_params: {

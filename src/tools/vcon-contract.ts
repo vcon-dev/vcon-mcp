@@ -78,6 +78,19 @@ export const vconCapabilitiesTool = {
   }
 };
 
+export const vconGraphShapeTool = {
+  name: 'vcon_graph_shape',
+  category: 'read' as ToolCategory,
+  description:
+    'Return the default OSS vCon shape graph for this corpus: nodes for analysis types, attachment purposes, legacy attachment types (when purpose is absent), and tag keys, plus optional co-occurrence edges between analysis types and attachment purposes. ' +
+    'Spec-generic structure only; no business ontology. Same payload as MCP resource vcon://v1/graph/shape. ' +
+    'Prefer the resource when the client supports resources; use this tool otherwise.',
+  inputSchema: {
+    type: 'object' as const,
+    properties: {},
+  },
+};
+
 export const vconSearchTool = {
   name: 'vcon_search',
   category: 'read' as ToolCategory,
@@ -236,7 +249,7 @@ export const describeResponseShapeTool = {
       tool_name: {
         type: 'string',
         description:
-          'Tool name to describe. Supported values include vcon_fetch, vcon_capabilities, vcon_search, vcon_taxonomy, vcon_aggregate, describe_response_shape, get_vcon, search_vcons, search_by_tags, search_vcons_content, search_vcons_semantic, and search_vcons_hybrid.'
+          'Tool name to describe. Supported values include vcon_fetch, vcon_capabilities, vcon_graph_shape, vcon_search, vcon_taxonomy, vcon_aggregate, describe_response_shape, get_vcon, search_vcons, search_by_tags, search_vcons_content, search_vcons_semantic, and search_vcons_hybrid.'
       },
       include_example: {
         type: 'boolean',
@@ -250,6 +263,7 @@ export const describeResponseShapeTool = {
 export const allContractTools = [
   vconFetchTool,
   vconCapabilitiesTool,
+  vconGraphShapeTool,
   vconTaxonomyTool,
   vconSearchTool,
   vconAggregateTool,

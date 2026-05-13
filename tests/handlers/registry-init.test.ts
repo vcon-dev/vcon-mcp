@@ -50,6 +50,7 @@ describe('Handler Registry Initialization', () => {
 
     expect(registry.has('vcon_fetch')).toBe(true);
     expect(registry.has('vcon_capabilities')).toBe(true);
+    expect(registry.has('vcon_graph_shape')).toBe(true);
     expect(registry.has('vcon_search')).toBe(true);
     expect(registry.has('vcon_taxonomy')).toBe(true);
     expect(registry.has('describe_response_shape')).toBe(true);
@@ -99,13 +100,13 @@ describe('Handler Registry Initialization', () => {
     // Schema: 2
     // CRUD: 8
     // Search: 4
-    // Contract: 5
+    // Contract: 7
     // Tags: 5
     // Database: 3
     // Analytics: 6
     // Size: 2
-    // Total: 35
-    expect(toolNames.length).toBe(35);
+    // Total: 37
+    expect(toolNames.length).toBe(37);
   });
 
   it('should allow retrieving handlers by name', () => {

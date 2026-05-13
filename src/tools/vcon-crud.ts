@@ -83,7 +83,8 @@ export const PartySchema = z.object({
  * ✅ Includes dialog reference
  */
 export const AttachmentSchema = z.object({
-  type: z.string().optional(),
+  purpose: z.string().optional().describe('Canonical spec field for attachment classification'),
+  type: z.string().optional().describe('Legacy compatibility field; prefer purpose for new data'),
   start: z.string().optional(),
   party: z.number().optional(),
   dialog: z.number().optional().describe('Dialog index this attachment relates to'),  // ✅ Added
@@ -564,7 +565,14 @@ export const addAttachmentTool = {
       attachment: {
         type: 'object',
         properties: {
-          type: { type: 'string' },
+          purpose: {
+            type: 'string',
+            description: 'Canonical spec field for attachment classification'
+          },
+          type: {
+            type: 'string',
+            description: 'Legacy compatibility field; prefer purpose for new data'
+          },
           party: {
             type: 'number',
             description: 'Party index this attachment relates to'

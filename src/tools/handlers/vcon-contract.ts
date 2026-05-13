@@ -1,6 +1,7 @@
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { BaseToolHandler, ToolHandlerContext, ToolResponse } from './base.js';
 import { VCon, Attachment, Analysis } from '../../types/vcon.js';
+import { VCON_SHAPE_GRAPH_JSON_SCHEMA } from '../../types/vcon-shape-graph.js';
 import { generateEmbedding } from '../../utils/embeddings.js';
 import { normalizeDateString } from './validation.js';
 
@@ -324,6 +325,7 @@ const SHAPE_DESCRIPTORS: Record<string, ShapeDescriptor> = {
           type: 'object',
           properties: {
             tools: { type: 'array' },
+            shape_graph: { type: 'object' },
             response_budgeting: { type: 'object' },
             fetch: { type: 'object' },
             search: { type: 'object' },
@@ -335,7 +337,14 @@ const SHAPE_DESCRIPTORS: Record<string, ShapeDescriptor> = {
     example: {
       ok: true,
       item: {
-        tools: ['vcon_fetch', 'vcon_search', 'vcon_taxonomy', 'vcon_aggregate', 'describe_response_shape'],
+        tools: ['vcon_fetch', 'vcon_capabilities', 'vcon_graph_shape', 'vcon_search', 'vcon_taxonomy', 'vcon_aggregate', 'describe_response_shape'],
+        shape_graph: {
+          resource_uri: 'vcon://v1/graph/shape',
+          tool: 'vcon_graph_shape',
+          json_schema_id: 'https://vcon.dev/mcp/shape-graph/1-0-0',
+          description:
+            'Corpus-level shape graph (analysis types, attachment purposes, legacy types, tag keys). Prefer the MCP resource when available.',
+        },
         response_budgeting: {
           default_max_response_bytes: 250000,
           minimum_max_response_bytes: 1024,
@@ -355,6 +364,47 @@ const SHAPE_DESCRIPTORS: Record<string, ShapeDescriptor> = {
         }
       }
     },
+  },
+  vcon_graph_shape: {
+    tool_name: 'vcon_graph_shape',
+    summary: 'OSS shape graph JSON: nodes for corpus structure and optional co-occurrence edges.',
+    response_schema: {
+      type: 'object',
+      required: ['ok', 'item'],
+      properties: {
+        ok: { type: 'boolean', const: true },
+        item: VCON_SHAPE_GRAPH_JSON_SCHEMA as unknown as Record<string, unknown>,
+      },
+    },
+    example: {
+      ok: true,
+      item: {
+        schema_version: '1.0.0',
+        generated_at: '2026-05-11T14:00:00Z',
+        corpus: {
+          vcons_with_tags_mv: 1200,
+          notes: ['Co-occurrence edges capped for bounded responses.'],
+        },
+        nodes: [
+          { id: 'analysis_type:summary', kind: 'analysis_type', label: 'summary', vcon_count: 800 },
+          { id: 'attachment_purpose:dealer_info', kind: 'attachment_purpose', label: 'dealer_info', vcon_count: 400 },
+          { id: 'tag_key:portal', kind: 'tag_key', label: 'portal', vcon_count: 900 },
+        ],
+        edges: [
+          {
+            id: 'analysis_type_with_attachment_purpose:summary|dealer_info',
+            kind: 'analysis_type_with_attachment_purpose',
+            source: 'analysis_type:summary',
+            target: 'attachment_purpose:dealer_info',
+            joint_vcon_count: 350,
+          },
+        ],
+      },
+    },
+    notes: [
+      'Same JSON as MCP resource vcon://v1/graph/shape.',
+      'See item.corpus.notes for backend-specific counting semantics.',
+    ],
   },
   vcon_search: {
     tool_name: 'vcon_search',
@@ -745,12 +795,44 @@ export class VConFetchHandler extends BaseToolHandler {
   }
 }
 
+export class VConGraphShapeHandler extends BaseToolHandler {
+  readonly toolName = 'vcon_graph_shape';
+
+  protected async execute(_args: unknown, context: ToolHandlerContext): Promise<ToolResponse> {
+    try {
+      const graph = await context.queries.getVconShapeGraph();
+      return this.createOkItemResponse(graph);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return this.createErrorEnvelopeResponse({
+        code: 'SHAPE_GRAPH_FAILED',
+        message,
+      });
+    }
+  }
+}
+
 export class VConCapabilitiesHandler extends BaseToolHandler {
   readonly toolName = 'vcon_capabilities';
 
   protected async execute(_args: any, _context: ToolHandlerContext): Promise<ToolResponse> {
     return this.createOkItemResponse({
-      tools: ['vcon_fetch', 'vcon_capabilities', 'vcon_search', 'vcon_taxonomy', 'vcon_aggregate', 'describe_response_shape'],
+      tools: [
+        'vcon_fetch',
+        'vcon_capabilities',
+        'vcon_graph_shape',
+        'vcon_search',
+        'vcon_taxonomy',
+        'vcon_aggregate',
+        'describe_response_shape',
+      ],
+      shape_graph: {
+        resource_uri: 'vcon://v1/graph/shape',
+        tool: 'vcon_graph_shape',
+        json_schema_id: VCON_SHAPE_GRAPH_JSON_SCHEMA.$id,
+        description:
+          'Default corpus-level graph from vCon structure only (analysis types, attachment purposes, legacy attachment types without purpose, tag keys, bounded co-occurrence). No business ontology. Read this resource or call vcon_graph_shape after vcon_capabilities and before broad search when teaching an agent what evidence exists.',
+      },
       response_budgeting: {
         default_max_response_bytes: DEFAULT_MAX_RESPONSE_BYTES,
         minimum_max_response_bytes: MIN_MAX_RESPONSE_BYTES,

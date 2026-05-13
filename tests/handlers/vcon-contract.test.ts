@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   VConFetchHandler,
   VConCapabilitiesHandler,
+  VConGraphShapeHandler,
   VConSearchHandler,
   VConTaxonomyHandler,
   DescribeResponseShapeHandler,
@@ -69,6 +70,13 @@ describe('Redesigned vCon contract handlers', () => {
       keywordSearchCount: vi.fn().mockResolvedValue(1),
       semanticSearch: vi.fn().mockResolvedValue([]),
       hybridSearch: vi.fn().mockResolvedValue([]),
+      getVconShapeGraph: vi.fn().mockResolvedValue({
+        schema_version: '1.0.0',
+        generated_at: '2026-05-11T14:00:00Z',
+        corpus: { notes: ['test'] },
+        nodes: [{ id: 'analysis_type:summary', kind: 'analysis_type', label: 'summary', vcon_count: 1 }],
+        edges: [],
+      }),
     };
 
     mockContext = {
@@ -188,10 +196,24 @@ describe('Redesigned vCon contract handlers', () => {
     expect(response.item.tools).toContain('vcon_fetch');
     expect(response.item.tools).toContain('vcon_search');
     expect(response.item.tools).toContain('vcon_capabilities');
+    expect(response.item.tools).toContain('vcon_graph_shape');
+    expect(response.item.shape_graph?.resource_uri).toBe('vcon://v1/graph/shape');
     expect(response.item.response_budgeting.default_max_response_bytes).toBe(250000);
     expect(response.item.fetch.supported_include).toContain('dealer');
     expect(response.item.search.modes).toContain('hybrid');
     expect(response.item.pagination.strategy).toBe('opaque cursor');
+  });
+
+  it('vcon_graph_shape returns shape graph payload', async () => {
+    const handler = new VConGraphShapeHandler();
+
+    const result = await handler.handle({}, mockContext);
+    const response = JSON.parse(result.content[0].text);
+
+    expect(response.ok).toBe(true);
+    expect(response.item.schema_version).toBe('1.0.0');
+    expect(response.item.nodes[0].kind).toBe('analysis_type');
+    expect(mockQueries.getVconShapeGraph).toHaveBeenCalled();
   });
 
   it('vcon_search returns a normalized metadata page', async () => {
@@ -273,6 +295,7 @@ describe('Redesigned vCon contract handlers', () => {
     expect(response.ok).toBe(true);
     expect(response.items.some((item: any) => item.tool_name === 'vcon_fetch')).toBe(true);
     expect(response.items.some((item: any) => item.tool_name === 'vcon_capabilities')).toBe(true);
+    expect(response.items.some((item: any) => item.tool_name === 'vcon_graph_shape')).toBe(true);
     expect(response.items.some((item: any) => item.tool_name === 'vcon_search')).toBe(true);
     expect(response.page.count).toBeGreaterThan(0);
   });

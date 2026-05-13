@@ -16,6 +16,12 @@ import { ATTR_CACHE_HIT, ATTR_DB_OPERATION, ATTR_SEARCH_RESULTS_COUNT, ATTR_SEAR
 import { logWithContext, recordCounter, withSpan } from '../observability/instrumentation.js';
 import { createLogger } from '../observability/logger.js';
 import { Analysis, Attachment, Dialog, VCon } from '../types/vcon.js';
+import {
+  VCON_SHAPE_GRAPH_SCHEMA_VERSION,
+  type VconShapeGraphEdge,
+  type VconShapeGraphNode,
+  type VconShapeGraphPayload,
+} from '../types/vcon-shape-graph.js';
 import { deserializeBody, serializeBody } from '../utils/body-serialization.js';
 
 const logger = createLogger('queries');
@@ -1929,6 +1935,211 @@ export class SupabaseVConQueries implements IVConQueries {
     minCount?: number;
   }): Promise<DistinctValuesResult> {
     return this.getDistinctValues('analysis', 'type', options);
+  }
+
+  async getVconShapeGraph(): Promise<VconShapeGraphPayload> {
+    const notes: string[] = [];
+    const generated_at = new Date().toISOString();
+    const nodes: VconShapeGraphNode[] = [];
+    const edges: VconShapeGraphEdge[] = [];
+
+    const nodeId = (kind: VconShapeGraphNode['kind'], label: string) =>
+      `${kind}:${encodeURIComponent(label)}`;
+
+    const runSql = async (q: string) => {
+      const { data, error } = await this.supabase.rpc('exec_sql', { q, params: {} });
+      if (error) throw error;
+      return (data || []) as Record<string, unknown>[];
+    };
+
+    try {
+      const analysisRows = await runSql(`
+        SELECT type AS value, COUNT(DISTINCT vcon_id)::bigint AS vcon_count
+        FROM analysis
+        WHERE type IS NOT NULL AND btrim(type::text) <> ''
+        GROUP BY type
+        ORDER BY vcon_count DESC
+      `);
+      for (const row of analysisRows) {
+        const label = String(row.value ?? '').trim();
+        if (!label) continue;
+        nodes.push({
+          id: nodeId('analysis_type', label),
+          kind: 'analysis_type',
+          label,
+          vcon_count: Number(row.vcon_count ?? 0),
+        });
+      }
+
+      const purposeRows = await runSql(`
+        SELECT purpose AS value, COUNT(DISTINCT vcon_id)::bigint AS vcon_count
+        FROM attachments
+        WHERE purpose IS NOT NULL AND btrim(purpose::text) <> ''
+        GROUP BY purpose
+        ORDER BY vcon_count DESC
+      `);
+      for (const row of purposeRows) {
+        const label = String(row.value ?? '').trim();
+        if (!label) continue;
+        nodes.push({
+          id: nodeId('attachment_purpose', label),
+          kind: 'attachment_purpose',
+          label,
+          vcon_count: Number(row.vcon_count ?? 0),
+        });
+      }
+
+      const legacyTypeRows = await runSql(`
+        SELECT type AS value, COUNT(DISTINCT vcon_id)::bigint AS vcon_count
+        FROM attachments
+        WHERE type IS NOT NULL AND btrim(type::text) <> ''
+          AND (purpose IS NULL OR btrim(purpose::text) = '')
+        GROUP BY type
+        ORDER BY vcon_count DESC
+      `);
+      for (const row of legacyTypeRows) {
+        const label = String(row.value ?? '').trim();
+        if (!label) continue;
+        nodes.push({
+          id: nodeId('attachment_type_legacy', label),
+          kind: 'attachment_type_legacy',
+          label,
+          vcon_count: Number(row.vcon_count ?? 0),
+        });
+      }
+
+      try {
+        const tagRows = await runSql(`
+          SELECT key AS value, COUNT(DISTINCT vcon_id)::bigint AS vcon_count
+          FROM vcon_tags_mv,
+               LATERAL jsonb_each_text(tags) AS t(key, value)
+          GROUP BY key
+          ORDER BY vcon_count DESC
+        `);
+        for (const row of tagRows) {
+          const label = String(row.value ?? '').trim();
+          if (!label) continue;
+          nodes.push({
+            id: nodeId('tag_key', label),
+            kind: 'tag_key',
+            label,
+            vcon_count: Number(row.vcon_count ?? 0),
+          });
+        }
+      } catch (e: any) {
+        notes.push(
+          `Tag-key nodes skipped: ${e?.message || String(e)}. Ensure vcon_tags_mv is available.`,
+        );
+      }
+
+      let vcons_with_tags_mv: number | undefined;
+      try {
+        const tot = await runSql(
+          `SELECT COUNT(DISTINCT vcon_id)::integer AS n FROM vcon_tags_mv`,
+        );
+        vcons_with_tags_mv = Number((tot[0] as any)?.n ?? 0);
+      } catch {
+        /* optional */
+      }
+
+      const coRows = await runSql(`
+        SELECT a.type AS analysis_type,
+               att.purpose AS attachment_purpose,
+               COUNT(DISTINCT a.vcon_id)::bigint AS joint_vcons
+        FROM analysis a
+        INNER JOIN attachments att ON att.vcon_id = a.vcon_id
+        WHERE a.type IS NOT NULL AND btrim(a.type::text) <> ''
+          AND att.purpose IS NOT NULL AND btrim(att.purpose::text) <> ''
+        GROUP BY a.type, att.purpose
+        ORDER BY joint_vcons DESC
+        LIMIT 400
+      `);
+      for (const row of coRows) {
+        const at = String(row.analysis_type ?? '').trim();
+        const ap = String(row.attachment_purpose ?? '').trim();
+        if (!at || !ap) continue;
+        const src = nodeId('analysis_type', at);
+        const tgt = nodeId('attachment_purpose', ap);
+        edges.push({
+          id: `edge:analysis_type_with_attachment_purpose:${encodeURIComponent(at)}:${encodeURIComponent(ap)}`,
+          kind: 'analysis_type_with_attachment_purpose',
+          source: src,
+          target: tgt,
+          joint_vcon_count: Number(row.joint_vcons ?? 0),
+        });
+      }
+
+      return {
+        schema_version: VCON_SHAPE_GRAPH_SCHEMA_VERSION,
+        generated_at,
+        corpus: {
+          ...(vcons_with_tags_mv !== undefined ? { vcons_with_tags_mv } : {}),
+          notes,
+        },
+        nodes,
+        edges,
+      };
+    } catch (err: any) {
+      logWithContext('warn', 'getVconShapeGraph SQL path failed, using discovery fallbacks', {
+        message: err?.message || String(err),
+      });
+      notes.push(
+        `Primary path used exec_sql aggregations; failed (${err?.message || String(err)}). ` +
+          'Counts on analysis and attachment nodes may reflect row tallies, not distinct vCons.',
+      );
+
+      const analysis = await this.getUniqueAnalysisTypes({ includeCounts: true });
+      for (const v of analysis.values) {
+        nodes.push({
+          id: nodeId('analysis_type', v),
+          kind: 'analysis_type',
+          label: v,
+          ...(analysis.countsPerValue ? { vcon_count: analysis.countsPerValue[v] } : {}),
+        });
+      }
+      const purposes = await this.getUniqueAttachmentPurposes({ includeCounts: true });
+      for (const v of purposes.values) {
+        nodes.push({
+          id: nodeId('attachment_purpose', v),
+          kind: 'attachment_purpose',
+          label: v,
+          ...(purposes.countsPerValue ? { vcon_count: purposes.countsPerValue[v] } : {}),
+        });
+      }
+      const legacyTypes = await this.getUniqueAttachmentTypes({ includeCounts: true });
+      for (const v of legacyTypes.values) {
+        nodes.push({
+          id: nodeId('attachment_type_legacy', v),
+          kind: 'attachment_type_legacy',
+          label: v,
+          ...(legacyTypes.countsPerValue ? { vcon_count: legacyTypes.countsPerValue[v] } : {}),
+        });
+      }
+      const tags = await this.getUniqueTags({ includeCounts: true });
+      for (const k of tags.keys) {
+        let approx: number | undefined;
+        if (tags.countsPerValue?.[k]) {
+          approx = Object.values(tags.countsPerValue[k]).reduce((a, b) => a + b, 0);
+        }
+        nodes.push({
+          id: nodeId('tag_key', k),
+          kind: 'tag_key',
+          label: k,
+          ...(approx !== undefined ? { vcon_count: approx } : {}),
+        });
+      }
+
+      return {
+        schema_version: VCON_SHAPE_GRAPH_SCHEMA_VERSION,
+        generated_at,
+        corpus: {
+          vcons_with_tags_mv: tags.totalVCons,
+          notes,
+        },
+        nodes,
+        edges,
+      };
+    }
   }
 
   async aggregateVconsByDealerStats(params: {
