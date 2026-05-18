@@ -105,7 +105,7 @@ The Model Context Protocol (MCP) enables AI assistants to use external tools and
 
 ### Core Capabilities
 
-- ✅ **30 MCP Tools** - Complete CRUD operations, search, tagging, templates, analytics
+- ✅ **35 MCP Tools** - Complete CRUD operations, search, tagging, templates, analytics
 - ✅ **9 Query Prompts** - Guide AI assistants to search effectively
 - ✅ **4 Search Modes** - Basic, keyword, semantic, and hybrid search
 - ✅ **Tag System** - Flexible key-value metadata for organization

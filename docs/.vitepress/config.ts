@@ -31,7 +31,7 @@ export default defineConfig({
       { text: 'Reference', link: '/reference/vcon-spec' },
       { text: 'Examples', link: '/examples/' },
       {
-        text: 'v1.0.0',
+        text: 'v1.2.0',
         items: [
           { text: 'Changelog', link: '/changelog' },
           { text: 'Contributing', link: '/development/contributing' },

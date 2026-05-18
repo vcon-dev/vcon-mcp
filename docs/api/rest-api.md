@@ -855,7 +855,7 @@ The REST API now has full parity with MCP tools. All endpoints use `/api/v1` as 
 | Protocol | HTTP/JSON | MCP (stdio/HTTP) |
 | Auth | API Key (Bearer) | MCP client auth |
 | Best for | External integrations, scripts | AI assistants |
-| Operations | Full CRUD + sub-resources | Full toolkit (30+ tools) |
+| Operations | Full CRUD + sub-resources | Full toolkit (35 tools) |
 | Search | 4 modes (list, keyword, semantic, hybrid) | 4 search modes |
 | Tags | Full tag management | Full tag management |
 | Analytics | Full analytics suite | Full analytics suite |
