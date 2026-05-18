@@ -45,6 +45,16 @@
 * [Cloud Providers](deployment/cloud.md)
 * [Self-Hosted Supabase](deployment/self-hosted-supabase.md)
 
+## VCONIC for Resellers
+
+* [Quick Start Guide](var/01-quick-start-guide.md)
+* [Installation Guide](var/02-installation-guide.md)
+* [Configuration Guide](var/03-configuration-guide.md)
+* [Administration Guide](var/04-administration-guide.md)
+* [Troubleshooting Guide](var/05-troubleshooting-guide.md)
+* [Upgrade Guide](var/06-upgrade-guide.md)
+* [Release Notes](var/07-release-notes.md)
+
 ## Reference
 
 * [Overview](reference/index.md)

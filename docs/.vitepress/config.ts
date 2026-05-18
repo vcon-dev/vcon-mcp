@@ -27,6 +27,7 @@ export default defineConfig({
       { text: 'API', link: '/api/' },
       { text: 'Development', link: '/development/' },
       { text: 'Deployment', link: '/deployment/' },
+      { text: 'Resellers', link: '/var/01-quick-start-guide' },
       { text: 'Reference', link: '/reference/vcon-spec' },
       { text: 'Examples', link: '/examples/' },
       {
@@ -142,6 +143,21 @@ export default defineConfig({
         }
       ],
       
+      '/var/': [
+        {
+          text: 'VCONIC for Resellers',
+          items: [
+            { text: 'Quick Start Guide', link: '/var/01-quick-start-guide' },
+            { text: 'Installation Guide', link: '/var/02-installation-guide' },
+            { text: 'Configuration Guide', link: '/var/03-configuration-guide' },
+            { text: 'Administration Guide', link: '/var/04-administration-guide' },
+            { text: 'Troubleshooting Guide', link: '/var/05-troubleshooting-guide' },
+            { text: 'Upgrade Guide', link: '/var/06-upgrade-guide' },
+            { text: 'Release Notes', link: '/var/07-release-notes' },
+          ]
+        }
+      ],
+
       '/reference/': [
         {
           text: 'Technical Reference',
