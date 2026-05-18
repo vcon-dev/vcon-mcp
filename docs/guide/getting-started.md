@@ -270,10 +270,11 @@ Start Here
    - Privacy helpers
    - Serialization
 
-### MCP Tools Provided (30 tools)
+### MCP Tools Provided (35 tools)
 
 - **CRUD:** `create_vcon`, `get_vcon`, `update_vcon`, `delete_vcon`, `add_dialog`, `add_analysis`, `add_attachment`, `create_vcon_from_template`
 - **Search:** `search_vcons`, `search_vcons_content`, `search_vcons_semantic`, `search_vcons_hybrid`
+- **Contract:** `vcon_fetch`, `vcon_search`, `vcon_capabilities`, `vcon_taxonomy`, `describe_response_shape`
 - **Tags:** `manage_tag`, `get_tags`, `remove_all_tags`, `search_by_tags`, `get_unique_tags`
 - **Analytics:** `get_database_analytics`, `get_monthly_growth_analytics`, `get_content_analytics`, `get_tag_analytics`, `get_attachment_analytics`, `get_database_health_metrics`
 - **Database:** `get_database_shape`, `get_database_stats`, `analyze_query`, `get_database_size_info`, `get_smart_search_limits`
