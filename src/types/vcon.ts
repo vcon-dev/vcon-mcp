@@ -144,7 +144,7 @@ export interface Dialog {
  * Attachment Object - Section 4.4
  */
 export interface Attachment {
-  purpose?: string;         // Section 4.4.1
+  purpose?: string;         // Section 4.4.1 - canonical spec field for attachment classification
   start?: string;           // Section 4.4.2 - ISO 8601 datetime
   party?: number;           // Section 4.4.3
   dialog?: number;          // Section 4.4.4
@@ -154,7 +154,7 @@ export interface Attachment {
   encoding?: Encoding;
   url?: string;
   content_hash?: string | string[];
-  // Non-spec fields used by Strolid for custom attachment types (stored in metadata)
+  // Legacy/non-spec compatibility field. Prefer purpose for new writes and reads.
   type?: string;
 }
 

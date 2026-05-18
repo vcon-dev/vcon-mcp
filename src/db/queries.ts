@@ -16,11 +16,17 @@ import { ATTR_CACHE_HIT, ATTR_DB_OPERATION, ATTR_SEARCH_RESULTS_COUNT, ATTR_SEAR
 import { logWithContext, recordCounter, withSpan } from '../observability/instrumentation.js';
 import { createLogger } from '../observability/logger.js';
 import { Analysis, Attachment, Dialog, VCon } from '../types/vcon.js';
+import {
+  VCON_SHAPE_GRAPH_SCHEMA_VERSION,
+  type VconShapeGraphEdge,
+  type VconShapeGraphNode,
+  type VconShapeGraphPayload,
+} from '../types/vcon-shape-graph.js';
 import { deserializeBody, serializeBody } from '../utils/body-serialization.js';
 
 const logger = createLogger('queries');
 
-import { IVConQueries } from './interfaces.js';
+import { DistinctValuesResult, IVConQueries } from './interfaces.js';
 
 export class SupabaseVConQueries implements IVConQueries {
   private redis: Redis | null = null;
@@ -527,6 +533,7 @@ export class SupabaseVConQueries implements IVConQueries {
         vcon_id: vcon.id,
         attachment_index: nextIndex,
         type: attachment.type,
+        purpose: attachment.purpose,
         start_time: attachment.start,
         party: attachment.party,
         dialog: attachment.dialog,            // ✅ Added per spec Section 4.4.4
@@ -725,6 +732,7 @@ export class SupabaseVConQueries implements IVConQueries {
         })),
         attachments: attachments?.map(att => ({
           type: att.type,
+          purpose: att.purpose,
           start: att.start_time,
           party: att.party,
           dialog: att.dialog,
@@ -767,6 +775,143 @@ export class SupabaseVConQueries implements IVConQueries {
     });
   }
 
+  private static readonly TAG_ORDERED_FETCH_CAP = 100_000;
+
+  private async filterVconUuidsBySubject(uuids: string[], subject: string): Promise<string[]> {
+    if (uuids.length === 0 || !subject) return uuids;
+    const ordered: string[] = [];
+    const IN_BATCH = 400;
+    for (let i = 0; i < uuids.length; i += IN_BATCH) {
+      const chunk = uuids.slice(i, i + IN_BATCH);
+      const { data, error } = await this.supabase
+        .from('vcons')
+        .select('uuid')
+        .in('uuid', chunk)
+        .ilike('subject', `%${subject}%`);
+      if (error) throw error;
+      const hit = new Set((data || []).map((r: { uuid: string }) => r.uuid));
+      for (const u of chunk) {
+        if (hit.has(u)) ordered.push(u);
+      }
+    }
+    return ordered;
+  }
+
+  private async partyMatchUuidSet(filters: {
+    partyName?: string;
+    partyEmail?: string;
+    partyTel?: string;
+  }): Promise<Set<string>> {
+    let partyQuery = this.supabase
+      .from('parties')
+      .select('vcon_id')
+      .limit(10000);
+
+    if (filters.partyName) {
+      partyQuery = partyQuery.ilike('name', `%${filters.partyName}%`);
+    }
+    if (filters.partyEmail) {
+      partyQuery = partyQuery.ilike('mailto', `%${filters.partyEmail}%`);
+    }
+    if (filters.partyTel) {
+      partyQuery = partyQuery.ilike('tel', `%${filters.partyTel}%`);
+    }
+
+    const { data: partyData, error: partyError } = await partyQuery;
+    if (partyError) throw partyError;
+    if (!partyData || partyData.length === 0) {
+      return new Set();
+    }
+
+    const partyVconIds = new Set(partyData.map(p => p.vcon_id));
+    const partyIdArray = Array.from(partyVconIds);
+    const IN_BATCH = 400;
+    const matchingUuidSet = new Set<string>();
+    for (let i = 0; i < partyIdArray.length; i += IN_BATCH) {
+      const chunk = partyIdArray.slice(i, i + IN_BATCH);
+      const { data: batchVcons } = await this.supabase
+        .from('vcons')
+        .select('uuid, id')
+        .in('id', chunk);
+      (batchVcons || []).forEach(v => matchingUuidSet.add(v.uuid));
+    }
+    return matchingUuidSet;
+  }
+
+  private async filterVconUuidsByPartyOrdered(
+    orderedUuids: string[],
+    filters: { partyName?: string; partyEmail?: string; partyTel?: string },
+  ): Promise<string[]> {
+    const partySet = await this.partyMatchUuidSet(filters);
+    if (partySet.size === 0) return [];
+    return orderedUuids.filter(u => partySet.has(u));
+  }
+
+  private async dealerMatchUuidSet(dealerId?: string, dealerName?: string): Promise<Set<string>> {
+    if (!dealerId && !dealerName) return new Set();
+    const { data, error } = await this.supabase.rpc('vcon_uuids_for_dealer_filter', {
+      p_dealer_id: dealerId ?? null,
+      p_name_ilike: dealerName ?? null,
+    });
+    if (error) throw error;
+    return new Set((data || []).map((r: { vcon_uuid: string }) => r.vcon_uuid));
+  }
+
+  private async filterVconUuidsByDealerOrdered(
+    orderedUuids: string[],
+    dealerId?: string,
+    dealerName?: string,
+  ): Promise<string[]> {
+    const dealerSet = await this.dealerMatchUuidSet(dealerId, dealerName);
+    if (dealerSet.size === 0) return [];
+    return orderedUuids.filter(u => dealerSet.has(u));
+  }
+
+  /**
+   * Tag-first metadata search: ordered by vcon.created_at via search_vcons_by_tags_and_date,
+   * then optional subject / party / dealer narrowing. Aligns pagination with searchVConsCount.
+   */
+  private async searchVConsTagOrdered(filters: {
+    subject?: string;
+    partyName?: string;
+    partyEmail?: string;
+    partyTel?: string;
+    startDate?: string;
+    endDate?: string;
+    tags: Record<string, string>;
+    dealerId?: string;
+    dealerName?: string;
+    limit?: number;
+  }, limit: number): Promise<VCon[]> {
+    const rpcMax = Math.min(
+      SupabaseVConQueries.TAG_ORDERED_FETCH_CAP,
+      Math.max(limit, 1),
+    );
+    let ordered = await this.searchByTagsAndDate(
+      filters.tags,
+      filters.startDate,
+      filters.endDate,
+      rpcMax,
+    );
+
+    if (filters.subject) {
+      ordered = await this.filterVconUuidsBySubject(ordered, filters.subject);
+    }
+    if (filters.partyName || filters.partyEmail || filters.partyTel) {
+      ordered = await this.filterVconUuidsByPartyOrdered(ordered, filters);
+    }
+    if (filters.dealerId || filters.dealerName) {
+      ordered = await this.filterVconUuidsByDealerOrdered(
+        ordered,
+        filters.dealerId,
+        filters.dealerName,
+      );
+    }
+
+    const vconUuids = ordered.slice(0, limit);
+    return Promise.all(vconUuids.map(uuid => this.getVCon(uuid)));
+  }
+
   /**
    * Search vCons by various criteria
    */
@@ -778,18 +923,35 @@ export class SupabaseVConQueries implements IVConQueries {
     startDate?: string;
     endDate?: string;
     tags?: Record<string, string>;
+    dealerId?: string;
+    dealerName?: string;
     limit?: number;
   }): Promise<VCon[]> {
     const limit = filters.limit || 10;
 
+    if (filters.tags && Object.keys(filters.tags).length > 0) {
+      return this.searchVConsTagOrdered(
+        {
+          subject: filters.subject,
+          partyName: filters.partyName,
+          partyEmail: filters.partyEmail,
+          partyTel: filters.partyTel,
+          startDate: filters.startDate,
+          endDate: filters.endDate,
+          tags: filters.tags,
+          dealerId: filters.dealerId,
+          dealerName: filters.dealerName,
+          limit: filters.limit,
+        },
+        limit,
+      );
+    }
+
     // Start with party filters if present - these constrain which vCons to consider
     // Party filters must be applied FIRST to avoid missing results due to limit
-    let candidateVconIds: Set<number> | null = null;
+    let candidateVconIds: Set<string> | null = null;
 
     if (filters.partyName || filters.partyEmail || filters.partyTel) {
-      // Explicit limit (PostgREST default cap is typically 1000 rows, which
-      // can silently truncate a name/email filter before it reaches the
-      // specific vCon the caller was looking for).
       let partyQuery = this.supabase
         .from('parties')
         .select('vcon_id')
@@ -809,20 +971,14 @@ export class SupabaseVConQueries implements IVConQueries {
       if (partyError) throw partyError;
 
       if (!partyData || partyData.length === 0) {
-        // No parties match - return empty result
         return [];
       }
 
-      candidateVconIds = new Set(partyData.map(p => p.vcon_id));
+      candidateVconIds = new Set(partyData.map(p => String(p.vcon_id)));
     }
 
-    // If we have tag filters, fetch more initially to allow for filtering.
-    const initialLimit = (filters.tags && Object.keys(filters.tags).length > 0)
-      ? Math.max(limit * 10, 1000)
-      : limit;
+    const initialLimit = limit;
 
-    // Common per-query filter application. Shared by the single-shot and the
-    // batched-IN code paths so both honor the same subject/date filters.
     const applyFilters = <Q extends { ilike: any; gte: any; lte: any; order: any; limit: any }>(
       q: Q,
       withLimit: boolean,
@@ -841,10 +997,6 @@ export class SupabaseVConQueries implements IVConQueries {
 
     try {
       if (candidateVconIds !== null) {
-        // Batched path. The party-match set may be arbitrarily large; PostgREST
-        // encodes `.in()` into the URL so 400 UUIDs is the safe ceiling. Walk
-        // the full candidate set in chunks, then sort/limit in JS to produce
-        // the same top-N-by-created_at ordering as the single-shot path below.
         const idArray = Array.from(candidateVconIds);
         const IN_BATCH = 100;
         const accumulated: Array<{ uuid: string; id: any; created_at: string }> = [];
@@ -892,61 +1044,17 @@ export class SupabaseVConQueries implements IVConQueries {
     let vconUuids = data.map(v => v.uuid);
 
     if (filters.partyName || filters.partyEmail || filters.partyTel) {
-      // Same explicit limit rationale as the pre-filter block above — avoid
-      // silent PostgREST row truncation when names/emails match many rows.
-      let partyQuery = this.supabase
-        .from('parties')
-        .select('vcon_id')
-        .limit(10000);
-
-      if (filters.partyName) {
-        partyQuery = partyQuery.ilike('name', `%${filters.partyName}%`);
-      }
-      if (filters.partyEmail) {
-        partyQuery = partyQuery.ilike('mailto', `%${filters.partyEmail}%`);
-      }
-      if (filters.partyTel) {
-        partyQuery = partyQuery.ilike('tel', `%${filters.partyTel}%`);
-      }
-
-      const { data: partyData, error: partyError } = await partyQuery;
-      if (partyError) throw partyError;
-
-      const partyVconIds = new Set(partyData.map(p => p.vcon_id));
-
-      // Batch the .in() to avoid "URI too long" when partyVconIds is large.
-      // PostgREST encodes .in() as a URL parameter; arrays > ~400 items can
-      // exceed HTTP header/URL size limits.
-      const partyIdArray = Array.from(partyVconIds);
-      const IN_BATCH = 400;
-      const matchingUuidSet = new Set<string>();
-      for (let i = 0; i < partyIdArray.length; i += IN_BATCH) {
-        const chunk = partyIdArray.slice(i, i + IN_BATCH);
-        const { data: batchVcons } = await this.supabase
-          .from('vcons')
-          .select('uuid, id')
-          .in('id', chunk);
-        (batchVcons || []).forEach(v => matchingUuidSet.add(v.uuid));
-      }
-
+      const matchingUuidSet = await this.partyMatchUuidSet(filters);
       vconUuids = vconUuids.filter(uuid => matchingUuidSet.has(uuid));
     }
 
-    // If tag filters, get matching UUIDs and intersect with current results.
-    // Use the date-aware RPC when a date range is set so we don't intersect
-    // an undated 10k-UUID list against a date-truncated candidate set.
-    if (filters.tags && Object.keys(filters.tags).length > 0) {
-      const tagMatchingUuids = (filters.startDate || filters.endDate)
-        ? await this.searchByTagsAndDate(filters.tags, filters.startDate, filters.endDate, 100000)
-        : await this.searchByTags(filters.tags, 10000);
-      const tagMatchingSet = new Set(tagMatchingUuids);
-      vconUuids = vconUuids.filter(uuid => tagMatchingSet.has(uuid));
+    if (filters.dealerId || filters.dealerName) {
+      const dealerSet = await this.dealerMatchUuidSet(filters.dealerId, filters.dealerName);
+      vconUuids = vconUuids.filter(uuid => dealerSet.has(uuid));
     }
 
-    // Apply final limit after all filtering
     vconUuids = vconUuids.slice(0, limit);
 
-    // Fetch full vCons
     return Promise.all(
       vconUuids.map(uuid => this.getVCon(uuid))
     );
@@ -964,7 +1072,25 @@ export class SupabaseVConQueries implements IVConQueries {
     startDate?: string;
     endDate?: string;
     tags?: Record<string, string>;
+    dealerId?: string;
+    dealerName?: string;
   }): Promise<number> {
+    const hasTags = !!(filters.tags && Object.keys(filters.tags).length > 0);
+    const hasParty = !!(filters.partyName || filters.partyEmail || filters.partyTel);
+    const hasDealer = !!(filters.dealerId || filters.dealerName);
+
+    if (hasDealer && !hasTags && !hasParty) {
+      const { data, error } = await this.supabase.rpc('count_vcons_for_dealer_filter', {
+        p_dealer_id: filters.dealerId ?? null,
+        p_name_ilike: filters.dealerName ?? null,
+        p_subject_contains: filters.subject ?? null,
+        vcon_created_after: filters.startDate ?? null,
+        vcon_created_before: filters.endDate ?? null,
+      });
+      if (error) throw error;
+      return typeof data === 'number' ? data : Number(data ?? 0);
+    }
+
     // Build the same query as searchVCons but just get count
     let query = this.supabase
       .from('vcons')
@@ -1041,6 +1167,9 @@ export class SupabaseVConQueries implements IVConQueries {
           100000,
         );
         const tagAndDateSet = new Set(tagAndDateUuids);
+        const dealerSet = (filters.dealerId || filters.dealerName)
+          ? await this.dealerMatchUuidSet(filters.dealerId, filters.dealerName)
+          : null;
 
         const partyIdArray = Array.from(partyVconIds);
         const IN_BATCH = 400;
@@ -1051,7 +1180,9 @@ export class SupabaseVConQueries implements IVConQueries {
           if (filters.subject) chunkQuery = chunkQuery.ilike('subject', `%${filters.subject}%`);
           const { data: batchVcons } = await chunkQuery;
           for (const v of batchVcons || []) {
-            if (tagAndDateSet.has(v.uuid)) matched++;
+            if (!tagAndDateSet.has(v.uuid)) continue;
+            if (dealerSet && !dealerSet.has(v.uuid)) continue;
+            matched++;
           }
         }
         return matched;
@@ -1064,8 +1195,19 @@ export class SupabaseVConQueries implements IVConQueries {
     // so it executes as a single SQL join instead of a JS intersection over
     // a PostgREST page-truncated result set.
     if (filters.tags && Object.keys(filters.tags).length > 0) {
-      // Subject filter is rare in this path; if present we have to fall back
-      // to UUID intersection because the RPC doesn't accept it.
+      if (!hasParty && (filters.dealerId || filters.dealerName)) {
+        const { data, error } = await this.supabase.rpc('count_vcons_tags_and_dealer', {
+          tag_filter: filters.tags,
+          p_dealer_id: filters.dealerId ?? null,
+          p_name_ilike: filters.dealerName ?? null,
+          vcon_created_after: filters.startDate ?? null,
+          vcon_created_before: filters.endDate ?? null,
+          p_subject_contains: filters.subject ?? null,
+        });
+        if (error) throw error;
+        return typeof data === 'number' ? data : Number(data ?? 0);
+      }
+
       if (filters.subject) {
         const tagAndDateUuids = await this.searchByTagsAndDate(
           filters.tags,
@@ -1076,7 +1218,6 @@ export class SupabaseVConQueries implements IVConQueries {
         if (tagAndDateUuids.length === 0) return 0;
         const tagAndDateSet = new Set(tagAndDateUuids);
 
-        // Walk vcons in batches matching the subject filter and intersect.
         const uuidArray = Array.from(tagAndDateSet);
         const IN_BATCH = 400;
         let matched = 0;
@@ -1118,11 +1259,6 @@ export class SupabaseVConQueries implements IVConQueries {
     if (error) throw error;
     return count || 0;
   }
-
-  /**
-   * Delete a vCon and all related entities
-   */
-
 
   /**
    * Update vCon metadata
@@ -1477,6 +1613,131 @@ export class SupabaseVConQueries implements IVConQueries {
   }
 
   /**
+   * Get distinct string values from a table column with optional counts.
+   * Uses exec_sql when available, then falls back to a JS batch scan.
+   */
+  private async getDistinctValues(
+    table: 'attachments' | 'analysis',
+    column: 'type' | 'purpose',
+    options?: {
+      includeCounts?: boolean;
+      minCount?: number;
+    },
+  ): Promise<DistinctValuesResult> {
+    const includeCounts = options?.includeCounts ?? false;
+    const minCount = options?.minCount ?? 1;
+
+    try {
+      const havingClause = minCount > 1 ? `HAVING COUNT(*) >= ${minCount}` : '';
+      const aggQuery = `
+        SELECT ${column} AS value, COUNT(*)::integer AS cnt
+        FROM ${table}
+        WHERE ${column} IS NOT NULL
+          AND btrim(${column}) <> ''
+        GROUP BY ${column}
+        ${havingClause}
+        ORDER BY cnt DESC, ${column} ASC
+      `;
+      const totalQuery = `
+        SELECT COUNT(DISTINCT vcon_id)::integer AS total
+        FROM ${table}
+        WHERE ${column} IS NOT NULL
+          AND btrim(${column}) <> ''
+      `;
+
+      const [{ data: rows, error: rowsErr }, { data: totalData, error: totalErr }] = await Promise.all([
+        this.supabase.rpc('exec_sql', { q: aggQuery, params: {} }),
+        this.supabase.rpc('exec_sql', { q: totalQuery, params: {} }),
+      ]);
+
+      if (rowsErr) throw rowsErr;
+      if (totalErr) throw totalErr;
+
+      const values: string[] = [];
+      const countsPerValue: Record<string, number> = {};
+      for (const row of rows || []) {
+        const value = typeof row?.value === 'string' ? row.value.trim() : '';
+        if (!value) continue;
+        values.push(value);
+        if (includeCounts) {
+          countsPerValue[value] = Number(row?.cnt || 0);
+        }
+      }
+
+      return {
+        values,
+        ...(includeCounts ? { countsPerValue } : {}),
+        totalVCons: Number((totalData as any)?.[0]?.total ?? 0),
+      };
+    } catch (fastErr: any) {
+      const isExpected =
+        fastErr?.code === '42P01' ||
+        fastErr?.code === 'PGRST202' ||
+        fastErr?.message?.includes('does not exist') ||
+        fastErr?.message?.includes('Could not find');
+      if (!isExpected) throw fastErr;
+      logWithContext('warn', 'Distinct-values SQL fast path unavailable, using JS batch fallback', {
+        table,
+        column,
+        reason: fastErr.message,
+      });
+    }
+
+    const { count, error: countError } = await this.supabase
+      .from(table)
+      .select('*', { count: 'exact', head: true });
+    if (countError) throw countError;
+
+    const batchSize = 1000;
+    const totalBatches = Math.ceil((count || 0) / batchSize);
+    const valuesSet = new Set<string>();
+    const countsPerValue: Record<string, number> = {};
+    const vconIds = new Set<string>();
+
+    for (let i = 0; i < totalBatches; i++) {
+      const from = i * batchSize;
+      const to = Math.min(from + batchSize - 1, (count || 0) - 1);
+      const { data: batch, error } = await this.supabase
+        .from(table)
+        .select(`vcon_id, ${column}`)
+        .range(from, to);
+      if (error) throw error;
+
+      for (const row of batch || []) {
+        const record = row as Record<string, unknown>;
+        const raw = record[column];
+        const value = typeof raw === 'string' ? raw.trim() : '';
+        if (!value) continue;
+        valuesSet.add(value);
+        countsPerValue[value] = (countsPerValue[value] || 0) + 1;
+        if (record.vcon_id) {
+          vconIds.add(String(record.vcon_id));
+        }
+      }
+    }
+
+    const values = Array.from(valuesSet)
+      .filter((value) => countsPerValue[value] >= minCount)
+      .sort((a, b) => {
+        const countDiff = countsPerValue[b] - countsPerValue[a];
+        return countDiff !== 0 ? countDiff : a.localeCompare(b);
+      });
+
+    const filteredCounts: Record<string, number> = {};
+    if (includeCounts) {
+      for (const value of values) {
+        filteredCounts[value] = countsPerValue[value];
+      }
+    }
+
+    return {
+      values,
+      ...(includeCounts ? { countsPerValue: filteredCounts } : {}),
+      totalVCons: vconIds.size,
+    };
+  }
+
+  /**
    * Get unique tags across all vCons
    */
   async getUniqueTags(options?: {
@@ -1653,6 +1914,310 @@ export class SupabaseVConQueries implements IVConQueries {
     };
     if (includeCounts) result.countsPerValue = filteredCounts;
     return result;
+  }
+
+  async getUniqueAttachmentTypes(options?: {
+    includeCounts?: boolean;
+    minCount?: number;
+  }): Promise<DistinctValuesResult> {
+    return this.getDistinctValues('attachments', 'type', options);
+  }
+
+  async getUniqueAttachmentPurposes(options?: {
+    includeCounts?: boolean;
+    minCount?: number;
+  }): Promise<DistinctValuesResult> {
+    return this.getDistinctValues('attachments', 'purpose', options);
+  }
+
+  async getUniqueAnalysisTypes(options?: {
+    includeCounts?: boolean;
+    minCount?: number;
+  }): Promise<DistinctValuesResult> {
+    return this.getDistinctValues('analysis', 'type', options);
+  }
+
+  async getVconShapeGraph(): Promise<VconShapeGraphPayload> {
+    const notes: string[] = [];
+    const generated_at = new Date().toISOString();
+    const nodes: VconShapeGraphNode[] = [];
+    const edges: VconShapeGraphEdge[] = [];
+
+    const nodeId = (kind: VconShapeGraphNode['kind'], label: string) =>
+      `${kind}:${encodeURIComponent(label)}`;
+
+    const runSql = async (q: string) => {
+      const { data, error } = await this.supabase.rpc('exec_sql', { q, params: {} });
+      if (error) throw error;
+      return (data || []) as Record<string, unknown>[];
+    };
+
+    try {
+      const analysisRows = await runSql(`
+        SELECT type AS value, COUNT(DISTINCT vcon_id)::bigint AS vcon_count
+        FROM analysis
+        WHERE type IS NOT NULL AND btrim(type::text) <> ''
+        GROUP BY type
+        ORDER BY vcon_count DESC
+      `);
+      for (const row of analysisRows) {
+        const label = String(row.value ?? '').trim();
+        if (!label) continue;
+        nodes.push({
+          id: nodeId('analysis_type', label),
+          kind: 'analysis_type',
+          label,
+          vcon_count: Number(row.vcon_count ?? 0),
+        });
+      }
+
+      const purposeRows = await runSql(`
+        SELECT purpose AS value, COUNT(DISTINCT vcon_id)::bigint AS vcon_count
+        FROM attachments
+        WHERE purpose IS NOT NULL AND btrim(purpose::text) <> ''
+        GROUP BY purpose
+        ORDER BY vcon_count DESC
+      `);
+      for (const row of purposeRows) {
+        const label = String(row.value ?? '').trim();
+        if (!label) continue;
+        nodes.push({
+          id: nodeId('attachment_purpose', label),
+          kind: 'attachment_purpose',
+          label,
+          vcon_count: Number(row.vcon_count ?? 0),
+        });
+      }
+
+      const legacyTypeRows = await runSql(`
+        SELECT type AS value, COUNT(DISTINCT vcon_id)::bigint AS vcon_count
+        FROM attachments
+        WHERE type IS NOT NULL AND btrim(type::text) <> ''
+          AND (purpose IS NULL OR btrim(purpose::text) = '')
+        GROUP BY type
+        ORDER BY vcon_count DESC
+      `);
+      for (const row of legacyTypeRows) {
+        const label = String(row.value ?? '').trim();
+        if (!label) continue;
+        nodes.push({
+          id: nodeId('attachment_type_legacy', label),
+          kind: 'attachment_type_legacy',
+          label,
+          vcon_count: Number(row.vcon_count ?? 0),
+        });
+      }
+
+      try {
+        const tagRows = await runSql(`
+          SELECT key AS value, COUNT(DISTINCT vcon_id)::bigint AS vcon_count
+          FROM vcon_tags_mv,
+               LATERAL jsonb_each_text(tags) AS t(key, value)
+          GROUP BY key
+          ORDER BY vcon_count DESC
+        `);
+        for (const row of tagRows) {
+          const label = String(row.value ?? '').trim();
+          if (!label) continue;
+          nodes.push({
+            id: nodeId('tag_key', label),
+            kind: 'tag_key',
+            label,
+            vcon_count: Number(row.vcon_count ?? 0),
+          });
+        }
+      } catch (e: any) {
+        notes.push(
+          `Tag-key nodes skipped: ${e?.message || String(e)}. Ensure vcon_tags_mv is available.`,
+        );
+      }
+
+      let vcons_with_tags_mv: number | undefined;
+      try {
+        const tot = await runSql(
+          `SELECT COUNT(DISTINCT vcon_id)::integer AS n FROM vcon_tags_mv`,
+        );
+        vcons_with_tags_mv = Number((tot[0] as any)?.n ?? 0);
+      } catch {
+        /* optional */
+      }
+
+      const coRows = await runSql(`
+        SELECT a.type AS analysis_type,
+               att.purpose AS attachment_purpose,
+               COUNT(DISTINCT a.vcon_id)::bigint AS joint_vcons
+        FROM analysis a
+        INNER JOIN attachments att ON att.vcon_id = a.vcon_id
+        WHERE a.type IS NOT NULL AND btrim(a.type::text) <> ''
+          AND att.purpose IS NOT NULL AND btrim(att.purpose::text) <> ''
+        GROUP BY a.type, att.purpose
+        ORDER BY joint_vcons DESC
+        LIMIT 400
+      `);
+      for (const row of coRows) {
+        const at = String(row.analysis_type ?? '').trim();
+        const ap = String(row.attachment_purpose ?? '').trim();
+        if (!at || !ap) continue;
+        const src = nodeId('analysis_type', at);
+        const tgt = nodeId('attachment_purpose', ap);
+        edges.push({
+          id: `edge:analysis_type_with_attachment_purpose:${encodeURIComponent(at)}:${encodeURIComponent(ap)}`,
+          kind: 'analysis_type_with_attachment_purpose',
+          source: src,
+          target: tgt,
+          joint_vcon_count: Number(row.joint_vcons ?? 0),
+        });
+      }
+
+      return {
+        schema_version: VCON_SHAPE_GRAPH_SCHEMA_VERSION,
+        generated_at,
+        corpus: {
+          ...(vcons_with_tags_mv !== undefined ? { vcons_with_tags_mv } : {}),
+          notes,
+        },
+        nodes,
+        edges,
+      };
+    } catch (err: any) {
+      logWithContext('warn', 'getVconShapeGraph SQL path failed, using discovery fallbacks', {
+        message: err?.message || String(err),
+      });
+      notes.push(
+        `Primary path used exec_sql aggregations; failed (${err?.message || String(err)}). ` +
+          'Counts on analysis and attachment nodes may reflect row tallies, not distinct vCons.',
+      );
+
+      const analysis = await this.getUniqueAnalysisTypes({ includeCounts: true });
+      for (const v of analysis.values) {
+        nodes.push({
+          id: nodeId('analysis_type', v),
+          kind: 'analysis_type',
+          label: v,
+          ...(analysis.countsPerValue ? { vcon_count: analysis.countsPerValue[v] } : {}),
+        });
+      }
+      const purposes = await this.getUniqueAttachmentPurposes({ includeCounts: true });
+      for (const v of purposes.values) {
+        nodes.push({
+          id: nodeId('attachment_purpose', v),
+          kind: 'attachment_purpose',
+          label: v,
+          ...(purposes.countsPerValue ? { vcon_count: purposes.countsPerValue[v] } : {}),
+        });
+      }
+      const legacyTypes = await this.getUniqueAttachmentTypes({ includeCounts: true });
+      for (const v of legacyTypes.values) {
+        nodes.push({
+          id: nodeId('attachment_type_legacy', v),
+          kind: 'attachment_type_legacy',
+          label: v,
+          ...(legacyTypes.countsPerValue ? { vcon_count: legacyTypes.countsPerValue[v] } : {}),
+        });
+      }
+      const tags = await this.getUniqueTags({ includeCounts: true });
+      for (const k of tags.keys) {
+        let approx: number | undefined;
+        if (tags.countsPerValue?.[k]) {
+          approx = Object.values(tags.countsPerValue[k]).reduce((a, b) => a + b, 0);
+        }
+        nodes.push({
+          id: nodeId('tag_key', k),
+          kind: 'tag_key',
+          label: k,
+          ...(approx !== undefined ? { vcon_count: approx } : {}),
+        });
+      }
+
+      return {
+        schema_version: VCON_SHAPE_GRAPH_SCHEMA_VERSION,
+        generated_at,
+        corpus: {
+          vcons_with_tags_mv: tags.totalVCons,
+          notes,
+        },
+        nodes,
+        edges,
+      };
+    }
+  }
+
+  async aggregateVconsByDealerStats(params: {
+    tagFilter: Record<string, string>;
+    startDate?: string;
+    endDate?: string;
+    minBaseline: number;
+    limit: number;
+  }): Promise<Array<{
+    dealer_id: string;
+    dealer_name: string | null;
+    team_id: number | null;
+    team_name: string | null;
+    filtered_count: number;
+    baseline_count: number;
+  }>> {
+    const { data, error } = await this.supabase.rpc('aggregate_vcons_by_dealer_stats', {
+      tag_filter: params.tagFilter,
+      vcon_created_after: params.startDate ?? null,
+      vcon_created_before: params.endDate ?? null,
+      min_baseline: params.minBaseline,
+      max_results: params.limit,
+    });
+    if (error) throw error;
+    return (data || []).map((row: Record<string, unknown>) => ({
+      dealer_id: String(row.dealer_id ?? ''),
+      dealer_name: (row.dealer_name as string) ?? null,
+      team_id: row.team_id != null ? Number(row.team_id) : null,
+      team_name: (row.team_name as string) ?? null,
+      filtered_count: Number(row.filtered_count ?? 0),
+      baseline_count: Number(row.baseline_count ?? 0),
+    }));
+  }
+
+  async getTaxonomyCoverageSnapshot(): Promise<{
+    vcons_total: number | null;
+    with_strolid_dealer_attachment_pct: number | null;
+    with_dealer_name_tag_pct: number | null;
+  }> {
+    const none = {
+      vcons_total: null as number | null,
+      with_strolid_dealer_attachment_pct: null as number | null,
+      with_dealer_name_tag_pct: null as number | null,
+    };
+    try {
+      const { count: totalV, error: e1 } = await this.supabase
+        .from('vcons')
+        .select('*', { count: 'exact', head: true });
+      if (e1 || totalV == null || totalV === 0) return none;
+
+      const { count: dealerRows, error: e2 } = await this.supabase
+        .from('attachments')
+        .select('vcon_id', { count: 'exact', head: true })
+        .eq('type', 'strolid_dealer');
+      if (e2) return { ...none, vcons_total: totalV };
+
+      const dealerPct = Math.min(
+        100,
+        Math.round(((dealerRows ?? 0) / totalV) * 1000) / 10,
+      );
+
+      let dealerNamePct: number | null = null;
+      const { count: nameTagRows, error: e3 } = await this.supabase
+        .from('vcon_tags_mv')
+        .select('*', { count: 'exact', head: true })
+        .not('tags->dealer_name', 'is', null);
+      if (!e3 && nameTagRows != null) {
+        dealerNamePct = Math.min(100, Math.round((nameTagRows / totalV) * 1000) / 10);
+      }
+
+      return {
+        vcons_total: totalV,
+        with_strolid_dealer_attachment_pct: dealerPct,
+        with_dealer_name_tag_pct: dealerNamePct,
+      };
+    } catch {
+      return none;
+    }
   }
 
   /**

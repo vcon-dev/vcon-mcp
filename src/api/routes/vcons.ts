@@ -20,6 +20,7 @@ import {
 } from '../validation.js';
 import { VConValidationError } from '../../services/vcon-service.js';
 import { logWithContext, recordCounter } from '../../observability/instrumentation.js';
+import { filterAnalysis, filterAttachments } from '../../utils/read-surfaces.js';
 
 /**
  * Format a vCon based on response_format parameter
@@ -38,7 +39,7 @@ function formatVCon(vcon: VCon, format: string): any {
     };
   }
   if (format === 'summary') {
-    const summaryAnalysis = (vcon.analysis || []).filter((a: any) => a.type === 'summary');
+    const summaryAnalysis = filterAnalysis(vcon, { type: 'summary' });
     return {
       vcon: vcon.vcon,
       uuid: vcon.uuid,
@@ -52,6 +53,10 @@ function formatVCon(vcon: VCon, format: string): any {
     };
   }
   return vcon;
+}
+
+function getQueryStringValue(value: string | string[] | undefined): string | undefined {
+  return typeof value === 'string' && value.trim() !== '' ? value : undefined;
 }
 
 /**
@@ -210,6 +215,62 @@ export function createVConRoutes(apiContext: RestApiContext): Router {
         requestContext: { purpose: 'rest-api-read' },
       });
       sendSuccess(ctx, { vcon: formatVCon(vcon, format) });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('not found')) {
+        return sendError(ctx, 404, `vCon with UUID ${uuid} not found`);
+      }
+      throw error;
+    }
+  });
+
+  // ── GET /vcons/:uuid/analysis — Read analysis with optional type filter ───
+  router.get('/vcons/:uuid/analysis', async (ctx: Context) => {
+    const { uuid } = ctx.params;
+    const uuidCheck = validateUUID(uuid);
+    if (!uuidCheck.valid) return sendError(ctx, 400, uuidCheck.errors[0]);
+
+    const type = getQueryStringValue(ctx.query.type as string | string[] | undefined);
+
+    try {
+      const vcon = await apiContext.vconService.get(uuid, {
+        requestContext: { purpose: 'rest-api-analysis-read' },
+      });
+      const analysis = filterAnalysis(vcon, { type });
+      sendSuccess(ctx, {
+        count: analysis.length,
+        ...(type ? { type } : {}),
+        analysis,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('not found')) {
+        return sendError(ctx, 404, `vCon with UUID ${uuid} not found`);
+      }
+      throw error;
+    }
+  });
+
+  // ── GET /vcons/:uuid/attachments — Read attachments with purpose-first filters ──
+  router.get('/vcons/:uuid/attachments', async (ctx: Context) => {
+    const { uuid } = ctx.params;
+    const uuidCheck = validateUUID(uuid);
+    if (!uuidCheck.valid) return sendError(ctx, 400, uuidCheck.errors[0]);
+
+    const type = getQueryStringValue(ctx.query.type as string | string[] | undefined);
+    const purpose = getQueryStringValue(ctx.query.purpose as string | string[] | undefined);
+
+    try {
+      const vcon = await apiContext.vconService.get(uuid, {
+        requestContext: { purpose: 'rest-api-attachment-read' },
+      });
+      // Purpose is the canonical spec-facing attachment classifier.
+      // Type remains available as a legacy compatibility filter.
+      const attachments = filterAttachments(vcon, { type, purpose });
+      sendSuccess(ctx, {
+        count: attachments.length,
+        ...(type ? { type } : {}),
+        ...(purpose ? { purpose } : {}),
+        attachments,
+      });
     } catch (error) {
       if (error instanceof Error && error.message.includes('not found')) {
         return sendError(ctx, 404, `vCon with UUID ${uuid} not found`);

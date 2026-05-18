@@ -46,8 +46,9 @@ describe('Schema Handlers', () => {
       const result = await handler.handle({}, mockContext);
 
       const response = JSON.parse(result.content[0].text);
-      expect(response.success).toBe(true);
-      expect(response.note).toContain('JSON Schema export');
+      expect(response.definitions?.VCon).toBeDefined();
+      expect(response.definitions.VCon.type).toBe('object');
+      expect(response.$ref).toMatch(/VCon/);
     });
 
     it('should return JSON schema format when explicitly requested', async () => {
@@ -57,7 +58,7 @@ describe('Schema Handlers', () => {
       }, mockContext);
 
       const response = JSON.parse(result.content[0].text);
-      expect(response.success).toBe(true);
+      expect(response.definitions?.VCon?.properties?.parties).toBeDefined();
     });
 
     it('should return TypeScript format when requested', async () => {
@@ -66,7 +67,8 @@ describe('Schema Handlers', () => {
         format: 'typescript',
       }, mockContext);
 
-      expect(result.content[0].text).toContain('src/types/vcon.ts');
+      expect(result.content[0].text).toContain('IETF vCon Core Types');
+      expect(result.content[0].text).toContain('export interface VCon');
     });
 
     it('should throw error for unsupported format', async () => {
@@ -88,7 +90,7 @@ describe('Schema Handlers', () => {
       }, mockContext);
 
       const response = JSON.parse(result.content[0].text);
-      expect(response.vcon).toBe('0.3.0');
+      expect(response.vcon).toBe('0.4.0');
       expect(response.parties).toBeDefined();
     });
 
@@ -99,7 +101,7 @@ describe('Schema Handlers', () => {
       }, mockContext);
 
       const response = JSON.parse(result.content[0].text);
-      expect(response.subject).toBe('Phone Call');
+      expect(response.subject).toBe('Customer support call');
       expect(response.dialog).toBeDefined();
     });
 
@@ -110,7 +112,7 @@ describe('Schema Handlers', () => {
       }, mockContext);
 
       const response = JSON.parse(result.content[0].text);
-      expect(response.subject).toBe('Chat');
+      expect(response.subject).toBe('Sales chat');
     });
 
     it('should return email example', async () => {
@@ -120,7 +122,7 @@ describe('Schema Handlers', () => {
       }, mockContext);
 
       const response = JSON.parse(result.content[0].text);
-      expect(response.subject).toBe('Email Thread');
+      expect(response.subject).toBe('Contract review');
       expect(response.attachments).toBeDefined();
     });
 
@@ -131,7 +133,7 @@ describe('Schema Handlers', () => {
       }, mockContext);
 
       const response = JSON.parse(result.content[0].text);
-      expect(response.subject).toBe('Video Meeting');
+      expect(response.subject).toBe('Quarterly review');
     });
 
     it('should return full_featured example', async () => {

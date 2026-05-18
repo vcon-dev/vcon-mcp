@@ -61,5 +61,11 @@
 ## Examples
 
 * [Overview](examples/index.md)
+* [System Instruction Assets](examples/system-instruction-assets.md)
 * [Large Database Optimization](examples/large-database-optimization.md)
+
+## Optimization
+
+* [Thread context bootstrap](optimization/thread-context-bootstrap.md)
+* [Session handoff for vault](optimization/SESSION_HANDOFF_FOR_VAULT.md)
 

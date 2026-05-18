@@ -571,7 +571,8 @@ describe.skipIf(!runE2E)('MCP Server E2E Tests', () => {
     });
   });
 
-  describe('Text Search (search_vcons_content)', () => {
+  // Full-text RPC can exceed 30s on large local corpora (see QA plan E2E notes).
+  describe('Text Search (search_vcons_content)', { timeout: 120_000 }, () => {
     it('should execute text search and return results', async () => {
       if (skipIfNoSchema()) return;
 

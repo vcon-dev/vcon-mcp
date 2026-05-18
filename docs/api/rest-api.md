@@ -13,6 +13,7 @@ The vCon MCP Server exposes a RESTful HTTP API alongside the MCP transport layer
 - **CORS Support** - Configurable cross-origin resource sharing
 - **Plugin Integration** - Full lifecycle hooks (beforeCreate, afterCreate, etc.)
 - **Batch Operations** - Ingest up to 100 vCons in a single request
+- **Discovery-Backed Reads** - Discover live attachment and analysis categories, then read by `type` or `purpose`
 - **Health Checks** - Built-in health endpoint for monitoring
 
 ---
@@ -113,6 +114,32 @@ You can use a different header by setting `API_KEY_HEADER` (e.g. `x-api-key`).
 ---
 
 ## Endpoints
+
+### Discovery-First Reads
+
+When a classification is stored in attachments or analysis, prefer this sequence:
+
+1. Discover available values first. For attachments, prefer `purpose`; use attachment `type` only for legacy compatibility. For analysis, use `type`.
+2. Read the matching filtered vCon subresource.
+3. Use tags when the classification genuinely lives in the tags attachment.
+
+Examples:
+
+```bash
+# Discover live attachment purposes
+curl "http://localhost:3000/api/v1/discovery/attachments/purposes" \
+  -H "Authorization: Bearer your-api-key"
+
+# Read one vCon's dealer info attachments
+curl "http://localhost:3000/api/v1/vcons/123e4567-e89b-12d3-a456-426614174000/attachments?purpose=dealer_info" \
+  -H "Authorization: Bearer your-api-key"
+
+# Read one vCon's summary analysis through the generic type filter
+curl "http://localhost:3000/api/v1/vcons/123e4567-e89b-12d3-a456-426614174000/analysis?type=summary" \
+  -H "Authorization: Bearer your-api-key"
+```
+
+---
 
 ### Health Check
 
@@ -760,11 +787,21 @@ The REST API now has full parity with MCP tools. All endpoints use `/api/v1` as 
 | POST | `/vcons/batch` | Batch create (up to 100) |
 | GET | `/vcons` | List/search vCons (filter with query params) |
 | GET | `/vcons/:uuid` | Get vCon by UUID (`?format=full\|summary\|metadata`) |
+| GET | `/vcons/:uuid/analysis` | Read analysis, optionally filtered by `?type=` |
+| GET | `/vcons/:uuid/attachments` | Read attachments, preferably filtered by `?purpose=`; `?type=` remains for legacy compatibility |
 | PATCH | `/vcons/:uuid` | Update vCon metadata (subject, extensions, critical) |
 | DELETE | `/vcons/:uuid` | Delete a vCon |
 | POST | `/vcons/:uuid/dialog` | Add dialog to a vCon |
 | POST | `/vcons/:uuid/analysis` | Add analysis to a vCon |
 | POST | `/vcons/:uuid/attachments` | Add attachment to a vCon |
+
+### Discovery
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/discovery/attachments/purposes` | Discover live attachment purposes (`?include_counts=false`, `?min_count=2`) |
+| GET | `/discovery/attachments/types` | Discover legacy attachment types (`?include_counts=false`, `?min_count=2`) |
+| GET | `/discovery/analysis/types` | Discover live analysis types (`?include_counts=false`, `?min_count=2`) |
 
 ### Tags
 

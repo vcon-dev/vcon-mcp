@@ -17,7 +17,8 @@ For new MCP clients, start with the redesigned contract surface: `vcon_capabilit
 Full HTTP REST API with parity to all MCP tools (30+ endpoints):
 
 - **vCon CRUD** - Create, read, update, delete + batch ingest
-- **Sub-resources** - Append dialog, analysis, attachments
+- **Discovery + Filtered Reads** - Discover live categories, then read by attachment `purpose` or analysis `type`
+- **Sub-resources** - Read or append analysis and attachments, append dialog
 - **Tags** - Per-vCon tag management + tag discovery
 - **Search** - Keyword, semantic, and hybrid search
 - **Database** - Schema shape, stats, size, health monitoring
@@ -48,11 +49,17 @@ Full HTTP REST API with parity to all MCP tools (30+ endpoints):
 
 URI-based access to vCon data:
 
+- `vcon://v1/discovery/attachments/purposes` - Discover live attachment purposes
+- `vcon://v1/discovery/attachments/types` - Discover legacy attachment types
+- `vcon://v1/discovery/analysis/types` - Discover live analysis types
 - `vcon://v1/vcons/recent` - Get recent vCons
 - `vcon://v1/vcons/recent/ids` - Lightweight ID lists
 - `vcon://v1/vcons/ids` - Paginated ID browsing
 - `vcon://v1/vcons/{uuid}` - Get specific vCon
 - `vcon://v1/vcons/{uuid}/metadata` - Get metadata only
+- `vcon://v1/vcons/{uuid}/attachments/purpose/{purpose}` - Read attachments by purpose
+- `vcon://v1/vcons/{uuid}/attachments/type/{type}` - Read attachments by legacy type
+- `vcon://v1/vcons/{uuid}/analysis/type/{type}` - Read analysis by type
 
 [View Resources Reference →](./resources.md)
 
@@ -160,6 +167,14 @@ const recent = await readResource("vcon://v1/vcons/recent/10");
 // Get specific vCon
 const vcon = await readResource(
   "vcon://v1/vcons/123e4567-e89b-12d3-a456-426614174000"
+);
+
+// Discover live attachment purposes first
+const purposes = await readResource("vcon://v1/discovery/attachments/purposes");
+
+// Then read a specific category-backed view
+const dealerInfo = await readResource(
+  "vcon://v1/vcons/123e4567-e89b-12d3-a456-426614174000/attachments/purpose/dealer_info"
 );
 
 // List IDs for navigation

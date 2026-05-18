@@ -32,6 +32,7 @@ describe('VConQueries', () => {
         or: vi.fn(),
         range: vi.fn(),
         in: vi.fn(),
+        rpc: vi.fn(),
       };
 
       // Make all methods return the mock itself for chaining
@@ -719,6 +720,69 @@ describe('VConQueries', () => {
 
       // Should use index 0 when no existing attachments
       expect(mockSupabase.insert).toHaveBeenCalled();
+    });
+  });
+
+  describe('distinct category discovery', () => {
+    it('should return attachment types from the SQL fast path', async () => {
+      mockSupabase.rpc
+        .mockResolvedValueOnce({
+          data: [
+            { value: 'document', cnt: 3 },
+            { value: 'tags', cnt: 1 },
+          ],
+          error: null,
+        })
+        .mockResolvedValueOnce({
+          data: [{ total: 2 }],
+          error: null,
+        });
+
+      const result = await queries.getUniqueAttachmentTypes({ includeCounts: true });
+
+      expect(result).toEqual({
+        values: ['document', 'tags'],
+        countsPerValue: {
+          document: 3,
+          tags: 1,
+        },
+        totalVCons: 2,
+      });
+    });
+
+    it('should fall back to batch scanning for attachment purposes when SQL is unavailable', async () => {
+      mockSupabase.rpc
+        .mockResolvedValueOnce({
+          data: null,
+          error: { code: 'PGRST202', message: 'Could not find the function public.exec_sql' },
+        })
+        .mockResolvedValueOnce({
+          data: null,
+          error: { code: 'PGRST202', message: 'Could not find the function public.exec_sql' },
+        });
+      mockSupabase.select.mockResolvedValueOnce({
+        count: 4,
+        error: null,
+      });
+      mockSupabase.range.mockResolvedValueOnce({
+        data: [
+          { vcon_id: 'v1', purpose: 'dealer_info' },
+          { vcon_id: 'v2', purpose: ' dealer_info ' },
+          { vcon_id: 'v2', purpose: '' },
+          { vcon_id: 'v3', purpose: null },
+        ],
+        error: null,
+      });
+
+      const result = await queries.getUniqueAttachmentPurposes({ includeCounts: true });
+
+      expect(result).toEqual({
+        values: ['dealer_info'],
+        countsPerValue: {
+          dealer_info: 2,
+        },
+        totalVCons: 2,
+      });
     });
   });
 });

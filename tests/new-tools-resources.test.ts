@@ -49,7 +49,7 @@ describe('Resources Endpoint Tests', () => {
     it('should return all expected core resources', () => {
       const resources = getCoreResources();
 
-      expect(resources).toHaveLength(12);
+      expect(resources).toHaveLength(19);
       expect(resources.map(r => r.uri)).toEqual([
         'vcon://v1/vcons/recent',
         'vcon://v1/vcons/recent/ids',
@@ -60,6 +60,13 @@ describe('Resources Endpoint Tests', () => {
         'vcon://v1/vcons/{uuid}/dialog',
         'vcon://v1/vcons/{uuid}/analysis',
         'vcon://v1/vcons/{uuid}/attachments',
+        'vcon://v1/discovery/attachments/types',
+        'vcon://v1/discovery/attachments/purposes',
+        'vcon://v1/discovery/analysis/types',
+        'vcon://v1/graph/shape',
+        'vcon://v1/vcons/{uuid}/attachments/type/{type}',
+        'vcon://v1/vcons/{uuid}/attachments/purpose/{purpose}',
+        'vcon://v1/vcons/{uuid}/analysis/type/{type}',
         'vcon://v1/vcons/{uuid}/transcript',
         'vcon://v1/vcons/{uuid}/summary',
         'vcon://v1/vcons/{uuid}/tags',
@@ -149,6 +156,78 @@ describe('Resources Endpoint Tests', () => {
       expect(result).toBeDefined();
       expect(result?.content).toHaveProperty('count', 0);
       expect(result?.content.vcons).toHaveLength(0);
+    });
+  });
+
+  describe('resolveCoreResource - Discovery resources', () => {
+    it('should return attachment types with counts', async () => {
+      vi.spyOn(queries, 'getUniqueAttachmentTypes').mockResolvedValue({
+        values: ['document', 'tags'],
+        countsPerValue: { document: 3, tags: 1 },
+        totalVCons: 3,
+      });
+
+      const result = await resolveCoreResource(queries, 'vcon://v1/discovery/attachments/types');
+
+      expect(result?.content).toEqual({
+        count: 2,
+        attachment_types: [
+          { value: 'document', count: 3 },
+          { value: 'tags', count: 1 },
+        ],
+      });
+    });
+
+    it('should return attachment purposes with counts', async () => {
+      vi.spyOn(queries, 'getUniqueAttachmentPurposes').mockResolvedValue({
+        values: ['dealer_info'],
+        countsPerValue: { dealer_info: 2 },
+        totalVCons: 2,
+      });
+
+      const result = await resolveCoreResource(queries, 'vcon://v1/discovery/attachments/purposes');
+
+      expect(result?.content).toEqual({
+        count: 1,
+        attachment_purposes: [
+          { value: 'dealer_info', count: 2 },
+        ],
+      });
+    });
+
+    it('should return analysis types with counts', async () => {
+      vi.spyOn(queries, 'getUniqueAnalysisTypes').mockResolvedValue({
+        values: ['summary', 'transcript'],
+        countsPerValue: { summary: 5, transcript: 4 },
+        totalVCons: 6,
+      });
+
+      const result = await resolveCoreResource(queries, 'vcon://v1/discovery/analysis/types');
+
+      expect(result?.content).toEqual({
+        count: 2,
+        analysis_types: [
+          { value: 'summary', count: 5 },
+          { value: 'transcript', count: 4 },
+        ],
+      });
+    });
+
+    it('should return shape graph JSON', async () => {
+      const graphPayload = {
+        schema_version: '1.0.0',
+        generated_at: '2026-05-11T14:00:00Z',
+        corpus: { notes: [] },
+        nodes: [],
+        edges: [],
+      };
+      vi.spyOn(queries, 'getVconShapeGraph').mockResolvedValue(graphPayload as any);
+
+      const result = await resolveCoreResource(queries, 'vcon://v1/graph/shape');
+
+      expect(result?.mimeType).toBe('application/json');
+      expect(result?.content).toEqual(graphPayload);
+      expect(queries.getVconShapeGraph).toHaveBeenCalled();
     });
   });
 
@@ -486,8 +565,8 @@ describe('Resources Endpoint Tests', () => {
         { type: 'summary', vendor: 'TestVendor', body: 'Test summary' }
       ],
       attachments: [
-        { type: 'tags', encoding: 'json', body: '["key1:value1", "key2:value2"]' },
-        { type: 'document', filename: 'test.pdf' }
+        { type: 'tags', purpose: 'classification', encoding: 'json', body: '["key1:value1", "key2:value2"]' },
+        { type: 'document', purpose: 'dealer_info', filename: 'test.pdf' }
       ]
     };
 
@@ -535,6 +614,39 @@ describe('Resources Endpoint Tests', () => {
       expect(result?.mimeType).toBe('application/json');
       expect(result?.content).toHaveProperty('attachments');
       expect(result?.content.attachments).toHaveLength(2);
+    });
+
+    it('should return attachments filtered by type', async () => {
+      vi.spyOn(queries, 'getVCon').mockResolvedValue(mockVCon);
+
+      const result = await resolveCoreResource(queries, `vcon://v1/vcons/${testUuid}/attachments/type/document`);
+
+      expect(result?.content.count).toBe(1);
+      expect(result?.content.type).toBe('document');
+      expect(result?.content.attachments).toHaveLength(1);
+      expect(result?.content.attachments[0].type).toBe('document');
+    });
+
+    it('should return attachments filtered by purpose', async () => {
+      vi.spyOn(queries, 'getVCon').mockResolvedValue(mockVCon);
+
+      const result = await resolveCoreResource(queries, `vcon://v1/vcons/${testUuid}/attachments/purpose/dealer_info`);
+
+      expect(result?.content.count).toBe(1);
+      expect(result?.content.purpose).toBe('dealer_info');
+      expect(result?.content.attachments).toHaveLength(1);
+      expect(result?.content.attachments[0].purpose).toBe('dealer_info');
+    });
+
+    it('should return analysis filtered by type', async () => {
+      vi.spyOn(queries, 'getVCon').mockResolvedValue(mockVCon);
+
+      const result = await resolveCoreResource(queries, `vcon://v1/vcons/${testUuid}/analysis/type/summary`);
+
+      expect(result?.content.count).toBe(1);
+      expect(result?.content.type).toBe('summary');
+      expect(result?.content.analysis).toHaveLength(1);
+      expect(result?.content.analysis[0].type).toBe('summary');
     });
 
     it('should return empty arrays for missing subresources', async () => {
@@ -623,7 +735,7 @@ describe('Resources Endpoint Tests', () => {
         subject: 'Test vCon',
         parties: [],
         attachments: [
-          { type: 'tags', encoding: 'json', body: '["department:sales", "priority:high", "status:open"]' },
+          { type: 'tags', purpose: 'classification', encoding: 'json', body: '["department:sales", "priority:high", "status:open"]' },
           { type: 'document', filename: 'test.pdf' }
         ]
       };

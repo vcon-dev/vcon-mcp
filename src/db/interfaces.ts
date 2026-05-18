@@ -6,6 +6,7 @@
  */
 
 import { Analysis, Attachment, Dialog, VCon } from '../types/vcon.js';
+import type { VconShapeGraphPayload } from '../types/vcon-shape-graph.js';
 
 export interface SearchResult {
     vcon_id: string;
@@ -21,6 +22,12 @@ export interface SearchResult {
     content_reference?: string | null;
     content_text?: string;
     similarity?: number;
+}
+
+export interface DistinctValuesResult {
+    values: string[];
+    countsPerValue?: Record<string, number>;
+    totalVCons: number;
 }
 
 export interface IVConQueries {
@@ -129,6 +136,10 @@ export interface IVConQueries {
         startDate?: string;
         endDate?: string;
         tags?: Record<string, string>;
+        /** Match strolid_dealer attachment id (string form, for example "1174"). */
+        dealerId?: string;
+        /** Case-insensitive substring match on strolid_dealer attachment name. */
+        dealerName?: string;
         limit?: number;
     }): Promise<VCon[]>;
 
@@ -143,7 +154,36 @@ export interface IVConQueries {
         startDate?: string;
         endDate?: string;
         tags?: Record<string, string>;
+        dealerId?: string;
+        dealerName?: string;
     }): Promise<number>;
+
+    /**
+     * Roll up vCons with strolid_dealer attachments by dealer id (Postgres RPC).
+     */
+    aggregateVconsByDealerStats(params: {
+        tagFilter: Record<string, string>;
+        startDate?: string;
+        endDate?: string;
+        minBaseline: number;
+        limit: number;
+    }): Promise<Array<{
+        dealer_id: string;
+        dealer_name: string | null;
+        team_id: number | null;
+        team_name: string | null;
+        filtered_count: number;
+        baseline_count: number;
+    }>>;
+
+    /**
+     * Optional DB-backed coverage hints for taxonomy (best-effort; may omit on error).
+     */
+    getTaxonomyCoverageSnapshot(): Promise<{
+        vcons_total: number | null;
+        with_strolid_dealer_attachment_pct: number | null;
+        with_dealer_name_tag_pct: number | null;
+    }>;
 
     /**
      * Update vCon metadata (subject, extensions, must_support)
@@ -195,4 +235,37 @@ export interface IVConQueries {
         countsPerValue?: Record<string, Record<string, number>>;
         totalVCons: number;
     }>;
+
+    /**
+     * Get all unique legacy attachment types (and optionally counts) across the database.
+     * Prefer attachment purposes for spec-facing discovery.
+     */
+    getUniqueAttachmentTypes(options?: {
+        includeCounts?: boolean;
+        minCount?: number;
+    }): Promise<DistinctValuesResult>;
+
+    /**
+     * Get all unique attachment purposes (and optionally counts) across the database.
+     * This is the canonical spec-facing attachment classification surface.
+     */
+    getUniqueAttachmentPurposes(options?: {
+        includeCounts?: boolean;
+        minCount?: number;
+    }): Promise<DistinctValuesResult>;
+
+    /**
+     * Get all unique analysis types (and optionally counts) across the database
+     */
+    getUniqueAnalysisTypes(options?: {
+        includeCounts?: boolean;
+        minCount?: number;
+    }): Promise<DistinctValuesResult>;
+
+    /**
+     * Default OSS "shape graph": distinct vCon incidence for analysis types,
+     * attachment purposes, legacy attachment types (no purpose), tag keys,
+     * and bounded analysis-type to attachment-purpose co-occurrence edges.
+     */
+    getVconShapeGraph(): Promise<VconShapeGraphPayload>;
 }

@@ -9,6 +9,8 @@ import { ToolResponse } from '../tools/handlers/base.js';
 export interface EnvelopePage {
   count: number;
   total?: number;
+  /** When set, clients must not assume they can page beyond this many rows even if total is higher. */
+  iterable_total?: number;
   next_cursor?: string | null;
 }
 

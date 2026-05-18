@@ -33,8 +33,10 @@ import {
 import {
   VConFetchHandler,
   VConCapabilitiesHandler,
+  VConGraphShapeHandler,
   VConSearchHandler,
   VConTaxonomyHandler,
+  VConAggregateHandler,
   DescribeResponseShapeHandler,
 } from './vcon-contract.js';
 
@@ -99,8 +101,10 @@ export function createHandlerRegistry(): ToolHandlerRegistry {
   // Register redesigned contract handlers
   registry.register(new VConFetchHandler());
   registry.register(new VConCapabilitiesHandler());
+  registry.register(new VConGraphShapeHandler());
   registry.register(new VConSearchHandler());
   registry.register(new VConTaxonomyHandler());
+  registry.register(new VConAggregateHandler());
   registry.register(new DescribeResponseShapeHandler());
 
   // Register tag handlers

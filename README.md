@@ -29,7 +29,7 @@ The Model Context Protocol (MCP) enables AI assistants to use external tools and
 - ✅ **IETF vCon Compliant** - Implements `draft-ietf-vcon-vcon-core-02` specification (v0.4.0)
 - ✅ **MCP Integration** - 35 tools for AI assistants to manage conversation data
 - ✅ **Redesigned Contract Tools** - Additive `vcon_fetch`, `vcon_capabilities`, `vcon_search`, `vcon_taxonomy`, and `describe_response_shape` tools for predictable envelopes, explicit payload control, and discovery-first clients
-- ✅ **REST API** - Full HTTP REST API with parity to all MCP tools (CRUD, search, tags, analytics)
+- ✅ **REST API** - Full HTTP REST API with CRUD, discovery, filtered reads, search, tags, and analytics surfaces
 - ✅ **Database Analytics** - Comprehensive analytics for size, growth, content patterns, and health monitoring
 - ✅ **Large Database Support** - Smart response limiting, metadata-only options, and memory-safe queries
 - ✅ **OpenTelemetry Observability** - Full traces, metrics, and structured logs with console or OTLP export
@@ -386,7 +386,8 @@ When running in HTTP transport mode, the server exposes a full RESTful HTTP API 
 |----------|-----------|-------------|
 | **CRUD** | `POST/GET/PATCH/DELETE /vcons` | Create, read, update, delete vCons |
 | **Batch** | `POST /vcons/batch` | Batch ingest up to 100 vCons |
-| **Sub-resources** | `POST /vcons/:uuid/{dialog,analysis,attachments}` | Append dialog, analysis, attachments |
+| **Sub-resources** | `GET/POST /vcons/:uuid/{analysis,attachments}` and `POST /vcons/:uuid/dialog` | Read or append analysis and attachments, append dialog |
+| **Discovery** | `GET /discovery/attachments/{purposes,types}`, `GET /discovery/analysis/types` | Discover live categories, with attachment purposes as the canonical spec surface |
 | **Tags** | `GET/PUT/DELETE /vcons/:uuid/tags` | Per-vCon tag management |
 | **Tag Discovery** | `GET /tags`, `GET /tags/search` | Discover and search by tags |
 | **Search** | `GET /vcons/search/{content,semantic,hybrid}` | Keyword, semantic, and hybrid search |
@@ -422,7 +423,17 @@ curl -X POST http://localhost:3000/api/v1/vcons \
 # Search by keyword
 curl "http://localhost:3000/api/v1/vcons/search/content?q=billing+issue" \
   -H "Authorization: Bearer your-api-key"
+
+# Discover attachment purposes before reading by category
+curl "http://localhost:3000/api/v1/discovery/attachments/purposes" \
+  -H "Authorization: Bearer your-api-key"
+
+# Read only dealer-info attachments for one vCon
+curl "http://localhost:3000/api/v1/vcons/123e4567-e89b-12d3-a456-426614174000/attachments?purpose=dealer_info" \
+  -H "Authorization: Bearer your-api-key"
 ```
+
+When a classification lives in attachments or analysis, discover the live values first and read through those filtered surfaces. For attachments, prefer `purpose` because it is the spec field; use attachment `type` only as a legacy compatibility fallback. Use tags when the classification genuinely lives in the tags attachment.
 
 See the complete [REST API Reference](docs/api/rest-api.md) for detailed documentation.
 
@@ -588,15 +599,23 @@ MCP_DISABLED_TOOLS=delete_vcon,analyze_query
 
 The server exposes URI-based resources for direct reads:
 
+- `vcon://v1/discovery/attachments/purposes` – discovered attachment purposes with counts
+- `vcon://v1/discovery/attachments/types` – discovered legacy attachment types with counts
+- `vcon://v1/discovery/analysis/types` – discovered analysis types with counts
 - `vcon://v1/vcons/{uuid}` – full vCon JSON
 - `vcon://v1/vcons/{uuid}/metadata` – metadata only
 - `vcon://v1/vcons/{uuid}/parties` – parties array
 - `vcon://v1/vcons/{uuid}/dialog` – dialog array
 - `vcon://v1/vcons/{uuid}/attachments` – attachments array
+- `vcon://v1/vcons/{uuid}/attachments/purpose/{purpose}` – attachments filtered by purpose
+- `vcon://v1/vcons/{uuid}/attachments/type/{type}` – attachments filtered by legacy type
 - `vcon://v1/vcons/{uuid}/analysis` – analysis array
+- `vcon://v1/vcons/{uuid}/analysis/type/{type}` – analysis filtered by type
 - `vcon://v1/vcons/{uuid}/transcript` – transcript analysis (filtered)
 - `vcon://v1/vcons/{uuid}/summary` – summary analysis (filtered)
 - `vcon://v1/vcons/{uuid}/tags` – tags as object (parsed)
+
+For attachment- or analysis-backed classifications, start with the discovery resources and then read the matching filtered surface. For attachments, prefer `purpose`; use `type` only for compatibility with older datasets. Prefer tags only when the data is actually stored as tags.
 
 ## Use Cases
 

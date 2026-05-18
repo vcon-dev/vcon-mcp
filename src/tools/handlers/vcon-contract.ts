@@ -1,6 +1,7 @@
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { BaseToolHandler, ToolHandlerContext, ToolResponse } from './base.js';
 import { VCon, Attachment, Analysis } from '../../types/vcon.js';
+import { VCON_SHAPE_GRAPH_JSON_SCHEMA } from '../../types/vcon-shape-graph.js';
 import { generateEmbedding } from '../../utils/embeddings.js';
 import { normalizeDateString } from './validation.js';
 
@@ -25,6 +26,7 @@ const DEFAULT_SEARCH_INCLUDES: FetchInclude[] = ['core', 'summary'];
 const DEFAULT_MAX_RESPONSE_BYTES = 250_000;
 const MIN_MAX_RESPONSE_BYTES = 1024;
 const SUPPORTED_SEARCH_MODES: SearchMode[] = ['metadata', 'keyword', 'semantic', 'hybrid'];
+const TAG_SORTED_WINDOW = 100_000;
 
 type CursorPayload = {
   offset: number;
@@ -72,15 +74,25 @@ function validateSearchMode(value: unknown): SearchMode {
 }
 
 function pickSummaryAnalysis(analysis: Analysis[] | undefined) {
-  return (analysis || []).filter((entry) => entry.type === 'summary').map((entry) => ({
-    type: entry.type,
-    vendor: entry.vendor,
-    product: entry.product,
-    schema: entry.schema,
-    encoding: entry.encoding,
-    body: entry.body,
-    dialog: entry.dialog,
-  }));
+  return (analysis || [])
+    .filter((entry) => entry.type === 'summary')
+    .map((entry) => ({
+      type: entry.type,
+      vendor: entry.vendor,
+      product: entry.product,
+      schema: entry.schema,
+      encoding: entry.encoding,
+      ...(typeof entry.body === 'string' && entry.body.trim().length > 0 ? { body: entry.body } : {}),
+      dialog: entry.dialog,
+    }));
+}
+
+function normalizeDealerTeam(raw: unknown): Record<string, unknown> | null {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  if (Object.keys(o).length === 0) return null;
+  return o;
 }
 
 function extractDealer(attachments: Attachment[] | undefined) {
@@ -101,11 +113,15 @@ function extractDealer(attachments: Attachment[] | undefined) {
   }
 
   const dealer = raw as Record<string, unknown>;
+  const idRaw = dealer.id;
+  const idNormalized =
+    idRaw === null || idRaw === undefined ? null : String(idRaw);
+
   return {
-    id: dealer.id ?? null,
+    id: idNormalized,
     name: dealer.name ?? null,
     outboundPhoneNumber: dealer.outboundPhoneNumber ?? null,
-    team: dealer.team ?? null,
+    team: normalizeDealerTeam(dealer.team),
   };
 }
 
@@ -309,6 +325,7 @@ const SHAPE_DESCRIPTORS: Record<string, ShapeDescriptor> = {
           type: 'object',
           properties: {
             tools: { type: 'array' },
+            shape_graph: { type: 'object' },
             response_budgeting: { type: 'object' },
             fetch: { type: 'object' },
             search: { type: 'object' },
@@ -320,7 +337,14 @@ const SHAPE_DESCRIPTORS: Record<string, ShapeDescriptor> = {
     example: {
       ok: true,
       item: {
-        tools: ['vcon_fetch', 'vcon_search', 'vcon_taxonomy', 'describe_response_shape'],
+        tools: ['vcon_fetch', 'vcon_capabilities', 'vcon_graph_shape', 'vcon_search', 'vcon_taxonomy', 'vcon_aggregate', 'describe_response_shape'],
+        shape_graph: {
+          resource_uri: 'vcon://v1/graph/shape',
+          tool: 'vcon_graph_shape',
+          json_schema_id: 'https://vcon.dev/mcp/shape-graph/1-0-0',
+          description:
+            'Corpus-level shape graph (analysis types, attachment purposes, legacy types, tag keys). Prefer the MCP resource when available.',
+        },
         response_budgeting: {
           default_max_response_bytes: 250000,
           minimum_max_response_bytes: 1024,
@@ -340,6 +364,47 @@ const SHAPE_DESCRIPTORS: Record<string, ShapeDescriptor> = {
         }
       }
     },
+  },
+  vcon_graph_shape: {
+    tool_name: 'vcon_graph_shape',
+    summary: 'OSS shape graph JSON: nodes for corpus structure and optional co-occurrence edges.',
+    response_schema: {
+      type: 'object',
+      required: ['ok', 'item'],
+      properties: {
+        ok: { type: 'boolean', const: true },
+        item: VCON_SHAPE_GRAPH_JSON_SCHEMA as unknown as Record<string, unknown>,
+      },
+    },
+    example: {
+      ok: true,
+      item: {
+        schema_version: '1.0.0',
+        generated_at: '2026-05-11T14:00:00Z',
+        corpus: {
+          vcons_with_tags_mv: 1200,
+          notes: ['Co-occurrence edges capped for bounded responses.'],
+        },
+        nodes: [
+          { id: 'analysis_type:summary', kind: 'analysis_type', label: 'summary', vcon_count: 800 },
+          { id: 'attachment_purpose:dealer_info', kind: 'attachment_purpose', label: 'dealer_info', vcon_count: 400 },
+          { id: 'tag_key:portal', kind: 'tag_key', label: 'portal', vcon_count: 900 },
+        ],
+        edges: [
+          {
+            id: 'analysis_type_with_attachment_purpose:summary|dealer_info',
+            kind: 'analysis_type_with_attachment_purpose',
+            source: 'analysis_type:summary',
+            target: 'attachment_purpose:dealer_info',
+            joint_vcon_count: 350,
+          },
+        ],
+      },
+    },
+    notes: [
+      'Same JSON as MCP resource vcon://v1/graph/shape.',
+      'See item.corpus.notes for backend-specific counting semantics.',
+    ],
   },
   vcon_search: {
     tool_name: 'vcon_search',
@@ -369,6 +434,10 @@ const SHAPE_DESCRIPTORS: Record<string, ShapeDescriptor> = {
           properties: {
             count: { type: 'number' },
             total: { type: 'number' },
+            iterable_total: {
+              type: 'number',
+              description: 'When present, maximum number of rows reachable via cursor for tag-sorted metadata search (newest TAG_SORTED_WINDOW matches).',
+            },
             next_cursor: { type: ['string', 'null'] },
           }
         }
@@ -388,10 +457,10 @@ const SHAPE_DESCRIPTORS: Record<string, ShapeDescriptor> = {
             }
           ],
           dealer: {
-            id: 'dealer-42',
+            id: '42',
             name: 'Acme Motors',
             outboundPhoneNumber: '+15551234567',
-            team: 'west'
+            team: { id: 8, name: 'Purple Team' },
           },
           search: {
             mode: 'keyword',
@@ -408,8 +477,58 @@ const SHAPE_DESCRIPTORS: Record<string, ShapeDescriptor> = {
     },
     notes: [
       'Cursor is opaque. Pass page.next_cursor back unchanged.',
-      'Counts are authoritative for metadata and keyword modes. Semantic and hybrid currently omit total.',
+      'For metadata search with tags, page.total is the full matching count while page.iterable_total may cap how far cursors can walk.',
+      'When items.length < limit, meta.short_page_reason explains whether more pages exist.',
+      'Semantic and hybrid modes omit page.total today.',
     ],
+  },
+  vcon_aggregate: {
+    tool_name: 'vcon_aggregate',
+    summary: 'Dealer-level rollups with optional tag numerator and baseline denominator for rate-style analytics.',
+    response_schema: {
+      type: 'object',
+      required: ['ok', 'item'],
+      properties: {
+        ok: { type: 'boolean', const: true },
+        item: {
+          type: 'object',
+          required: ['group_by', 'rows'],
+          properties: {
+            group_by: { type: 'string', const: 'dealer' },
+            rows: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  dealer_id: { type: 'string' },
+                  dealer_name: { type: ['string', 'null'] },
+                  team_id: { type: ['integer', 'null'] },
+                  team_name: { type: ['string', 'null'] },
+                  filtered_count: { type: 'number' },
+                  baseline_count: { type: 'number' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    example: {
+      ok: true,
+      item: {
+        group_by: 'dealer',
+        rows: [
+          {
+            dealer_id: '1174',
+            dealer_name: 'Example Motors',
+            team_id: 8,
+            team_name: 'Purple Team',
+            filtered_count: 42,
+            baseline_count: 600,
+          },
+        ],
+      },
+    },
   },
   describe_response_shape: {
     tool_name: 'describe_response_shape',
@@ -676,12 +795,44 @@ export class VConFetchHandler extends BaseToolHandler {
   }
 }
 
+export class VConGraphShapeHandler extends BaseToolHandler {
+  readonly toolName = 'vcon_graph_shape';
+
+  protected async execute(_args: unknown, context: ToolHandlerContext): Promise<ToolResponse> {
+    try {
+      const graph = await context.queries.getVconShapeGraph();
+      return this.createOkItemResponse(graph);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return this.createErrorEnvelopeResponse({
+        code: 'SHAPE_GRAPH_FAILED',
+        message,
+      });
+    }
+  }
+}
+
 export class VConCapabilitiesHandler extends BaseToolHandler {
   readonly toolName = 'vcon_capabilities';
 
   protected async execute(_args: any, _context: ToolHandlerContext): Promise<ToolResponse> {
     return this.createOkItemResponse({
-      tools: ['vcon_fetch', 'vcon_capabilities', 'vcon_search', 'vcon_taxonomy', 'describe_response_shape'],
+      tools: [
+        'vcon_fetch',
+        'vcon_capabilities',
+        'vcon_graph_shape',
+        'vcon_search',
+        'vcon_taxonomy',
+        'vcon_aggregate',
+        'describe_response_shape',
+      ],
+      shape_graph: {
+        resource_uri: 'vcon://v1/graph/shape',
+        tool: 'vcon_graph_shape',
+        json_schema_id: VCON_SHAPE_GRAPH_JSON_SCHEMA.$id,
+        description:
+          'Default corpus-level graph from vCon structure only (analysis types, attachment purposes, legacy attachment types without purpose, tag keys, bounded co-occurrence). No business ontology. Read this resource or call vcon_graph_shape after vcon_capabilities and before broad search when teaching an agent what evidence exists.',
+      },
       response_budgeting: {
         default_max_response_bytes: DEFAULT_MAX_RESPONSE_BYTES,
         minimum_max_response_bytes: MIN_MAX_RESPONSE_BYTES,
@@ -713,7 +864,14 @@ export class VConCapabilitiesHandler extends BaseToolHandler {
         strategy: 'opaque cursor',
         request_field: 'cursor',
         response_field: 'page.next_cursor',
-        semantics: 'Pass page.next_cursor back unchanged. Do not try to interpret or edit it client-side.',
+        semantics:
+          'Pass page.next_cursor back unchanged. Do not try to interpret or edit it client-side. ' +
+          'For debugging only, cursors are currently base64url JSON with an offset field; production clients must still treat them as opaque.',
+        total_semantics:
+          'page.total is the database count for the same filter predicate as the search (including tags and dealer filters). ' +
+          'For tag-sorted metadata search, at most the newest ' +
+          String(TAG_SORTED_WINDOW) +
+          ' matching vCons are reachable via cursor pagination; when the corpus exceeds that window, page.iterable_total duplicates that cap so clients know pagination cannot walk the full total.',
       },
       taxonomy_hints: {
         preferred_bad_call_signals: ['negative_experience', 'dnc_request', 'bad_call_quality'],
@@ -765,6 +923,8 @@ export class VConSearchHandler extends BaseToolHandler {
       startDate: normalizeDateString(args?.filters?.start_date as string | undefined),
       endDate: normalizeDateString(args?.filters?.end_date as string | undefined),
       tags,
+      dealerId: args?.filters?.dealer_id != null ? String(args.filters.dealer_id) : undefined,
+      dealerName: args?.filters?.dealer_name as string | undefined,
     };
     const query = args?.query as string | undefined;
     const threshold = (args?.threshold as number | undefined) ?? 0.7;
@@ -783,7 +943,11 @@ export class VConSearchHandler extends BaseToolHandler {
         });
         const pageResults = results.slice(cursor.offset, cursor.offset + limit);
         total = await context.queries.searchVConsCount(filters);
-        hasNextPage = total > cursor.offset + pageResults.length;
+        const effectiveUpper =
+          tags && total !== undefined
+            ? Math.min(total, TAG_SORTED_WINDOW)
+            : total ?? 0;
+        hasNextPage = total !== undefined && effectiveUpper > cursor.offset + pageResults.length;
         items = await Promise.all(pageResults.map((vcon) => buildItem(context, vcon, include, {
           search: { mode: 'metadata' },
         })));
@@ -914,11 +1078,24 @@ export class VConSearchHandler extends BaseToolHandler {
         }));
       }
 
-      const page = {
+      const page: Record<string, unknown> = {
         count: items.length,
         ...(total !== undefined ? { total } : {}),
+        ...(mode === 'metadata' && tags && total !== undefined && total > TAG_SORTED_WINDOW
+          ? { iterable_total: TAG_SORTED_WINDOW }
+          : {}),
         next_cursor: hasNextPage ? encodeCursor({ offset: cursor.offset + limit }) : null,
       };
+
+      let shortPageReason: string | undefined;
+      if (items.length < limit) {
+        if (mode === 'keyword' && hasNextPage) {
+          shortPageReason = 'keyword_dedup_or_rank_window';
+        } else {
+          shortPageReason = hasNextPage ? 'below_limit_more_results_exist' : 'end_of_searchable_results';
+        }
+      }
+
       const approximateBytes = estimateBytes({
         ok: true,
         items,
@@ -928,6 +1105,7 @@ export class VConSearchHandler extends BaseToolHandler {
           include,
           approximate_bytes: 0,
           max_response_bytes: maxResponseBytes,
+          ...(shortPageReason ? { short_page_reason: shortPageReason } : {}),
         }
       });
 
@@ -948,12 +1126,13 @@ export class VConSearchHandler extends BaseToolHandler {
         );
       }
 
-      return this.createOkListResponse(items, page, {
+      return this.createOkListResponse(items, page as any, {
         meta: {
           mode,
           include,
           approximate_bytes: approximateBytes,
           max_response_bytes: maxResponseBytes,
+          ...(shortPageReason ? { short_page_reason: shortPageReason } : {}),
         }
       });
     } catch (error) {
@@ -974,7 +1153,29 @@ export class VConSearchHandler extends BaseToolHandler {
 export class VConTaxonomyHandler extends BaseToolHandler {
   readonly toolName = 'vcon_taxonomy';
 
-  protected async execute(_args: any, _context: ToolHandlerContext): Promise<ToolResponse> {
+  protected async execute(_args: any, context: ToolHandlerContext): Promise<ToolResponse> {
+    let coverage: Record<string, unknown> = { note: 'coverage unavailable' };
+    try {
+      const snap = await context.queries.getTaxonomyCoverageSnapshot();
+      if (snap.vcons_total != null) {
+        coverage = {
+          vcons_total: snap.vcons_total,
+          strolid_dealer_attachment: {
+            availability: 'preferred',
+            coverage_pct: snap.with_strolid_dealer_attachment_pct,
+            note: 'Percentage uses strolid_dealer attachment rows over total vCons (approximate if duplicates exist).',
+          },
+          dealer_name_tag: {
+            availability: 'sparse',
+            coverage_pct: snap.with_dealer_name_tag_pct,
+            note: 'Share of vCons whose tag materialized view exposes a dealer_name key.',
+          },
+        };
+      }
+    } catch {
+      /* keep static guidance when counts fail */
+    }
+
     return this.createOkItemResponse({
       dataset: 'strolid',
       portal_values: [
@@ -1032,8 +1233,57 @@ export class VConTaxonomyHandler extends BaseToolHandler {
           goal: 'Build dealer-aware list views',
           recommendation: 'Use the dealer attachment, not dealer_name tag coverage.',
         },
+        {
+          goal: 'Top N dealers by portal tag rate',
+          recommendation:
+            'Call vcon_aggregate with group_by="dealer", the same tags filter as numerator, include_baseline true, and having.min_count for a sample floor.',
+        },
       ],
+      coverage,
     });
+  }
+}
+
+export class VConAggregateHandler extends BaseToolHandler {
+  readonly toolName = 'vcon_aggregate';
+
+  protected async execute(args: any, context: ToolHandlerContext): Promise<ToolResponse> {
+    const groupBy = (args?.group_by as string | undefined) || 'dealer';
+    if (groupBy !== 'dealer') {
+      return this.createErrorEnvelopeResponse({
+        code: 'INVALID_ARGUMENT',
+        message: 'group_by must be "dealer" for this release.',
+      });
+    }
+
+    const tags = (args?.tags as Record<string, string> | undefined) ?? {};
+    const limit = Math.min(Math.max(Number(args?.limit ?? 20), 1), 500);
+    const minBaseline = Math.max(
+      1,
+      Number((args?.having as { min_count?: number } | undefined)?.min_count ?? 1),
+    );
+    const startDate = normalizeDateString(args?.filters?.start_date as string | undefined);
+    const endDate = normalizeDateString(args?.filters?.end_date as string | undefined);
+
+    try {
+      const rows = await context.queries.aggregateVconsByDealerStats({
+        tagFilter: tags,
+        startDate,
+        endDate,
+        minBaseline,
+        limit,
+      });
+      return this.createOkItemResponse({
+        group_by: 'dealer',
+        rows,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return this.createErrorEnvelopeResponse({
+        code: 'AGGREGATE_FAILED',
+        message,
+      });
+    }
   }
 }
 
