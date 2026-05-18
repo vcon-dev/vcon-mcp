@@ -477,7 +477,7 @@ export interface VCon {
   vcon: VConVersion;
   uuid: string;
   extensions?: string[];      // Section 4.1.3
-  must_support?: string[];    // Section 4.1.4
+  critical?: string[];        // Section 4.1.4 (renamed from "must_support" in v0.4.0)
   created_at: string;
   updated_at?: string;
   subject?: string;
@@ -487,7 +487,7 @@ export interface VCon {
     url?: string;
     content_hash?: string | string[];
   };
-  appended?: {
+  amended?: {                 // Renamed from "appended" in v0.4.0
     uuid?: string;
     url?: string;
     content_hash?: string | string[];
@@ -575,7 +575,7 @@ export class VConQueries {
         created_at: vcon.created_at,
         updated_at: vcon.updated_at,
         extensions: vcon.extensions,
-        must_support: vcon.must_support,
+        critical: vcon.critical,
       })
       .select('id, uuid')
       .single();
@@ -687,7 +687,7 @@ export class VConQueries {
       vcon: vconData.vcon_version as '0.4.0',
       uuid: vconData.uuid,
       extensions: vconData.extensions,
-      must_support: vconData.must_support,
+      critical: vconData.critical,
       created_at: vconData.created_at,
       updated_at: vconData.updated_at,
       subject: vconData.subject,

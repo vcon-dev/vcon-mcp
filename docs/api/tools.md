@@ -743,101 +743,103 @@ Combined keyword + semantic search for comprehensive results.
 
 ## Tag Management
 
-### add_tag
+The tag toolset was consolidated to 5 tools. Tags are stored as a
+special vCon attachment (`type: "tags"`, `encoding: "json"`, body is a
+JSON array of `"key:value"` strings).
 
-Add or update a single tag on a vCon.
+### manage_tag
+
+Add, update, or remove a single tag on a vCon. Replaces the older
+`add_tag`, `update_tags`, and `remove_tag` tools.
 
 **Input Parameters:**
 
 ```typescript
 {
-  vcon_uuid: string,      // vCon UUID (required)
-  key: string,            // Tag key (required)
-  value: string | number | boolean,  // Tag value (required)
-  overwrite?: boolean     // Default: true
+  vcon_uuid: string,                       // vCon UUID (required)
+  action: "set" | "remove",                // (required)
+  key: string,                             // Tag key (required)
+  value?: string | number | boolean        // Required when action="set"
 }
 ```
 
-**Response:**
+**Response (on success):**
 
 ```typescript
 {
-  success: boolean,
+  success: true,
   message: string,
+  action: "set" | "remove",
   key: string,
-  value: any
+  value?: string                            // Stringified, only when action="set"
 }
 ```
 
-**Example:**
+**Examples:**
 
 ```typescript
+// Set a tag
 {
   "vcon_uuid": "123e4567-e89b-12d3-a456-426614174000",
+  "action": "set",
   "key": "department",
   "value": "sales"
+}
+
+// Remove a tag
+{
+  "vcon_uuid": "123e4567-e89b-12d3-a456-426614174000",
+  "action": "remove",
+  "key": "department"
 }
 ```
 
 ---
 
-### get_tag
+### get_tags
 
-Retrieve a specific tag value.
+Retrieve tags from a vCon. Provide a specific `key` to get one tag, or
+omit `key` to get all tags. Replaces the older `get_tag` and
+`get_all_tags` tools.
 
 **Input Parameters:**
 
 ```typescript
 {
-  vcon_uuid: string,      // vCon UUID (required)
-  key: string,            // Tag key (required)
-  default_value?: any     // Return if tag doesn't exist
+  vcon_uuid: string,                                       // (required)
+  key?: string,                                            // Omit for all tags
+  default_value?: string | number | boolean | null         // Used when key is provided
 }
 ```
 
-**Response:**
+**Response — single tag (key provided):**
 
 ```typescript
 {
-  success: boolean,
+  success: true,
   key: string,
-  value: any,
+  value: string | number | boolean | null,
   exists: boolean
 }
 ```
 
----
-
-### get_all_tags
-
-Get all tags for a vCon.
-
-**Input Parameters:**
+**Response — all tags (key omitted):**
 
 ```typescript
 {
-  vcon_uuid: string       // vCon UUID (required)
-}
-```
-
-**Response:**
-
-```typescript
-{
-  success: boolean,
+  success: true,
   vcon_uuid: string,
-  tags: {
-    [key: string]: string | number | boolean
-  },
+  tags: { [key: string]: string },
   count: number
 }
 ```
 
-**Example Response:**
+**Example Response (all tags):**
 
 ```json
 {
   "success": true,
+  "vcon_uuid": "123e4567-e89b-12d3-a456-426614174000",
   "tags": {
     "department": "sales",
     "priority": "high",
@@ -850,16 +852,15 @@ Get all tags for a vCon.
 
 ---
 
-### remove_tag
+### remove_all_tags
 
-Remove a tag from a vCon.
+Remove all tags from a vCon.
 
 **Input Parameters:**
 
 ```typescript
 {
-  vcon_uuid: string,      // vCon UUID (required)
-  key: string             // Tag key to remove (required)
+  vcon_uuid: string                       // (required)
 }
 ```
 
@@ -867,18 +868,16 @@ Remove a tag from a vCon.
 
 ### search_by_tags
 
-Find vCons by tag criteria (all tags must match).
+Find vCons by tag criteria. All specified tags must match (AND logic).
 
 **Input Parameters:**
 
 ```typescript
 {
-  tags: {                 // Tag key-value pairs (required)
-    [key: string]: string
-  },
-  limit?: number,         // Default: 50, Max: 100 - Maximum number of UUIDs to return
-  return_full_vcons?: boolean,  // Default: auto (true for ≤20 results, false for >20)
-  max_full_vcons?: number      // Default: 20 - Max full vCon objects to return (prevents size limits)
+  tags: { [key: string]: string },        // Non-empty object (required)
+  limit?: number,                          // Default: 50, Max: 100
+  return_full_vcons?: boolean,             // Default: false for >20 results, true otherwise
+  max_full_vcons?: number                  // Default: 20, Max: 50
 }
 ```
 
@@ -886,20 +885,24 @@ Find vCons by tag criteria (all tags must match).
 
 ```typescript
 {
-  success: boolean,
+  success: true,
   count: number,
   tags_searched: object,
-  vcon_uuids: string[],   // Always returned (all matching UUIDs)
-  vcons?: VCon[],         // Only included if return_full_vcons=true
-  message?: string        // Helpful message about result size
+  vcon_uuids: string[],                    // All matching UUIDs (up to limit)
+  vcons?: VCon[],                          // Only when return_full_vcons=true
+  message?: string                          // Hint about result size
 }
 ```
 
 **Behavior:**
-- Always returns `vcon_uuids` for all matching vCons (up to `limit`)
-- For large result sets (>20), only UUIDs are returned by default to prevent response size limits
-- Use `return_full_vcons: true` to get full vCon objects (limited to `max_full_vcons` to prevent size issues)
-- For small result sets (≤20), full vCon objects are returned by default
+
+- Always returns `vcon_uuids` for matching vCons (up to `limit`).
+- For result sets > 20, only UUIDs are returned by default to keep the
+  response under MCP size limits.
+- Set `return_full_vcons: true` to receive full vCon objects (capped at
+  `max_full_vcons`).
+- The `tags` parameter must be a non-empty object; null, undefined, or
+  `{}` is rejected.
 
 **Example:**
 
@@ -918,15 +921,16 @@ Find vCons by tag criteria (all tags must match).
 
 ### get_unique_tags
 
-Discover all available tags across all vCons.
+Discover all unique tag keys and values across the database. Useful for
+building selection UIs and tag analytics.
 
 **Input Parameters:**
 
 ```typescript
 {
-  include_counts?: boolean,   // Include usage statistics
-  key_filter?: string,        // Filter by key substring
-  min_count?: number          // Minimum occurrence count
+  include_counts?: boolean,                // Include usage counts; default false
+  key_filter?: string,                     // Case-insensitive substring match on keys
+  min_count?: number                       // Minimum occurrence; default 1
 }
 ```
 
@@ -934,16 +938,14 @@ Discover all available tags across all vCons.
 
 ```typescript
 {
-  success: boolean,
+  success: true,
   unique_keys: string[],
   unique_key_count: number,
   tags_by_key: {
-    [key: string]: string[]   // All values for each key
+    [key: string]: string[]                // All distinct values per key
   },
-  counts_per_value?: {        // If include_counts=true
-    [key: string]: {
-      [value: string]: number
-    }
+  counts_per_value?: {                     // Only when include_counts=true
+    [key: string]: { [value: string]: number }
   },
   total_vcons_with_tags: number
 }
@@ -955,52 +957,6 @@ Discover all available tags across all vCons.
 {
   "include_counts": true,
   "key_filter": "department"
-}
-```
-
----
-
-### update_tags
-
-Update multiple tags at once.
-
-**Input Parameters:**
-
-```typescript
-{
-  vcon_uuid: string,      // vCon UUID (required)
-  tags: {                 // Tags to add/update (required)
-    [key: string]: string | number | boolean
-  },
-  merge?: boolean         // Merge with existing (true) or replace all (false)
-}
-```
-
-**Example:**
-
-```typescript
-{
-  "vcon_uuid": "123e4567-e89b-12d3-a456-426614174000",
-  "tags": {
-    "status": "closed",
-    "resolution": "resolved",
-    "resolved_at": "2025-10-14T15:30:00Z"
-  },
-  "merge": true
-}
-```
-
----
-
-### remove_all_tags
-
-Remove all tags from a vCon.
-
-**Input Parameters:**
-
-```typescript
-{
-  vcon_uuid: string       // vCon UUID (required)
 }
 ```
 

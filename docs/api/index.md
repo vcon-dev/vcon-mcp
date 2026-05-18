@@ -376,7 +376,7 @@ interface ErrorResponse {
 
 ### API Version
 
-Current: **1.0.0**
+Current: **1.2.0**
 
 The API follows semantic versioning:
 - **Major** - Breaking changes

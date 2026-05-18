@@ -9,7 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.0.1] - 2025-01-XX
+## [1.2.0] - 2026-04-15
+
+### Added
+- REST API parity with MCP tool surface — full HTTP/JSON access at `/api/v1` (PR #46)
+- Predictable vCon contract tools: `vcon_fetch`, `vcon_search`, `vcon_capabilities`, `vcon_taxonomy`, `describe_response_shape`
+- HTTP transport (`MCP_TRANSPORT=http`) with Streamable HTTP and SSE
+- API-key authentication for REST and MCP HTTP endpoints (`API_KEYS`, `API_KEY_HEADER`, `API_AUTH_REQUIRED`)
+- Tool profiles and category controls (`MCP_TOOLS_PROFILE`, `MCP_ENABLED_CATEGORIES`, `MCP_DISABLED_CATEGORIES`, `MCP_DISABLED_TOOLS`)
+- Docker image published to `public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp` with `main-<sha>`, `latest`, and semver tags
+- Build provenance exposed via `X-Version`, `X-Git-Commit`, `X-Build-Time` response headers
+- Pino structured JSON logging (stderr); OpenTelemetry instrumentation with OTLP exporter option
+- DNS rebinding protection options for HTTP transport (`MCP_HTTP_DNS_PROTECTION`, allowed hosts/origins)
+- Discovery surfaces and internal knowledge graph
+
+### Changed
+- Tool catalog grew from 30 to 35 (5 new contract tools)
+- vCon version handling relaxed to accept any string or missing value
+- Dialog disposition validation relaxed to accept any string
+- Bearer token extraction tolerates leading whitespace in headers
+
+### Fixed
+- Upsert vCon on duplicate UUID submission instead of erroring
+- Correct body serialization/deserialization for analysis and attachments (CON-352)
+- `getTags` no longer crashes on non-array attachment bodies
+
+---
+
+## [1.0.1] - 2025-12 (approximate)
+
+> Date precise to the month only — the npm-published 1.0.1 pre-dated the
+> current main lineage and its exact release date isn't in this repo.
 
 ### Added
 - Comprehensive database documentation for LLMs (architecture, quickstart, schema visual)
@@ -154,18 +184,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ✅ Reference documentation
 - ✅ VitePress site
 
-### Phase 4: Testing & Polish (In Progress)
-- ⏳ Comprehensive test suite
-- ⏳ Performance optimization
-- ⏳ Security audit
-- ⏳ Production hardening
+### Phase 4: Production & Distribution (Completed in 1.2.0)
+- ✅ REST API parity with MCP surface
+- ✅ HTTP transport with API-key auth
+- ✅ Docker image pipeline to ECR
+- ✅ Pino structured logging + OpenTelemetry
+- ✅ Multi-tenant RLS
 
-### Phase 5: Enterprise Features (Planned)
-- ⏳ Privacy Suite plugin
-- ⏳ Consent management
-- ⏳ Compliance tools (GDPR, CCPA, HIPAA)
-- ⏳ Access logging
-- ⏳ PII detection and redaction
+### Phase 5: Predictability & Discovery (Completed in 1.2.0)
+- ✅ Contract tools: `vcon_fetch`, `vcon_search`, `vcon_capabilities`, `vcon_taxonomy`, `describe_response_shape`
+- ✅ Discovery surfaces and internal knowledge graph
+
+### Phase 6: Future Work (Planned)
+- ⏳ Privacy Suite plugin (consent, redaction, PII detection)
+- ⏳ Compliance tooling hooks (GDPR, CCPA, HIPAA)
+- ⏳ Performance hardening on large corpora
 
 ---
 
@@ -246,23 +279,17 @@ This first major release represents a production-ready, fully spec-compliant vCo
 
 ## Future Roadmap
 
-### v1.1.0 (Planned)
-- Performance optimizations
-- Additional search features
-- Enhanced analytics
-- More prompt templates
+The roadmap below reflects work not yet started or in early planning.
+Concrete shipped versions live in the dated entries above.
 
-### v1.2.0 (Planned)
-- Real-time subscriptions
-- WebSocket support
-- GraphQL API option
-- Distributed tracing
+### Near-term (post-1.2.0)
+- Privacy Suite plugin (consent management, PII detection, redaction)
+- Compliance tooling hooks (GDPR, CCPA, HIPAA support patterns)
+- Performance hardening on large corpora (cold-start full-text search)
 
-### v2.0.0 (Future)
-- Multi-tenant architecture
-- Advanced security features
-- Cloud-native deployment
-- Horizontal scaling support
+### Longer-term
+- Cloud-native deployment patterns and horizontal scaling guidance
+- Additional storage backends
 
 ---
 
@@ -295,5 +322,5 @@ Privacy Suite and enterprise features are available under commercial license.
 
 ---
 
-*Last Updated: October 14, 2025*
+*Last Updated: May 18, 2026*
 
