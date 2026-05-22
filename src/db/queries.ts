@@ -23,6 +23,7 @@ import {
   type VconShapeGraphPayload,
 } from '../types/vcon-shape-graph.js';
 import { deserializeBody, serializeBody } from '../utils/body-serialization.js';
+import { batchSaveVCon } from './batch-writer.js';
 
 const logger = createLogger('queries');
 
@@ -79,7 +80,6 @@ export class SupabaseVConQueries implements IVConQueries {
         operation: 'createVCon',
       }, 'Database query count');
 
-      // Extract tenant_id from vCon attachments if RLS is enabled
       const tenantConfig = getTenantConfig();
       let tenantId: string | null = null;
       if (tenantConfig.enabled) {
@@ -89,81 +89,7 @@ export class SupabaseVConQueries implements IVConQueries {
         }
       }
 
-      // Upsert main vcon — idempotent on re-submission of same UUID
-      // Set id = uuid so they match (id is the PK, uuid is the vCon document UUID)
-      const { data: vconData, error: vconError } = await this.supabase
-        .from('vcons')
-        .upsert({
-          id: vcon.uuid,     // Explicitly set id to match uuid
-          uuid: vcon.uuid,
-          vcon_version: vcon.vcon ?? '0.4.0',
-          subject: vcon.subject,
-          created_at: vcon.created_at,
-          updated_at: vcon.updated_at,
-          extensions: vcon.extensions,          // ✅ Added per spec
-          critical: vcon.critical,              // ✅ v0.4.0 (was must_support)
-          redacted: vcon.redacted || {},
-          amended: vcon.amended || {},          // ✅ v0.4.0 (was appended)
-          tenant_id: tenantId,                  // ✅ Added for RLS multi-tenant support
-        }, { onConflict: 'id' })
-        .select('id, uuid')
-        .single();
-
-      if (vconError) {
-        recordCounter('db.query.errors', 1, {
-          operation: 'createVCon',
-          error_type: vconError.code || 'unknown',
-        }, 'Database query errors');
-        throw vconError;
-      }
-
-      // Delete existing child rows so re-submission replaces them cleanly
-      await Promise.all([
-        this.supabase.from('parties').delete().eq('vcon_id', vconData.id),
-        this.supabase.from('dialog').delete().eq('vcon_id', vconData.id),
-        this.supabase.from('analysis').delete().eq('vcon_id', vconData.id),
-        this.supabase.from('attachments').delete().eq('vcon_id', vconData.id),
-      ]);
-
-      // Insert parties
-      if (vcon.parties.length > 0) {
-        const partiesData = vcon.parties.map((party, index) => ({
-          vcon_id: vconData.id,
-          party_index: index,
-          tel: party.tel,
-          sip: party.sip,
-          stir: party.stir,
-          mailto: party.mailto,
-          name: party.name,
-          did: party.did,                       // ✅ Added per spec
-          uuid: party.uuid,                     // ✅ Added per spec Section 4.2.12
-          validation: party.validation,
-          jcard: party.jcard,
-          gmlpos: party.gmlpos,
-          civicaddress: party.civicaddress,
-          timezone: party.timezone,
-        }));
-
-        const { error: partiesError } = await this.supabase
-          .from('parties')
-          .insert(partiesData);
-
-        if (partiesError) throw partiesError;
-      }
-
-      // Insert dialog, analysis, and attachments in parallel across categories.
-      await Promise.all([
-        ...(vcon.dialog ?? []).map((d, i) => this.addDialog(vconData.uuid, d, i)),
-        ...(vcon.analysis ?? []).map((a, i) => this.addAnalysis(vconData.uuid, a, i)),
-        ...(vcon.attachments ?? []).map((att, i) => this.addAttachment(vconData.uuid, att, i)),
-      ]);
-
-      // Invalidate cache after creation
-      if (this.cacheEnabled && this.redis) {
-        await this.redis.del(`vcon:${vconData.uuid}`);
-      }
-
-      return { uuid: vconData.uuid, id: vconData.id };
+      return batchSaveVCon(vcon, tenantId, this.supabase, this.redis);
     });
   }
 
