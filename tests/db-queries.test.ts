@@ -6,6 +6,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { randomUUID } from 'crypto';
 import { VConQueries } from '../src/db/queries.js';
+import { _resetBatchWriterForTests } from '../src/db/batch-writer.js';
 import { VCon, Analysis, Dialog, Attachment } from '../src/types/vcon.js';
 
 describe('VConQueries', () => {
@@ -13,6 +14,7 @@ describe('VConQueries', () => {
   let mockSupabase: any;
 
   beforeEach(() => {
+    _resetBatchWriterForTests();
     // Create a chainable mock that returns itself for all methods
     const createChainableMock = () => {
       const mock: any = {
@@ -33,13 +35,27 @@ describe('VConQueries', () => {
         range: vi.fn(),
         in: vi.fn(),
         rpc: vi.fn(),
+        then: undefined,
       };
 
       // Make all methods return the mock itself for chaining
       Object.keys(mock).forEach(key => {
-        if (key !== 'single') {
+        if (key !== 'single' && key !== 'then' && typeof mock[key]?.mockReturnValue === 'function') {
           mock[key].mockReturnValue(mock);
         }
+      });
+
+      // The batch writer awaits .upsert(...) and .insert(...) directly (no
+      // .select().single()), but legacy add* methods do chain .select().single().
+      // Give insert/upsert a `.then` so they're awaitable AND keep chain methods.
+      const ok = { data: null, error: null };
+      mock.upsert.mockImplementation(() => {
+        const chain: any = { ...mock, then: (resolve: any) => resolve(ok) };
+        return chain;
+      });
+      mock.insert.mockImplementation(() => {
+        const chain: any = { ...mock, then: (resolve: any) => resolve(ok) };
+        return chain;
       });
 
       return mock;
@@ -61,12 +77,6 @@ describe('VConQueries', () => {
           { name: 'Bob', tel: '+1234567890' }
         ]
       };
-
-      // Mock the vcon insert chain - single() is the last call
-      mockSupabase.single.mockResolvedValue({
-        data: { id: '1', uuid: testVCon.uuid },
-        error: null
-      });
 
       const result = await queries.createVCon(testVCon);
 
@@ -99,12 +109,6 @@ describe('VConQueries', () => {
         }]
       };
 
-      // Mock all single() calls
-      mockSupabase.single.mockResolvedValue({
-        data: { id: '1', uuid: testVCon.uuid },
-        error: null
-      });
-
       const result = await queries.createVCon(testVCon);
 
       expect(result.uuid).toBe(testVCon.uuid);
@@ -118,10 +122,10 @@ describe('VConQueries', () => {
         parties: [{ name: 'Test' }]
       };
 
-      mockSupabase.single.mockResolvedValueOnce({
+      mockSupabase.upsert.mockReturnValue(Promise.resolve({
         data: null,
-        error: new Error('Database error')
-      });
+        error: new Error('Database error'),
+      }));
 
       await expect(queries.createVCon(testVCon)).rejects.toThrow('Database error');
     });
