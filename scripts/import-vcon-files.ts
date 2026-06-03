@@ -118,11 +118,13 @@ function normaliseTagsBody(body: any): string {
 
 // ─── File discovery ───────────────────────────────────────────────────────────
 
-function findVConFiles(dir: string): string[] {
-  const results: string[] = [];
+function findVConFiles(dir: string, results: string[] = []): string[] {
+  // Accumulate into a shared array — spreading a recursive result into push()
+  // (`results.push(...findVConFiles(full))`) overflows the call stack on large
+  // corpora (hundreds of thousands of files).
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, e.name);
-    if (e.isDirectory()) results.push(...findVConFiles(full));
+    if (e.isDirectory()) findVConFiles(full, results);
     else if (e.isFile() && /\.(vcon|json)$/.test(e.name)) results.push(full);
   }
   return results;
