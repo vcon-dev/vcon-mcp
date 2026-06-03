@@ -101,4 +101,76 @@ runTest('MongoDB VCon CRUD', () => {
         const count = await queries.keywordSearchCount({ query: 'MongoDB' });
         expect(count).toBeGreaterThan(0);
     });
+
+    // ── Index-addressed child CRUD (state continues from above: 1 party, 1 dialog) ──
+
+    it('should add parties (append) and return new indices', async () => {
+        const r1 = await queries.addParty(testUuid, { name: 'Bob' });
+        const r2 = await queries.addParty(testUuid, { name: 'Carol' });
+        expect(r1.index).toBe(1);
+        expect(r2.index).toBe(2);
+        const v = await queries.getVCon(testUuid);
+        expect(v.parties).toHaveLength(3);
+        expect(v.parties[2].name).toBe('Carol');
+    });
+
+    it('should replace a party (PUT)', async () => {
+        await queries.updateParty(testUuid, 1, { name: 'Bob2', tel: '+15550001' });
+        const v = await queries.getVCon(testUuid);
+        expect(v.parties[1].name).toBe('Bob2');
+        expect(v.parties[1].tel).toBe('+15550001');
+    });
+
+    it('should remove a party as an index-preserving placeholder (no renumber)', async () => {
+        await queries.removeParty(testUuid, 1);
+        const v = await queries.getVCon(testUuid);
+        expect(v.parties).toHaveLength(3);          // slot preserved
+        expect(v.parties[1].name).toBeFalsy();      // emptied (Mongo stores literal {})
+        expect(v.parties[2].name).toBe('Carol');    // index 2 untouched
+    });
+
+    it('should remove a party as {name:"anonymous"} when anonymize=true', async () => {
+        await queries.removeParty(testUuid, 2, { anonymize: true });
+        const v = await queries.getVCon(testUuid);
+        expect(v.parties[2].name).toBe('anonymous');
+    });
+
+    it('should replace the dialog (PUT)', async () => {
+        await queries.updateDialog(testUuid, 0, { type: 'text', body: 'edited', encoding: 'none' });
+        const v = await queries.getVCon(testUuid);
+        expect(v.dialog![0].body).toBe('edited');
+    });
+
+    it('should remove the dialog as a content-stripped placeholder keeping type', async () => {
+        await queries.removeDialog(testUuid, 0);
+        const v = await queries.getVCon(testUuid);
+        expect(v.dialog).toHaveLength(1);            // slot preserved
+        expect(v.dialog![0].type).toBeDefined();
+        expect(v.dialog![0].body).toBeFalsy();
+    });
+
+    it('should compact analysis on remove (referential leaf)', async () => {
+        await queries.addAnalysis(testUuid, { type: 'summary', vendor: 'V0', body: 'first', encoding: 'none' });
+        await queries.addAnalysis(testUuid, { type: 'sentiment', vendor: 'V1', body: 'second', encoding: 'none' });
+        await queries.removeAnalysis(testUuid, 0);
+        const v = await queries.getVCon(testUuid);
+        expect(v.analysis).toHaveLength(1);
+        expect(v.analysis![0].vendor).toBe('V1');    // V0 removed, V1 shifted to index 0
+    });
+
+    it('should replace and compact attachments', async () => {
+        await queries.addAttachment(testUuid, { purpose: 'doc', body: 'a', encoding: 'none' });
+        await queries.addAttachment(testUuid, { purpose: 'image', body: 'b', encoding: 'none' });
+        await queries.updateAttachment(testUuid, 0, { purpose: 'doc-v2', body: 'a2', encoding: 'none' });
+        let v = await queries.getVCon(testUuid);
+        expect(v.attachments![0].purpose).toBe('doc-v2');
+        await queries.removeAttachment(testUuid, 0);
+        v = await queries.getVCon(testUuid);
+        expect(v.attachments).toHaveLength(1);
+        expect(v.attachments![0].purpose).toBe('image');
+    });
+
+    it('should reject an out-of-range index', async () => {
+        await expect(queries.updateParty(testUuid, 99, { name: 'X' })).rejects.toThrow();
+    });
 });
