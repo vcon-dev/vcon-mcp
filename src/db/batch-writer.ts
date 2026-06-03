@@ -11,7 +11,7 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 import Redis from 'ioredis';
-import { VCon } from '../types/vcon.js';
+import { Analysis, Attachment, Dialog, Party, VCon } from '../types/vcon.js';
 import { serializeBody } from '../utils/body-serialization.js';
 import { logWithContext, recordCounter } from '../observability/instrumentation.js';
 
@@ -249,9 +249,15 @@ export function buildVconRow(vcon: VCon, tenantId: string | null) {
   };
 }
 
-export function buildPartyRows(vcon: VCon) {
-  return (vcon.parties ?? []).map((party, index) => ({
-    vcon_id: vcon.uuid,
+// Single-row builders. These own the column-name mapping (start->start_time,
+// duration->duration_seconds, dialog->dialog_indices, mediatype->mimetype) and
+// body serialization, so per-child update/insert paths in the query layer reuse
+// exactly the same shaping as batch creation. NOTE: dialog body is stored RAW
+// (no serializeBody); analysis/attachment bodies use serializeBody.
+
+export function buildPartyRow(vconUuid: string, party: Party, index: number) {
+  return {
+    vcon_id: vconUuid,
     party_index: index,
     tel: party.tel,
     sip: party.sip,
@@ -265,40 +271,38 @@ export function buildPartyRows(vcon: VCon) {
     gmlpos: party.gmlpos,
     civicaddress: party.civicaddress,
     timezone: party.timezone,
-  }));
+  };
 }
 
-export function buildDialogRows(vcon: VCon) {
-  return (vcon.dialog ?? []).map((dialog, index) => {
-    let parties: unknown = null;
-    if (dialog.parties !== undefined) {
-      parties = Array.isArray(dialog.parties) ? dialog.parties : [dialog.parties];
-    }
-    return {
-      vcon_id: vcon.uuid,
-      dialog_index: index,
-      type: dialog.type,
-      start_time: dialog.start,
-      duration_seconds: dialog.duration,
-      parties,
-      originator: dialog.originator,
-      mediatype: dialog.mediatype,
-      filename: dialog.filename,
-      body: dialog.body,
-      encoding: dialog.encoding,
-      url: dialog.url,
-      content_hash: dialog.content_hash,
-      disposition: dialog.disposition,
-      session_id: dialog.session_id,
-      application: dialog.application,
-      message_id: dialog.message_id,
-    };
-  });
+export function buildDialogRow(vconUuid: string, dialog: Dialog, index: number) {
+  let parties: unknown = null;
+  if (dialog.parties !== undefined) {
+    parties = Array.isArray(dialog.parties) ? dialog.parties : [dialog.parties];
+  }
+  return {
+    vcon_id: vconUuid,
+    dialog_index: index,
+    type: dialog.type,
+    start_time: dialog.start,
+    duration_seconds: dialog.duration,
+    parties,
+    originator: dialog.originator,
+    mediatype: dialog.mediatype,
+    filename: dialog.filename,
+    body: dialog.body,
+    encoding: dialog.encoding,
+    url: dialog.url,
+    content_hash: dialog.content_hash,
+    disposition: dialog.disposition,
+    session_id: dialog.session_id,
+    application: dialog.application,
+    message_id: dialog.message_id,
+  };
 }
 
-export function buildAnalysisRows(vcon: VCon) {
-  return (vcon.analysis ?? []).map((analysis, index) => ({
-    vcon_id: vcon.uuid,
+export function buildAnalysisRow(vconUuid: string, analysis: Analysis, index: number) {
+  return {
+    vcon_id: vconUuid,
     analysis_index: index,
     type: analysis.type,
     dialog_indices: Array.isArray(analysis.dialog)
@@ -313,12 +317,12 @@ export function buildAnalysisRows(vcon: VCon) {
     encoding: analysis.encoding,
     url: analysis.url,
     content_hash: analysis.content_hash,
-  }));
+  };
 }
 
-export function buildAttachmentRows(vcon: VCon) {
-  return (vcon.attachments ?? []).map((attachment, index) => ({
-    vcon_id: vcon.uuid,
+export function buildAttachmentRow(vconUuid: string, attachment: Attachment, index: number) {
+  return {
+    vcon_id: vconUuid,
     attachment_index: index,
     type: attachment.type,
     purpose: attachment.purpose,
@@ -331,7 +335,23 @@ export function buildAttachmentRows(vcon: VCon) {
     encoding: attachment.encoding,
     url: attachment.url,
     content_hash: attachment.content_hash,
-  }));
+  };
+}
+
+export function buildPartyRows(vcon: VCon) {
+  return (vcon.parties ?? []).map((party, index) => buildPartyRow(vcon.uuid, party, index));
+}
+
+export function buildDialogRows(vcon: VCon) {
+  return (vcon.dialog ?? []).map((dialog, index) => buildDialogRow(vcon.uuid, dialog, index));
+}
+
+export function buildAnalysisRows(vcon: VCon) {
+  return (vcon.analysis ?? []).map((analysis, index) => buildAnalysisRow(vcon.uuid, analysis, index));
+}
+
+export function buildAttachmentRows(vcon: VCon) {
+  return (vcon.attachments ?? []).map((attachment, index) => buildAttachmentRow(vcon.uuid, attachment, index));
 }
 
 /**

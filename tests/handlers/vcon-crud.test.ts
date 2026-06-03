@@ -16,7 +16,17 @@ import {
   AddAnalysisHandler,
   AddDialogHandler,
   AddAttachmentHandler,
+  UpdateDialogHandler,
+  RemoveDialogHandler,
+  UpdateAnalysisHandler,
+  RemoveAnalysisHandler,
+  UpdateAttachmentHandler,
+  RemoveAttachmentHandler,
+  AddPartyHandler,
+  UpdatePartyHandler,
+  RemovePartyHandler,
 } from '../../src/tools/handlers/vcon-crud.js';
+import { ChildIndexError } from '../../src/utils/vcon-children.js';
 import { ToolHandlerContext } from '../../src/tools/handlers/base.js';
 import { VCon, Analysis, Dialog, Attachment } from '../../src/types/vcon.js';
 import { DatabaseInspector } from '../../src/db/database-inspector.js';
@@ -66,6 +76,15 @@ describe('vCon CRUD Handlers', () => {
       addAnalysis: vi.fn(),
       addDialog: vi.fn(),
       addAttachment: vi.fn(),
+      updateDialog: vi.fn(),
+      removeDialog: vi.fn(),
+      updateAnalysis: vi.fn(),
+      removeAnalysis: vi.fn(),
+      updateAttachment: vi.fn(),
+      removeAttachment: vi.fn(),
+      addParty: vi.fn().mockResolvedValue({ index: 2 }),
+      updateParty: vi.fn(),
+      removeParty: vi.fn(),
     };
 
     mockPluginManager = {
@@ -121,6 +140,29 @@ describe('vCon CRUD Handlers', () => {
       const response = JSON.parse(result.content[0].text);
       expect(response.success).toBe(true);
       expect(response.uuid).toBe(testUuid);
+    });
+
+    it('forwards inline dialog/analysis/attachments and maps must_support to critical', async () => {
+      const handler = new CreateVConHandler();
+      mockVConService.create.mockResolvedValue({ uuid: randomUUID(), id: '1', vcon: {} as VCon });
+
+      await handler.handle({
+        parties: [{ name: 'A' }],
+        dialog: [{ type: 'text', body: 'hi' }],
+        analysis: [{ type: 'summary', vendor: 'V' }],
+        attachments: [{ purpose: 'doc', body: 'x', encoding: 'none' }],
+        must_support: ['ext-a'],
+      }, mockContext);
+
+      expect(mockVConService.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          dialog: [{ type: 'text', body: 'hi' }],
+          analysis: [{ type: 'summary', vendor: 'V' }],
+          attachments: [{ purpose: 'doc', body: 'x', encoding: 'none' }],
+          critical: ['ext-a'],   // must_support mapped to critical
+        }),
+        expect.objectContaining({ source: 'mcp-tool' })
+      );
     });
 
     it('should apply plugin modifications from beforeCreate hook', async () => {
@@ -448,6 +490,137 @@ describe('vCon CRUD Handlers', () => {
       await expect(handler.handle({
         vcon_uuid: randomUUID(),
       }, mockContext)).rejects.toThrow(McpError);
+    });
+  });
+
+  // ── Index-addressed child CRUD ─────────────────────────────────────────────
+
+  describe('UpdateDialogHandler', () => {
+    it('replaces the dialog at the index', async () => {
+      const uuid = randomUUID();
+      await new UpdateDialogHandler().handle(
+        { vcon_uuid: uuid, index: 1, dialog: { type: 'text', body: 'hi' } },
+        mockContext
+      );
+      expect(mockQueries.updateDialog).toHaveBeenCalledWith(uuid, 1, expect.objectContaining({ type: 'text' }));
+    });
+
+    it('accepts index 0', async () => {
+      const uuid = randomUUID();
+      await new UpdateDialogHandler().handle(
+        { vcon_uuid: uuid, index: 0, dialog: { type: 'text' } },
+        mockContext
+      );
+      expect(mockQueries.updateDialog).toHaveBeenCalledWith(uuid, 0, expect.anything());
+    });
+
+    it('rejects a negative index', async () => {
+      await expect(new UpdateDialogHandler().handle(
+        { vcon_uuid: randomUUID(), index: -1, dialog: { type: 'text' } },
+        mockContext
+      )).rejects.toThrow(McpError);
+    });
+
+    it('maps a ChildIndexError from the query layer to McpError', async () => {
+      mockQueries.updateDialog.mockRejectedValueOnce(new ChildIndexError('dialog index 9 not found'));
+      await expect(new UpdateDialogHandler().handle(
+        { vcon_uuid: randomUUID(), index: 9, dialog: { type: 'text' } },
+        mockContext
+      )).rejects.toThrow(McpError);
+    });
+  });
+
+  describe('RemoveDialogHandler', () => {
+    it('removes the dialog at the index', async () => {
+      const uuid = randomUUID();
+      await new RemoveDialogHandler().handle({ vcon_uuid: uuid, index: 0 }, mockContext);
+      expect(mockQueries.removeDialog).toHaveBeenCalledWith(uuid, 0);
+    });
+  });
+
+  describe('UpdateAnalysisHandler', () => {
+    it('replaces the analysis at the index', async () => {
+      const uuid = randomUUID();
+      await new UpdateAnalysisHandler().handle(
+        { vcon_uuid: uuid, index: 2, analysis: { type: 'summary', vendor: 'V' } },
+        mockContext
+      );
+      expect(mockQueries.updateAnalysis).toHaveBeenCalledWith(uuid, 2, expect.objectContaining({ vendor: 'V' }));
+    });
+
+    it('rejects missing vendor', async () => {
+      await expect(new UpdateAnalysisHandler().handle(
+        { vcon_uuid: randomUUID(), index: 0, analysis: { type: 'summary' } },
+        mockContext
+      )).rejects.toThrow(McpError);
+    });
+  });
+
+  describe('RemoveAnalysisHandler / RemoveAttachmentHandler', () => {
+    it('removes analysis by index', async () => {
+      const uuid = randomUUID();
+      await new RemoveAnalysisHandler().handle({ vcon_uuid: uuid, index: 1 }, mockContext);
+      expect(mockQueries.removeAnalysis).toHaveBeenCalledWith(uuid, 1);
+    });
+    it('removes attachment by index', async () => {
+      const uuid = randomUUID();
+      await new RemoveAttachmentHandler().handle({ vcon_uuid: uuid, index: 0 }, mockContext);
+      expect(mockQueries.removeAttachment).toHaveBeenCalledWith(uuid, 0);
+    });
+  });
+
+  describe('UpdateAttachmentHandler', () => {
+    it('replaces the attachment at the index', async () => {
+      const uuid = randomUUID();
+      await new UpdateAttachmentHandler().handle(
+        { vcon_uuid: uuid, index: 0, attachment: { purpose: 'doc', body: 'x', encoding: 'none' } },
+        mockContext
+      );
+      expect(mockQueries.updateAttachment).toHaveBeenCalledWith(uuid, 0, expect.objectContaining({ purpose: 'doc' }));
+    });
+  });
+
+  describe('AddPartyHandler', () => {
+    it('appends a party and returns the new index', async () => {
+      const uuid = randomUUID();
+      const result = await new AddPartyHandler().handle(
+        { vcon_uuid: uuid, party: { name: 'Dave' } },
+        mockContext
+      );
+      expect(mockQueries.addParty).toHaveBeenCalledWith(uuid, expect.objectContaining({ name: 'Dave' }));
+      expect(JSON.parse(result.content[0].text).index).toBe(2);
+    });
+
+    it('rejects a party with no identifier', async () => {
+      await expect(new AddPartyHandler().handle(
+        { vcon_uuid: randomUUID(), party: {} },
+        mockContext
+      )).rejects.toThrow(McpError);
+    });
+  });
+
+  describe('UpdatePartyHandler', () => {
+    it('replaces the party at the index', async () => {
+      const uuid = randomUUID();
+      await new UpdatePartyHandler().handle(
+        { vcon_uuid: uuid, index: 1, party: { name: 'Bob2' } },
+        mockContext
+      );
+      expect(mockQueries.updateParty).toHaveBeenCalledWith(uuid, 1, expect.objectContaining({ name: 'Bob2' }));
+    });
+  });
+
+  describe('RemovePartyHandler', () => {
+    it('removes the party (empty placeholder) without validating it', async () => {
+      const uuid = randomUUID();
+      await new RemovePartyHandler().handle({ vcon_uuid: uuid, index: 0 }, mockContext);
+      expect(mockQueries.removeParty).toHaveBeenCalledWith(uuid, 0, { anonymize: false });
+    });
+
+    it('forwards anonymize=true', async () => {
+      const uuid = randomUUID();
+      await new RemovePartyHandler().handle({ vcon_uuid: uuid, index: 0, anonymize: true }, mockContext);
+      expect(mockQueries.removeParty).toHaveBeenCalledWith(uuid, 0, { anonymize: true });
     });
   });
 });

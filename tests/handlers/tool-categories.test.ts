@@ -123,9 +123,11 @@ describe('Tool Categories Integration', () => {
 
     it('should have expected number of write tools', () => {
       const writeTools = allToolsWithCategories.filter((t) => t.category === 'write');
-      // create_vcon, update_vcon, delete_vcon, add_analysis, add_dialog, add_attachment
-      // create_vcon_from_template, manage_tag, remove_all_tags
-      expect(writeTools.length).toBe(9);
+      // create_vcon, update_vcon, delete_vcon, add_analysis, add_dialog, add_attachment,
+      // create_vcon_from_template, manage_tag, remove_all_tags (9) +
+      // update_dialog, remove_dialog, update_analysis, remove_analysis,
+      // update_attachment, remove_attachment, add_party, update_party, remove_party (9)
+      expect(writeTools.length).toBe(18);
     });
 
     it('should have expected number of schema tools', () => {
@@ -147,17 +149,17 @@ describe('Tool Categories Integration', () => {
       expect(infraTools.length).toBe(5);
     });
 
-    it('should have 37 total tools', () => {
-      expect(allToolsWithCategories.length).toBe(37);
+    it('should have 46 total tools', () => {
+      expect(allToolsWithCategories.length).toBe(46);
     });
   });
 
   describe('Filtering with profiles', () => {
-    it('full profile should return all 37 tools', () => {
+    it('full profile should return all 46 tools', () => {
       process.env.MCP_TOOLS_PROFILE = 'full';
       const config = loadToolsConfig();
       const filtered = filterEnabledTools(allToolsWithCategories, config);
-      expect(filtered.length).toBe(37);
+      expect(filtered.length).toBe(46);
     });
 
     it('readonly profile should return only read and schema tools (17 total)', () => {
@@ -179,11 +181,11 @@ describe('Tool Categories Integration', () => {
       expect(toolNames).not.toContain('delete_vcon');
     });
 
-    it('user profile should return read, write, and schema tools (26 total)', () => {
+    it('user profile should return read, write, and schema tools (35 total)', () => {
       process.env.MCP_TOOLS_PROFILE = 'user';
       const config = loadToolsConfig();
       const filtered = filterEnabledTools(allToolsWithCategories, config);
-      expect(filtered.length).toBe(26); // 15 read + 9 write + 2 schema
+      expect(filtered.length).toBe(35); // 15 read + 18 write + 2 schema
 
       // Verify specific tools
       const toolNames = filtered.map((t) => t.name);
@@ -215,11 +217,11 @@ describe('Tool Categories Integration', () => {
       expect(toolNames).not.toContain('delete_vcon');
     });
 
-    it('minimal profile should return only read and write tools (24 total)', () => {
+    it('minimal profile should return only read and write tools (33 total)', () => {
       process.env.MCP_TOOLS_PROFILE = 'minimal';
       const config = loadToolsConfig();
       const filtered = filterEnabledTools(allToolsWithCategories, config);
-      expect(filtered.length).toBe(24); // 15 read + 9 write
+      expect(filtered.length).toBe(33); // 15 read + 18 write
 
       // Verify specific tools
       const toolNames = filtered.map((t) => t.name);
@@ -241,7 +243,7 @@ describe('Tool Categories Integration', () => {
 
       const toolNames = filtered.map((t) => t.name);
       expect(toolNames).not.toContain('delete_vcon');
-      expect(filtered.length).toBe(36);
+      expect(filtered.length).toBe(45);
     });
 
     it('should disable multiple tools', () => {
@@ -253,7 +255,7 @@ describe('Tool Categories Integration', () => {
       expect(toolNames).not.toContain('delete_vcon');
       expect(toolNames).not.toContain('analyze_query');
       expect(toolNames).not.toContain('remove_all_tags');
-      expect(filtered.length).toBe(34);
+      expect(filtered.length).toBe(43);
     });
 
     it('should combine profile with disabled tools', () => {
@@ -265,7 +267,7 @@ describe('Tool Categories Integration', () => {
       const toolNames = filtered.map((t) => t.name);
       expect(toolNames).not.toContain('delete_vcon');
       expect(toolNames).not.toContain('get_database_analytics'); // Excluded by profile
-      expect(filtered.length).toBe(25); // 26 - 1 disabled
+      expect(filtered.length).toBe(34); // 35 - 1 disabled
     });
   });
 
@@ -286,7 +288,7 @@ describe('Tool Categories Integration', () => {
       const config = loadToolsConfig();
       const filtered = filterEnabledTools(allToolsWithCategories, config);
 
-      expect(filtered.length).toBe(26); // 37 - 6 analytics - 5 infra
+      expect(filtered.length).toBe(35); // 46 - 6 analytics - 5 infra
       filtered.forEach((tool) => {
         expect(['analytics', 'infra']).not.toContain(tool.category);
       });
