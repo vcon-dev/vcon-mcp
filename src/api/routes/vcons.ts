@@ -7,9 +7,10 @@
 
 import Router from '@koa/router';
 import type { Context } from 'koa';
-import { AnalysisSchema, DialogSchema, AttachmentSchema } from '../../tools/vcon-crud.js';
-import { Analysis, Attachment, Dialog, VCon } from '../../types/vcon.js';
+import { AnalysisSchema, DialogSchema, AttachmentSchema, PartySchema } from '../../tools/vcon-crud.js';
+import { Analysis, Attachment, Dialog, Party, VCon } from '../../types/vcon.js';
 import { RestApiContext } from '../context.js';
+import { ChildIndexError } from '../../utils/vcon-children.js';
 import { parsePagination, PaginationState } from '../middleware/pagination.js';
 import { sendCreated, sendError, sendPaginated, sendSuccess } from '../response.js';
 import {
@@ -409,6 +410,151 @@ export function createVConRoutes(apiContext: RestApiContext): Router {
         return sendError(ctx, 404, `vCon with UUID ${uuid} not found`);
       }
       throw error;
+    }
+  });
+
+  // ── Index-addressed child CRUD ───────────────────────────────────────────
+  // PATCH = replace (PUT semantics). DELETE for dialog/parties leaves an
+  // index-preserving placeholder (core-02 §4.1.8); DELETE for analysis/
+  // attachments hard-removes and compacts.
+
+  /** Validate :uuid and :index; return the parsed index or null (after sending the error). */
+  const parseUuidIndex = (ctx: Context): { uuid: string; index: number } | null => {
+    const { uuid } = ctx.params;
+    const uuidCheck = validateUUID(uuid);
+    if (!uuidCheck.valid) { sendError(ctx, 400, uuidCheck.errors[0]); return null; }
+    const index = Number(ctx.params.index);
+    if (!Number.isInteger(index) || index < 0) {
+      sendError(ctx, 400, 'index must be a non-negative integer');
+      return null;
+    }
+    return { uuid, index };
+  };
+
+  /** Map an error from an index-addressed child op to an HTTP response. */
+  const sendChildError = (ctx: Context, error: any, kind: string): void => {
+    if (error?.name === 'ZodError') {
+      sendError(ctx, 400, `Invalid ${kind}: ${error.errors?.map((e: any) => e.message).join('; ')}`);
+      return;
+    }
+    if (error instanceof ChildIndexError || (error instanceof Error && error.message.includes('not found'))) {
+      sendError(ctx, 404, error.message);
+      return;
+    }
+    throw error;
+  };
+
+  // Dialog
+  router.patch('/vcons/:uuid/dialog/:index', async (ctx: Context) => {
+    const loc = parseUuidIndex(ctx);
+    if (!loc) return;
+    try {
+      const dialog = DialogSchema.parse(ctx.request.body) as Dialog;
+      await apiContext.queries.updateDialog(loc.uuid, loc.index, dialog);
+      sendSuccess(ctx, { message: `Replaced dialog ${loc.index} in vCon ${loc.uuid}`, dialog });
+    } catch (error) {
+      sendChildError(ctx, error, 'dialog');
+    }
+  });
+
+  router.delete('/vcons/:uuid/dialog/:index', async (ctx: Context) => {
+    const loc = parseUuidIndex(ctx);
+    if (!loc) return;
+    try {
+      await apiContext.queries.removeDialog(loc.uuid, loc.index);
+      sendSuccess(ctx, { message: `Removed dialog ${loc.index} from vCon ${loc.uuid} (placeholder kept; index preserved)` });
+    } catch (error) {
+      sendChildError(ctx, error, 'dialog');
+    }
+  });
+
+  // Analysis
+  router.patch('/vcons/:uuid/analysis/:index', async (ctx: Context) => {
+    const loc = parseUuidIndex(ctx);
+    if (!loc) return;
+    const body = ctx.request.body as any;
+    if (body && typeof body === 'object' && !body.vendor) {
+      return sendError(ctx, 400, 'Analysis vendor is REQUIRED per IETF spec Section 4.5.5');
+    }
+    try {
+      const analysis = AnalysisSchema.parse(body) as Analysis;
+      await apiContext.queries.updateAnalysis(loc.uuid, loc.index, analysis);
+      sendSuccess(ctx, { message: `Replaced analysis ${loc.index} in vCon ${loc.uuid}`, analysis });
+    } catch (error) {
+      sendChildError(ctx, error, 'analysis');
+    }
+  });
+
+  router.delete('/vcons/:uuid/analysis/:index', async (ctx: Context) => {
+    const loc = parseUuidIndex(ctx);
+    if (!loc) return;
+    try {
+      await apiContext.queries.removeAnalysis(loc.uuid, loc.index);
+      sendSuccess(ctx, { message: `Removed analysis ${loc.index} from vCon ${loc.uuid} (compacted)` });
+    } catch (error) {
+      sendChildError(ctx, error, 'analysis');
+    }
+  });
+
+  // Attachments
+  router.patch('/vcons/:uuid/attachments/:index', async (ctx: Context) => {
+    const loc = parseUuidIndex(ctx);
+    if (!loc) return;
+    try {
+      const attachment = AttachmentSchema.parse(ctx.request.body) as Attachment;
+      await apiContext.queries.updateAttachment(loc.uuid, loc.index, attachment);
+      sendSuccess(ctx, { message: `Replaced attachment ${loc.index} in vCon ${loc.uuid}`, attachment });
+    } catch (error) {
+      sendChildError(ctx, error, 'attachment');
+    }
+  });
+
+  router.delete('/vcons/:uuid/attachments/:index', async (ctx: Context) => {
+    const loc = parseUuidIndex(ctx);
+    if (!loc) return;
+    try {
+      await apiContext.queries.removeAttachment(loc.uuid, loc.index);
+      sendSuccess(ctx, { message: `Removed attachment ${loc.index} from vCon ${loc.uuid} (compacted)` });
+    } catch (error) {
+      sendChildError(ctx, error, 'attachment');
+    }
+  });
+
+  // Parties
+  router.post('/vcons/:uuid/parties', async (ctx: Context) => {
+    const { uuid } = ctx.params;
+    const uuidCheck = validateUUID(uuid);
+    if (!uuidCheck.valid) return sendError(ctx, 400, uuidCheck.errors[0]);
+    try {
+      const party = PartySchema.parse(ctx.request.body) as Party;
+      const { index } = await apiContext.queries.addParty(uuid, party);
+      sendCreated(ctx, { message: `Added party at index ${index} to vCon ${uuid}`, index, party });
+    } catch (error) {
+      sendChildError(ctx, error, 'party');
+    }
+  });
+
+  router.patch('/vcons/:uuid/parties/:index', async (ctx: Context) => {
+    const loc = parseUuidIndex(ctx);
+    if (!loc) return;
+    try {
+      const party = PartySchema.parse(ctx.request.body) as Party;
+      await apiContext.queries.updateParty(loc.uuid, loc.index, party);
+      sendSuccess(ctx, { message: `Replaced party ${loc.index} in vCon ${loc.uuid}`, party });
+    } catch (error) {
+      sendChildError(ctx, error, 'party');
+    }
+  });
+
+  router.delete('/vcons/:uuid/parties/:index', async (ctx: Context) => {
+    const loc = parseUuidIndex(ctx);
+    if (!loc) return;
+    const anonymize = ctx.query.anonymize === 'true' || ctx.query.anonymize === '1';
+    try {
+      await apiContext.queries.removeParty(loc.uuid, loc.index, { anonymize });
+      sendSuccess(ctx, { message: `Removed party ${loc.index} from vCon ${loc.uuid} (${anonymize ? 'anonymized' : 'empty'} placeholder kept; index preserved)` });
+    } catch (error) {
+      sendChildError(ctx, error, 'party');
     }
   });
 

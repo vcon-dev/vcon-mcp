@@ -15,7 +15,7 @@ import { extractTenantFromVCon, getTenantConfig } from '../config/tenant-config.
 import { ATTR_CACHE_HIT, ATTR_DB_OPERATION, ATTR_SEARCH_RESULTS_COUNT, ATTR_SEARCH_THRESHOLD, ATTR_SEARCH_TYPE, ATTR_VCON_UUID } from '../observability/attributes.js';
 import { logWithContext, recordCounter, withSpan } from '../observability/instrumentation.js';
 import { createLogger } from '../observability/logger.js';
-import { Analysis, Attachment, Dialog, VCon } from '../types/vcon.js';
+import { Analysis, Attachment, Dialog, Party, VCon } from '../types/vcon.js';
 import {
   VCON_SHAPE_GRAPH_SCHEMA_VERSION,
   type VconShapeGraphEdge,
@@ -23,11 +23,29 @@ import {
   type VconShapeGraphPayload,
 } from '../types/vcon-shape-graph.js';
 import { deserializeBody, serializeBody } from '../utils/body-serialization.js';
-import { batchSaveVCon } from './batch-writer.js';
+import { ChildIndexError } from '../utils/vcon-children.js';
+import {
+  batchSaveVCon,
+  buildAnalysisRow,
+  buildAttachmentRow,
+  buildDialogRow,
+  buildPartyRow,
+} from './batch-writer.js';
 
 const logger = createLogger('queries');
 
 import { DistinctValuesResult, IVConQueries } from './interfaces.js';
+
+/**
+ * Replace undefined values with null so a supabase-js UPDATE clears omitted
+ * columns (PUT semantics) instead of leaving their previous values. undefined
+ * keys are dropped from the request body by supabase-js and would not be touched.
+ */
+function nullifyUndefined<T extends Record<string, unknown>>(obj: T): T {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) out[k] = v === undefined ? null : v;
+  return out as T;
+}
 
 export class SupabaseVConQueries implements IVConQueries {
   private redis: Redis | null = null;
@@ -473,6 +491,243 @@ export class SupabaseVConQueries implements IVConQueries {
       });
 
     if (attachmentError) throw attachmentError;
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Index-addressed child CRUD (update / remove / add party).
+  //
+  // Update = REPLACE (PUT): the supplied object fully replaces the child at the
+  // index, so omitted fields are cleared. supabase-js OMITS undefined keys from
+  // an UPDATE (they would retain their old values), so update payloads run
+  // through `nullifyUndefined` to force omitted columns to NULL.
+  //
+  // Remove follows draft-ietf-vcon-vcon-core-02 §4.1.8: parties and dialog leave
+  // an index-preserving placeholder (positional references must not shift);
+  // analysis and attachments are referential leaves, so they are hard-deleted
+  // and the table compacted. The placeholder/compact rules live in
+  // src/utils/vcon-children.ts and are unit-tested there; here we apply the
+  // equivalent column writes. Each method invalidates the Redis cache.
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /** Resolve the internal vcons.id (used as child vcon_id), mirroring addDialog/addAnalysis. */
+  private async resolveVConId(vconUuid: string): Promise<string> {
+    const { data, error } = await this.supabase
+      .from('vcons')
+      .select('id')
+      .eq('uuid', vconUuid)
+      .single();
+    if (error) throw error;
+    return data.id;
+  }
+
+  /** Delete + reinsert-shifted to keep a child table contiguous after removing one index. */
+  private async compactChildTable(
+    table: 'analysis' | 'attachments',
+    indexCol: 'analysis_index' | 'attachment_index',
+    vconId: string,
+    index: number
+  ): Promise<void> {
+    const { data: rows, error } = await this.supabase
+      .from(table)
+      .select('*')
+      .eq('vcon_id', vconId)
+      .gte(indexCol, index)
+      .order(indexCol, { ascending: true });
+    if (error) throw error;
+    if (!rows || !rows.some((r: any) => r[indexCol] === index)) {
+      throw new ChildIndexError(`${table} index ${index} not found`);
+    }
+    // Delete the target and its entire trailing run, then reinsert the trailing
+    // rows shifted down by one. Emptying the whole >= index range first means no
+    // transient UNIQUE(vcon_id, *_index) collision on reinsert.
+    const { error: delErr } = await this.supabase
+      .from(table)
+      .delete()
+      .eq('vcon_id', vconId)
+      .gte(indexCol, index);
+    if (delErr) throw delErr;
+    const shifted = rows
+      .filter((r: any) => r[indexCol] > index)
+      .map((r: any) => ({ ...r, [indexCol]: r[indexCol] - 1 }));
+    if (shifted.length > 0) {
+      const { error: insErr } = await this.supabase.from(table).insert(shifted);
+      if (insErr) throw insErr;
+    }
+  }
+
+  /**
+   * Add a single party to a vCon, appended at the next index.
+   */
+  async addParty(vconUuid: string, party: Party, knownIndex?: number): Promise<{ index: number }> {
+    const vconId = await this.resolveVConId(vconUuid);
+    let nextIndex: number;
+    if (knownIndex !== undefined) {
+      nextIndex = knownIndex;
+    } else {
+      const { data: existing, error: selErr } = await this.supabase
+        .from('parties')
+        .select('party_index')
+        .eq('vcon_id', vconId)
+        .order('party_index', { ascending: false })
+        .limit(1);
+      if (selErr) throw selErr;  // else a failed SELECT silently falls back to index 0 → UNIQUE collision
+      nextIndex = existing && existing.length > 0 ? existing[0].party_index + 1 : 0;
+    }
+    const { error } = await this.supabase.from('parties').insert(buildPartyRow(vconId, party, nextIndex));
+    if (error) throw error;
+    await this.invalidateCachedVCon(vconUuid);
+    return { index: nextIndex };
+  }
+
+  /**
+   * Replace the party at `index` (PUT). Omitted fields are cleared.
+   */
+  async updateParty(vconUuid: string, index: number, party: Party): Promise<void> {
+    const vconId = await this.resolveVConId(vconUuid);
+    const { vcon_id: _v, party_index: _i, ...cols } = buildPartyRow(vconId, party, index);
+    const { data, error } = await this.supabase
+      .from('parties')
+      .update(nullifyUndefined(cols))
+      .eq('vcon_id', vconId)
+      .eq('party_index', index)
+      .select('id');
+    if (error) throw error;
+    if (!data || data.length === 0) throw new ChildIndexError(`party index ${index} not found`);
+    await this.invalidateCachedVCon(vconUuid);
+  }
+
+  /**
+   * Remove the party at `index` by replacing it with an index-preserving empty
+   * placeholder Party Object ({} or {name:"anonymous"}). Does NOT renumber.
+   */
+  async removeParty(vconUuid: string, index: number, options: { anonymize?: boolean } = {}): Promise<void> {
+    const vconId = await this.resolveVConId(vconUuid);
+    const placeholder = {
+      tel: null, sip: null, stir: null, mailto: null,
+      name: options.anonymize ? 'anonymous' : null,
+      did: null, uuid: null, validation: null, jcard: null,
+      gmlpos: null, civicaddress: null, timezone: null,
+    };
+    const { data, error } = await this.supabase
+      .from('parties')
+      .update(placeholder)
+      .eq('vcon_id', vconId)
+      .eq('party_index', index)
+      .select('id');
+    if (error) throw error;
+    if (!data || data.length === 0) throw new ChildIndexError(`party index ${index} not found`);
+    await this.invalidateCachedVCon(vconUuid);
+  }
+
+  /**
+   * Replace the dialog at `index` (PUT). Rewrites party_history for that dialog.
+   */
+  async updateDialog(vconUuid: string, index: number, dialog: Dialog): Promise<void> {
+    const vconId = await this.resolveVConId(vconUuid);
+    const { vcon_id: _v, dialog_index: _i, ...cols } = buildDialogRow(vconId, dialog, index);
+    const { data, error } = await this.supabase
+      .from('dialog')
+      .update(nullifyUndefined(cols))
+      .eq('vcon_id', vconId)
+      .eq('dialog_index', index)
+      .select('id');
+    if (error) throw error;
+    if (!data || data.length === 0) throw new ChildIndexError(`dialog index ${index} not found`);
+    await this.replacePartyHistory(data[0].id, dialog.party_history);
+    await this.invalidateCachedVCon(vconUuid);
+  }
+
+  /**
+   * Remove the dialog at `index` by replacing it with a content-stripped
+   * placeholder that keeps `type` (index preserved; party_history cleared).
+   */
+  async removeDialog(vconUuid: string, index: number): Promise<void> {
+    const vconId = await this.resolveVConId(vconUuid);
+    const { data: existing, error: selErr } = await this.supabase
+      .from('dialog')
+      .select('id, type')
+      .eq('vcon_id', vconId)
+      .eq('dialog_index', index)
+      .maybeSingle();
+    if (selErr) throw selErr;
+    if (!existing) throw new ChildIndexError(`dialog index ${index} not found`);
+    const placeholder = {
+      type: existing.type,
+      start_time: null, duration_seconds: null, parties: null, originator: null,
+      mediatype: null, filename: null, body: null, encoding: null, url: null,
+      content_hash: null, disposition: null, session_id: null, application: null, message_id: null,
+    };
+    const { error } = await this.supabase
+      .from('dialog')
+      .update(placeholder)
+      .eq('vcon_id', vconId)
+      .eq('dialog_index', index);
+    if (error) throw error;
+    await this.replacePartyHistory(existing.id, undefined);
+    await this.invalidateCachedVCon(vconUuid);
+  }
+
+  /** Replace the party_history rows for a dialog row (delete-all then insert). */
+  private async replacePartyHistory(dialogId: string, history: Dialog['party_history']): Promise<void> {
+    const { error: delErr } = await this.supabase.from('party_history').delete().eq('dialog_id', dialogId);
+    if (delErr) throw delErr;
+    if (history && history.length > 0) {
+      const rows = history.map(h => ({ dialog_id: dialogId, party_index: h.party, time: h.time, event: h.event }));
+      const { error } = await this.supabase.from('party_history').insert(rows);
+      if (error) throw error;
+    }
+  }
+
+  /**
+   * Replace the analysis at `index` (PUT). Omitted fields are cleared.
+   */
+  async updateAnalysis(vconUuid: string, index: number, analysis: Analysis): Promise<void> {
+    const vconId = await this.resolveVConId(vconUuid);
+    const { vcon_id: _v, analysis_index: _i, ...cols } = buildAnalysisRow(vconId, analysis, index);
+    const { data, error } = await this.supabase
+      .from('analysis')
+      .update(nullifyUndefined(cols))
+      .eq('vcon_id', vconId)
+      .eq('analysis_index', index)
+      .select('id');
+    if (error) throw error;
+    if (!data || data.length === 0) throw new ChildIndexError(`analysis index ${index} not found`);
+    await this.invalidateCachedVCon(vconUuid);
+  }
+
+  /**
+   * Remove the analysis at `index` (hard delete + compact; analysis is a leaf).
+   */
+  async removeAnalysis(vconUuid: string, index: number): Promise<void> {
+    const vconId = await this.resolveVConId(vconUuid);
+    await this.compactChildTable('analysis', 'analysis_index', vconId, index);
+    await this.invalidateCachedVCon(vconUuid);
+  }
+
+  /**
+   * Replace the attachment at `index` (PUT). Omitted fields are cleared.
+   */
+  async updateAttachment(vconUuid: string, index: number, attachment: Attachment): Promise<void> {
+    const vconId = await this.resolveVConId(vconUuid);
+    const { vcon_id: _v, attachment_index: _i, ...cols } = buildAttachmentRow(vconId, attachment, index);
+    const { data, error } = await this.supabase
+      .from('attachments')
+      .update(nullifyUndefined(cols))
+      .eq('vcon_id', vconId)
+      .eq('attachment_index', index)
+      .select('id');
+    if (error) throw error;
+    if (!data || data.length === 0) throw new ChildIndexError(`attachment index ${index} not found`);
+    await this.invalidateCachedVCon(vconUuid);
+  }
+
+  /**
+   * Remove the attachment at `index` (hard delete + compact; attachment is a leaf).
+   */
+  async removeAttachment(vconUuid: string, index: number): Promise<void> {
+    const vconId = await this.resolveVConId(vconUuid);
+    await this.compactChildTable('attachments', 'attachment_index', vconId, index);
+    await this.invalidateCachedVCon(vconUuid);
   }
 
   /**

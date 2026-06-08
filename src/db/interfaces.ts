@@ -5,7 +5,7 @@
  * (Supabase/PostgreSQL and MongoDB)
  */
 
-import { Analysis, Attachment, Dialog, VCon } from '../types/vcon.js';
+import { Analysis, Attachment, Dialog, Party, VCon } from '../types/vcon.js';
 import type { VconShapeGraphPayload } from '../types/vcon-shape-graph.js';
 
 export interface SearchResult {
@@ -65,6 +65,38 @@ export interface IVConQueries {
      * Add attachment to a vCon
      */
     addAttachment(vconUuid: string, attachment: Attachment): Promise<void>;
+
+    // ── Index-addressed child CRUD ──────────────────────────────────────────
+    // update = REPLACE (PUT). Removal of parties/dialog leaves an
+    // index-preserving placeholder (core-02 §4.1.8); analysis/attachments are
+    // referential leaves and are hard-deleted + compacted.
+
+    /** Append a single party; resolves with its new index. */
+    addParty(vconUuid: string, party: Party): Promise<{ index: number }>;
+
+    /** Replace the party at `index` (omitted fields cleared). */
+    updateParty(vconUuid: string, index: number, party: Party): Promise<void>;
+
+    /** Remove the party at `index` via empty/anonymized placeholder (no renumber). */
+    removeParty(vconUuid: string, index: number, options?: { anonymize?: boolean }): Promise<void>;
+
+    /** Replace the dialog at `index` (omitted fields cleared; party_history rewritten). */
+    updateDialog(vconUuid: string, index: number, dialog: Dialog): Promise<void>;
+
+    /** Remove the dialog at `index` via content-stripped placeholder keeping `type` (no renumber). */
+    removeDialog(vconUuid: string, index: number): Promise<void>;
+
+    /** Replace the analysis at `index` (omitted fields cleared). */
+    updateAnalysis(vconUuid: string, index: number, analysis: Analysis): Promise<void>;
+
+    /** Remove the analysis at `index` (hard delete + compact). */
+    removeAnalysis(vconUuid: string, index: number): Promise<void>;
+
+    /** Replace the attachment at `index` (omitted fields cleared). */
+    updateAttachment(vconUuid: string, index: number, attachment: Attachment): Promise<void>;
+
+    /** Remove the attachment at `index` (hard delete + compact). */
+    removeAttachment(vconUuid: string, index: number): Promise<void>;
 
     /**
      * Keyword search

@@ -34,6 +34,16 @@ describe('Handler Registry Initialization', () => {
     expect(registry.has('add_analysis')).toBe(true);
     expect(registry.has('add_dialog')).toBe(true);
     expect(registry.has('add_attachment')).toBe(true);
+    // Index-addressed child CRUD
+    expect(registry.has('update_dialog')).toBe(true);
+    expect(registry.has('remove_dialog')).toBe(true);
+    expect(registry.has('update_analysis')).toBe(true);
+    expect(registry.has('remove_analysis')).toBe(true);
+    expect(registry.has('update_attachment')).toBe(true);
+    expect(registry.has('remove_attachment')).toBe(true);
+    expect(registry.has('add_party')).toBe(true);
+    expect(registry.has('update_party')).toBe(true);
+    expect(registry.has('remove_party')).toBe(true);
   });
 
   it('should register all search handlers', () => {
@@ -98,15 +108,15 @@ describe('Handler Registry Initialization', () => {
 
     // Count expected handlers:
     // Schema: 2
-    // CRUD: 8
+    // CRUD: 17 (8 original + 9 index-addressed child CRUD)
     // Search: 4
     // Contract: 7
     // Tags: 5
     // Database: 3
     // Analytics: 6
     // Size: 2
-    // Total: 37
-    expect(toolNames.length).toBe(37);
+    // Total: 46
+    expect(toolNames.length).toBe(46);
   });
 
   it('should allow retrieving handlers by name', () => {

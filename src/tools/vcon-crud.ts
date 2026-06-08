@@ -60,6 +60,19 @@ export const DialogSchema = z.object({
   session_id: z.string().optional().describe('Session identifier'),  // ✅ New field
   application: z.string().optional().describe('Application that created this dialog'),  // ✅ New field
   message_id: z.string().optional().describe('Message identifier'),  // ✅ New field
+  // party_history must be in the schema or update_dialog would strip it and always clear existing history.
+  party_history: z.array(z.object({
+    party: z.number(),
+    time: z.string(),
+    event: z.enum(['join', 'drop', 'hold', 'unhold', 'mute', 'unmute']),
+  })).optional().describe('Party join/drop/hold/mute events'),
+  // Transfer-specific (type='transfer')
+  transferee: z.number().optional(),
+  transferor: z.number().optional(),
+  transfer_target: z.union([z.number(), z.array(z.number())]).optional(),
+  original: z.union([z.number(), z.array(z.number())]).optional(),
+  consultation: z.union([z.number(), z.array(z.number())]).optional(),
+  target_dialog: z.union([z.number(), z.array(z.number())]).optional(),
 });
 
 /**
@@ -75,6 +88,11 @@ export const PartySchema = z.object({
   did: z.string().optional(),
   uuid: z.string().uuid().optional().describe('Unique identifier for this party'),  // ✅ Added
   validation: z.string().optional(),
+  // Full core-02 Party object: these are persisted by the DB layer, so the schema
+  // must include them or .parse() would strip them before they reach the query.
+  jcard: z.record(z.unknown()).optional().describe('jCard object (RFC 7095)'),
+  gmlpos: z.string().optional().describe('GML position'),
+  civicaddress: z.record(z.unknown()).optional().describe('Civic address object'),
   timezone: z.string().optional(),
 });
 
@@ -102,14 +120,126 @@ export const AttachmentSchema = z.object({
 
 import type { ToolCategory } from '../config/tools.js';
 
+// ───────────────────────────────────────────────────────────────────────────
+// Shared child property shapes, reused by create_vcon and the index-addressed
+// update/add tools. (The legacy add_* tools keep their own inline copies.)
+// ───────────────────────────────────────────────────────────────────────────
+
+const UUID_PROP = {
+  type: 'string' as const,
+  description: 'UUID of the vCon',
+  pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+};
+
+const INDEX_PROP = {
+  type: 'integer' as const,
+  minimum: 0,
+  description: 'Zero-based index of the child element to address',
+};
+
+// Reusable index-shaped fragments (positional array indexes are non-negative integers).
+const PARTY_INDEX = { type: 'integer', minimum: 0 } as const;
+const INDEX_OR_LIST = {
+  oneOf: [{ type: 'integer', minimum: 0 }, { type: 'array', items: { type: 'integer', minimum: 0 } }],
+} as const;
+const PARTY_HISTORY_PROP = {
+  type: 'array',
+  description: 'Party join/drop/hold/mute events',
+  items: {
+    type: 'object',
+    properties: {
+      party: { type: 'integer', minimum: 0 },
+      time: { type: 'string', description: 'ISO 8601 datetime' },
+      event: { type: 'string', enum: ['join', 'drop', 'hold', 'unhold', 'mute', 'unmute'] },
+    },
+    required: ['party', 'time', 'event'],
+  },
+} as const;
+
+const partyProperties = {
+  name: { type: 'string', description: 'Display name of the party' },
+  tel: { type: 'string', description: 'Telephone number' },
+  mailto: { type: 'string', description: 'Email address' },
+  sip: { type: 'string', description: 'SIP URI' },
+  stir: { type: 'string', description: 'STIR identity' },
+  did: { type: 'string', description: 'Decentralized identifier' },
+  uuid: { type: 'string', description: 'UUID for cross-vCon party tracking' },
+  validation: { type: 'string' },
+  jcard: { type: 'object', description: 'jCard object (RFC 7095)', additionalProperties: true },
+  gmlpos: { type: 'string', description: 'GML position' },
+  civicaddress: { type: 'object', description: 'Civic address object', additionalProperties: true },
+  timezone: { type: 'string' },
+} as const;
+
+const dialogProperties = {
+  type: { type: 'string', enum: ['recording', 'text', 'transfer', 'incomplete'], description: 'Type of dialog' },
+  start: { type: 'string', description: 'Start time (ISO 8601 datetime)' },
+  duration: { type: 'number', description: 'Duration in seconds' },
+  parties: {
+    oneOf: [
+      { type: 'integer', minimum: 0 },
+      { type: 'array', items: { oneOf: [{ type: 'integer', minimum: 0 }, { type: 'array', items: { type: 'integer', minimum: 0 } }] } },
+    ],
+    description: 'Party index, list of indexes, or nested groupings',
+  },
+  originator: { ...PARTY_INDEX, description: 'Originating party index' },
+  body: { type: 'string', description: 'Dialog content' },
+  encoding: { type: 'string', enum: ['base64url', 'json', 'none'] },
+  mediatype: { type: 'string', description: 'MIME type of the content' },
+  filename: { type: 'string' },
+  url: { type: 'string', description: 'URL to external content' },
+  content_hash: { oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] },
+  disposition: { type: 'string' },
+  session_id: { type: 'string' },
+  application: { type: 'string' },
+  message_id: { type: 'string' },
+  party_history: PARTY_HISTORY_PROP,
+  // Transfer-specific (type='transfer')
+  transferee: PARTY_INDEX,
+  transferor: PARTY_INDEX,
+  transfer_target: INDEX_OR_LIST,
+  original: INDEX_OR_LIST,
+  consultation: INDEX_OR_LIST,
+  target_dialog: INDEX_OR_LIST,
+} as const;
+
+const analysisProperties = {
+  type: { type: 'string', description: 'Type of analysis (e.g., summary, transcript, sentiment)' },
+  dialog: { ...INDEX_OR_LIST, description: 'Dialog index(es) this analysis applies to' },
+  vendor: { type: 'string', description: 'REQUIRED: Vendor who produced this analysis' },
+  product: { type: 'string' },
+  schema: { type: 'string', description: 'Schema identifier for this analysis format' },
+  body: { type: 'string', description: 'Analysis content as string' },
+  encoding: { type: 'string', enum: ['base64url', 'json', 'none'] },
+  mediatype: { type: 'string' },
+  filename: { type: 'string' },
+  url: { type: 'string' },
+  content_hash: { oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] },
+} as const;
+
+const attachmentProperties = {
+  purpose: { type: 'string', description: 'Canonical spec field for attachment classification' },
+  type: { type: 'string', description: 'Legacy compatibility field; prefer purpose' },
+  party: { ...PARTY_INDEX, description: 'Party index this attachment relates to' },
+  dialog: { ...PARTY_INDEX, description: 'Dialog index this attachment relates to' },
+  start: { type: 'string' },
+  mediatype: { type: 'string' },
+  filename: { type: 'string' },
+  body: { type: 'string', description: 'Attachment content' },
+  encoding: { type: 'string', enum: ['base64url', 'json', 'none'] },
+  url: { type: 'string' },
+  content_hash: { oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] },
+} as const;
+
 /**
  * Tool: Create vCon
  */
 export const createVConTool = {
   name: 'create_vcon',
   category: 'write' as ToolCategory,
-  description: 'Create a new vCon compliant with IETF draft-ietf-vcon-vcon-core-00. ' +
-    'A vCon (virtual conversation) captures conversation data including parties, dialog, analysis, and attachments.',
+  description: 'Create a new vCon compliant with IETF draft-ietf-vcon-vcon-core-02. ' +
+    'A vCon (virtual conversation) captures conversation data including parties, dialog, analysis, and attachments. ' +
+    'Dialog, analysis, and attachments may be supplied inline at creation, or added later with the add_* tools.',
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -120,26 +250,37 @@ export const createVConTool = {
       parties: {
         type: 'array',
         description: 'Array of parties (participants) in the conversation. At least one party is required.',
-        items: {
-          type: 'object',
-          properties: {
-            name: { type: 'string', description: 'Display name of the party' },
-            tel: { type: 'string', description: 'Telephone number' },
-            mailto: { type: 'string', description: 'Email address' },
-            sip: { type: 'string', description: 'SIP URI' },
-            uuid: { type: 'string', description: 'UUID for cross-vCon party tracking' },
-          }
-        },
+        items: { type: 'object', properties: partyProperties },
         minItems: 1
+      },
+      dialog: {
+        type: 'array',
+        description: 'Optional conversation segments to create inline.',
+        items: { type: 'object', properties: dialogProperties, required: ['type'] }
+      },
+      analysis: {
+        type: 'array',
+        description: 'Optional analysis records to create inline (vendor REQUIRED per spec).',
+        items: { type: 'object', properties: analysisProperties, required: ['type', 'vendor'] }
+      },
+      attachments: {
+        type: 'array',
+        description: 'Optional attachments to create inline.',
+        items: { type: 'object', properties: attachmentProperties }
       },
       extensions: {
         type: 'array',
         description: 'Array of extension identifiers used in this vCon',
         items: { type: 'string' }
       },
+      critical: {
+        type: 'array',
+        description: 'Extensions that MUST be supported to process this vCon (spec v0.4.0; was must_support).',
+        items: { type: 'string' }
+      },
       must_support: {
         type: 'array',
-        description: 'Array of extensions that must be supported to process this vCon',
+        description: 'Deprecated alias for critical (pre-0.4.0 name); mapped to critical if critical is absent.',
         items: { type: 'string' }
       }
     },
@@ -654,6 +795,130 @@ export const updateVConTool = {
   }
 };
 
+// ── Index-addressed update / remove tools (category 'write') ─────────────────
+
+export const updateDialogTool = {
+  name: 'update_dialog',
+  category: 'write' as ToolCategory,
+  description: 'Replace the dialog at the given index (PUT semantics: omitted fields are cleared). Index is the dialog\'s position in the vCon\'s dialog array.',
+  inputSchema: {
+    type: 'object' as const,
+    properties: {
+      vcon_uuid: UUID_PROP,
+      index: INDEX_PROP,
+      dialog: { type: 'object', properties: dialogProperties, required: ['type'] },
+    },
+    required: ['vcon_uuid', 'index', 'dialog'],
+  },
+};
+
+export const removeDialogTool = {
+  name: 'remove_dialog',
+  category: 'write' as ToolCategory,
+  description: 'Remove the dialog at the given index. Per IETF core-02 §4.1.8 the slot is preserved as a content-stripped placeholder (keeps "type") so positional references in analysis/attachments do not shift.',
+  inputSchema: {
+    type: 'object' as const,
+    properties: { vcon_uuid: UUID_PROP, index: INDEX_PROP },
+    required: ['vcon_uuid', 'index'],
+  },
+};
+
+export const updateAnalysisTool = {
+  name: 'update_analysis',
+  category: 'write' as ToolCategory,
+  description: 'Replace the analysis at the given index (PUT semantics: omitted fields are cleared). vendor is REQUIRED per IETF spec.',
+  inputSchema: {
+    type: 'object' as const,
+    properties: {
+      vcon_uuid: UUID_PROP,
+      index: INDEX_PROP,
+      analysis: { type: 'object', properties: analysisProperties, required: ['type', 'vendor'] },
+    },
+    required: ['vcon_uuid', 'index', 'analysis'],
+  },
+};
+
+export const removeAnalysisTool = {
+  name: 'remove_analysis',
+  category: 'write' as ToolCategory,
+  description: 'Remove the analysis at the given index. Analysis is a referential leaf, so the element is hard-deleted and the remaining analyses are renumbered to stay contiguous.',
+  inputSchema: {
+    type: 'object' as const,
+    properties: { vcon_uuid: UUID_PROP, index: INDEX_PROP },
+    required: ['vcon_uuid', 'index'],
+  },
+};
+
+export const updateAttachmentTool = {
+  name: 'update_attachment',
+  category: 'write' as ToolCategory,
+  description: 'Replace the attachment at the given index (PUT semantics: omitted fields are cleared).',
+  inputSchema: {
+    type: 'object' as const,
+    properties: {
+      vcon_uuid: UUID_PROP,
+      index: INDEX_PROP,
+      attachment: { type: 'object', properties: attachmentProperties },
+    },
+    required: ['vcon_uuid', 'index', 'attachment'],
+  },
+};
+
+export const removeAttachmentTool = {
+  name: 'remove_attachment',
+  category: 'write' as ToolCategory,
+  description: 'Remove the attachment at the given index. Attachments are referential leaves, so the element is hard-deleted and the rest renumbered to stay contiguous. Note: removing a "tags" attachment clears the vCon\'s tags.',
+  inputSchema: {
+    type: 'object' as const,
+    properties: { vcon_uuid: UUID_PROP, index: INDEX_PROP },
+    required: ['vcon_uuid', 'index'],
+  },
+};
+
+export const addPartyTool = {
+  name: 'add_party',
+  category: 'write' as ToolCategory,
+  description: 'Append a party to an existing vCon. Returns the new party index.',
+  inputSchema: {
+    type: 'object' as const,
+    properties: {
+      vcon_uuid: UUID_PROP,
+      party: { type: 'object', properties: partyProperties },
+    },
+    required: ['vcon_uuid', 'party'],
+  },
+};
+
+export const updatePartyTool = {
+  name: 'update_party',
+  category: 'write' as ToolCategory,
+  description: 'Replace the party at the given index (PUT semantics: omitted fields are cleared).',
+  inputSchema: {
+    type: 'object' as const,
+    properties: {
+      vcon_uuid: UUID_PROP,
+      index: INDEX_PROP,
+      party: { type: 'object', properties: partyProperties },
+    },
+    required: ['vcon_uuid', 'index', 'party'],
+  },
+};
+
+export const removePartyTool = {
+  name: 'remove_party',
+  category: 'write' as ToolCategory,
+  description: 'Remove the party at the given index. Per IETF core-02 §4.1.8 the slot is preserved as an empty placeholder Party Object so positional references (dialog.parties, attachment.party, etc.) do not shift. Set anonymize=true to write {name:"anonymous"} instead of an empty object.',
+  inputSchema: {
+    type: 'object' as const,
+    properties: {
+      vcon_uuid: UUID_PROP,
+      index: INDEX_PROP,
+      anonymize: { type: 'boolean', description: 'Write {name:"anonymous"} instead of an empty placeholder', default: false },
+    },
+    required: ['vcon_uuid', 'index'],
+  },
+};
+
 // Export all tools as an array
 export const allTools = [
   createVConTool,
@@ -667,5 +932,15 @@ export const allTools = [
   addAttachmentTool,
   deleteVConTool,
   updateVConTool,
+  // Index-addressed child CRUD
+  updateDialogTool,
+  removeDialogTool,
+  updateAnalysisTool,
+  removeAnalysisTool,
+  updateAttachmentTool,
+  removeAttachmentTool,
+  addPartyTool,
+  updatePartyTool,
+  removePartyTool,
 ];
 

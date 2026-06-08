@@ -19,6 +19,15 @@ import {
   AddAnalysisHandler,
   AddDialogHandler,
   AddAttachmentHandler,
+  UpdateDialogHandler,
+  RemoveDialogHandler,
+  UpdateAnalysisHandler,
+  RemoveAnalysisHandler,
+  UpdateAttachmentHandler,
+  RemoveAttachmentHandler,
+  AddPartyHandler,
+  UpdatePartyHandler,
+  RemovePartyHandler,
 } from './vcon-crud.js';
 
 // Search handlers
@@ -91,6 +100,16 @@ export function createHandlerRegistry(): ToolHandlerRegistry {
   registry.register(new AddAnalysisHandler());
   registry.register(new AddDialogHandler());
   registry.register(new AddAttachmentHandler());
+  // Index-addressed child CRUD
+  registry.register(new UpdateDialogHandler());
+  registry.register(new RemoveDialogHandler());
+  registry.register(new UpdateAnalysisHandler());
+  registry.register(new RemoveAnalysisHandler());
+  registry.register(new UpdateAttachmentHandler());
+  registry.register(new RemoveAttachmentHandler());
+  registry.register(new AddPartyHandler());
+  registry.register(new UpdatePartyHandler());
+  registry.register(new RemovePartyHandler());
 
   // Register search handlers
   registry.register(new SearchVConsHandler());

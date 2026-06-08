@@ -159,6 +159,18 @@ export function requirePositiveInteger(value: any, paramName: string): number {
 }
 
 /**
+ * Validate that a parameter is a non-negative integer (0 is valid).
+ * Used for child array indices, where index 0 is the first element.
+ */
+export function requireNonNegativeInteger(value: any, paramName: string): number {
+  const num = typeof value === 'number' ? value : Number(value);
+  if (isNaN(num) || !Number.isInteger(num) || num < 0) {
+    throw new McpError(ErrorCode.InvalidParams, `${paramName} must be a non-negative integer`);
+  }
+  return num;
+}
+
+/**
  * Validate that a parameter is a number within a range
  */
 export function requireNumberInRange(

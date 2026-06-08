@@ -3,7 +3,18 @@
  */
 
 import { Db, ObjectId } from 'mongodb';
-import { Analysis, Attachment, Dialog, VCon } from '../types/vcon.js';
+import { Analysis, Attachment, Dialog, Party, VCon } from '../types/vcon.js';
+import {
+    appendParty,
+    removeAnalysisAt,
+    removeAttachmentAt,
+    removeDialogAt,
+    removePartyAt,
+    replaceAnalysisAt,
+    replaceAttachmentAt,
+    replaceDialogAt,
+    replacePartyAt,
+} from '../utils/vcon-children.js';
 import {
     VCON_SHAPE_GRAPH_SCHEMA_VERSION,
     type VconShapeGraphNode,
@@ -150,6 +161,91 @@ export class MongoVConQueries implements IVConQueries {
             if (result.matchedCount === 0) {
                 throw new Error(`vCon not found: ${vconUuid}`);
             }
+        });
+    }
+
+    // ── Index-addressed child CRUD ──────────────────────────────────────────
+    // The vCon is stored as one document, so each op loads it, applies the
+    // shared pure helper (src/utils/vcon-children.ts) — which also enforces the
+    // bounds guard (mandatory: a positional $set past the end would silently
+    // grow the array) — and writes back the single touched array. This keeps the
+    // placeholder/compact semantics byte-identical to the helper's unit tests.
+
+    private async loadVConDoc(uuid: string): Promise<VCon> {
+        const collection = this.db.collection(this.VCONS_COLLECTION);
+        const doc = await collection.findOne({ uuid });
+        if (!doc) throw new Error(`vCon not found: ${uuid}`);
+        const { _id, ...rest } = doc;
+        return rest as unknown as VCon;
+    }
+
+    private async setArray(uuid: string, key: 'parties' | 'dialog' | 'analysis' | 'attachments', value: unknown): Promise<void> {
+        const collection = this.db.collection(this.VCONS_COLLECTION);
+        await collection.updateOne({ uuid }, { $set: { [key]: value } as any });
+    }
+
+    async addParty(vconUuid: string, party: Party): Promise<{ index: number }> {
+        return withSpan('mongo.addParty', async () => {
+            const vcon = await this.loadVConDoc(vconUuid);
+            const { vcon: next, index } = appendParty(vcon, party);
+            await this.setArray(vconUuid, 'parties', next.parties);
+            return { index };
+        });
+    }
+
+    async updateParty(vconUuid: string, index: number, party: Party): Promise<void> {
+        return withSpan('mongo.updateParty', async () => {
+            const next = replacePartyAt(await this.loadVConDoc(vconUuid), index, party);
+            await this.setArray(vconUuid, 'parties', next.parties);
+        });
+    }
+
+    async removeParty(vconUuid: string, index: number, options: { anonymize?: boolean } = {}): Promise<void> {
+        return withSpan('mongo.removeParty', async () => {
+            const next = removePartyAt(await this.loadVConDoc(vconUuid), index, options);
+            await this.setArray(vconUuid, 'parties', next.parties);
+        });
+    }
+
+    async updateDialog(vconUuid: string, index: number, dialog: Dialog): Promise<void> {
+        return withSpan('mongo.updateDialog', async () => {
+            const next = replaceDialogAt(await this.loadVConDoc(vconUuid), index, dialog);
+            await this.setArray(vconUuid, 'dialog', next.dialog);
+        });
+    }
+
+    async removeDialog(vconUuid: string, index: number): Promise<void> {
+        return withSpan('mongo.removeDialog', async () => {
+            const next = removeDialogAt(await this.loadVConDoc(vconUuid), index);
+            await this.setArray(vconUuid, 'dialog', next.dialog);
+        });
+    }
+
+    async updateAnalysis(vconUuid: string, index: number, analysis: Analysis): Promise<void> {
+        return withSpan('mongo.updateAnalysis', async () => {
+            const next = replaceAnalysisAt(await this.loadVConDoc(vconUuid), index, analysis);
+            await this.setArray(vconUuid, 'analysis', next.analysis);
+        });
+    }
+
+    async removeAnalysis(vconUuid: string, index: number): Promise<void> {
+        return withSpan('mongo.removeAnalysis', async () => {
+            const next = removeAnalysisAt(await this.loadVConDoc(vconUuid), index);
+            await this.setArray(vconUuid, 'analysis', next.analysis);
+        });
+    }
+
+    async updateAttachment(vconUuid: string, index: number, attachment: Attachment): Promise<void> {
+        return withSpan('mongo.updateAttachment', async () => {
+            const next = replaceAttachmentAt(await this.loadVConDoc(vconUuid), index, attachment);
+            await this.setArray(vconUuid, 'attachments', next.attachments);
+        });
+    }
+
+    async removeAttachment(vconUuid: string, index: number): Promise<void> {
+        return withSpan('mongo.removeAttachment', async () => {
+            const next = removeAttachmentAt(await this.loadVConDoc(vconUuid), index);
+            await this.setArray(vconUuid, 'attachments', next.attachments);
         });
     }
 

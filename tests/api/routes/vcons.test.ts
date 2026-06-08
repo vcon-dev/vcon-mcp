@@ -398,4 +398,109 @@ describe('vCon CRUD Routes', () => {
       expect(ctx.mocks.queries.addAttachment).toHaveBeenCalledOnce();
     });
   });
+
+  // ── Index-addressed child CRUD ──────────────────────────────────────────
+
+  describe('PATCH/DELETE /vcons/:uuid/dialog/:index', () => {
+    const uuid = '11111111-1111-1111-1111-111111111111';
+
+    it('PATCH replaces the dialog at the index', async () => {
+      const res = await request(ctx.app.callback())
+        .patch(`${BASE}/vcons/${uuid}/dialog/1`)
+        .send({ type: 'text', body: 'hi' })
+        .expect(200);
+      expect(res.body.success).toBe(true);
+      expect(ctx.mocks.queries.updateDialog).toHaveBeenCalledWith(uuid, 1, expect.objectContaining({ type: 'text' }));
+    });
+
+    it('DELETE removes the dialog at the index', async () => {
+      await request(ctx.app.callback()).delete(`${BASE}/vcons/${uuid}/dialog/0`).expect(200);
+      expect(ctx.mocks.queries.removeDialog).toHaveBeenCalledWith(uuid, 0);
+    });
+
+    it('returns 400 for a non-integer index', async () => {
+      await request(ctx.app.callback()).delete(`${BASE}/vcons/${uuid}/dialog/abc`).expect(400);
+    });
+
+    it('returns 400 for a negative index', async () => {
+      await request(ctx.app.callback()).delete(`${BASE}/vcons/${uuid}/dialog/-1`).expect(400);
+    });
+
+    it('returns 400 for a bad UUID', async () => {
+      await request(ctx.app.callback()).delete(`${BASE}/vcons/not-a-uuid/dialog/0`).expect(400);
+    });
+
+    it('returns 404 when the index is not found', async () => {
+      const { ChildIndexError } = await import('../../../src/utils/vcon-children.js');
+      ctx.mocks.queries.removeDialog.mockRejectedValueOnce(new ChildIndexError('dialog index 9 not found'));
+      await request(ctx.app.callback()).delete(`${BASE}/vcons/${uuid}/dialog/9`).expect(404);
+    });
+
+    it('returns 400 for an invalid dialog body (missing type)', async () => {
+      await request(ctx.app.callback())
+        .patch(`${BASE}/vcons/${uuid}/dialog/0`)
+        .send({ body: 'no type' })
+        .expect(400);
+    });
+  });
+
+  describe('analysis/attachment index routes', () => {
+    const uuid = '11111111-1111-1111-1111-111111111111';
+
+    it('PATCH /analysis/:index requires vendor', async () => {
+      await request(ctx.app.callback())
+        .patch(`${BASE}/vcons/${uuid}/analysis/0`)
+        .send({ type: 'summary' })
+        .expect(400);
+    });
+
+    it('PATCH /analysis/:index replaces', async () => {
+      await request(ctx.app.callback())
+        .patch(`${BASE}/vcons/${uuid}/analysis/2`)
+        .send({ type: 'summary', vendor: 'V' })
+        .expect(200);
+      expect(ctx.mocks.queries.updateAnalysis).toHaveBeenCalledWith(uuid, 2, expect.objectContaining({ vendor: 'V' }));
+    });
+
+    it('DELETE /analysis/:index compacts', async () => {
+      await request(ctx.app.callback()).delete(`${BASE}/vcons/${uuid}/analysis/1`).expect(200);
+      expect(ctx.mocks.queries.removeAnalysis).toHaveBeenCalledWith(uuid, 1);
+    });
+
+    it('DELETE /attachments/:index compacts', async () => {
+      await request(ctx.app.callback()).delete(`${BASE}/vcons/${uuid}/attachments/0`).expect(200);
+      expect(ctx.mocks.queries.removeAttachment).toHaveBeenCalledWith(uuid, 0);
+    });
+  });
+
+  describe('party routes', () => {
+    const uuid = '11111111-1111-1111-1111-111111111111';
+
+    it('POST /parties appends and returns the new index', async () => {
+      const res = await request(ctx.app.callback())
+        .post(`${BASE}/vcons/${uuid}/parties`)
+        .send({ name: 'Dave' })
+        .expect(201);
+      expect(res.body.index).toBe(2);
+      expect(ctx.mocks.queries.addParty).toHaveBeenCalledWith(uuid, expect.objectContaining({ name: 'Dave' }));
+    });
+
+    it('PATCH /parties/:index replaces', async () => {
+      await request(ctx.app.callback())
+        .patch(`${BASE}/vcons/${uuid}/parties/1`)
+        .send({ name: 'Bob2' })
+        .expect(200);
+      expect(ctx.mocks.queries.updateParty).toHaveBeenCalledWith(uuid, 1, expect.objectContaining({ name: 'Bob2' }));
+    });
+
+    it('DELETE /parties/:index keeps an empty placeholder by default', async () => {
+      await request(ctx.app.callback()).delete(`${BASE}/vcons/${uuid}/parties/0`).expect(200);
+      expect(ctx.mocks.queries.removeParty).toHaveBeenCalledWith(uuid, 0, { anonymize: false });
+    });
+
+    it('DELETE /parties/:index?anonymize=true forwards the flag', async () => {
+      await request(ctx.app.callback()).delete(`${BASE}/vcons/${uuid}/parties/0?anonymize=true`).expect(200);
+      expect(ctx.mocks.queries.removeParty).toHaveBeenCalledWith(uuid, 0, { anonymize: true });
+    });
+  });
 });

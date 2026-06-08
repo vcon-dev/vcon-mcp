@@ -792,4 +792,79 @@ describe.skipIf(!runE2E)('MCP Server E2E Tests', () => {
       // Don't add to cleanup list since we already deleted
     });
   });
+
+  describe('Index-addressed child CRUD', () => {
+    it('round-trips inline create, party/dialog placeholders, and analysis compaction', async () => {
+      if (skipIfNoSchema()) return;
+
+      // 1. Create with inline parties + dialog + analysis (create_vcon widening)
+      const createResult = await callTool<{ success: boolean; uuid: string }>(
+        ctx.client,
+        'create_vcon',
+        {
+          subject: generateTestSubject(),
+          parties: [{ name: 'P0' }, { name: 'P1' }, { name: 'P2' }],
+          dialog: [
+            { type: 'text', body: 'hello', parties: [0, 1], encoding: 'none' },
+            { type: 'recording', url: 'https://example.com/a.wav', parties: [0, 1] },
+          ],
+          analysis: [
+            { type: 'summary', vendor: 'V0', body: 'first', encoding: 'none' },
+            { type: 'sentiment', vendor: 'V1', body: 'second', encoding: 'none' },
+          ],
+        }
+      );
+      const uuid = createResult.uuid;
+      ctx.createdVcons.push(uuid);
+
+      const get = async () =>
+        (await callTool<{ success: boolean; vcon: any }>(ctx.client, 'get_vcon', { uuid })).vcon;
+
+      let vcon = await get();
+      expect(vcon.parties).toHaveLength(3);
+      expect(vcon.dialog).toHaveLength(2);
+      expect(vcon.analysis).toHaveLength(2);
+
+      // 2. update_party (PUT) at index 1
+      await callTool(ctx.client, 'update_party', { vcon_uuid: uuid, index: 1, party: { name: 'P1-renamed', tel: '+15550001' } });
+      vcon = await get();
+      expect(vcon.parties[1].name).toBe('P1-renamed');
+      expect(vcon.parties[1].tel).toBe('+15550001');
+
+      // 3. remove_party at index 1 -> empty placeholder, index preserved, no renumber
+      await callTool(ctx.client, 'remove_party', { vcon_uuid: uuid, index: 1 });
+      vcon = await get();
+      expect(vcon.parties).toHaveLength(3);          // slot preserved
+      expect(vcon.parties[1].name).toBeFalsy();      // emptied (null/undefined identifiers)
+      expect(vcon.parties[1].tel).toBeFalsy();
+      expect(vcon.parties[2].name).toBe('P2');       // index 2 untouched
+
+      // 4. update_dialog (PUT) at index 0
+      await callTool(ctx.client, 'update_dialog', { vcon_uuid: uuid, index: 0, dialog: { type: 'text', body: 'edited', encoding: 'none' } });
+      vcon = await get();
+      expect(vcon.dialog[0].body).toBe('edited');
+
+      // 5. remove_dialog at index 0 -> content-stripped placeholder, type kept, slot preserved
+      await callTool(ctx.client, 'remove_dialog', { vcon_uuid: uuid, index: 0 });
+      vcon = await get();
+      expect(vcon.dialog).toHaveLength(2);
+      expect(vcon.dialog[0].type).toBeDefined();
+      expect(vcon.dialog[0].body).toBeFalsy();
+
+      // 6. add_party -> appended at index 3
+      const addParty = await callTool<{ success: boolean; index: number }>(
+        ctx.client, 'add_party', { vcon_uuid: uuid, party: { name: 'P3' } }
+      );
+      expect(addParty.index).toBe(3);
+      vcon = await get();
+      expect(vcon.parties).toHaveLength(4);
+      expect(vcon.parties[3].name).toBe('P3');
+
+      // 7. remove_analysis at index 0 -> hard delete + compaction
+      await callTool(ctx.client, 'remove_analysis', { vcon_uuid: uuid, index: 0 });
+      vcon = await get();
+      expect(vcon.analysis).toHaveLength(1);
+      expect(vcon.analysis[0].vendor).toBe('V1');   // V0 removed, V1 shifted to index 0
+    });
+  });
 });
