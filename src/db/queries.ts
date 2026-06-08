@@ -564,12 +564,13 @@ export class SupabaseVConQueries implements IVConQueries {
     if (knownIndex !== undefined) {
       nextIndex = knownIndex;
     } else {
-      const { data: existing } = await this.supabase
+      const { data: existing, error: selErr } = await this.supabase
         .from('parties')
         .select('party_index')
         .eq('vcon_id', vconId)
         .order('party_index', { ascending: false })
         .limit(1);
+      if (selErr) throw selErr;  // else a failed SELECT silently falls back to index 0 → UNIQUE collision
       nextIndex = existing && existing.length > 0 ? existing[0].party_index + 1 : 0;
     }
     const { error } = await this.supabase.from('parties').insert(buildPartyRow(vconId, party, nextIndex));
@@ -668,7 +669,8 @@ export class SupabaseVConQueries implements IVConQueries {
 
   /** Replace the party_history rows for a dialog row (delete-all then insert). */
   private async replacePartyHistory(dialogId: string, history: Dialog['party_history']): Promise<void> {
-    await this.supabase.from('party_history').delete().eq('dialog_id', dialogId);
+    const { error: delErr } = await this.supabase.from('party_history').delete().eq('dialog_id', dialogId);
+    if (delErr) throw delErr;
     if (history && history.length > 0) {
       const rows = history.map(h => ({ dialog_id: dialogId, party_index: h.party, time: h.time, event: h.event }));
       const { error } = await this.supabase.from('party_history').insert(rows);

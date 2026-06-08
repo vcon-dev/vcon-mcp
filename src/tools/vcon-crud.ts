@@ -60,6 +60,19 @@ export const DialogSchema = z.object({
   session_id: z.string().optional().describe('Session identifier'),  // ✅ New field
   application: z.string().optional().describe('Application that created this dialog'),  // ✅ New field
   message_id: z.string().optional().describe('Message identifier'),  // ✅ New field
+  // party_history must be in the schema or update_dialog would strip it and always clear existing history.
+  party_history: z.array(z.object({
+    party: z.number(),
+    time: z.string(),
+    event: z.enum(['join', 'drop', 'hold', 'unhold', 'mute', 'unmute']),
+  })).optional().describe('Party join/drop/hold/mute events'),
+  // Transfer-specific (type='transfer')
+  transferee: z.number().optional(),
+  transferor: z.number().optional(),
+  transfer_target: z.union([z.number(), z.array(z.number())]).optional(),
+  original: z.union([z.number(), z.array(z.number())]).optional(),
+  consultation: z.union([z.number(), z.array(z.number())]).optional(),
+  target_dialog: z.union([z.number(), z.array(z.number())]).optional(),
 });
 
 /**
@@ -75,6 +88,11 @@ export const PartySchema = z.object({
   did: z.string().optional(),
   uuid: z.string().uuid().optional().describe('Unique identifier for this party'),  // ✅ Added
   validation: z.string().optional(),
+  // Full core-02 Party object: these are persisted by the DB layer, so the schema
+  // must include them or .parse() would strip them before they reach the query.
+  jcard: z.record(z.unknown()).optional().describe('jCard object (RFC 7095)'),
+  gmlpos: z.string().optional().describe('GML position'),
+  civicaddress: z.record(z.unknown()).optional().describe('Civic address object'),
   timezone: z.string().optional(),
 });
 
@@ -114,10 +132,29 @@ const UUID_PROP = {
 };
 
 const INDEX_PROP = {
-  type: 'number' as const,
+  type: 'integer' as const,
   minimum: 0,
   description: 'Zero-based index of the child element to address',
 };
+
+// Reusable index-shaped fragments (positional array indexes are non-negative integers).
+const PARTY_INDEX = { type: 'integer', minimum: 0 } as const;
+const INDEX_OR_LIST = {
+  oneOf: [{ type: 'integer', minimum: 0 }, { type: 'array', items: { type: 'integer', minimum: 0 } }],
+} as const;
+const PARTY_HISTORY_PROP = {
+  type: 'array',
+  description: 'Party join/drop/hold/mute events',
+  items: {
+    type: 'object',
+    properties: {
+      party: { type: 'integer', minimum: 0 },
+      time: { type: 'string', description: 'ISO 8601 datetime' },
+      event: { type: 'string', enum: ['join', 'drop', 'hold', 'unhold', 'mute', 'unmute'] },
+    },
+    required: ['party', 'time', 'event'],
+  },
+} as const;
 
 const partyProperties = {
   name: { type: 'string', description: 'Display name of the party' },
@@ -128,6 +165,9 @@ const partyProperties = {
   did: { type: 'string', description: 'Decentralized identifier' },
   uuid: { type: 'string', description: 'UUID for cross-vCon party tracking' },
   validation: { type: 'string' },
+  jcard: { type: 'object', description: 'jCard object (RFC 7095)', additionalProperties: true },
+  gmlpos: { type: 'string', description: 'GML position' },
+  civicaddress: { type: 'object', description: 'Civic address object', additionalProperties: true },
   timezone: { type: 'string' },
 } as const;
 
@@ -135,8 +175,14 @@ const dialogProperties = {
   type: { type: 'string', enum: ['recording', 'text', 'transfer', 'incomplete'], description: 'Type of dialog' },
   start: { type: 'string', description: 'Start time (ISO 8601 datetime)' },
   duration: { type: 'number', description: 'Duration in seconds' },
-  parties: { oneOf: [{ type: 'number' }, { type: 'array', items: { type: 'number' } }], description: 'Party indexes involved' },
-  originator: { type: 'number', description: 'Originating party index' },
+  parties: {
+    oneOf: [
+      { type: 'integer', minimum: 0 },
+      { type: 'array', items: { oneOf: [{ type: 'integer', minimum: 0 }, { type: 'array', items: { type: 'integer', minimum: 0 } }] } },
+    ],
+    description: 'Party index, list of indexes, or nested groupings',
+  },
+  originator: { ...PARTY_INDEX, description: 'Originating party index' },
   body: { type: 'string', description: 'Dialog content' },
   encoding: { type: 'string', enum: ['base64url', 'json', 'none'] },
   mediatype: { type: 'string', description: 'MIME type of the content' },
@@ -147,11 +193,19 @@ const dialogProperties = {
   session_id: { type: 'string' },
   application: { type: 'string' },
   message_id: { type: 'string' },
+  party_history: PARTY_HISTORY_PROP,
+  // Transfer-specific (type='transfer')
+  transferee: PARTY_INDEX,
+  transferor: PARTY_INDEX,
+  transfer_target: INDEX_OR_LIST,
+  original: INDEX_OR_LIST,
+  consultation: INDEX_OR_LIST,
+  target_dialog: INDEX_OR_LIST,
 } as const;
 
 const analysisProperties = {
   type: { type: 'string', description: 'Type of analysis (e.g., summary, transcript, sentiment)' },
-  dialog: { oneOf: [{ type: 'number' }, { type: 'array', items: { type: 'number' } }], description: 'Dialog index(es) this analysis applies to' },
+  dialog: { ...INDEX_OR_LIST, description: 'Dialog index(es) this analysis applies to' },
   vendor: { type: 'string', description: 'REQUIRED: Vendor who produced this analysis' },
   product: { type: 'string' },
   schema: { type: 'string', description: 'Schema identifier for this analysis format' },
@@ -166,8 +220,8 @@ const analysisProperties = {
 const attachmentProperties = {
   purpose: { type: 'string', description: 'Canonical spec field for attachment classification' },
   type: { type: 'string', description: 'Legacy compatibility field; prefer purpose' },
-  party: { type: 'number', description: 'Party index this attachment relates to' },
-  dialog: { type: 'number', description: 'Dialog index this attachment relates to' },
+  party: { ...PARTY_INDEX, description: 'Party index this attachment relates to' },
+  dialog: { ...PARTY_INDEX, description: 'Dialog index this attachment relates to' },
   start: { type: 'string' },
   mediatype: { type: 'string' },
   filename: { type: 'string' },

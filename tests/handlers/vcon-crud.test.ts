@@ -528,6 +528,16 @@ describe('vCon CRUD Handlers', () => {
         mockContext
       )).rejects.toThrow(McpError);
     });
+
+    it('preserves party_history (DialogSchema must not strip it)', async () => {
+      const uuid = randomUUID();
+      const party_history = [{ party: 0, time: '2026-01-01T00:00:00Z', event: 'join' }];
+      await new UpdateDialogHandler().handle(
+        { vcon_uuid: uuid, index: 0, dialog: { type: 'text', body: 'hi', party_history } },
+        mockContext
+      );
+      expect(mockQueries.updateDialog).toHaveBeenCalledWith(uuid, 0, expect.objectContaining({ party_history }));
+    });
   });
 
   describe('RemoveDialogHandler', () => {
@@ -596,6 +606,21 @@ describe('vCon CRUD Handlers', () => {
         { vcon_uuid: randomUUID(), party: {} },
         mockContext
       )).rejects.toThrow(McpError);
+    });
+
+    it('preserves full Party fields (jcard/gmlpos/civicaddress must not be stripped)', async () => {
+      const uuid = randomUUID();
+      const party = {
+        name: 'Dave',
+        gmlpos: '42.0 -70.0',
+        jcard: { fn: 'Dave' },
+        civicaddress: { country: 'US', a1: 'MA' },
+      };
+      await new AddPartyHandler().handle({ vcon_uuid: uuid, party }, mockContext);
+      expect(mockQueries.addParty).toHaveBeenCalledWith(
+        uuid,
+        expect.objectContaining({ gmlpos: '42.0 -70.0', jcard: { fn: 'Dave' }, civicaddress: { country: 'US', a1: 'MA' } })
+      );
     });
   });
 
