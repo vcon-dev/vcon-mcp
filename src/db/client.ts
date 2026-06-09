@@ -23,6 +23,13 @@ export function getSupabaseClient(): SupabaseClient {
     // Otherwise fall back to ANON_KEY
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
 
+    // Postgres schema this instance is scoped to. Default 'public'.
+    // Setting a per-group schema (e.g. 'sales') isolates this instance's data
+    // within a shared Supabase project. supabase-js routes both .from() and
+    // .rpc() to this schema, so the group's tables AND search RPCs must exist
+    // in it (see scripts/bootstrap-schema.sh).
+    const schema = process.env.SUPABASE_DB_SCHEMA || 'public';
+
     if (!url || !key) {
       throw new Error(
         'Missing Supabase credentials. Set SUPABASE_URL and either SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY environment variables.'
@@ -33,14 +40,19 @@ export function getSupabaseClient(): SupabaseClient {
       url: url,
       key_type: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'service_role' : 'anon',
       rls_enabled: process.env.RLS_ENABLED === 'true',
+      schema,
     });
 
+    // Cast back to the schema-agnostic SupabaseClient type: a runtime schema
+    // string widens the inferred literal ('public') and would otherwise not
+    // match the module-level type. The client is identical at runtime.
     supabase = createClient(url, key, {
+      db: { schema },
       auth: {
         persistSession: false,
         autoRefreshToken: false,
       },
-    });
+    }) as SupabaseClient;
   }
 
   return supabase;

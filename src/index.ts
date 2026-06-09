@@ -19,8 +19,10 @@ import { createHttpTransport, getHttpTransportConfig, startHttpServer } from './
 import { startStdioTransport } from './transport/stdio.js';
 import { getVersionInfo, getVersionString } from './version.js';
 
-// Load environment variables
-dotenv.config();
+// Load environment variables. ENV_FILE lets each instance load its own
+// per-group file (e.g. .env.sales) so multiple instances can point at
+// different Supabase projects/schemas. Defaults to .env.
+dotenv.config({ path: process.env.ENV_FILE || '.env' });
 
 // Initialize observability
 await initializeObservability();
@@ -32,6 +34,8 @@ logger.info({
   git_commit: versionInfo.gitCommit,
   build_time: versionInfo.buildTime,
   is_dev: versionInfo.isDev,
+  instance: process.env.VCON_INSTANCE_LABEL || undefined,
+  schema: process.env.SUPABASE_DB_SCHEMA || 'public',
 }, `vCon MCP Server starting - version ${getVersionString()}`);
 
 // Setup server (database, plugins, handlers)

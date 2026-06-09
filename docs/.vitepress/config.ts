@@ -54,6 +54,7 @@ export default defineConfig({
           text: 'Advanced Setup',
           items: [
             { text: 'Getting Started (Developers)', link: '/guide/getting-started' },
+            { text: 'Multi-Supabase Isolation', link: '/guide/multi-supabase-isolation' },
           ]
         },
         {
