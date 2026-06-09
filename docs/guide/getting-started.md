@@ -486,7 +486,7 @@ Your implementation is successful when:
 
 ---
 
-*Last Updated: April 2026*  
+*Last Updated: June 2026*  
 *Project: vCon MCP Server Documentation v1.2.0*  
 *Spec: draft-ietf-vcon-vcon-core-02 (v0.4.0)*
 

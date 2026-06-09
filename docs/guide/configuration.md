@@ -128,6 +128,30 @@ CURRENT_TENANT_ID=1124
 
 See [RLS Multi-Tenant Guide](rls-multi-tenant.md) for complete setup instructions.
 
+#### Multi-Group / Schema Isolation
+
+RLS scopes rows within one shared schema. To give each group (customer, dealer,
+business unit) its own data store instead, run one instance per group, isolated
+either by a separate Supabase project or by a separate Postgres schema in a
+shared project:
+
+```bash
+# Schema isolation: same project, a Postgres schema per group
+SUPABASE_DB_SCHEMA=sales          # routes this instance's reads/writes to schema "sales"
+VCON_INSTANCE_LABEL=sales         # group label, shown in logs and GET /health
+
+# Per-group launcher: load .env.sales instead of .env
+ENV_FILE=.env.sales
+```
+
+Leave `SUPABASE_DB_SCHEMA` unset (defaults to `public`) and point `SUPABASE_URL`
+at a dedicated project for full project isolation. The schema must already hold
+the vCon object set plus search RPCs (`scripts/bootstrap-schema.sh`) and be added
+to PostgREST exposed schemas.
+
+See [Multi-Supabase Isolation](multi-supabase-isolation.md) for complete patterns,
+the security trade-off, and provisioning scripts.
+
 #### Tool Categories
 
 Control which tools are available in your deployment:

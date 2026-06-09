@@ -539,6 +539,9 @@ Embedding provider priority: **LiteLLM → Azure OpenAI → OpenAI → Hugging F
 | `SUPABASE_URL` | ✅ Yes | Your Supabase project URL | - |
 | `SUPABASE_ANON_KEY` | ✅ Yes | Supabase anon public key | - |
 | `SUPABASE_SERVICE_ROLE_KEY` | ❌ No | Service role key (admin operations) | - |
+| `SUPABASE_DB_SCHEMA` | ❌ No | Postgres schema this instance is scoped to. Set a per-group schema for schema isolation in a shared project — see [Multi-Supabase Isolation](./multi-supabase-isolation.md) | `public` |
+| `ENV_FILE` | ❌ No | Env file to load instead of `.env` (e.g. `.env.sales`), for per-group launchers | `.env` |
+| `VCON_INSTANCE_LABEL` | ❌ No | Free-text label for this instance's group; surfaced in logs and `GET /health` | - |
 | `LITELLM_PROXY_URL` | ❌ No | LiteLLM proxy base URL — takes priority for embeddings | - |
 | `LITELLM_MASTER_KEY` | ❌ No | LiteLLM proxy API key (also accepted as `LITELLM_API_KEY`) | - |
 | `OPENAI_API_KEY` | ❌ No | OpenAI API key for embeddings (if LiteLLM not set) | - |

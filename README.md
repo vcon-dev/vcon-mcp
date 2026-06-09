@@ -110,6 +110,8 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 **Database backend**: Defaults to Supabase (`DB_TYPE=supabase`). MongoDB is also supported via `DB_TYPE=mongodb` — see [docs/mongodb/setup.md](docs/mongodb/setup.md).
 
+**Isolating groups**: To give each group (customer, dealer, business unit) its own data store, run one server entry per group, isolated by a separate Supabase project or a Postgres schema (`SUPABASE_DB_SCHEMA`). Per-group launchers can load `ENV_FILE=.env.<group>` instead of inline env. See [Multi-Supabase Isolation](docs/guide/multi-supabase-isolation.md).
+
 Restart Claude Desktop and start using vCon tools!
 
 ## Docker Deployment
