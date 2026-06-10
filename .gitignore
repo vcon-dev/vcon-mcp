@@ -14,6 +14,12 @@ dist/
 .env
 .env.local
 .env.*.local
+# Per-group env files (e.g. .env.city-of-newport) hold creds — keep only the example
+.env.*
+!.env.example
+
+# Generated/local SQL dumps and per-schema bootstrap files
+sql/
 
 # Supabase
 .branches/

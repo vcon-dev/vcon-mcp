@@ -50,6 +50,9 @@ export function createSchemaRoutes(apiContext: RestApiContext): Router {
   // ── GET /health — Health check ────────────────────────────────────────────
   router.get('/health', async (ctx: Context) => {
     const versionInfo = getVersionInfo();
+    // Which group/schema this instance serves (for multi-instance isolation).
+    const instance = process.env.VCON_INSTANCE_LABEL || null;
+    const schema = process.env.SUPABASE_DB_SCHEMA || 'public';
     try {
       // Backend-agnostic health probe
       const connInfo = await apiContext.dbInspector.getConnectionInfo();
@@ -57,6 +60,8 @@ export function createSchemaRoutes(apiContext: RestApiContext): Router {
         status: 'healthy',
         timestamp: new Date().toISOString(),
         database: 'connected',
+        instance,
+        schema,
         version: versionInfo.version,
         gitCommit: versionInfo.gitCommit,
         buildTime: versionInfo.buildTime,
@@ -68,6 +73,8 @@ export function createSchemaRoutes(apiContext: RestApiContext): Router {
         status: 'unhealthy',
         timestamp: new Date().toISOString(),
         database: 'error',
+        instance,
+        schema,
         error: error instanceof Error ? error.message : 'Unknown error',
         version: versionInfo.version,
         gitCommit: versionInfo.gitCommit,
