@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.0] - 2026-06-10
+
+### Added
+- Per-group Supabase isolation: an instance is scoped by `SUPABASE_DB_SCHEMA` (default `public`), enabling one MCP server per group via a separate Supabase project (project isolation) or a separate Postgres schema in a shared project (schema isolation) (PR #58)
+- `ENV_FILE` support so each instance can load its own `.env.<group>` file
+- `VCON_INSTANCE_LABEL` surfaced in startup logs and `GET /api/v1/health` (alongside the active `schema`)
+- `start` / `start:group` npm scripts and `scripts/start-group.sh` launcher
+- `scripts/bootstrap-schema.sh` (clone `public` into a new schema, with pg version fallback, extension-type preservation, and role grants) and `scripts/migrate-all-groups.sh` (migration fan-out across groups)
+- Multi-Supabase Isolation guide; group-isolation env vars documented in installation/configuration/README
+
+### Changed
+- MCP server advertises its real package version (was hardcoded `1.0.0`); now sourced from `package.json`
+- The Supabase client applies `db.schema` from `SUPABASE_DB_SCHEMA`
+
+---
+
 ## [1.2.0] - 2026-04-15
 
 ### Added

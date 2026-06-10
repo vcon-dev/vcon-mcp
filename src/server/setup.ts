@@ -4,6 +4,9 @@
  * Initializes database, plugins, and handler registry
  */
 
+import { readFileSync } from 'fs';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { getRedisClient, getSupabaseClient } from '../db/client.js';
 // Supabase implementations
@@ -29,6 +32,22 @@ import { createHandlerRegistry, type ToolHandlerRegistry } from '../tools/handle
 
 const logger = createLogger('server-setup');
 
+/**
+ * Read the package version from package.json at runtime.
+ * Sourced here (not a compile-time JSON import) because rootDir is ./src,
+ * so package.json sits outside the TS root. From dist/server/setup.js the
+ * package root is ../../; the same holds in the published package and under
+ * vite-node (src/server) during tests.
+ */
+function getPackageVersion(): string {
+  try {
+    const pkgPath = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'package.json');
+    return JSON.parse(readFileSync(pkgPath, 'utf8')).version || '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}
+
 export interface ServerContext {
   server: Server;
   queries: IVConQueries;
@@ -49,7 +68,7 @@ export function createServer(): Server {
   return new Server(
     {
       name: 'vcon-mcp-server',
-      version: '1.0.0',
+      version: getPackageVersion(),
     },
     {
       capabilities: {
