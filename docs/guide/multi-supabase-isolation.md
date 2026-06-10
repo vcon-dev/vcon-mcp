@@ -59,6 +59,23 @@ schemas or projects.
    scripts/bootstrap-schema.sh sales            # writes sql/bootstrap-sales.sql
    scripts/bootstrap-schema.sh sales --apply    # applies it
    ```
+   Notes on what the script handles for you:
+   - **Tool versions.** If the host `pg_dump`/`psql` are missing or older than
+     the server (e.g. Homebrew Postgres 14 vs Supabase local 17, where `pg_dump`
+     aborts), it automatically runs them inside the `supabase_db_<project>`
+     container that publishes the DB port. Override detection with
+     `--db-container <name>`.
+   - **Extension types stay put.** Extension-owned names installed in `public`
+     (pgvector's `vector`/`halfvec`/`sparsevec` types and operator classes in
+     the local stack) are excluded from the schema rewrite — `pg_dump` does not
+     re-create extension members, so rewriting them would fail with
+     `type <schema>.vector does not exist`.
+   - **Role grants.** The dump is taken with `--no-privileges`, so the generated
+     SQL ends with `GRANT USAGE` on the schema plus table/sequence/function
+     grants (and matching `ALTER DEFAULT PRIVILEGES`) for `anon`,
+     `authenticated`, and `service_role` — the same access `public` gets out of
+     the box. Without these PostgREST returns
+     `permission denied for schema <schema>`.
 2. **Expose the schema to PostgREST** or `supabase-js` can't reach it:
    - Cloud: Dashboard → API → Exposed schemas → add `sales`.
    - Local: add it to `[api] schemas` in `supabase/config.toml`, then restart.
@@ -168,7 +185,9 @@ an *organizational* boundary, not a hard one. For a real boundary:
   the role's `search_path`), not the project service-role key.
 
 Until per-schema roles are in place, treat schema isolation as logical separation
-with a shared trust domain.
+with a shared trust domain. Note that `bootstrap-schema.sh` grants the shared API
+roles (`anon`, `authenticated`, `service_role`) on the new schema so it behaves
+like `public`; a hard boundary still requires the per-group roles above.
 
 ## On-demand lifecycle (future)
 
