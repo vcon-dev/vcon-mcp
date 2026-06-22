@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">VCONIC one-page overview</title>
+  <desc id="desc">Single-page VCONIC overview with logo treatment, description, color palette, and key capabilities.</desc>
+  <defs>
+    <linearGradient id="hero" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#5f67ee"/>
+      <stop offset="100%" stop-color="#7e86ff"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#f7f8ff"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#1d2452" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="900" fill="#eef1ff"/>
+  <circle cx="1340" cy="120" r="190" fill="#dde2ff"/>
+  <circle cx="1500" cy="760" r="210" fill="#d8deff"/>
+  <circle cx="80" cy="820" r="160" fill="#dfe5ff"/>
+
+  <rect x="70" y="70" width="1460" height="760" rx="36" fill="url(#card)" filter="url(#shadow)"/>
+  <rect x="70" y="70" width="1460" height="250" rx="36" fill="url(#hero)"/>
+  <rect x="70" y="280" width="1460" height="40" fill="url(#hero)"/>
+
+  <g transform="translate(140 132)">
+    <circle cx="72" cy="72" r="72" fill="#ffffff" fill-opacity="0.16"/>
+    <path d="M72 14l50 29v58l-50 29-50-29V43z" fill="#ffffff"/>
+    <path d="M55 51l17 36 17-36h23L72 115 32 51z" fill="#5f67ee"/>
+  </g>
+
+  <text x="290" y="168" fill="#ffffff" font-family="Inter, Arial, sans-serif" font-size="72" font-weight="700" letter-spacing="3">VCONIC</text>
+  <text x="292" y="218" fill="#e7eaff" font-family="Inter, Arial, sans-serif" font-size="26" font-weight="500" letter-spacing="1.2">Conversation Data Management with AI</text>
+
+  <text x="140" y="380" fill="#20274a" font-family="Inter, Arial, sans-serif" font-size="34" font-weight="700">Overview</text>
+  <text x="140" y="426" fill="#40486d" font-family="Inter, Arial, sans-serif" font-size="24">
+    <tspan x="140" dy="0">VCONIC MCP Server is the reseller distribution of the open-source vcon-mcp project.</tspan>
+    <tspan x="140" dy="34">It gives AI assistants and applications a standards-based way to create, search,</tspan>
+    <tspan x="140" dy="34">analyze, and manage IETF vCon conversation data without forking the core platform.</tspan>
+  </text>
+
+  <text x="140" y="560" fill="#20274a" font-family="Inter, Arial, sans-serif" font-size="34" font-weight="700">What it delivers</text>
+  <g fill="#40486d" font-family="Inter, Arial, sans-serif" font-size="24">
+    <text x="140" y="610">• IETF vCon compliant conversation storage and retrieval</text>
+    <text x="140" y="652">• MCP and REST interfaces for AI assistants, apps, and workflows</text>
+    <text x="140" y="694">• Search, analytics, tagging, and extensible plugin architecture</text>
+    <text x="140" y="736">• Reseller-ready packaging, support positioning, and partner tooling</text>
+  </g>
+
+  <rect x="980" y="360" width="420" height="320" rx="28" fill="#ffffff"/>
+  <text x="1020" y="418" fill="#20274a" font-family="Inter, Arial, sans-serif" font-size="32" font-weight="700">Color palette</text>
+
+  <g font-family="Inter, Arial, sans-serif" fill="#40486d" font-size="22">
+    <rect x="1020" y="450" width="78" height="78" rx="20" fill="#5f67ee"/>
+    <text x="1120" y="483" font-weight="700">Primary</text>
+    <text x="1120" y="515">#5F67EE</text>
+
+    <rect x="1020" y="548" width="78" height="78" rx="20" fill="#20274a"/>
+    <text x="1120" y="581" font-weight="700">Deep navy</text>
+    <text x="1120" y="613">#20274A</text>
+
+    <rect x="1020" y="646" width="78" height="78" rx="20" fill="#eef1ff" stroke="#cbd3ff" stroke-width="2"/>
+    <text x="1120" y="679" font-weight="700">Soft background</text>
+    <text x="1120" y="711">#EEF1FF</text>
+  </g>
+
+  <rect x="980" y="700" width="420" height="82" rx="24" fill="#20274a"/>
+  <text x="1020" y="748" fill="#ffffff" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="600">Open source core. Reseller-ready presentation.</text>
+
+  <text x="140" y="785" fill="#6b7293" font-family="Inter, Arial, sans-serif" font-size="20">Source copy adapted from repository documentation and VCONIC reseller guides.</text>
+  <text x="140" y="814" fill="#6b7293" font-family="Inter, Arial, sans-serif" font-size="20">GitHub: github.com/vcon-dev/vcon-mcp</text>
+</svg>
