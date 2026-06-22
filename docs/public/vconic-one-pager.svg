@@ -69,5 +69,7 @@
   <text x="1020" y="748" fill="#ffffff" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="600">Open source core. Reseller-ready presentation.</text>
 
   <text x="140" y="785" fill="#6b7293" font-family="Inter, Arial, sans-serif" font-size="20">Source copy adapted from repository documentation and VCONIC reseller guides.</text>
-  <text x="140" y="814" fill="#6b7293" font-family="Inter, Arial, sans-serif" font-size="20">GitHub: github.com/vcon-dev/vcon-mcp</text>
+  <a href="https://github.com/vcon-dev/vcon-mcp">
+    <text x="140" y="814" fill="#5f67ee" font-family="Inter, Arial, sans-serif" font-size="20" text-decoration="underline">GitHub: github.com/vcon-dev/vcon-mcp</text>
+  </a>
 </svg>
