@@ -4,11 +4,11 @@ Complete reference for all Model Context Protocol (MCP) tools provided by the vC
 
 ## Overview
 
-The vCon MCP Server provides 35 tools organized into these functional groups:
+The vCon MCP Server provides 46 tools organized into these functional groups:
 
-- **[Redesigned Contract Tools](#redesigned-contract-tools)** - Recommended discovery, fetch, and search surface for new clients
+- **[Redesigned Contract Tools](#redesigned-contract-tools)** - Recommended discovery, fetch, search, and aggregation surface for new clients
 - **[Core Operations](#core-operations)** - Create, read, update, delete vCons
-- **[Component Management](#component-management)** - Add dialog, analysis, attachments
+- **[Component Management](#component-management)** - Add, update, and remove parties, dialog, analysis, attachments
 - **[Search & Query](#search--query)** - Four search modes with different capabilities
 - **[Tag Management](#tag-management)** - Organize with key-value metadata
 - **[Database Tools](#database-tools)** - Inspect and optimize database
@@ -146,6 +146,18 @@ Single-record fetch with one stable response shape:
 ### describe_response_shape
 
 Return the published JSON schema plus one concrete example for redesigned and legacy tools. Use this when a client needs to probe actual envelope structure before wiring a parser.
+
+---
+
+### vcon_aggregate
+
+Server-side rollup for analyst questions such as "top dealers by portal-tag rate". Groups vCons that carry a `strolid_dealer` attachment by dealer id and returns `filtered_count` (rows matching the supplied tags) and `baseline_count` (all rows in the group), so a client can divide for a rate in one round trip. Requires the Postgres RPC `aggregate_vcons_by_dealer_stats` from the latest migration.
+
+---
+
+### vcon_graph_shape
+
+Return the default OSS vCon shape graph for the corpus: nodes for analysis types, attachment purposes, legacy attachment types (when purpose is absent), and tag keys, plus optional co-occurrence edges between analysis types and attachment purposes. Spec-generic structure only, no business ontology. Returns the same payload as the resource `vcon://v1/graph/shape`; prefer the resource when the client supports resources.
 
 ---
 
@@ -551,6 +563,44 @@ Add an attachment (file, document, etc.) to a vCon.
   }
 }
 ```
+
+---
+
+### add_party
+
+Append a party to an existing vCon.
+
+```typescript
+{
+  vcon_uuid: string,   // required
+  party: {             // any subset of party fields (name, tel, sip, mailto, role, uuid, did, ...)
+    name?: string,
+    tel?: string,
+    mailto?: string,
+    role?: string
+  }
+}
+// Response: { success, message, party_index }
+```
+
+---
+
+### Sub-resource Updates & Removal
+
+Index-addressed edits to a vCon's child arrays. Each tool takes `vcon_uuid` plus an integer `index` (the element's position in its array). **Update** tools use PUT semantics: omitted fields are cleared. **Removal** follows IETF core-02 §4.1.8: party and dialog removals preserve the slot as a placeholder so positional references (`dialog.parties`, `attachment.party`, `analysis.dialog`, etc.) do not shift; analysis and attachment removals hard-delete the element and renumber the rest.
+
+| Tool | Parameters | Behavior |
+|------|-----------|----------|
+| `update_party` | `vcon_uuid`, `index`, `party` | Replace the party at `index` |
+| `remove_party` | `vcon_uuid`, `index`, `anonymize?` | Remove party; leaves an empty placeholder, or `{name:"anonymous"}` when `anonymize=true` |
+| `update_dialog` | `vcon_uuid`, `index`, `dialog` | Replace the dialog at `index` |
+| `remove_dialog` | `vcon_uuid`, `index` | Remove dialog; leaves a content-stripped placeholder that keeps `type` |
+| `update_analysis` | `vcon_uuid`, `index`, `analysis` | Replace the analysis at `index` (`vendor` required) |
+| `remove_analysis` | `vcon_uuid`, `index` | Hard-delete; remaining analyses renumbered contiguously |
+| `update_attachment` | `vcon_uuid`, `index`, `attachment` | Replace the attachment at `index` |
+| `remove_attachment` | `vcon_uuid`, `index` | Hard-delete and renumber; removing a `tags` attachment clears the vCon's tags |
+
+Each returns `{ success, message }`.
 
 ---
 

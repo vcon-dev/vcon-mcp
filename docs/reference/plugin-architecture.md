@@ -58,7 +58,7 @@ This document tracks the implementation of the two-repository plugin architectur
 #### 3. Package Configuration (`package.json`)
 
 **Updated Fields**
-- `name`: Changed to `@vcon/mcp-server` (scoped package)
+- `name`: Changed to `vcon-mcp` (scoped package)
 - `description`: Updated to "MCP Server for IETF vCon - Open Source Core"
 - `types`: Added `dist/index.d.ts` for TypeScript definitions
 - `exports`: Added exports for hooks and types:
@@ -204,7 +204,7 @@ vcon-privacy-suite/
 │   ├── consent/           ❌ Consent management
 │   ├── audit/             ❌ Access logging
 │   └── tools/             ❌ Privacy MCP tools
-├── package.json           ❌ Depends on @vcon/mcp-server
+├── package.json           ❌ Depends on vcon-mcp
 ├── LICENSE                ❌ Commercial license
 └── README.md              ❌ Enterprise docs
 ```
@@ -233,9 +233,9 @@ VCON_OFFLINE_MODE=false
 ## Distribution Strategy
 
 ### Open Source Core
-- **Package**: `@vcon/mcp-server`
+- **Package**: `vcon-mcp`
 - **Registry**: npm public
-- **Installation**: `npm install @vcon/mcp-server`
+- **Installation**: `npm install vcon-mcp`
 - **License**: MIT (open source)
 - **Access**: Public, anyone can use
 
@@ -253,7 +253,7 @@ VCON_OFFLINE_MODE=false
 ### Enterprise SaaS (GitHub Packages)
 ```bash
 # Install core
-npm install @vcon/mcp-server
+npm install vcon-mcp
 
 # Install privacy suite (requires GitHub auth)
 npm install @vcon/privacy-suite --registry=https://npm.pkg.github.com
@@ -265,13 +265,13 @@ export SUPABASE_URL=your-db-url
 export SUPABASE_ANON_KEY=your-key
 
 # Run
-node node_modules/@vcon/mcp-server/dist/index.js
+node node_modules/vcon-mcp/dist/index.js
 ```
 
 ### Telco On-Premise (Direct Distribution)
 ```bash
 # Install core
-npm install @vcon/mcp-server
+npm install vcon-mcp
 
 # Install privacy suite from .tgz
 npm install ./vcon-privacy-suite-1.0.0.tgz
@@ -282,7 +282,7 @@ export VCON_LICENSE_KEY=file:///etc/vcon/license.key
 export VCON_OFFLINE_MODE=true
 
 # Run
-node node_modules/@vcon/mcp-server/dist/index.js
+node node_modules/vcon-mcp/dist/index.js
 ```
 
 ## Success Metrics

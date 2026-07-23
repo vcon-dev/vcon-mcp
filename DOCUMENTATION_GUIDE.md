@@ -2,11 +2,10 @@
 
 ## Overview
 
-The vCon MCP Server documentation is organized for easy publishing across multiple platforms:
-- **GitHub Pages** - https://vcon-dev.github.io/vcon-mcp
-- **npm** - Package documentation
-- **GitBook** - Optional alternative hosting
-- **GitHub README** - Quick start and overview
+The vCon MCP Server documentation is organized for publishing across these surfaces:
+- **Published docs site** - https://mcp.conserver.io/ (GitBook, kept in sync from `docs/` via GitBook git-sync)
+- **GitHub README** - Quick start and overview (also the npm package home page)
+- **Local preview** - VitePress (`npm run docs:dev`) for authoring `docs/`
 
 ## Documentation Structure
 
@@ -58,19 +57,15 @@ npm run docs:build
 npm run docs:preview
 ```
 
-### Deploy to GitHub Pages
+### Publish to the docs site (GitBook)
+
+The published site at https://mcp.conserver.io/ is a GitBook space connected to this repo via GitBook git-sync. Merging changes under `docs/` to `main` propagates to GitBook automatically; there is no GitHub Actions job that deploys docs.
 
 ```bash
-# Automatically deployed via GitHub Actions
-# Push to main branch triggers deployment
-git push origin main
+# Edit under docs/, preview locally, then merge to main
+npm run docs:dev
+git push origin main   # GitBook git-sync picks up docs/ changes
 ```
-
-### Deploy to GitBook
-
-1. Import repository to GitBook
-2. Configure GitBook to use `docs/` folder
-3. Set up GitBook integration in repository
 
 ### npm Package Documentation
 
@@ -114,23 +109,16 @@ See the [API Reference](../api/tools.md) for complete documentation.
 
 ## Documentation Platforms
 
-### GitHub Pages
-- **URL**: https://vcon-dev.github.io/vcon-mcp
-- **Deploy**: Automatic via GitHub Actions
+### GitBook (published docs site)
+- **URL**: https://mcp.conserver.io/
 - **Source**: `docs/` folder
-- **Build**: VitePress static site
+- **Sync**: GitBook git-sync from `main` (no GitHub Actions involved)
 
 ### npm Package
-- **URL**: https://www.npmjs.com/package/@vcon/mcp-server
+- **URL**: https://www.npmjs.com/package/vcon-mcp
 - **Source**: README.md (main page)
-- **Links**: Points to GitHub Pages for full docs
+- **Links**: Points to the published docs site for full docs
 - **Include**: Quick start, installation, basic examples
-
-### GitBook (Optional)
-- **URL**: https://vcon-dev.gitbook.io/vcon-mcp
-- **Source**: `docs/` folder
-- **Import**: Connect GitHub repository
-- **Sync**: Automatic on push
 
 ### GitHub Repository
 - **URL**: https://github.com/vcon-dev/vcon-mcp
@@ -152,7 +140,7 @@ See the [API Reference](../api/tools.md) for complete documentation.
 
 ```typescript
 // Always include complete, runnable examples
-import { VConQueries } from '@vcon/mcp-server';
+import { VConQueries } from 'vcon-mcp';
 
 const queries = new VConQueries(supabase);
 const vcon = await queries.getVCon(uuid);
@@ -175,28 +163,22 @@ description: Quick start guide for vCon MCP Server
 ---
 ```
 
-## Automated Workflows
+## Automation
 
 ### GitHub Actions
 
-The repository includes automated workflows for:
-1. **Deploy Documentation** - Build and deploy to GitHub Pages
-2. **Test Links** - Verify all documentation links
-3. **Spell Check** - Check spelling in documentation
-4. **Update Stats** - Update documentation statistics
+The repository's workflows (`.github/workflows/`) cover code, not docs:
+- **Tests** (`test.yml`)
+- **Publish to npm** (`publish.yml`)
+- **Build and Push to ECR Public** (`docker-ecr.yml`)
 
-### Deployment Pipeline
+There is currently no Actions workflow that builds or deploys documentation, and no link-check or spell-check job. Docs authoring uses VitePress locally; publishing to https://mcp.conserver.io/ happens through GitBook git-sync when `docs/` changes land on `main`.
+
+### Publishing Pipeline
 
 ```
-Push to main
-    ↓
-GitHub Actions triggered
-    ↓
-Build VitePress site
-    ↓
-Deploy to GitHub Pages
-    ↓
-Available at GitHub Pages URL
+Edit docs/ locally  →  preview with npm run docs:dev  →  merge to main
+    →  GitBook git-sync  →  live at mcp.conserver.io
 ```
 
 ## Documentation Checklist
@@ -212,43 +194,16 @@ When adding new features:
 
 ## Platform-Specific Notes
 
-### GitHub Pages
-- Deployed to `gh-pages` branch
-- Uses custom domain support
-- HTTPS enabled by default
-- CDN distributed globally
+### GitBook (mcp.conserver.io)
+- Custom domain (`mcp.conserver.io`) with built-in search
+- Synced from `docs/` on `main` via git-sync
+- Supports versioning
 
 ### npm
 - README.md is the package home page
 - Keep it concise
 - Link to full documentation
 - Include installation and quick start
-
-### GitBook
-- Supports custom domains
-- Has built-in search
-- Supports versioning
-- Can integrate with GitHub
-
-## Migration Status
-
-### Completed
-- ✅ README.md - Updated main entry point
-- ✅ Documentation structure planned
-- ✅ VitePress configuration created
-- ✅ GitHub Actions workflow created
-
-### In Progress
-- 🔄 Consolidating redundant files
-- 🔄 Creating new guide pages
-- 🔄 Building API reference
-- 🔄 Adding code examples
-
-### Planned
-- ⏳ GitBook integration
-- ⏳ Search functionality
-- ⏳ Versioned documentation
-- ⏳ Multi-language support (future)
 
 ## Support
 
@@ -268,6 +223,6 @@ See [Contributing Guide](./docs/development/contributing.md) for details on:
 
 ---
 
-**Last Updated**: October 14, 2025
-**Documentation Version**: 1.0.0
+**Last Updated**: July 23, 2026
+**Applies to**: vcon-mcp 1.3.0
 

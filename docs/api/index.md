@@ -31,11 +31,11 @@ Full HTTP REST API with parity to all MCP tools (30+ endpoints):
 
 ### 🛠️ [Tools](./tools.md)
 
-35 MCP tools for vCon operations:
+46 MCP tools for vCon operations:
 
-- **Redesigned Contract Tools** - Discovery-first search and fetch with predictable envelopes
+- **Redesigned Contract Tools** - Discovery-first search, fetch, and aggregation with predictable envelopes
 - **Core Operations** - Create, read, update, delete vCons
-- **Component Management** - Add dialog, analysis, attachments
+- **Component Management** - Add, update, and remove parties, dialog, analysis, attachments
 - **Search & Query** - Keyword, semantic, and hybrid search
 - **Tag Management** - Organize with key-value metadata
 - **Database Tools** - Inspect and optimize database

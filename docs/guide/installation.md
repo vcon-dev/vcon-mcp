@@ -206,7 +206,7 @@ Install the server globally to use from anywhere (coming soon).
 
 ```bash
 # Install globally from npm
-npm install -g @vcon/mcp-server
+npm install -g vcon-mcp
 
 # Create a configuration file
 mkdir ~/.vcon-mcp

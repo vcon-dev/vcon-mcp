@@ -474,7 +474,7 @@ All of the above (resources, prompts, tools, hooks) can be packaged as plugins.
 ### Plugin Structure
 
 ```typescript
-import { VConPlugin, RequestContext } from '@vcon/mcp-server/hooks';
+import { VConPlugin, RequestContext } from 'vcon-mcp/hooks';
 import { Tool, Resource } from '@modelcontextprotocol/sdk/types';
 
 export default class MyExtensionPlugin implements VConPlugin {
@@ -880,8 +880,8 @@ A complete plugin for customer intelligence features.
 #### File: `plugins/customer-intelligence/index.ts`
 
 ```typescript
-import { VConPlugin, RequestContext } from '@vcon/mcp-server/hooks';
-import { VCon } from '@vcon/mcp-server/types';
+import { VConPlugin, RequestContext } from 'vcon-mcp/hooks';
+import { VCon } from 'vcon-mcp/types';
 import { Tool, Resource } from '@modelcontextprotocol/sdk/types';
 
 export default class CustomerIntelligencePlugin implements VConPlugin {

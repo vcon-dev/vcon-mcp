@@ -202,7 +202,7 @@ switch (name) {
 
 ```typescript
 // plugins/my-plugin/index.ts
-import { VConPlugin } from '@vcon/mcp-server/hooks';
+import { VConPlugin } from 'vcon-mcp/hooks';
 
 export default class MyPlugin implements VConPlugin {
   name = 'my-plugin';

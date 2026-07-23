@@ -6,7 +6,7 @@ This guide explains how to publish the vCon MCP Server documentation to various 
 
 The documentation is designed to be easily published to:
 - **GitHub Pages** - https://yourusername.github.io/vcon-mcp
-- **npm** - https://www.npmjs.com/package/@vcon/mcp-server
+- **npm** - https://www.npmjs.com/package/vcon-mcp
 - **GitBook** - https://your-org.gitbook.io/vcon-mcp
 - **GitHub Repository** - README.md overview
 
@@ -109,7 +109,7 @@ The main README.md serves as the npm package documentation.
 
 ```json
 {
-  "name": "@vcon/mcp-server",
+  "name": "vcon-mcp",
   "description": "IETF vCon MCP Server - Conversation Data Management with AI",
   "homepage": "https://yourusername.github.io/vcon-mcp",
   "repository": {
@@ -138,7 +138,7 @@ Keep README.md focused on:
 Brief description
 
 ## Installation
-npm install @vcon/mcp-server
+npm install vcon-mcp
 
 ## Quick Start
 [Code example]
@@ -167,7 +167,7 @@ npm publish
 
 ### npm Package Page
 
-Appears at: https://www.npmjs.com/package/@vcon/mcp-server
+Appears at: https://www.npmjs.com/package/vcon-mcp
 
 **Optimization tips:**
 - Add badges (version, downloads, license)
@@ -272,10 +272,10 @@ Keep the root README.md as a **landing page**:
 
 Add badges for quick info:
 ```markdown
-![Version](https://img.shields.io/npm/v/@vcon/mcp-server)
+![Version](https://img.shields.io/npm/v/vcon-mcp)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![GitHub Stars](https://img.shields.io/github/stars/vcon-dev/vcon-mcp)
-![Downloads](https://img.shields.io/npm/dm/@vcon/mcp-server)
+![Downloads](https://img.shields.io/npm/dm/vcon-mcp)
 ```
 
 ### Structure

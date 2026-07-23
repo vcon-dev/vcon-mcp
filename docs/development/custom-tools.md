@@ -1131,7 +1131,7 @@ Package your tools as a plugin:
 
 ```typescript
 // my-custom-tools-plugin/index.ts
-import { VConPlugin } from '@vcon/mcp-server/hooks';
+import { VConPlugin } from 'vcon-mcp/hooks';
 import { myCustomTool, handleMyCustomTool } from './tools.js';
 
 export default class CustomToolsPlugin implements VConPlugin {

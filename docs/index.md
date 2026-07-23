@@ -65,8 +65,8 @@ features:
     details: Extensive guides, API reference, examples, and IETF specification details
     
   - icon: 🌐
-    title: Real-time Updates
-    details: Supabase real-time subscriptions for live conversation data updates
+    title: Real-time Ready
+    details: Supabase real-time subscriptions are available at the database layer (not yet exposed via MCP tools)
 ---
 
 ## Quick Start
@@ -105,7 +105,7 @@ The Model Context Protocol (MCP) enables AI assistants to use external tools and
 
 ### Core Capabilities
 
-- ✅ **35 MCP Tools** - Complete CRUD operations, search, tagging, templates, analytics
+- ✅ **46 MCP Tools** - Complete CRUD operations, search, tagging, templates, analytics
 - ✅ **9 Query Prompts** - Guide AI assistants to search effectively
 - ✅ **4 Search Modes** - Basic, keyword, semantic, and hybrid search
 - ✅ **Tag System** - Flexible key-value metadata for organization
