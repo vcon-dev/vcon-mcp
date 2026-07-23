@@ -16,7 +16,7 @@ This section provides real-world examples of:
 ### Create a vCon
 
 ```typescript
-import { VConQueries } from '@vcon/mcp-server';
+import { VConQueries } from 'vcon-mcp';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(url, key);

@@ -27,7 +27,7 @@ The Model Context Protocol (MCP) enables AI assistants to use external tools and
 ## Key Features
 
 - ✅ **IETF vCon Compliant** - Implements `draft-ietf-vcon-vcon-core-02` specification (v0.4.0)
-- ✅ **MCP Integration** - 35 tools for AI assistants to manage conversation data
+- ✅ **MCP Integration** - 46 tools for AI assistants to manage conversation data
 - ✅ **Redesigned Contract Tools** - Additive `vcon_fetch`, `vcon_capabilities`, `vcon_search`, `vcon_taxonomy`, and `describe_response_shape` tools for predictable envelopes, explicit payload control, and discovery-first clients
 - ✅ **REST API** - Full HTTP REST API with CRUD, discovery, filtered reads, search, tags, and analytics surfaces
 - ✅ **Database Analytics** - Comprehensive analytics for size, growth, content patterns, and health monitoring
@@ -349,7 +349,7 @@ The server will start on `http://127.0.0.1:3000` (default) and log:
 curl -i -X POST http://127.0.0.1:3000 \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"my-client","version":"1.0.0"}}}'
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"my-client","version":"1.0.0"}}}'
 
 # Extract the Mcp-Session-Id from response headers
 
@@ -441,7 +441,7 @@ See the complete [REST API Reference](docs/api/rest-api.md) for detailed documen
 
 ## Available MCP Tools
 
-The server exposes 35 MCP tools, grouped by purpose. See [docs/api/tools.md](docs/api/tools.md) for full schemas.
+The server exposes 46 MCP tools, grouped by purpose. See [docs/api/tools.md](docs/api/tools.md) for full schemas.
 
 ### Recommended For New Clients
 
@@ -476,9 +476,32 @@ The legacy tools remain supported, but they are no longer the recommended starti
 | `get_vcon` | Retrieve a complete vCon by UUID |
 | `update_vcon` | Update top-level vCon metadata (subject, extensions, critical) |
 | `delete_vcon` | Delete a vCon and all related data |
+| `add_party` | Append a party to an existing vCon (returns the new party index) |
 | `add_dialog` | Add a conversation segment (recording, text, transfer, incomplete) |
 | `add_analysis` | Add AI/ML analysis results (vendor required) |
 | `add_attachment` | Attach files, documents, or supporting materials |
+
+### Sub-resource Updates & Removal
+
+Index-addressed edits to a vCon's child arrays. Update tools use PUT semantics (omitted fields are cleared). Per IETF core-02 §4.1.8, party and dialog removals preserve the slot as a placeholder so positional references do not shift; analysis and attachment removals hard-delete and renumber.
+
+| Tool | Description |
+|------|-------------|
+| `update_party` | Replace the party at the given index |
+| `remove_party` | Remove the party at an index (preserves an empty placeholder; `anonymize=true` writes `{name:"anonymous"}`) |
+| `update_dialog` | Replace the dialog at the given index |
+| `remove_dialog` | Remove the dialog at an index (preserves a content-stripped placeholder keeping `type`) |
+| `update_analysis` | Replace the analysis at the given index (vendor required) |
+| `remove_analysis` | Remove the analysis at an index (hard-delete, remaining analyses renumbered) |
+| `update_attachment` | Replace the attachment at the given index |
+| `remove_attachment` | Remove the attachment at an index (hard-delete and renumber; removing a `tags` attachment clears the vCon's tags) |
+
+### Aggregation & Graph
+
+| Tool | Description |
+|------|-------------|
+| `vcon_aggregate` | Server-side rollup for analyst questions (e.g. top dealers by portal-tag rate); returns `filtered_count` and `baseline_count` per group |
+| `vcon_graph_shape` | Return the default vCon shape graph for the corpus (analysis types, attachment purposes, tag keys, co-occurrence edges); same payload as resource `vcon://v1/graph/shape` |
 
 ### Search
 
@@ -545,8 +568,8 @@ Tools are organized into categories that can be enabled or disabled for differen
 
 | Category | Tools | Description |
 |----------|-------|-------------|
-| `read` | `get_vcon`, `vcon_fetch`, `vcon_capabilities`, `vcon_search`, `vcon_taxonomy`, `describe_response_shape`, `search_vcons`, `search_vcons_content`, `search_vcons_semantic`, `search_vcons_hybrid`, `get_tags`, `search_by_tags`, `get_unique_tags` | All read operations |
-| `write` | `create_vcon`, `update_vcon`, `delete_vcon`, `add_analysis`, `add_dialog`, `add_attachment`, `create_vcon_from_template`, `manage_tag`, `remove_all_tags` | All mutating operations |
+| `read` | `get_vcon`, `vcon_fetch`, `vcon_capabilities`, `vcon_search`, `vcon_taxonomy`, `vcon_aggregate`, `vcon_graph_shape`, `describe_response_shape`, `search_vcons`, `search_vcons_content`, `search_vcons_semantic`, `search_vcons_hybrid`, `get_tags`, `search_by_tags`, `get_unique_tags` | All read operations |
+| `write` | `create_vcon`, `update_vcon`, `delete_vcon`, `add_party`, `update_party`, `remove_party`, `add_dialog`, `update_dialog`, `remove_dialog`, `add_analysis`, `update_analysis`, `remove_analysis`, `add_attachment`, `update_attachment`, `remove_attachment`, `create_vcon_from_template`, `manage_tag`, `remove_all_tags` | All mutating operations |
 | `schema` | `get_schema`, `get_examples` | Documentation helpers |
 | `analytics` | `get_database_analytics`, `get_monthly_growth_analytics`, `get_attachment_analytics`, `get_tag_analytics`, `get_content_analytics`, `get_database_health_metrics` | Business intelligence |
 | `infra` | `get_database_shape`, `get_database_stats`, `analyze_query`, `get_database_size_info`, `get_smart_search_limits` | Admin/debugging |
@@ -856,12 +879,11 @@ npm run test:compliance
 # Launch MCP test console (interactive)
 npm run test:console
 
-# Build for production
+# Build for production (also the primary type check)
 npm run build
-
-# Lint code
-npm run lint
 ```
+
+> **Note:** `npm run lint` is not currently wired up (no ESLint 9 flat config exists yet), so `npm run build` (tsc) is the authoritative check for now.
 
 ### Testing
 
@@ -984,7 +1006,7 @@ const results = await searchVCons({
 
 - [X] Semantic search with pgvector
 - [ ] Real-time subscriptions
-- [ ] Batch operations
+- [X] Batch operations
 - [ ] Export/import formats
 
 ### Phase 3: Enterprise Features 📋

@@ -11,8 +11,8 @@ Plugins implement the `VConPlugin` interface which provides lifecycle hooks and 
 ### Basic Plugin Structure
 
 ```typescript
-import { VConPlugin, RequestContext } from '@vcon/mcp-server/hooks';
-import { VCon } from '@vcon/mcp-server/types';
+import { VConPlugin, RequestContext } from 'vcon-mcp/hooks';
+import { VCon } from 'vcon-mcp/types';
 import { Tool } from '@modelcontextprotocol/sdk/types';
 
 export default class MyPlugin implements VConPlugin {
@@ -264,8 +264,8 @@ constructor(config: any) {
 ## Example: Simple Logging Plugin
 
 ```typescript
-import { VConPlugin, RequestContext } from '@vcon/mcp-server/hooks';
-import { VCon } from '@vcon/mcp-server/types';
+import { VConPlugin, RequestContext } from 'vcon-mcp/hooks';
+import { VCon } from 'vcon-mcp/types';
 
 export default class LoggingPlugin implements VConPlugin {
   name = 'logging-plugin';
@@ -293,8 +293,8 @@ export default class LoggingPlugin implements VConPlugin {
 ## Example: Access Control Plugin
 
 ```typescript
-import { VConPlugin, RequestContext } from '@vcon/mcp-server/hooks';
-import { VCon } from '@vcon/mcp-server/types';
+import { VConPlugin, RequestContext } from 'vcon-mcp/hooks';
+import { VCon } from 'vcon-mcp/types';
 
 export default class AccessControlPlugin implements VConPlugin {
   name = 'access-control';
@@ -351,7 +351,7 @@ Create a test file:
 
 ```typescript
 import MyPlugin from './my-plugin';
-import { VCon } from '@vcon/mcp-server/types';
+import { VCon } from 'vcon-mcp/types';
 
 const plugin = new MyPlugin({
   licenseKey: 'test-key',
@@ -399,7 +399,7 @@ console.log('Modified vCon:', modified);
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "peerDependencies": {
-    "@vcon/mcp-server": "^1.0.0"
+    "vcon-mcp": "^1.0.0"
   }
 }
 ```

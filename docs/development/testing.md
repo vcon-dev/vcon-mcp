@@ -2,7 +2,7 @@
 
 ## ✅ Quick Test Results
 
-Your MCP server is **fully functional**! All 35 MCP tools and 35+ REST API endpoints are tested:
+Your MCP server is **fully functional**! All 46 MCP tools and 35+ REST API endpoints are tested:
 
 **MCP Tools (35):** CRUD (create, get, update, delete, add_dialog, add_analysis, add_attachment, create_from_template), Search (search_vcons, search_vcons_content, search_vcons_semantic, search_vcons_hybrid), Contract (vcon_fetch, vcon_search, vcon_capabilities, vcon_taxonomy, describe_response_shape), Tags (manage_tag, get_tags, remove_all_tags, search_by_tags, get_unique_tags), Schema (get_schema, get_examples), Database (get_database_shape, get_database_stats, analyze_query, get_database_size_info, get_smart_search_limits), Analytics (get_database_analytics, get_monthly_growth_analytics, get_content_analytics, get_tag_analytics, get_attachment_analytics, get_database_health_metrics)
 
@@ -67,7 +67,7 @@ Integrate your MCP server directly with Claude Desktop.
 3. **Verify it loaded:**
    - Look for the 🔌 MCP icon in Claude Desktop
    - It should show "vcon" as an available server
-   - You should see 35 tools available
+   - You should see 46 tools available
 
 **Test in Claude:**
 
@@ -265,7 +265,7 @@ const result = await fetch('YOUR_WEBHOOK_URL', {
 ## 📝 Test Checklist
 
 Before deploying:
-- [ ] All 35 MCP tools tested via script
+- [ ] All 46 MCP tools tested via script
 - [ ] REST API endpoints tested (`npm test` includes supertest coverage)
 - [ ] MCP Inspector loads and shows tools
 - [ ] Can search vCons by subject

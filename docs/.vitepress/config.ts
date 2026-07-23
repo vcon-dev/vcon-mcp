@@ -195,7 +195,7 @@ export default defineConfig({
 
     socialLinks: [
       { icon: 'github', link: 'https://github.com/vcon-dev/vcon-mcp' },
-      { icon: 'npm', link: 'https://www.npmjs.com/package/@vcon/mcp-server' }
+      { icon: 'npm', link: 'https://www.npmjs.com/package/vcon-mcp' }
     ],
 
     footer: {

@@ -113,12 +113,42 @@ Format: `"key:value"` strings in a JSON array.
 | Tool | Description |
 |------|-------------|
 | `create_vcon` | Create new vCon with parties |
+| `create_vcon_from_template` | Create vCon from a template (phone_call, chat, email, video, custom) |
 | `get_vcon` | Retrieve vCon by UUID |
-| `update_vcon` | Update metadata (subject, extensions) |
+| `update_vcon` | Update metadata (subject, extensions, critical) |
 | `delete_vcon` | Delete vCon and all related data |
+| `add_party` | Append a party (returns new party index) |
 | `add_dialog` | Add conversation segment |
 | `add_analysis` | Add AI analysis (vendor REQUIRED) |
 | `add_attachment` | Add file/document |
+
+### Sub-resource Update/Remove Tools
+
+Index-addressed edits. Update = PUT semantics (omitted fields cleared). Removal follows core-02 §4.1.8: party/dialog leave placeholders (no renumber); analysis/attachment hard-delete and renumber. See [`docs/api/tools.md`](docs/api/tools.md#sub-resource-updates--removal).
+
+| Tool | Description |
+|------|-------------|
+| `update_party` / `remove_party` | Replace / remove party at index (`remove_party` supports `anonymize`) |
+| `update_dialog` / `remove_dialog` | Replace / remove dialog at index |
+| `update_analysis` / `remove_analysis` | Replace / remove analysis at index (vendor REQUIRED on update) |
+| `update_attachment` / `remove_attachment` | Replace / remove attachment at index (removing `tags` clears tags) |
+
+### Aggregation & Graph Tools
+
+| Tool | Description |
+|------|-------------|
+| `vcon_aggregate` | Server-side dealer rollups (`filtered_count` / `baseline_count`); needs RPC `aggregate_vcons_by_dealer_stats` |
+| `vcon_graph_shape` | Corpus shape graph (analysis types, attachment purposes, tag keys, co-occurrence edges); mirrors resource `vcon://v1/graph/shape` |
+
+### Contract & Discovery Tools
+
+| Tool | Description |
+|------|-------------|
+| `vcon_fetch` | Single-record fetch with explicit `include` groups |
+| `vcon_search` | Unified metadata/keyword/semantic/hybrid search with stable envelopes |
+| `vcon_capabilities` | Discover modes, includes, pagination, byte budgets, migration hints |
+| `vcon_taxonomy` | Portal taxonomy and preferred data-source guidance |
+| `describe_response_shape` | Published response schema + example for redesigned and legacy tools |
 
 ### Search Tools
 

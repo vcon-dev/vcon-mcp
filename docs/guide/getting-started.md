@@ -270,11 +270,12 @@ Start Here
    - Privacy helpers
    - Serialization
 
-### MCP Tools Provided (35 tools)
+### MCP Tools Provided (46 tools)
 
-- **CRUD:** `create_vcon`, `get_vcon`, `update_vcon`, `delete_vcon`, `add_dialog`, `add_analysis`, `add_attachment`, `create_vcon_from_template`
+- **CRUD:** `create_vcon`, `get_vcon`, `update_vcon`, `delete_vcon`, `add_party`, `add_dialog`, `add_analysis`, `add_attachment`, `create_vcon_from_template`
+- **Sub-resource update/remove:** `update_party`, `remove_party`, `update_dialog`, `remove_dialog`, `update_analysis`, `remove_analysis`, `update_attachment`, `remove_attachment`
 - **Search:** `search_vcons`, `search_vcons_content`, `search_vcons_semantic`, `search_vcons_hybrid`
-- **Contract:** `vcon_fetch`, `vcon_search`, `vcon_capabilities`, `vcon_taxonomy`, `describe_response_shape`
+- **Contract:** `vcon_fetch`, `vcon_search`, `vcon_capabilities`, `vcon_taxonomy`, `vcon_aggregate`, `vcon_graph_shape`, `describe_response_shape`
 - **Tags:** `manage_tag`, `get_tags`, `remove_all_tags`, `search_by_tags`, `get_unique_tags`
 - **Analytics:** `get_database_analytics`, `get_monthly_growth_analytics`, `get_content_analytics`, `get_tag_analytics`, `get_attachment_analytics`, `get_database_health_metrics`
 - **Database:** `get_database_shape`, `get_database_stats`, `analyze_query`, `get_database_size_info`, `get_smart_search_limits`
