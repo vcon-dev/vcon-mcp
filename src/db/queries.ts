@@ -30,6 +30,7 @@ import {
   buildAttachmentRow,
   buildDialogRow,
   buildPartyRow,
+  vconCacheKey,
 } from './batch-writer.js';
 
 const logger = createLogger('queries');
@@ -738,7 +739,7 @@ export class SupabaseVConQueries implements IVConQueries {
     if (!this.cacheEnabled || !this.redis) return null;
 
     try {
-      const cached = await this.redis.get(`vcon:${uuid}`);
+      const cached = await this.redis.get(vconCacheKey(uuid));
       if (cached) {
         logger.debug({ vcon_uuid: uuid, cache_hit: true }, 'Cache hit');
         return JSON.parse(cached) as VCon;
@@ -764,7 +765,7 @@ export class SupabaseVConQueries implements IVConQueries {
 
     try {
       await this.redis.setex(
-        `vcon:${uuid}`,
+        vconCacheKey(uuid),
         this.cacheTTL,
         JSON.stringify(vcon)
       );
@@ -790,7 +791,7 @@ export class SupabaseVConQueries implements IVConQueries {
     if (!this.cacheEnabled || !this.redis) return;
 
     try {
-      await this.redis.del(`vcon:${uuid}`);
+      await this.redis.del(vconCacheKey(uuid));
       logger.debug({ vcon_uuid: uuid }, 'Invalidated cache');
     } catch (error) {
       logger.warn({

@@ -62,6 +62,17 @@ function tenantKey(tenantId: string | null): TenantKey {
 }
 
 /**
+ * Redis cache key for a vCon, namespaced by the instance's Postgres schema.
+ * Instances pinned to different schemas (SUPABASE_DB_SCHEMA, see db/client.ts)
+ * MUST NOT collide in a shared Redis, or a cached read from one schema leaks
+ * into another. The schema is the tenant boundary, so it belongs in the key.
+ */
+export function vconCacheKey(uuid: string): string {
+  const schema = process.env.SUPABASE_DB_SCHEMA || 'public';
+  return `vcon:${schema}:${uuid}`;
+}
+
+/**
  * Enqueue a vCon for batched insertion. Resolves when the batch containing
  * this vCon has been fully committed; rejects if any insert in that batch
  * fails.
@@ -216,7 +227,7 @@ async function commitBatch(pending: Pending[], tenantId: string | null): Promise
     const redis = redisRef;
     await Promise.all(
       pending.map(p =>
-        redis.del(`vcon:${p.vcon.uuid}`).catch(e => {
+        redis.del(vconCacheKey(p.vcon.uuid)).catch(e => {
           logWithContext('warn', 'cache invalidation failed', {
             vcon_uuid: p.vcon.uuid,
             error_message: e instanceof Error ? e.message : String(e),

@@ -15,6 +15,7 @@ import {
   BATCH_MAX_AGE_MS,
   _resetBatchWriterForTests,
   _flushNowForTests,
+  vconCacheKey,
 } from '../../src/db/batch-writer.js';
 import { VCon } from '../../src/types/vcon.js';
 
@@ -179,6 +180,29 @@ describe('batch-writer', () => {
       // Each tenant's batch should have exactly one row.
       expect(vconCalls[0][0]).toHaveLength(1);
       expect(vconCalls[1][0]).toHaveLength(1);
+    });
+  });
+
+  describe('vconCacheKey', () => {
+    const prev = process.env.SUPABASE_DB_SCHEMA;
+    afterEach(() => {
+      if (prev === undefined) delete process.env.SUPABASE_DB_SCHEMA;
+      else process.env.SUPABASE_DB_SCHEMA = prev;
+    });
+
+    it('namespaces the cache key by schema so two schemas never collide', () => {
+      process.env.SUPABASE_DB_SCHEMA = 'acme';
+      const acme = vconCacheKey('u1');
+      process.env.SUPABASE_DB_SCHEMA = 'beta';
+      const beta = vconCacheKey('u1');
+      expect(acme).toBe('vcon:acme:u1');
+      expect(beta).toBe('vcon:beta:u1');
+      expect(acme).not.toBe(beta); // same uuid, different schema -> different key (no cross-tenant leak)
+    });
+
+    it('defaults to the public schema when unset', () => {
+      delete process.env.SUPABASE_DB_SCHEMA;
+      expect(vconCacheKey('u1')).toBe('vcon:public:u1');
     });
   });
 });
