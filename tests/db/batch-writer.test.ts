@@ -190,19 +190,21 @@ describe('batch-writer', () => {
       else process.env.SUPABASE_DB_SCHEMA = prev;
     });
 
-    it('namespaces the cache key by schema so two schemas never collide', () => {
+    it('namespaces the cache key with schema outermost so two schemas never collide', () => {
       process.env.SUPABASE_DB_SCHEMA = 'acme';
       const acme = vconCacheKey('u1');
       process.env.SUPABASE_DB_SCHEMA = 'beta';
       const beta = vconCacheKey('u1');
-      expect(acme).toBe('vcon:acme:u1');
-      expect(beta).toBe('vcon:beta:u1');
+      expect(acme).toBe('acme:vcon:u1');
+      expect(beta).toBe('beta:vcon:u1');
       expect(acme).not.toBe(beta); // same uuid, different schema -> different key (no cross-tenant leak)
     });
 
-    it('defaults to the public schema when unset', () => {
+    it('falls back to a bare vcon: key when no schema is set', () => {
       delete process.env.SUPABASE_DB_SCHEMA;
-      expect(vconCacheKey('u1')).toBe('vcon:public:u1');
+      // Bare key matches the pre-namespacing behavior and the conserver default,
+      // so an untenanted shared Redis stays consistent across both services.
+      expect(vconCacheKey('u1')).toBe('vcon:u1');
     });
   });
 });

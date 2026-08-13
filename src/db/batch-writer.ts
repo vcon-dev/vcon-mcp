@@ -66,10 +66,16 @@ function tenantKey(tenantId: string | null): TenantKey {
  * Instances pinned to different schemas (SUPABASE_DB_SCHEMA, see db/client.ts)
  * MUST NOT collide in a shared Redis, or a cached read from one schema leaks
  * into another. The schema is the tenant boundary, so it belongs in the key.
+ *
+ * Schema is the OUTERMOST namespace (`<schema>:vcon:<uuid>`), matching the
+ * enterprise conserver's global key prefix so both can share one Redis. When
+ * no schema is set the key is the bare `vcon:<uuid>` — byte-identical to the
+ * pre-namespacing key and to the conserver's default, so an untenanted shared
+ * store stays consistent across both services.
  */
 export function vconCacheKey(uuid: string): string {
-  const schema = process.env.SUPABASE_DB_SCHEMA || 'public';
-  return `vcon:${schema}:${uuid}`;
+  const schema = process.env.SUPABASE_DB_SCHEMA;
+  return schema ? `${schema}:vcon:${uuid}` : `vcon:${uuid}`;
 }
 
 /**
