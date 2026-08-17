@@ -463,10 +463,13 @@ describe('VConQueries', () => {
       expect(result).toEqual({});
     });
 
-    it('returns {} when the tags attachment body is an object, not an array', async () => {
-      stubGetTagsQuery('{"department":"sales"}');
+    // External ingest writes tags as a flat JSON object rather than the
+    // "key:value" array this server writes. Those tags used to read back as
+    // {} — 10k+ vCons with silently invisible tags. Both shapes are accepted.
+    it('reads a flat JSON object tags body', async () => {
+      stubGetTagsQuery('{"department":"sales","message_count":1,"deal":null}');
       const result = await queries.getTags(randomUUID());
-      expect(result).toEqual({});
+      expect(result).toEqual({ department: 'sales', message_count: '1' });
     });
   });
 

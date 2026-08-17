@@ -23,6 +23,7 @@ import {
   type VconShapeGraphPayload,
 } from '../types/vcon-shape-graph.js';
 import { deserializeBody, serializeBody } from '../utils/body-serialization.js';
+import { parseTagsBody } from '../utils/read-surfaces.js';
 import { ChildIndexError } from '../utils/vcon-children.js';
 import {
   batchSaveVCon,
@@ -1495,26 +1496,9 @@ export class SupabaseVConQueries implements IVConQueries {
       return {};
     }
 
-    // Parse tags from body (array of "key:value" strings). Legacy rows can
-    // hold the literal "null", "{}", or other non-array bodies — iterating
-    // those directly throws "tagsArray is not iterable", which previously
-    // surfaced from manage_tag / get_tags on vCons whose tags attachment
-    // was never populated with a proper JSON array.
-    const parsed = JSON.parse(attachments[0].body || '[]');
-    const tagsArray: unknown[] = Array.isArray(parsed) ? parsed : [];
-    const tagsObject: Record<string, string> = {};
-
-    for (const tagString of tagsArray) {
-      if (typeof tagString !== 'string') continue;
-      const colonIndex = tagString.indexOf(':');
-      if (colonIndex > 0) {
-        const key = tagString.substring(0, colonIndex);
-        const value = tagString.substring(colonIndex + 1);
-        tagsObject[key] = value;
-      }
-    }
-
-    return tagsObject;
+    // Accepts both the "key:value" array this server writes and the flat
+    // JSON object external ingest produces; garbage bodies yield {}.
+    return parseTagsBody(attachments[0].body);
   }
 
   /**
@@ -1707,18 +1691,7 @@ export class SupabaseVConQueries implements IVConQueries {
         // Process batch immediately to allow early exit
         for (const attachment of batch || []) {
           try {
-            const tagsArray = JSON.parse(attachment.body || '[]');
-            const tagsObject: Record<string, string> = {};
-
-            for (const tagString of tagsArray) {
-              if (typeof tagString !== 'string') continue;
-              const colonIndex = tagString.indexOf(':');
-              if (colonIndex > 0) {
-                const key = tagString.substring(0, colonIndex);
-                const value = tagString.substring(colonIndex + 1);
-                tagsObject[key] = value;
-              }
-            }
+            const tagsObject = parseTagsBody(attachment.body);
 
             // Check if all requested tags match
             let allMatch = true;
@@ -2049,25 +2022,14 @@ export class SupabaseVConQueries implements IVConQueries {
           });
         }
       }
-      try {
-        const tagsArray = JSON.parse(attachment.body || '[]');
-        if (!Array.isArray(tagsArray)) continue;
-        for (const tagString of tagsArray) {
-          if (typeof tagString !== 'string') continue;
-          const colonIndex = tagString.indexOf(':');
-          if (colonIndex <= 0) continue;
-          const key = tagString.substring(0, colonIndex);
-          const value = tagString.substring(colonIndex + 1);
-          if (keyFilter && !key.toLowerCase().includes(keyFilter)) continue;
-          if (!allTagsFb[key]) allTagsFb[key] = new Set<string>();
-          if (includeCounts) {
-            if (!tagCountsFb[key]) tagCountsFb[key] = {};
-            tagCountsFb[key][value] = (tagCountsFb[key][value] || 0) + 1;
-          }
-          allTagsFb[key].add(value);
+      for (const [key, value] of Object.entries(parseTagsBody(attachment.body))) {
+        if (keyFilter && !key.toLowerCase().includes(keyFilter)) continue;
+        if (!allTagsFb[key]) allTagsFb[key] = new Set<string>();
+        if (includeCounts) {
+          if (!tagCountsFb[key]) tagCountsFb[key] = {};
+          tagCountsFb[key][value] = (tagCountsFb[key][value] || 0) + 1;
         }
-      } catch {
-        // skip unparseable attachments
+        allTagsFb[key].add(value);
       }
     }
 
