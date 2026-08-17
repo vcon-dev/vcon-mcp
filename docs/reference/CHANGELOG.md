@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.1] - 2026-08-17
+
+### Fixed
+- Tags carried on a spec-correct vCon 0.4.0 attachment as `purpose: "tags"` were silently invisible: tag storage keyed only on `attachments.type = 'tags'`, so those rows landed with `type` NULL and were missed by every tag read path and by `vcon_tags_mv`. A `BEFORE INSERT OR UPDATE` trigger on `attachments` now mirrors `tags` across `type` and `purpose` (with a backfill for existing rows), and `vcon_tags_mv` is rebuilt on `coalesce(type, purpose)`. Tags written by the server now also carry the spec `purpose` field
+- MongoDB backend tag paths (`getTags`, `saveTags`, `searchByTags`, unique-tag discovery) and `extractTags` recognize either spelling via a shared `isTagsAttachment()` predicate
+
+### Migration
+- `20260817000000_tags_attachment_purpose.sql` — required for the fix; backfills existing tag attachments and recreates `vcon_tags_mv` with its indexes
+
+---
+
 ## [1.3.0] - 2026-06-10
 
 ### Added
