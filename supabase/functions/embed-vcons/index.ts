@@ -7,6 +7,7 @@ import {
   embedOpenAI,
   embedAzureOpenAI,
   embedHF,
+  embedSupabase,
   getModelName,
 } from "../_shared/embeddings.ts";
 
@@ -20,16 +21,26 @@ const AZURE_OPENAI_EMBEDDING_API_KEY = Deno.env.get("AZURE_OPENAI_EMBEDDING_API_
 const AZURE_OPENAI_EMBEDDING_API_VERSION = Deno.env.get("AZURE_OPENAI_EMBEDDING_API_VERSION") || "2024-02-01";
 const HF_API_TOKEN = Deno.env.get("HF_API_TOKEN");
 
-// Provider priority: LiteLLM > Azure OpenAI > OpenAI > Hugging Face
-const PROVIDER: EmbeddingProvider = (LITELLM_PROXY_URL && LITELLM_MASTER_KEY)
-  ? "litellm"
-  : (AZURE_OPENAI_EMBEDDING_ENDPOINT && AZURE_OPENAI_EMBEDDING_API_KEY)
-    ? "azure"
-    : OPENAI_API_KEY
-      ? "openai"
-      : HF_API_TOKEN
-        ? "hf"
-        : "openai";
+// Provider priority: explicit EMBEDDING_PROVIDER > LiteLLM > Azure OpenAI >
+// OpenAI > Hugging Face > the Edge Runtime's built-in gte-small.
+//
+// gte-small is the fallback rather than an error because it always works here:
+// no key, no egress, no cost, and natively the 384 dimensions the column wants.
+// Whatever is chosen must ALSO be what query embeddings come from, or cosine
+// similarity compares vectors from two different models and silently returns
+// confident nonsense. The embedding_model column records which was used.
+const FORCED_PROVIDER = Deno.env.get("EMBEDDING_PROVIDER") as EmbeddingProvider | undefined;
+const PROVIDER: EmbeddingProvider = FORCED_PROVIDER
+  ? FORCED_PROVIDER
+  : (LITELLM_PROXY_URL && LITELLM_MASTER_KEY)
+    ? "litellm"
+    : (AZURE_OPENAI_EMBEDDING_ENDPOINT && AZURE_OPENAI_EMBEDDING_API_KEY)
+      ? "azure"
+      : OPENAI_API_KEY
+        ? "openai"
+        : HF_API_TOKEN
+          ? "hf"
+          : "supabase";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false }
@@ -232,6 +243,19 @@ serve(async (req) => {
           totalErrors += batch.length;
         }
       }
+    } else if (PROVIDER === "supabase") {
+      // Built-in gte-small: one text at a time, in-process. gte-small truncates
+      // at 512 tokens itself, so the token-aware batching above does not apply.
+      //
+      // ponytail: caller must paginate at ?limit=10. The model loads per worker
+      // invocation, so 25 units returns WORKER_RESOURCE_LIMIT (measured on the
+      // free tier, 2026-08-17) — it is a memory ceiling, not a timeout, so no
+      // amount of waiting helps. Raise it only if the runtime's per-worker
+      // memory grows; for bulk work, loop the endpoint instead.
+      const texts = units.map((u) => u.content_text);
+      const vectors = await embedSupabase(texts);
+      await upsertEmbeddings(units, vectors);
+      totalEmbedded = units.length;
     } else {
       // HF
       const texts = units.map((u) => u.content_text);

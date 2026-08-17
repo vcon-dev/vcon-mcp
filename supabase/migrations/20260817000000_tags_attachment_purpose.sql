@@ -39,44 +39,15 @@ UPDATE attachments SET type = 'tags' WHERE type IS NULL AND purpose = 'tags';
 UPDATE attachments SET purpose = 'tags' WHERE purpose IS NULL AND type = 'tags';
 
 -- ============================================================================
--- 3. Rebuild vcon_tags_mv on coalesce(type, purpose)
+-- 3. vcon_tags_mv is NOT rebuilt here
 -- ============================================================================
--- Belt and braces: the trigger keeps type populated going forward, but the MV
--- no longer depends on that being true.
-
-DROP MATERIALIZED VIEW IF EXISTS vcon_tags_mv CASCADE;
-
-CREATE MATERIALIZED VIEW vcon_tags_mv AS
-SELECT
-  a.tenant_id,
-  ta.vcon_id,
-  jsonb_object_agg(ta.key, ta.value) AS tags,
-  a.updated_at AS tag_updated_at,
-  a.created_at AS tag_created_at
-FROM (
-  SELECT a.tenant_id,
-         a.vcon_id,
-         a.updated_at,
-         a.created_at,
-         split_part(elem, ':', 1) AS key,
-         split_part(elem, ':', 2) AS value
-  FROM attachments a
-  CROSS JOIN LATERAL jsonb_array_elements_text(a.body::jsonb) AS elem
-  WHERE coalesce(a.type, a.purpose) = 'tags'
-    AND a.body IS NOT NULL
-    AND a.body != ''
-    AND a.body ~ '^\s*\[.*\]\s*$'
-) ta
-JOIN attachments a ON a.vcon_id = ta.vcon_id AND coalesce(a.type, a.purpose) = 'tags'
-WHERE ta.key IS NOT NULL AND ta.key != ''
-GROUP BY a.tenant_id, ta.vcon_id, a.updated_at, a.created_at;
-
--- Indexes (unchanged from 20251210120000_optimize_mv_tags_timestamps.sql)
-CREATE UNIQUE INDEX idx_vcon_tags_mv_vcon_id ON vcon_tags_mv(vcon_id);
-CREATE INDEX idx_vcon_tags_mv_tags_gin ON vcon_tags_mv USING GIN (tags);
-CREATE INDEX idx_vcon_tags_mv_tenant ON vcon_tags_mv(tenant_id);
-CREATE INDEX idx_vcon_tags_mv_updated ON vcon_tags_mv(tag_updated_at DESC);
-CREATE INDEX idx_vcon_tags_mv_tenant_updated ON vcon_tags_mv(tenant_id, tag_updated_at DESC);
+-- 20260817120000_vcon_tags_mv_object_body.sql already defines the MV on
+-- coalesce(type, purpose), so the "belt and braces" rebuild this migration
+-- used to carry is redundant. It is also unsafe: on a database that has
+-- already applied 20260817120000, this file applies out of order and its
+-- rebuild would revert the MV to the array-only body predicate, silently
+-- re-breaking tags for every object-bodied vCon. Leaving the MV alone makes
+-- this migration order-independent.
 
 -- Partial index used for incremental change detection on tag attachments
 DROP INDEX IF EXISTS idx_attachments_type_updated;

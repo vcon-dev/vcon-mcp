@@ -15,7 +15,7 @@ import {
     replaceDialogAt,
     replacePartyAt,
 } from '../utils/vcon-children.js';
-import { isTagsAttachment } from '../utils/read-surfaces.js';
+import { isTagsAttachment, parseTagsBody } from '../utils/read-surfaces.js';
 import {
     VCON_SHAPE_GRAPH_SCHEMA_VERSION,
     type VconShapeGraphNode,
@@ -571,14 +571,7 @@ export class MongoVConQueries implements IVConQueries {
     async getTags(vconUuid: string): Promise<Record<string, string>> {
         const vcon = await this.getVCon(vconUuid);
         const tagsAttachment = (vcon.attachments || []).find(isTagsAttachment);
-        if (!tagsAttachment?.body) return {};
-        const arr: string[] = JSON.parse(tagsAttachment.body as string);
-        const result: Record<string, string> = {};
-        for (const s of arr) {
-            const i = s.indexOf(':');
-            if (i > 0) result[s.slice(0, i)] = s.slice(i + 1);
-        }
-        return result;
+        return parseTagsBody(tagsAttachment?.body);
     }
 
     async getTag(vconUuid: string, key: string, defaultValue: any = null): Promise<any> {
@@ -713,19 +706,12 @@ export class MongoVConQueries implements IVConQueries {
         for (const doc of docs) {
             const tagsAtt = (doc.attachments || []).find(isTagsAttachment);
             if (!tagsAtt?.body) continue;
-            try {
-                const arr: string[] = JSON.parse(tagsAtt.body);
-                totalVCons++;
-                for (const s of arr) {
-                    const i = s.indexOf(':');
-                    if (i <= 0) continue;
-                    const k = s.slice(0, i);
-                    const v = s.slice(i + 1);
-                    if (options?.keyFilter && !k.toLowerCase().includes(options.keyFilter.toLowerCase())) continue;
-                    if (!tagsByKey[k]) tagsByKey[k] = new Set();
-                    tagsByKey[k].add(v);
-                }
-            } catch { /* skip malformed */ }
+            totalVCons++;
+            for (const [k, v] of Object.entries(parseTagsBody(tagsAtt.body))) {
+                if (options?.keyFilter && !k.toLowerCase().includes(options.keyFilter.toLowerCase())) continue;
+                if (!tagsByKey[k]) tagsByKey[k] = new Set();
+                tagsByKey[k].add(v);
+            }
         }
 
         const result: Record<string, string[]> = {};

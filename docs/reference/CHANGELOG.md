@@ -11,12 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.3.1] - 2026-08-17
 
+### Added
+- Supabase-native `gte-small` embeddings, so a hosted dataset needs no third-party embedding key: `embedSupabase()` runs inside the Supabase project at the native 384 dims, `embed-vcons` accepts `supabase` as a provider (and falls back to it instead of erroring on a missing `OPENAI_API_KEY`), and a new `embed-query` edge function embeds query strings with the same model as the corpus. `EMBEDDING_PROVIDER` forces a specific choice (PR #65)
+
 ### Fixed
-- Tags carried on a spec-correct vCon 0.4.0 attachment as `purpose: "tags"` were silently invisible: tag storage keyed only on `attachments.type = 'tags'`, so those rows landed with `type` NULL and were missed by every tag read path and by `vcon_tags_mv`. A `BEFORE INSERT OR UPDATE` trigger on `attachments` now mirrors `tags` across `type` and `purpose` (with a backfill for existing rows), and `vcon_tags_mv` is rebuilt on `coalesce(type, purpose)`. Tags written by the server now also carry the spec `purpose` field
-- MongoDB backend tag paths (`getTags`, `saveTags`, `searchByTags`, unique-tag discovery) and `extractTags` recognize either spelling via a shared `isTagsAttachment()` predicate
+- Tags carried on a spec-correct vCon 0.4.0 attachment as `purpose: "tags"` were silently invisible: tag storage keyed only on `attachments.type = 'tags'`, so those rows landed with `type` NULL and were missed by every tag read path and by `vcon_tags_mv`. A `BEFORE INSERT OR UPDATE` trigger on `attachments` now mirrors `tags` across `type` and `purpose` (with a backfill for existing rows), and `vcon_tags_mv` keys on `coalesce(type, purpose)`. Tags written by the server now also carry the spec `purpose` field (PR #66)
+- MongoDB backend tag paths (`getTags`, `saveTags`, `searchByTags`, unique-tag discovery) and `extractTags` recognize either spelling via a shared `isTagsAttachment()` predicate (PR #66)
+- Tags stored as a flat JSON object body (`{"source": "gmail", ...}`, produced by external ingest) read back as no tags at all, because every read path required the `["key:value", ...]` array form. `vcon_tags_mv` and a new shared `parseTagsBody()` now accept both shapes; writes still emit the array form (PR #67)
+- Query-time embedding was hardcoded to `api.openai.com` with no override, so a locally embedded corpus could not be searched at all; the query path now uses the configured provider and rejects a wrong-dimension response instead of passing it into the vector comparison (PR #65)
+- `vcon_embeddings` upserts were not idempotent for subject-level rows: `content_reference` is NULL there and Postgres treats NULLs as distinct in a unique constraint, so each backfill pass inserted another full 384-dim copy with no error (PR #65)
 
 ### Migration
-- `20260817000000_tags_attachment_purpose.sql` — required for the fix; backfills existing tag attachments and recreates `vcon_tags_mv` with its indexes
+- `20260817000000_tags_attachment_purpose.sql` — required for the `purpose` fix; adds the normalizing trigger and backfills existing tag attachments. It deliberately does not rebuild `vcon_tags_mv`, so it is safe to apply out of order
+- `20260817120000_vcon_tags_mv_object_body.sql` — rebuilds `vcon_tags_mv` on `coalesce(type, purpose)` with support for both tag body shapes
+- `20260817210000_vcon_embeddings_unique_nulls_not_distinct.sql` — makes the `vcon_embeddings` unique constraint `NULLS NOT DISTINCT`
 
 ---
 

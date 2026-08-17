@@ -65,29 +65,51 @@ export function isTagsAttachment(attachment: Attachment): boolean {
   return attachment.type === 'tags' || attachment.purpose === 'tags';
 }
 
-export function extractTags(vcon: VCon): Record<string, string> {
-  const tagsAttachment = (vcon.attachments || []).find(isTagsAttachment);
-  if (!tagsAttachment || tagsAttachment.body === undefined || tagsAttachment.body === null) {
-    return {};
-  }
+/**
+ * Parse a tags attachment body into a key/value object.
+ *
+ * Two shapes exist in the wild and both are accepted:
+ *  - `["key:value", ...]` — what this server writes (CLAUDE.md "Tags Storage")
+ *  - `{"key": "value", ...}` — a flat JSON object, produced by external
+ *    ingest pipelines. Before this was handled, 10k+ such vCons read back as
+ *    zero tags, silently.
+ *
+ * Non-string scalar values are stringified and nulls dropped, mirroring what
+ * `jsonb_each_text` does for vcon_tags_mv, so SQL and TS agree.
+ */
+export function parseTagsBody(body: unknown): Record<string, string> {
+  if (body === undefined || body === null || body === '') return {};
 
+  let parsed: unknown;
   try {
-    const parsed =
-      typeof tagsAttachment.body === 'string'
-        ? JSON.parse(tagsAttachment.body)
-        : tagsAttachment.body;
-    const tagsArray = Array.isArray(parsed) ? parsed : [];
-    const tagsObject: Record<string, string> = {};
-
-    for (const tag of tagsArray) {
-      if (typeof tag !== 'string') continue;
-      const colonIndex = tag.indexOf(':');
-      if (colonIndex <= 0) continue;
-      tagsObject[tag.slice(0, colonIndex)] = tag.slice(colonIndex + 1);
-    }
-
-    return tagsObject;
+    parsed = typeof body === 'string' ? JSON.parse(body) : body;
   } catch {
     return {};
   }
+
+  const tags: Record<string, string> = {};
+
+  if (Array.isArray(parsed)) {
+    for (const tag of parsed) {
+      if (typeof tag !== 'string') continue;
+      const colonIndex = tag.indexOf(':');
+      if (colonIndex <= 0) continue;
+      tags[tag.slice(0, colonIndex)] = tag.slice(colonIndex + 1);
+    }
+    return tags;
+  }
+
+  if (parsed !== null && typeof parsed === 'object') {
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (!key || value === null || value === undefined) continue;
+      tags[key] = typeof value === 'object' ? JSON.stringify(value) : String(value);
+    }
+  }
+
+  return tags;
+}
+
+export function extractTags(vcon: VCon): Record<string, string> {
+  const tagsAttachment = (vcon.attachments || []).find(isTagsAttachment);
+  return parseTagsBody(tagsAttachment?.body);
 }

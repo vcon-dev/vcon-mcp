@@ -4,10 +4,15 @@
  * All functions take explicit options (no process.env / Deno.env) so callers supply credentials.
  */
 
-export type EmbeddingProvider = "litellm" | "openai" | "azure" | "hf";
+export type EmbeddingProvider = "supabase" | "litellm" | "openai" | "azure" | "hf";
 
 const EMBEDDING_MODEL = "text-embedding-3-small";
 const DIMENSIONS = 384;
+
+// gte-small is natively 384-dimensional, which is what vcon_embeddings.embedding
+// is sized for. The OpenAI-family providers above only reach 384 by asking for
+// truncation, so their vectors are NOT interchangeable with these ones.
+const SUPABASE_MODEL = "Supabase/gte-small";
 
 export interface LiteLLMOptions {
   baseUrl: string;
@@ -26,6 +31,32 @@ export interface AzureOpenAIOptions {
 
 export interface HFOptions {
   apiToken: string;
+}
+
+/**
+ * Generate embeddings with the Edge Runtime's built-in gte-small model.
+ *
+ * No API key, no network egress, no per-token cost. Only works inside the
+ * Supabase Edge Runtime — `Supabase.ai` does not exist under Node, so the Node
+ * callers of this module must pick a different provider.
+ *
+ * gte-small is English-only and truncates input at 512 tokens.
+ */
+export async function embedSupabase(texts: string[]): Promise<number[][]> {
+  const ai = (globalThis as { Supabase?: { ai?: { Session: new (m: string) => { run(input: string, opts: Record<string, boolean>): Promise<unknown> } } } }).Supabase?.ai;
+  if (!ai) {
+    throw new Error("Supabase.ai is only available in the Supabase Edge Runtime; use another provider under Node");
+  }
+  const session = new ai.Session("gte-small");
+  const out: number[][] = [];
+  for (const text of texts) {
+    const vector = await session.run(text, { mean_pool: true, normalize: true });
+    if (!Array.isArray(vector) || vector.length !== DIMENSIONS) {
+      throw new Error(`gte-small returned ${Array.isArray(vector) ? vector.length : typeof vector}, expected ${DIMENSIONS} dimensions`);
+    }
+    out.push(vector as number[]);
+  }
+  return out;
 }
 
 /**
@@ -137,6 +168,8 @@ export async function embedHF(texts: string[], options: HFOptions): Promise<numb
  */
 export function getModelName(provider: EmbeddingProvider): string {
   switch (provider) {
+    case "supabase":
+      return SUPABASE_MODEL;
     case "litellm":
     case "openai":
     case "azure":
