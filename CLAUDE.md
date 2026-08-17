@@ -104,6 +104,10 @@ Tags are stored as a **special attachment**, not a column:
 
 Format: `"key:value"` strings in a JSON array.
 
+vCon 0.4.0 classifies attachments with `purpose`, not `type`, so `purpose: "tags"` is
+equivalent. A DB trigger (`normalize_tags_attachment`) mirrors `tags` across both columns
+on write, so the `type = 'tags'` read paths and `vcon_tags_mv` see either spelling.
+
 ---
 
 ## MCP Tools Reference

@@ -56,8 +56,17 @@ export function filterAnalysis(
   });
 }
 
+/**
+ * Tags attachment predicate. vCon 0.4.0 classifies attachments with `purpose`;
+ * older data (and this server's own legacy writes) used `type`. Either marks
+ * the tags attachment.
+ */
+export function isTagsAttachment(attachment: Attachment): boolean {
+  return attachment.type === 'tags' || attachment.purpose === 'tags';
+}
+
 export function extractTags(vcon: VCon): Record<string, string> {
-  const tagsAttachment = filterAttachments(vcon, { type: 'tags' })[0];
+  const tagsAttachment = (vcon.attachments || []).find(isTagsAttachment);
   if (!tagsAttachment || tagsAttachment.body === undefined || tagsAttachment.body === null) {
     return {};
   }

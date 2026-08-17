@@ -1,0 +1,355 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1786999064747,
+  "projectRoot": "/Users/thomashowe/Documents/GitHub/vcon-dev/vcon-mcp/.claude/worktrees/peaceful-nobel-1d9adf",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      },
+      {
+        "name": "TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "tsconfig.json"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "koa",
+        "version": "3.1.1",
+        "category": "backend"
+      },
+      {
+        "name": "vitest",
+        "version": "3.2.4",
+        "category": "testing"
+      }
+    ],
+    "packageManager": "npm",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "npm run build 2>&1 | tail -20",
+    "testCommand": "npx vitest run 2>&1 | tail -25",
+    "lintCommand": "npm run lint",
+    "devCommand": "npm run dev",
+    "scripts": {
+      "build": "tsc",
+      "dev": "tsx watch src/index.ts",
+      "start": "node dist/index.js",
+      "start:group": "node dist/index.js",
+      "test": "vitest",
+      "test:e2e": "vitest run --config vitest.config.e2e.ts",
+      "test:stress": "vitest run --config vitest.config.stress.ts",
+      "test:compliance": "vitest run tests/vcon-compliance.test.ts",
+      "test:console": "npx @modelcontextprotocol/inspector tsx src/index.ts",
+      "lint": "eslint src/**/*.ts",
+      "docs:dev": "vitepress dev docs",
+      "docs:build": "vitepress build docs",
+      "docs:preview": "vitepress preview docs",
+      "prepublishOnly": "npm run build",
+      "db:status": "tsx scripts/check-db-status.ts",
+      "db:check": "tsx scripts/check-vcons.ts",
+      "db:analyze": "tsx scripts/check-daily-counts.ts",
+      "db:backup": "tsx scripts/backup-from-remote.ts",
+      "db:backup:cli": "./scripts/backup-remote-cli.sh",
+      "db:restore": "./scripts/restore-backup.sh",
+      "sync": "tsx scripts/sync-all.ts",
+      "sync:continuous": "tsx scripts/sync-all.ts --sync",
+      "sync:vcons": "tsx scripts/load-legacy-vcons.ts",
+      "sync:embeddings": "tsx scripts/embed-vcons.ts --continuous --limit=500 --provider=openai --delay=2",
+      "sync:tags": "tsx scripts/sync-all.ts --no-vcons --no-embeddings",
+      "sync:strolid": "./scripts/sync-strolid.sh",
+      "embeddings:check": "tsx scripts/check-embedding-coverage.ts",
+      "test:db": "tsx scripts/test-database-tools.ts",
+      "test:mcp": "tsx scripts/test-mcp-tools.ts",
+      "test:search": "tsx scripts/test-search-tools.ts",
+      "test:search:quick": "tsx scripts/test-search-quick.ts",
+      "analyze:indexes": "tsx scripts/analyze-search-indexes.ts",
+      "test:tags": "tsx scripts/test-tags.ts",
+      "test:tenant": "tsx scripts/test-tenant-isolation.ts",
+      "migrate:rls": "tsx scripts/migrate-to-rls.ts",
+      "migrate:remote": "tsx scripts/migrate-to-remote.ts",
+      "db:setup:e2e": "tsx scripts/setup-e2e-database.ts",
+      "util:s3-sync": "./scripts/backfill-s3-sync.sh"
+    }
+  },
+  "conventions": {
+    "namingStyle": "camelCase",
+    "importStyle": null,
+    "testPattern": "*.test.ts",
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "docs",
+      "examples",
+      "scripts",
+      "src",
+      "tests"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "archive": {
+      "path": "archive",
+      "purpose": null,
+      "fileCount": 15,
+      "lastAccessed": 1786999064732,
+      "keyFiles": [
+        "DATABASE_TOOLS_SUMMARY.md",
+        "DEPLOYMENT_FIX.md",
+        "DOCUMENTATION_CONSOLIDATED.md",
+        "EMBEDDING_UPGRADE_SUMMARY.md",
+        "MIGRATION_FROM_OLD_SCRIPTS.md"
+      ]
+    },
+    "background_docs": {
+      "path": "background_docs",
+      "purpose": null,
+      "fileCount": 13,
+      "lastAccessed": 1786999064732,
+      "keyFiles": [
+        "LLM_GUIDE.md",
+        "conserver-quick-start.md",
+        "conserver_config_guide.md",
+        "draft-howe-vcon-consent-00.txt",
+        "draft-howe-vcon-lifecycle-00-existing.txt"
+      ]
+    },
+    "blog": {
+      "path": "blog",
+      "purpose": null,
+      "fileCount": 6,
+      "lastAccessed": 1786999064732,
+      "keyFiles": [
+        "01-overview.md",
+        "02-mcp-and-ai.md",
+        "03-server-scope.md",
+        "04-architecture.md",
+        "05-business-cases.md"
+      ]
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 6,
+      "lastAccessed": 1786999064734,
+      "keyFiles": [
+        "SEARCH_OPTIMIZATION_GUIDE.md",
+        "SUMMARY.md",
+        "index.md",
+        "jsonld-ex-evaluation.md",
+        "jsonld-integration.md"
+      ]
+    },
+    "examples": {
+      "path": "examples",
+      "purpose": "Example code",
+      "fileCount": 3,
+      "lastAccessed": 1786999064734,
+      "keyFiles": [
+        "README.md",
+        "conserver-supabase-storage.py",
+        "logging-plugin.js"
+      ]
+    },
+    "hackathon": {
+      "path": "hackathon",
+      "purpose": null,
+      "fileCount": 3,
+      "lastAccessed": 1786999064734,
+      "keyFiles": [
+        "README.md",
+        "docker-compose.yml"
+      ]
+    },
+    "jaeger": {
+      "path": "jaeger",
+      "purpose": null,
+      "fileCount": 3,
+      "lastAccessed": 1786999064734,
+      "keyFiles": [
+        "docker-compose.yml",
+        "start-jaeger.sh",
+        "stop-jaeger.sh"
+      ]
+    },
+    "scripts": {
+      "path": "scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 44,
+      "lastAccessed": 1786999064735,
+      "keyFiles": [
+        "README.md",
+        "analyze-search-indexes.ts",
+        "backfill-search-indexes.ts",
+        "backfill-tenant-ids.ts",
+        "backup-from-remote.ts"
+      ]
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 2,
+      "lastAccessed": 1786999064735,
+      "keyFiles": [
+        "index.ts",
+        "version.ts"
+      ]
+    },
+    "supabase": {
+      "path": "supabase",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1786999064735,
+      "keyFiles": [
+        "config.toml"
+      ]
+    },
+    "tests": {
+      "path": "tests",
+      "purpose": "Test files",
+      "fileCount": 12,
+      "lastAccessed": 1786999064736,
+      "keyFiles": [
+        "crud-schemas.test.ts",
+        "db-child-crud.test.ts",
+        "db-client.test.ts",
+        "db-queries.test.ts",
+        "integration.test.ts"
+      ]
+    },
+    "docs/api": {
+      "path": "docs/api",
+      "purpose": "API routes",
+      "fileCount": 8,
+      "lastAccessed": 1786999064738,
+      "keyFiles": [
+        "index.md",
+        "prompts.md",
+        "resources.md"
+      ]
+    },
+    "docs/examples": {
+      "path": "docs/examples",
+      "purpose": "Example code",
+      "fileCount": 3,
+      "lastAccessed": 1786999064738,
+      "keyFiles": [
+        "index.md",
+        "large-database-optimization.md",
+        "system-instruction-assets.md"
+      ]
+    },
+    "hackathon/docs": {
+      "path": "hackathon/docs",
+      "purpose": "Documentation",
+      "fileCount": 4,
+      "lastAccessed": 1786999064738,
+      "keyFiles": [
+        "diagram-1-architecture.mermaid",
+        "diagram-2-pipeline-flow.mermaid",
+        "diagram-3-neo4j-schema.mermaid"
+      ]
+    },
+    "src/api": {
+      "path": "src/api",
+      "purpose": "API routes",
+      "fileCount": 6,
+      "lastAccessed": 1786999064738,
+      "keyFiles": [
+        "auth.ts",
+        "context.ts",
+        "index.ts"
+      ]
+    },
+    "src/config": {
+      "path": "src/config",
+      "purpose": "Configuration files",
+      "fileCount": 2,
+      "lastAccessed": 1786999064739,
+      "keyFiles": [
+        "tenant-config.ts",
+        "tools.ts"
+      ]
+    },
+    "supabase/migrations": {
+      "path": "supabase/migrations",
+      "purpose": "Database migrations",
+      "fileCount": 53,
+      "lastAccessed": 1786999064739,
+      "keyFiles": [
+        "20251007184415_initial_vcon_schema.sql",
+        "20251010120000_search_and_embeddings.sql",
+        "20251010121000_vcon_tags_mv.sql"
+      ]
+    },
+    "tests/api": {
+      "path": "tests/api",
+      "purpose": "API routes",
+      "fileCount": 2,
+      "lastAccessed": 1786999064739,
+      "keyFiles": [
+        "auth.test.ts",
+        "helpers.ts"
+      ]
+    },
+    "tests/config": {
+      "path": "tests/config",
+      "purpose": "Configuration files",
+      "fileCount": 1,
+      "lastAccessed": 1786999064739,
+      "keyFiles": [
+        "tools.test.ts"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "src/db/mongo-queries.ts",
+      "accessCount": 6,
+      "lastAccessed": 1786999516366,
+      "type": "file"
+    },
+    {
+      "path": "tests/e2e/mcp-client.test.ts",
+      "accessCount": 2,
+      "lastAccessed": 1786999558333,
+      "type": "file"
+    },
+    {
+      "path": "supabase/migrations/20260817000000_tags_attachment_purpose.sql",
+      "accessCount": 1,
+      "lastAccessed": 1786999486157,
+      "type": "file"
+    },
+    {
+      "path": "src/utils/read-surfaces.ts",
+      "accessCount": 1,
+      "lastAccessed": 1786999493720,
+      "type": "file"
+    },
+    {
+      "path": "CLAUDE.md",
+      "accessCount": 1,
+      "lastAccessed": 1786999582244,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}
