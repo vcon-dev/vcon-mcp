@@ -102,7 +102,13 @@ Tags are stored as a **special attachment**, not a column:
 }
 ```
 
-Format: `"key:value"` strings in a JSON array.
+Format: `"key:value"` strings in a JSON array. **Writes always use this form.**
+
+Reads also accept a flat JSON object body (`{"source": "gmail", "thread_id": "..."}`),
+which external ingest pipelines produce. Both shapes are handled in exactly two
+places — `parseTagsBody()` in `src/utils/read-surfaces.ts` for TS, and
+`vcon_tags_mv` for SQL. Route new tag readers through those; do not re-parse
+`attachments.body` inline.
 
 ---
 
