@@ -9,6 +9,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.4.0] - 2026-08-18
+
+### Added
+- Supabase-native embeddings: `embedSupabase()` uses the Edge Runtime's built-in `gte-small`
+  model, which is natively 384-dimensional and needs no API key, no network egress and no
+  per-token cost. A dataset can now be stood up and queried semantically with no third-party
+  embedding provider anywhere in the stack (PR #65)
+- `embed-vcons` accepts `supabase` as a provider and uses it as the fallback instead of failing
+  on a missing `OPENAI_API_KEY`. `EMBEDDING_PROVIDER` forces a specific choice
+- New `embed-query` edge function embeds a single string, so query-time vectors come from the
+  same model as the corpus without the server holding any additional secret
+- `resolveProvider()` exposes the active query-embedding provider and model for inspection
+
+### Fixed
+- **MCP over HTTP was unusable after one request.** `startHttpServer` built a single
+  `StreamableHTTPServerTransport` at startup and reused it for every request. In stateless mode
+  the SDK rejects a reused transport, and because `setupHttpMiddleware` never awaited
+  `handleRequest`, the rejection surfaced as an empty-body HTTP 500 — so a hosted server
+  accepted exactly one `initialize` per container start. Stateful mode failed differently, with
+  the second client getting `400 Server already initialized`. Each request now reuses the
+  transport for its `Mcp-Session-Id` or gets a fresh transport and MCP Server (PR #68)
+- Port resolution used `config.port || ...`, so port 0 (bind any free port) fell through to the
+  default (PR #68)
+- Attachment `purpose='tags'` is now treated as equivalent to `type='tags'`. vCon 0.4.0
+  attachments carry `purpose`, so tags arriving inside a spec-correct document were written with
+  `type` NULL and were invisible to every tag read path and to `vcon_tags_mv` — silently, with
+  no error (PR #67)
+- The `vcon_embeddings` upsert was not idempotent. It conflicts on
+  `(vcon_id, content_type, content_reference)`, but subject rows carry a NULL
+  `content_reference` and Postgres treats NULLs as distinct in a unique constraint, so
+  `ON CONFLICT` matched nothing and every backfill pass inserted another full 384-dim vector.
+  Measured on a 2408-vCon corpus: 2550 rows across 990 vCons, up to 3 copies each. The
+  constraint is now `UNIQUE NULLS NOT DISTINCT`, and a migration collapses existing duplicates
+  (PR #65)
+
+### Notes
+- `gte-small` and OpenAI's `text-embedding-3-small` both fit `vector(384)` but are **not**
+  interchangeable. Changing `EMBEDDING_PROVIDER` on a populated corpus requires re-embedding;
+  `vcon_embeddings.embedding_model` records what was used
+- Backfilling with the `supabase` provider must paginate at `limit=10`. Larger batches return
+  `WORKER_RESOURCE_LIMIT` because the model loads per worker invocation, which is a memory
+  ceiling rather than a timeout
+
 ## [1.3.0] - 2026-06-10
 
 ### Added
