@@ -47,19 +47,19 @@ describe('validateHttpRequestAuth', () => {
   it('returns ok when auth not required', () => {
     const config = { ...getAuthConfig(), required: false };
     const req = mockReq({});
-    expect(validateHttpRequestAuth(req, config)).toEqual({ ok: true });
+    expect(validateHttpRequestAuth(req, config)).toEqual({ ok: true, readonly: false });
   });
 
   it('returns ok when Authorization Bearer token is valid (default)', () => {
     const config = getAuthConfig();
     const req = mockReq({ authorization: 'Bearer key1' });
-    expect(validateHttpRequestAuth(req, config)).toEqual({ ok: true });
+    expect(validateHttpRequestAuth(req, config)).toEqual({ ok: true, readonly: false });
   });
 
   it('returns ok when custom header is valid (API_KEY_HEADER override)', () => {
     const config = { ...getAuthConfig(), headerName: 'x-api-key' };
     const req = mockReq({ 'x-api-key': 'key2' });
-    expect(validateHttpRequestAuth(req, config)).toEqual({ ok: true });
+    expect(validateHttpRequestAuth(req, config)).toEqual({ ok: true, readonly: false });
   });
 
   it('returns 401 when token missing and auth required', () => {

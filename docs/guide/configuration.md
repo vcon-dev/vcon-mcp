@@ -152,6 +152,47 @@ to PostgREST exposed schemas.
 See [Multi-Supabase Isolation](multi-supabase-isolation.md) for complete patterns,
 the security trade-off, and provisioning scripts.
 
+#### API Keys and Read-Only Access
+
+Both the REST API and the MCP HTTP endpoint authenticate with the same keys.
+
+```bash
+# Full access: read, write, delete
+API_KEYS=ops-key-1,ops-key-2
+
+# Read-only: authenticates, but cannot mutate anything
+API_KEYS_READONLY=partner-key-1,partner-key-2
+
+# Header used for the key (default: authorization, i.e. Authorization: Bearer <key>)
+API_KEY_HEADER=authorization
+
+# Require auth (default: true)
+API_AUTH_REQUIRED=true
+```
+
+What a read-only key can do:
+
+| Surface | Allowed | Rejected |
+|---------|---------|----------|
+| REST | `GET`, `HEAD`, `OPTIONS` on any route | every `POST`, `PUT`, `PATCH`, `DELETE` → `403 Forbidden` |
+| MCP | tools in the `read`, `schema`, `analytics`, `infra` categories | tools in the `write` category (not listed, and `tools/call` fails) |
+
+Notes:
+
+- Read-only keys are the credential to hand an external consumer of a hosted
+  dataset. `API_KEYS` tokens can delete the whole corpus in one request.
+- A token listed in both variables is treated as read-only (deny wins).
+- The read-only tool set is derived from the same categories as
+  `MCP_TOOLS_PROFILE` (see below) minus `write`, so `MCP_DISABLED_CATEGORIES`
+  and `MCP_DISABLED_TOOLS` still apply on top.
+- An MCP session is pinned to the scope of the key that opened it; a request
+  carrying a session ID created under a different scope gets `403`.
+- `API_KEYS` alone stays full access for backward compatibility. When no
+  read-only keys are configured, the server logs a warning at startup.
+- REST reads are all `GET`, including search and analytics. The one read-ish
+  `POST` is `/database/analyze` (query plans), which read-only keys cannot use
+  over REST — the equivalent `analyze_query` MCP tool is available.
+
 #### Tool Categories
 
 Control which tools are available in your deployment:
