@@ -12,6 +12,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { createClient } from '@supabase/supabase-js';
 import {
   checkE2EEnvironment,
   createTestClient,
@@ -499,6 +500,64 @@ describe.skipIf(!runE2E)('MCP Server E2E Tests', () => {
       expect(searchResult.success).toBe(true);
       expect(searchResult.vcon_uuids).toContain(tagTestUuid);
     });
+
+    // vCon 0.4.0 classifies attachments with `purpose`, not `type`. A spec-correct
+    // vCon whose tags arrive as purpose='tags' must still be readable through the
+    // tag API and land in vcon_tags_mv.
+    it('should read tags from a 0.4.0 purpose="tags" attachment', async () => {
+      if (skipIfNoSchema()) return;
+
+      const uniqueTagValue = `purpose-${Date.now()}`;
+      const createResult = await callTool<{ success: boolean; uuid: string }>(
+        ctx.client,
+        'create_vcon',
+        {
+          subject: generateTestSubject(),
+          parties: [{ name: 'Purpose Tags Test' }],
+          attachments: [
+            {
+              purpose: 'tags',
+              encoding: 'json',
+              body: JSON.stringify([`e2e-purpose:${uniqueTagValue}`]),
+            },
+          ],
+        }
+      );
+      const uuid = createResult.uuid;
+      ctx.createdVcons.push(uuid);
+
+      // Readable through the tag API
+      const getTagsResult = await callTool<{
+        success: boolean;
+        tags: Record<string, string>;
+      }>(ctx.client, 'get_tags', { vcon_uuid: uuid });
+      expect(getTagsResult.tags['e2e-purpose']).toBe(uniqueTagValue);
+
+      // Present in the materialized view
+      const supabase = createClient(
+        process.env.SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+      );
+      const { error: refreshError } = await supabase.rpc('refresh_vcon_tags_mv');
+      expect(refreshError).toBeFalsy();
+
+      const { data: mvRows, error: mvError } = await supabase.rpc('exec_sql', {
+        q: `SELECT mv.tags FROM vcon_tags_mv mv
+            JOIN vcons v ON v.id = mv.vcon_id
+            WHERE v.uuid = '${uuid}'`,
+        params: {},
+      });
+      expect(mvError).toBeFalsy();
+      expect((mvRows as any[])?.[0]?.tags?.['e2e-purpose']).toBe(uniqueTagValue);
+
+      // And findable by tag search (which reads the MV)
+      const searchResult = await callTool<{ vcon_uuids: string[] }>(
+        ctx.client,
+        'search_by_tags',
+        { tags: { 'e2e-purpose': uniqueTagValue } }
+      );
+      expect(searchResult.vcon_uuids).toContain(uuid);
+    }, 60000);
   });
 
   describe('Combined Filters', () => {

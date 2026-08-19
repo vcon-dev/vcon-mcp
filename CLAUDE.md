@@ -110,6 +110,10 @@ places — `parseTagsBody()` in `src/utils/read-surfaces.ts` for TS, and
 `vcon_tags_mv` for SQL. Route new tag readers through those; do not re-parse
 `attachments.body` inline.
 
+vCon 0.4.0 classifies attachments with `purpose`, not `type`, so `purpose: "tags"` is
+equivalent. A DB trigger (`normalize_tags_attachment`) mirrors `tags` across both columns
+on write, so the `type = 'tags'` read paths and `vcon_tags_mv` see either spelling.
+
 ---
 
 ## MCP Tools Reference

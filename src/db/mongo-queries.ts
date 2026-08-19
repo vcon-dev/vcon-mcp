@@ -15,12 +15,12 @@ import {
     replaceDialogAt,
     replacePartyAt,
 } from '../utils/vcon-children.js';
+import { isTagsAttachment, parseTagsBody } from '../utils/read-surfaces.js';
 import {
     VCON_SHAPE_GRAPH_SCHEMA_VERSION,
     type VconShapeGraphNode,
     type VconShapeGraphPayload,
 } from '../types/vcon-shape-graph.js';
-import { parseTagsBody } from '../utils/read-surfaces.js';
 import { DistinctValuesResult, IVConQueries } from './interfaces.js';
 import { logWithContext, recordCounter, withSpan } from '../observability/instrumentation.js';
 import { ATTR_DB_OPERATION, ATTR_SEARCH_RESULTS_COUNT, ATTR_SEARCH_THRESHOLD, ATTR_SEARCH_TYPE, ATTR_VCON_UUID } from '../observability/attributes.js';
@@ -570,7 +570,7 @@ export class MongoVConQueries implements IVConQueries {
 
     async getTags(vconUuid: string): Promise<Record<string, string>> {
         const vcon = await this.getVCon(vconUuid);
-        const tagsAttachment = (vcon.attachments || []).find((a: any) => a.type === 'tags');
+        const tagsAttachment = (vcon.attachments || []).find(isTagsAttachment);
         return parseTagsBody(tagsAttachment?.body);
     }
 
@@ -603,8 +603,8 @@ export class MongoVConQueries implements IVConQueries {
         const body = JSON.stringify(Object.entries(tags).map(([k, v]) => `${k}:${v}`));
         const vcon = await this.getVCon(vconUuid);
         const collection = this.db.collection(this.VCONS_COLLECTION);
-        const attachments = (vcon.attachments || []).filter((a: any) => a.type !== 'tags');
-        attachments.push({ type: 'tags', encoding: 'json', body });
+        const attachments = (vcon.attachments || []).filter((a) => !isTagsAttachment(a));
+        attachments.push({ type: 'tags', purpose: 'tags', encoding: 'json', body });
         await collection.updateOne({ uuid: vconUuid }, { $set: { attachments } });
     }
 
@@ -612,7 +612,11 @@ export class MongoVConQueries implements IVConQueries {
         const collection = this.db.collection(this.VCONS_COLLECTION);
         const tagStrings = Object.entries(tags).map(([k, v]) => `${k}:${v}`);
         const results = await collection
-            .find({ 'attachments': { $elemMatch: { type: 'tags', body: { $all: tagStrings.map(t => new RegExp(t)) } } } })
+            .find({
+                $or: ['type', 'purpose'].map((field) => ({
+                    attachments: { $elemMatch: { [field]: 'tags', body: { $all: tagStrings.map(t => new RegExp(t)) } } },
+                })),
+            })
             .limit(limit)
             .project({ uuid: 1 })
             .toArray();
@@ -692,15 +696,15 @@ export class MongoVConQueries implements IVConQueries {
     }> {
         const collection = this.db.collection(this.VCONS_COLLECTION);
         const docs = await collection
-            .find({ 'attachments.type': 'tags' })
-            .project({ 'attachments.$': 1 })
+            .find({ $or: [{ 'attachments.type': 'tags' }, { 'attachments.purpose': 'tags' }] })
+            .project({ attachments: 1 })
             .toArray();
 
         const tagsByKey: Record<string, Set<string>> = {};
         let totalVCons = 0;
 
         for (const doc of docs) {
-            const tagsAtt = (doc.attachments || []).find((a: any) => a.type === 'tags');
+            const tagsAtt = (doc.attachments || []).find(isTagsAttachment);
             if (!tagsAtt?.body) continue;
             totalVCons++;
             for (const [k, v] of Object.entries(parseTagsBody(tagsAtt.body))) {

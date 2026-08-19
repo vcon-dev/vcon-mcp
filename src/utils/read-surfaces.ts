@@ -57,6 +57,15 @@ export function filterAnalysis(
 }
 
 /**
+ * Tags attachment predicate. vCon 0.4.0 classifies attachments with `purpose`;
+ * older data (and this server's own legacy writes) used `type`. Either marks
+ * the tags attachment.
+ */
+export function isTagsAttachment(attachment: Attachment): boolean {
+  return attachment.type === 'tags' || attachment.purpose === 'tags';
+}
+
+/**
  * Parse a tags attachment body into a key/value object.
  *
  * Two shapes exist in the wild and both are accepted:
@@ -101,6 +110,6 @@ export function parseTagsBody(body: unknown): Record<string, string> {
 }
 
 export function extractTags(vcon: VCon): Record<string, string> {
-  const tagsAttachment = filterAttachments(vcon, { type: 'tags' })[0];
+  const tagsAttachment = (vcon.attachments || []).find(isTagsAttachment);
   return parseTagsBody(tagsAttachment?.body);
 }
