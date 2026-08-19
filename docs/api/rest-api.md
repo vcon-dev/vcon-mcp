@@ -31,7 +31,8 @@ The vCon MCP Server exposes a RESTful HTTP API alongside the MCP transport layer
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `API_KEYS` | (none) | Comma-separated list of valid API keys |
+| `API_KEYS` | (none) | Comma-separated API keys with full read/write/delete access |
+| `API_KEYS_READONLY` | (none) | Comma-separated read-only API keys — authenticate, but any non-GET request returns `403 Forbidden` |
 | `API_KEY_HEADER` | `authorization` | Header for API key; default expects `Authorization: Bearer <token>`. Set to `x-api-key` to use that header instead. |
 | `API_AUTH_REQUIRED` | `true` | Set to `false` to disable authentication |
 

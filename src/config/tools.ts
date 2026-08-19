@@ -142,6 +142,20 @@ export function loadToolsConfig(): ToolsConfig {
 }
 
 /**
+ * Restrict a config to read-only tools, for read-only API keys.
+ *
+ * Reuses the existing category metadata: drop 'write' and keep the rest, which
+ * matches the REST rule (read-only keys get GETs) without a second per-tool
+ * classification.
+ */
+export function restrictToReadonly(config: ToolsConfig): ToolsConfig {
+  return {
+    ...config,
+    enabledCategories: config.enabledCategories.filter((c) => c !== 'write'),
+  };
+}
+
+/**
  * Filter tools based on configuration
  */
 export function filterEnabledTools<T extends { name: string; category: ToolCategory }>(

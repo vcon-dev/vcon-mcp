@@ -16,7 +16,7 @@ export function setupHttpMiddleware(
   req: IncomingMessage,
   res: ServerResponse,
   transport: any
-): void {
+): Promise<void> {
   const requestId = randomUUID();
   const startTime = Date.now();
   const remoteAddress = req.socket.remoteAddress || 'unknown';
@@ -124,7 +124,7 @@ export function setupHttpMiddleware(
     return originalEnd.call(this, chunk, encoding, cb);
   };
 
-  // Delegate to transport
-  transport.handleRequest(req, res);
+  // Delegate to transport (caller handles rejection - see startHttpServer)
+  return transport.handleRequest(req, res);
 }
 

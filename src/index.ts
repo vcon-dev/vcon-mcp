@@ -14,8 +14,8 @@ import { initializeObservability, shutdownObservability } from './observability/
 import { logWithContext } from './observability/instrumentation.js';
 import { logger } from './observability/logger.js';
 import { registerHandlers } from './server/handlers.js';
-import { setupServer, type ServerContext } from './server/setup.js';
-import { createHttpTransport, getHttpTransportConfig, startHttpServer } from './transport/http.js';
+import { createServer, setupServer, type ServerContext } from './server/setup.js';
+import { getHttpTransportConfig, startHttpServer } from './transport/http.js';
 import { startStdioTransport } from './transport/stdio.js';
 import { getVersionInfo, getVersionString } from './version.js';
 
@@ -79,8 +79,13 @@ async function main() {
         dbSizeAnalyzer: serverContext.dbSizeAnalyzer,
       };
       
-      const transport = createHttpTransport(config);
-      httpServerInstance = await startHttpServer(serverContext.server, transport, config);
+      // A Server binds to one transport, so HTTP needs a fresh one per
+      // session (stateful) / per request (stateless).
+      httpServerInstance = await startHttpServer(({ readonly }) => {
+        const server = createServer();
+        registerHandlers({ ...serverContext, server }, { readonly });
+        return server;
+      }, config);
       
       // Log REST API availability
       const restBasePath = process.env.REST_API_BASE_PATH || '/api/v1';

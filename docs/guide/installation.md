@@ -88,6 +88,19 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key-here
 ```
 
+If you expose the HTTP transport (REST API and MCP over HTTP), also set API keys:
+
+```env
+# Full access: read, write, delete
+API_KEYS=ops-key-1
+# Read-only: GET-only on REST, no write MCP tools. Give these to consumers.
+API_KEYS_READONLY=partner-key-1
+```
+
+`API_KEYS` tokens can delete the whole corpus, so hand out `API_KEYS_READONLY`
+tokens to anyone who only needs to read. See
+[Configuration → API Keys and Read-Only Access](configuration.md#api-keys-and-read-only-access).
+
 **Getting Supabase Credentials:**
 
 1. Go to [supabase.com](https://supabase.com) and sign in

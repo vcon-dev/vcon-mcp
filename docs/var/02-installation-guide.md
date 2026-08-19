@@ -87,11 +87,17 @@ cd vcon-mcp && npm install && npm run build
      -e MCP_TRANSPORT=http \
      -e MCP_HTTP_HOST=0.0.0.0 \
      -e API_KEYS='customer-key-1' \
+     -e API_KEYS_READONLY='partner-readonly-key-1' \
      public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp:1.2.0
    ```
 
 6. **Verify.** `curl http://localhost:3000/api/v1/health` returns `{"status":"ok"}`
    with `X-Version` and `X-Git-Commit` response headers.
+
+`API_KEYS` grants full read/write/delete. Hand external consumers a key from
+`API_KEYS_READONLY` instead: those keys get `403` on every non-GET REST request
+and cannot call write MCP tools. See
+[Configuration Guide → Authentication](./03-configuration-guide.md#authentication).
 
 ### Transport choice
 

@@ -15,7 +15,13 @@ import {
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
 import { randomUUID } from 'crypto';
-import { loadToolsConfig, filterEnabledTools, stripCategories, type ToolDefinition } from '../config/tools.js';
+import {
+  loadToolsConfig,
+  filterEnabledTools,
+  restrictToReadonly,
+  stripCategories,
+  type ToolDefinition,
+} from '../config/tools.js';
 import { logWithContext } from '../observability/instrumentation.js';
 import { RequestContext } from '../hooks/plugin-interface.js';
 import type { ToolHandlerContext } from '../tools/handlers/index.js';
@@ -35,8 +41,10 @@ import type { ServerContext } from './setup.js';
  * Register all MCP request handlers
  * 
  * @param context - Full server context (uses subset for tool handlers)
+ * @param options.readonly - Restrict this server to read-only tools (used when
+ *   the HTTP session authenticated with a read-only API key).
  */
-export function registerHandlers(context: ServerContext): void {
+export function registerHandlers(context: ServerContext, options: { readonly?: boolean } = {}): void {
   const { server, queries, pluginManager, handlerRegistry } = context;
 
   // Tool handler context - subset of ServerContext that handlers need
@@ -51,7 +59,8 @@ export function registerHandlers(context: ServerContext): void {
   };
 
   // Load tools configuration once at startup
-  const toolsConfig = loadToolsConfig();
+  const baseToolsConfig = loadToolsConfig();
+  const toolsConfig = options.readonly ? restrictToReadonly(baseToolsConfig) : baseToolsConfig;
 
   // List tools
   server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -79,8 +88,9 @@ export function registerHandlers(context: ServerContext): void {
     // Filter based on configuration
     const enabledTools = filterEnabledTools(allToolsWithCategories, toolsConfig);
 
-    // Get plugin tools (plugins don't have categories, always included if available)
-    const pluginTools = await pluginManager.getAdditionalTools();
+    // Get plugin tools (plugins have no category, so a read-only session drops
+    // them rather than guess whether they mutate)
+    const pluginTools = options.readonly ? [] : await pluginManager.getAdditionalTools();
 
     // Strip category field for MCP response (MCP doesn't need it)
     const toolsForResponse = [
@@ -128,7 +138,9 @@ export function registerHandlers(context: ServerContext): void {
         const isCategoryDisabled = !toolsConfig.enabledCategories.includes(toolDef.category);
         
         let errorMessage: string;
-        if (isExplicitlyDisabled) {
+        if (options.readonly && toolDef.category === 'write') {
+          errorMessage = `Tool '${name}' requires write access, but this session authenticated with a read-only API key.`;
+        } else if (isExplicitlyDisabled) {
           errorMessage = `Tool '${name}' is explicitly disabled via MCP_DISABLED_TOOLS configuration.`;
         } else if (isCategoryDisabled) {
           errorMessage = `Tool '${name}' is disabled. Category '${toolDef.category}' is not enabled in current configuration.`;
@@ -148,8 +160,8 @@ export function registerHandlers(context: ServerContext): void {
       return handler.handle(args, handlerContext) as any;
     }
 
-    // Check if this is a plugin tool
-    const pluginTools = await pluginManager.getAdditionalTools();
+    // Check if this is a plugin tool (never for read-only sessions, see above)
+    const pluginTools = options.readonly ? [] : await pluginManager.getAdditionalTools();
     const pluginTool = pluginTools.find((t) => t.name === name);
 
     if (pluginTool) {
