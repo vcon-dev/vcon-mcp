@@ -51,14 +51,21 @@ API key auth covers both REST and MCP HTTP endpoints.
 | Variable | Default | Meaning |
 |---|---|---|
 | `API_AUTH_REQUIRED` | `true` | Require auth on REST + MCP HTTP |
-| `API_KEYS` | — | Comma-separated valid keys |
+| `API_KEYS` | — | Comma-separated keys with full read/write/delete access |
+| `API_KEYS_READONLY` | — | Comma-separated read-only keys (GET-only on REST, no write tools on MCP) |
 | `API_KEY_HEADER` | `authorization` | Header to read key from |
 
 Default header `authorization` accepts `Authorization: Bearer <key>`. Set
 `API_KEY_HEADER=x-api-key` to use a plain custom header.
 
-**Misconfiguration trap:** `API_AUTH_REQUIRED=true` with empty `API_KEYS`
-returns `503 Service Unavailable` until a key is set.
+**Misconfiguration trap:** `API_AUTH_REQUIRED=true` with no keys in either
+variable returns `503 Service Unavailable` until a key is set.
+
+**Read-only keys.** Give external consumers an `API_KEYS_READONLY` key. Those
+keys get `403 Forbidden` on any non-GET REST request and cannot call `write`
+category MCP tools. `API_KEYS` keys can delete the entire corpus, so never hand
+one out. A key in both variables is read-only. Details:
+[Configuration → API Keys and Read-Only Access](../guide/configuration.md#api-keys-and-read-only-access).
 
 ## Multi-tenant (RLS)
 

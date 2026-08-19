@@ -10,30 +10,54 @@ import type { Context, Next } from 'koa';
 import { logWithContext } from '../observability/instrumentation.js';
 
 export interface AuthConfig {
-  /** API keys that are allowed (comma-separated in env) */
+  /** Full-access API keys (comma-separated in env API_KEYS) */
   apiKeys: string[];
+  /** Read-only API keys (comma-separated in env API_KEYS_READONLY) */
+  readonlyKeys: string[];
   /** Header name for API key (default: authorization, i.e. Authorization: Bearer <token>). */
   headerName: string;
   /** Whether auth is required (default: true) */
   required: boolean;
 }
 
-/**
- * Get auth configuration from environment
- */
-export function getAuthConfig(): AuthConfig {
-  const apiKeysEnv = process.env.API_KEYS || '';
-  const apiKeys = apiKeysEnv
+function splitKeys(env: string | undefined): string[] {
+  return (env || '')
     .split(',')
     .map(k => k.trim())
     .filter(k => k.length > 0);
+}
+
+/**
+ * Get auth configuration from environment.
+ *
+ * API_KEYS keeps full read/write access (backward compatible). API_KEYS_READONLY
+ * tokens authenticate but may only read. A token listed in both is treated as
+ * read-only (deny wins).
+ */
+export function getAuthConfig(): AuthConfig {
+  const readonlyKeys = splitKeys(process.env.API_KEYS_READONLY);
+  const apiKeys = splitKeys(process.env.API_KEYS).filter(k => !readonlyKeys.includes(k));
 
   return {
     apiKeys,
+    readonlyKeys,
     headerName: process.env.API_KEY_HEADER || 'authorization',
     required: process.env.API_AUTH_REQUIRED !== 'false',
   };
 }
+
+/** True if the token is a configured read-only key. */
+export function isReadonlyToken(config: AuthConfig, token: string): boolean {
+  return config.readonlyKeys.includes(token);
+}
+
+/** All tokens that authenticate, whatever their scope. */
+function allKeys(config: AuthConfig): string[] {
+  return [...config.apiKeys, ...config.readonlyKeys];
+}
+
+/** HTTP methods a read-only token may use on the REST API. */
+const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 /** Lower-case header name for lookup (Node headers are lower-cased) */
 function getHeader(req: IncomingMessage, name: string): string | undefined {
@@ -57,7 +81,7 @@ export function getTokenFromRequest(req: IncomingMessage, headerName: string): s
 }
 
 export type ValidateHttpAuthResult =
-  | { ok: true }
+  | { ok: true; readonly: boolean }
   | { ok: false; statusCode: number; body: object; wwwAuth?: string };
 
 /**
@@ -69,9 +93,9 @@ export function validateHttpRequestAuth(
   config: AuthConfig
 ): ValidateHttpAuthResult {
   if (!config.required) {
-    return { ok: true };
+    return { ok: true, readonly: false };
   }
-  if (config.apiKeys.length === 0) {
+  if (allKeys(config).length === 0) {
     logWithContext('error', 'MCP auth required but no API keys configured - blocking request', {
       hint: 'Set API_KEYS, or set API_AUTH_REQUIRED=false',
     });
@@ -104,7 +128,7 @@ export function validateHttpRequestAuth(
       },
     };
   }
-  if (!config.apiKeys.includes(token)) {
+  if (!allKeys(config).includes(token)) {
     logWithContext('warn', 'Invalid MCP auth token attempted', {
       remote_address: req.socket?.remoteAddress,
       token_prefix: token.substring(0, 8) + '...',
@@ -116,7 +140,7 @@ export function validateHttpRequestAuth(
       body: { error: 'Unauthorized', message: 'Invalid token' },
     };
   }
-  return { ok: true };
+  return { ok: true, readonly: isReadonlyToken(config, token) };
 }
 
 /**
@@ -134,7 +158,7 @@ export function createAuthMiddleware(config?: Partial<AuthConfig>) {
 
     // Auth is required but no API keys are configured - this is a misconfiguration
     // Block requests with a clear error rather than silently allowing access
-    if (authConfig.apiKeys.length === 0) {
+    if (allKeys(authConfig).length === 0) {
       logWithContext('error', 'API auth required but no API keys configured - blocking request', {
         path: ctx.path,
         hint: 'Set API_KEYS environment variable, or set API_AUTH_REQUIRED=false to disable auth',
@@ -171,8 +195,8 @@ export function createAuthMiddleware(config?: Partial<AuthConfig>) {
       return;
     }
 
-    // Check if API key is valid
-    if (!authConfig.apiKeys.includes(apiKey)) {
+    // Check if API key is valid (full-access or read-only)
+    if (!allKeys(authConfig).includes(apiKey)) {
       logWithContext('warn', 'Invalid API key attempted', {
         remote_address: ctx.ip,
         api_key_prefix: apiKey.substring(0, 8) + '...',
@@ -187,8 +211,27 @@ export function createAuthMiddleware(config?: Partial<AuthConfig>) {
       return;
     }
 
-    // Store API key in state for downstream use
+    // Store API key + scope in state for downstream use
     ctx.state.apiKey = apiKey;
+    ctx.state.readonly = isReadonlyToken(authConfig, apiKey);
+
+    // Read-only tokens may only read. Method-based, so every current and future
+    // mutating route is covered without a per-route allowlist.
+    if (ctx.state.readonly && !READ_METHODS.has(ctx.method.toUpperCase())) {
+      logWithContext('warn', 'Read-only API key attempted a write', {
+        remote_address: ctx.ip,
+        method: ctx.method,
+        path: ctx.path,
+        api_key_prefix: apiKey.substring(0, 8) + '...',
+      });
+      ctx.status = 403;
+      ctx.body = {
+        error: 'Forbidden',
+        message: `Read-only API key cannot ${ctx.method} ${ctx.path}. Read-only keys are limited to GET requests.`,
+      };
+      return;
+    }
+
     await next();
   };
 }

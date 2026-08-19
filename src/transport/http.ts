@@ -70,10 +70,11 @@ export function createHttpTransport(
  *
  * @param createMcpServer - Factory returning a fresh MCP Server with handlers
  *   registered. A Server binds to exactly one transport, so we need one per
- *   session (stateful) / per request (stateless).
+ *   session (stateful) / per request (stateless). Receives the authenticated
+ *   token's scope so read-only keys get a read-only tool set.
  */
 export async function startHttpServer(
-  createMcpServer: () => Server,
+  createMcpServer: (options: { readonly: boolean }) => Server,
   config: HttpTransportConfig = {}
 ): Promise<http.Server> {
   // ?? not ||: port 0 is valid (bind any free port).
@@ -84,27 +85,48 @@ export async function startHttpServer(
   // mode, where every request gets a throwaway transport.
   // ponytail: in-memory map, so stateful mode needs sticky routing across
   // replicas. Move to a shared store only if that becomes a real deployment.
-  const sessions = new Map<string, StreamableHTTPServerTransport>();
+  const sessions = new Map<
+    string,
+    { transport: StreamableHTTPServerTransport; readonly: boolean }
+  >();
 
   async function handleMcpRequest(
     req: http.IncomingMessage,
-    res: http.ServerResponse
+    res: http.ServerResponse,
+    isReadonly: boolean
   ): Promise<void> {
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
     const existing = sessionId ? sessions.get(sessionId) : undefined;
 
     if (existing) {
-      return setupHttpMiddleware(req, res, existing);
+      // A session's tool set is fixed at creation, so a token may not join a
+      // session opened under a different scope (that would let a read-only key
+      // reuse a read/write session).
+      if (existing.readonly !== isReadonly) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            error: {
+              code: -32600,
+              message: 'Session was created with a different API key scope',
+            },
+            id: null,
+          })
+        );
+        return;
+      }
+      return setupHttpMiddleware(req, res, existing.transport);
     }
 
     const transport = createHttpTransport(config, (id) => {
-      sessions.set(id, transport);
+      sessions.set(id, { transport, readonly: isReadonly });
     });
     transport.onclose = () => {
       if (transport.sessionId) sessions.delete(transport.sessionId);
     };
 
-    await createMcpServer().connect(transport);
+    await createMcpServer({ readonly: isReadonly }).connect(transport);
 
     if (config.stateless) {
       // Single-use transport: tear it down once the response is done.
@@ -135,7 +157,14 @@ export async function startHttpServer(
     auth_required: mcpAuthConfig.required,
     header: mcpAuthConfig.headerName,
     bearer_supported: true,
+    full_access_keys: mcpAuthConfig.apiKeys.length,
+    readonly_keys: mcpAuthConfig.readonlyKeys.length,
   });
+  if (mcpAuthConfig.required && mcpAuthConfig.readonlyKeys.length === 0) {
+    logWithContext('warn', 'All configured API keys grant full read/write/delete access', {
+      hint: 'Set API_KEYS_READONLY for consumers that should only read',
+    });
+  }
 
   // Create HTTP server that routes between REST API and MCP
   const httpServer = http.createServer((req, res) => {
@@ -160,7 +189,7 @@ export async function startHttpServer(
     }
 
     // Fall through to MCP transport
-    handleMcpRequest(req, res).catch((error) => {
+    handleMcpRequest(req, res, authResult.readonly).catch((error) => {
       logWithContext('error', 'MCP request handling failed', {
         error_message: error instanceof Error ? error.message : String(error),
         error_stack: error instanceof Error ? error.stack : undefined,

@@ -81,9 +81,9 @@ async function main() {
       
       // A Server binds to one transport, so HTTP needs a fresh one per
       // session (stateful) / per request (stateless).
-      httpServerInstance = await startHttpServer(() => {
+      httpServerInstance = await startHttpServer(({ readonly }) => {
         const server = createServer();
-        registerHandlers({ ...serverContext, server });
+        registerHandlers({ ...serverContext, server }, { readonly });
         return server;
       }, config);
       

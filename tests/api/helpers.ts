@@ -164,7 +164,7 @@ export interface TestAppContext {
  * Create a fully-mocked Koa app for testing REST routes.
  * Auth is disabled by default for test convenience.
  */
-export function createTestApp(): TestAppContext {
+export function createTestApp(opts: { authRequired?: boolean } = {}): TestAppContext {
   const queries = createMockQueries();
   const pluginManager = createMockPluginManager();
   const vconService = createMockVConService(queries);
@@ -182,8 +182,8 @@ export function createTestApp(): TestAppContext {
     dbSizeAnalyzer: dbSizeAnalyzer as any,
   };
 
-  // Disable auth for tests
-  process.env.API_AUTH_REQUIRED = 'false';
+  // Disable auth for tests unless the test is exercising auth itself
+  process.env.API_AUTH_REQUIRED = opts.authRequired ? 'true' : 'false';
 
   const app = createRestApi(apiContext);
 
