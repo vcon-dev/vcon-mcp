@@ -1,8 +1,9 @@
 name: Publish to npm
 
 on:
-  release:
-    types: [created]
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 jobs:
@@ -23,10 +24,11 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
       
-      # Guards a release cut from the wrong commit: v1.4.0 was tagged but never
-      # published, so the tag and the registry disagreed for three days.
+      # Publishing is triggered by the tag push itself, so `git push origin vX.Y.Z`
+      # is the whole release. v1.4.0 was tagged but never published because the
+      # old trigger waited on a GitHub release nobody cut.
       - name: Tag matches package.json
-        if: github.event_name == 'release'
+        if: github.event_name == 'push'
         run: |
           pkg=$(node -p "require('./package.json').version")
           tag="${GITHUB_REF_NAME#v}"

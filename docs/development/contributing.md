@@ -533,23 +533,26 @@ For maintainers:
    - Review all changes
    - Get approval from maintainers
 
-6. **Merge and Tag**
+6. **Merge, then tag**
    ```bash
-   git checkout main
-   git merge release/v1.2.0
+   git checkout main && git pull
    git tag -a v1.2.0 -m "Release v1.2.0"
-   git push origin main --tags
+   git push origin v1.2.0
    ```
 
-7. **Publish**
+   Pushing the tag is the release. `.github/workflows/publish.yml` triggers on
+   `v*` tags, builds, and publishes to npm with provenance. Do **not** run
+   `npm publish` by hand — that is how `v1.4.0` ended up tagged but never
+   published, and how `v1.5.0` ended up published with no tag.
+
+7. **Confirm**
    ```bash
-   npm publish
+   npm view vcon-mcp version
    ```
 
-8. **Create GitHub Release**
-   - Copy CHANGELOG entry
-   - Attach built assets
-   - Publish release notes
+   CI refuses to publish if the tag and `package.json` disagree, and a separate
+   job fails any PR where `package.json` and the newest CHANGELOG heading drift
+   apart.
 
 ---
 
