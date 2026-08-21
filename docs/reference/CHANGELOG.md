@@ -9,20 +9,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.3.1] - 2026-08-17
+## [1.5.0] - 2026-08-21
+
+### Added
+- Read-only API keys (`API_KEYS_READONLY`). `API_KEYS` was a flat list where every token
+  granted full read, write and delete over the REST API, so there was no safe credential to
+  hand an external consumer of a hosted dataset. Read-only tokens authenticate but are limited
+  to `GET`/`HEAD`/`OPTIONS` on REST (403 otherwise) and to non-write MCP tools, reusing the
+  existing `MCP_TOOLS_PROFILE` category metadata rather than a second classification.
+  `API_KEYS` keeps full access for backward compatibility; the server warns at startup when no
+  read-only keys are configured, a token listed in both variables is read-only (deny wins), an
+  MCP session is pinned to the scope of the key that opened it, and plugin tools (which carry
+  no category) are dropped from read-only sessions (PR #69)
+
+### Fixed
+- Attachment `purpose='tags'` is now treated as equivalent to `type='tags'`. vCon 0.4.0
+  classifies attachments with `purpose`, so tags arriving inside a spec-correct document were
+  written with `type` NULL and were invisible to every tag read path and to `vcon_tags_mv` —
+  silently, with no error. A `BEFORE INSERT OR UPDATE` trigger on `attachments` mirrors `tags`
+  across both columns (with a backfill), and `vcon_tags_mv` keys on `coalesce(type, purpose)`.
+  Tags written by the server now also carry the spec `purpose` field (PR #66)
+- MongoDB backend tag paths (`getTags`, `saveTags`, `searchByTags`, unique-tag discovery) and
+  `extractTags` recognize either spelling via a shared `isTagsAttachment()` predicate (PR #66)
+
+### Migration
+  normalizing trigger and backfills existing tag attachments. It deliberately does not rebuild
+  `vcon_tags_mv`, so it is safe to apply out of order
+
+### Notes
+- 1.4.0 was tagged but never published to npm; its CHANGELOG entry was clobbered by the #66
+  merge and is restored below. Installing 1.5.0 from npm brings everything since 1.3.0
+
+## [1.4.0] - 2026-08-18
+
+> Tagged but never published to npm; superseded by 1.5.0.
 
 ### Added
 - Supabase-native `gte-small` embeddings, so a hosted dataset needs no third-party embedding key: `embedSupabase()` runs inside the Supabase project at the native 384 dims, `embed-vcons` accepts `supabase` as a provider (and falls back to it instead of erroring on a missing `OPENAI_API_KEY`), and a new `embed-query` edge function embeds query strings with the same model as the corpus. `EMBEDDING_PROVIDER` forces a specific choice (PR #65)
 
 ### Fixed
-- Tags carried on a spec-correct vCon 0.4.0 attachment as `purpose: "tags"` were silently invisible: tag storage keyed only on `attachments.type = 'tags'`, so those rows landed with `type` NULL and were missed by every tag read path and by `vcon_tags_mv`. A `BEFORE INSERT OR UPDATE` trigger on `attachments` now mirrors `tags` across `type` and `purpose` (with a backfill for existing rows), and `vcon_tags_mv` keys on `coalesce(type, purpose)`. Tags written by the server now also carry the spec `purpose` field (PR #66)
-- MongoDB backend tag paths (`getTags`, `saveTags`, `searchByTags`, unique-tag discovery) and `extractTags` recognize either spelling via a shared `isTagsAttachment()` predicate (PR #66)
+- **MCP over HTTP was unusable after one request.** `startHttpServer` built a single `StreamableHTTPServerTransport` at startup and reused it for every request; in stateless mode the SDK rejects a reused transport, and because `setupHttpMiddleware` never awaited `handleRequest` the rejection surfaced as an empty-body HTTP 500 — so a hosted server accepted exactly one `initialize` per container start. Each request now reuses the transport for its `Mcp-Session-Id` or gets a fresh transport and MCP Server (PR #68)
+- Port resolution used `config.port || ...`, so port 0 (bind any free port) fell through to the default (PR #68)
 - Tags stored as a flat JSON object body (`{"source": "gmail", ...}`, produced by external ingest) read back as no tags at all, because every read path required the `["key:value", ...]` array form. `vcon_tags_mv` and a new shared `parseTagsBody()` now accept both shapes; writes still emit the array form (PR #67)
 - Query-time embedding was hardcoded to `api.openai.com` with no override, so a locally embedded corpus could not be searched at all; the query path now uses the configured provider and rejects a wrong-dimension response instead of passing it into the vector comparison (PR #65)
 - `vcon_embeddings` upserts were not idempotent for subject-level rows: `content_reference` is NULL there and Postgres treats NULLs as distinct in a unique constraint, so each backfill pass inserted another full 384-dim copy with no error (PR #65)
 
 ### Migration
-- `20260817000000_tags_attachment_purpose.sql` — required for the `purpose` fix; adds the normalizing trigger and backfills existing tag attachments. It deliberately does not rebuild `vcon_tags_mv`, so it is safe to apply out of order
 - `20260817120000_vcon_tags_mv_object_body.sql` — rebuilds `vcon_tags_mv` on `coalesce(type, purpose)` with support for both tag body shapes
 - `20260817210000_vcon_embeddings_unique_nulls_not_distinct.sql` — makes the `vcon_embeddings` unique constraint `NULLS NOT DISTINCT`
 
