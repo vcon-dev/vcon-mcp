@@ -34,3 +34,21 @@ jobs:
       - name: Run tests
         run: npm test
 
+  version-changelog:
+    name: package.json version matches CHANGELOG
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # A release commit touches only package.json and CHANGELOG.md, so a PR
+      # branched from before it reverts the changelog with no merge conflict
+      # and no failing test. That happened in #66 and cost a release cycle.
+      - name: Compare versions
+        run: |
+          pkg=$(node -p "require('./package.json').version")
+          log=$(grep -m1 -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' docs/reference/CHANGELOG.md | tr -d '#[] ')
+          echo "package.json: $pkg / CHANGELOG: $log"
+          if [ "$pkg" != "$log" ]; then
+            echo "::error file=docs/reference/CHANGELOG.md::package.json is $pkg but the newest CHANGELOG entry is $log. If this PR branched from before a release commit, rebase on main."
+            exit 1
+          fi
