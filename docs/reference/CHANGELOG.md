@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.0] - 2026-08-27
+
+### Added
+- `bin` entry (`vcon-mcp` -> `dist/index.js`), so the server runs with
+  `npx -y vcon-mcp`. `package.json` declared `main` and `exports` but no `bin`, so npm
+  installed the package without an executable and every adopter had to clone the repo,
+  build it, and point their MCP client at an absolute `dist/index.js` path. The entry
+  file already carried the shebang; only the wiring was missing (PR #73)
+
+### Changed
+- README MCP client configuration examples use `npx -y vcon-mcp` instead of a hard-coded
+  `dist/index.js` path, in both the Claude Desktop and read-only deployment samples
+- `PUBLISHING_GUIDE.md` documents the tag-push release flow instead of walking a
+  maintainer through `npm login` and `npm publish` by hand. Publishing by hand is what
+  left v1.4.0 tagged and unpublished for three days; the guide now ends with
+  `npm view vcon-mcp version` as the verification step, since the tag, the changelog and
+  the registry drift apart independently
+
+---
+
 ## [1.5.0] - 2026-08-21
 
 ### Added
