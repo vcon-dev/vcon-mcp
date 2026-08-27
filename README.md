@@ -63,6 +63,15 @@ The Model Context Protocol (MCP) enables AI assistants to use external tools and
 
 ### Installation
 
+Run it straight from npm, no clone or build:
+
+```bash
+npx -y vcon-mcp
+```
+
+That is the path to use in any MCP client config. Clone only if you intend to
+develop against the server:
+
 ```bash
 # Clone the repository
 git clone https://github.com/vcon-dev/vcon-mcp.git
@@ -93,8 +102,8 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 {
   "mcpServers": {
     "vcon": {
-      "command": "node",
-      "args": ["/path/to/vcon-mcp/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "vcon-mcp"],
       "env": {
         "SUPABASE_URL": "your-project-url",
         "SUPABASE_SERVICE_ROLE_KEY": "your-service-role-key",
@@ -608,8 +617,8 @@ MCP_DISABLED_TOOLS=delete_vcon,analyze_query
 {
   "mcpServers": {
     "vcon": {
-      "command": "node",
-      "args": ["/path/to/vcon-mcp/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "vcon-mcp"],
       "env": {
         "SUPABASE_URL": "your-project-url",
         "SUPABASE_ANON_KEY": "your-anon-key",

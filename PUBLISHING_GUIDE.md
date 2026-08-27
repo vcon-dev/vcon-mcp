@@ -149,20 +149,23 @@ See [full documentation](https://yourusername.github.io/vcon-mcp)
 
 ### Publishing
 
+**The tag push is the release.** `.github/workflows/publish.yml` builds and
+publishes on any `v*` tag, and refuses to publish when the tag does not match
+`package.json`. Never run `npm publish` by hand.
+
 ```bash
-# Login to npm
-npm login
+# Bump the version in package.json (patch, minor, or major)
+npm version minor          # commits the bump and creates the vX.Y.Z tag
 
-# Test package
-npm pack
-# Check the generated .tgz file
+# Check what would ship, before you push
+npm pack --dry-run
 
-# Publish
-npm publish --access public
+# Push the commit, then the tag. The tag is what publishes.
+git push origin main
+git push origin vX.Y.Z
 
-# Update
-npm version patch  # or minor, major
-npm publish
+# Verify against the registry, not against the tag
+npm view vcon-mcp version
 ```
 
 ### npm Package Page
@@ -406,11 +409,10 @@ gh workflow run deploy-docs.yml
 ### npm README not updating
 
 ```bash
-# npm caches READMEs
-# Wait 1-2 hours or
-# Bump version and republish
+# npm caches READMEs. Wait 1-2 hours, or bump the version and push the
+# new tag (the tag publishes; never `npm publish` by hand).
 npm version patch
-npm publish
+git push origin main && git push origin "v$(node -p "require('./package.json').version")"
 ```
 
 ### Build errors
