@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.1] - 2026-08-27
+
+### Fixed
+- Declared `@opentelemetry/core`, `@opentelemetry/resources` and `@opentelemetry/sdk-metrics`
+  as dependencies. `dist/observability/config.js` imports all three at startup, but they were
+  never declared; they only resolved in the dev repo because npm hoisted them as transitive
+  deps of `@opentelemetry/sdk-node`. On a clean install with a different hoisting layout the
+  server died immediately with
+  `ERR_MODULE_NOT_FOUND: Cannot find package '@opentelemetry/resources'`, which an MCP client
+  surfaces only as `CONNECTION_CLOSED`. Found installing the vCon plugin, whose `.mcp.json`
+  launches the server with `npx -y vcon-mcp` (PR #74)
+
+---
+
 ## [1.6.0] - 2026-08-27
 
 ### Added
