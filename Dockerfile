@@ -95,9 +95,13 @@ ENV NODE_ENV=production \
 # Expose HTTP port
 EXPOSE 3000
 
-# Healthcheck for HTTP transport
+# Healthcheck for HTTP transport.
+# 127.0.0.1, not localhost: localhost resolves to [::1] first, but the server binds
+# MCP_HTTP_HOST=0.0.0.0 (IPv4-only), so the probe was refused on every container (CON-792).
+# ponytail: hardcoded IPv4 loopback. A ':: ' bind still accepts it (dual-stack); only a
+# bind to one specific non-loopback interface would need MCP_HTTP_HOST plumbed in here.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:${MCP_HTTP_PORT}/api/v1/health || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:${MCP_HTTP_PORT}/api/v1/health || exit 1
 
 # Create entrypoint script
 COPY --chown=vcon:nodejs <<'EOF' /app/docker-entrypoint.sh

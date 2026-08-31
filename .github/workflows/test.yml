@@ -52,3 +52,14 @@ jobs:
             echo "::error file=docs/reference/CHANGELOG.md::package.json is $pkg but the newest CHANGELOG entry is $log. If this PR branched from before a release commit, rebase on main."
             exit 1
           fi
+
+  docker-healthcheck:
+    name: Docker HEALTHCHECK reaches healthy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # CON-792: the HEALTHCHECK probed http://localhost, which resolves to [::1] while the
+      # server binds 0.0.0.0. Every container reported unhealthy while serving fine.
+      - name: Run healthcheck regression test
+        run: ./scripts/test-docker-healthcheck.sh
