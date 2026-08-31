@@ -169,6 +169,7 @@ export function createVConRoutes(apiContext: RestApiContext): Router {
       endDate: normalizeDateString(ctx.query.end_date as string | undefined),
       tags,
       limit,
+      offset,
     };
 
     const vcons = await apiContext.vconService.search(

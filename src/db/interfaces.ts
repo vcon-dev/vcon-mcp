@@ -173,6 +173,8 @@ export interface IVConQueries {
         /** Case-insensitive substring match on strolid_dealer attachment name. */
         dealerName?: string;
         limit?: number;
+        /** Rows to skip before the page starts (metadata search pagination). */
+        offset?: number;
     }): Promise<VCon[]>;
 
     /**

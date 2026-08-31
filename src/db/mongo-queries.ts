@@ -504,6 +504,7 @@ export class MongoVConQueries implements IVConQueries {
         dealerId?: string;
         dealerName?: string;
         limit?: number;
+        offset?: number;
     }): Promise<VCon[]> {
         const collection = this.db.collection(this.VCONS_COLLECTION);
         const query: any = {};
@@ -531,6 +532,7 @@ export class MongoVConQueries implements IVConQueries {
         const results = await collection
             .find(query)
             .sort({ created_at: -1 })
+            .skip(filters.offset || 0)
             .limit(filters.limit || 10)
             .toArray();
 

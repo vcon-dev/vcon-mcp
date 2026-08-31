@@ -36,7 +36,7 @@ describe('Search Count Limit Validation', () => {
 
         // Create all query builder methods that return the builder for chaining
         const chainMethods = ['from', 'select', 'insert', 'update', 'delete', 'eq', 
-                             'limit', 'order', 'ilike', 'gte', 'lte', 'in'];
+                             'limit', 'range', 'order', 'ilike', 'gte', 'lte', 'in'];
         
         chainMethods.forEach(method => {
           queryBuilder[method] = vi.fn((...args: any[]) => {
