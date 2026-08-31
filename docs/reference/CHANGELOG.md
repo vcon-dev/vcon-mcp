@@ -16,8 +16,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.range()`, the party-filter and tag-ordered paths slice from the offset, and Mongo uses
   `.skip()`. Deep paging in the tag-ordered path remains capped at
   `TAG_ORDERED_FETCH_CAP` (100,000 rows) (CON-790)
+- Dealer-filtered metadata search returns full pages. `searchVCons` resolved
+  `dealerMatchUuidSet()` *after* the page had been fetched and bounded, then dropped
+  non-matching rows from it — so a dealer holding 1 in 10 of the corpus got pages of
+  roughly one row, while `searchVConsCount` correctly reported the full total. The dealer
+  predicate now constrains the query before the page is cut, the way the party filter
+  already did. Reached through the `vcon_search` MCP tool (`filters.dealer_id` /
+  `filters.dealer_name`); REST exposes no dealer parameters and was unaffected (CON-792)
 
 ### Changed
+- `has_more` on `GET /vcons` is computed from a probe row (`limit + 1` requested, extra row
+  withheld) instead of `vcons.length === limit`, which reported `true` on any exactly-full
+  page and cost the client a request for an empty one. Same probe the
+  `vcon://v1/vcons/ids` resource already used (CON-792)
+- The redundant post-hoc party filter in `searchVCons` is gone; that path was already
+  constrained by the candidate set, so it was resolving the same party lookup twice per
+  request (CON-792)
 - `vitest.config.ts` excludes `.claude/**`, so a git worktree under `.claude/worktrees`
   no longer doubles the local suite or drags its `tests/e2e` copies into `npm test`
 

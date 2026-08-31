@@ -353,6 +353,151 @@ describe('VConQueries', () => {
       expect(first[0].uuid).not.toBe(second[0].uuid);
     });
 
+    it('should constrain a dealer-filtered search before the page is cut', async () => {
+      // Six vCons belong to the dealer; the corpus around them belongs to other dealers.
+      // The old code fetched a page of the whole corpus and then dropped non-matching
+      // rows, so a page of 3 came back with roughly one row in it.
+      const dealerUuids = Array.from({ length: 6 }, () => randomUUID());
+      const inCalls: Array<[string, string[]]> = [];
+
+      mockSupabase.rpc.mockResolvedValue({
+        data: dealerUuids.map(vcon_uuid => ({ vcon_uuid })),
+        error: null,
+      });
+
+      // The unconstrained path stays wired up and serves a corpus where the dealer owns
+      // 1 row in 5. Code that pages the whole corpus and then drops non-matching rows
+      // gets a short page here rather than a mock error.
+      mockSupabase.order.mockImplementation(() => ({
+        ...mockSupabase,
+        range: vi.fn().mockImplementation((from: number, to: number) => ({
+          then: (resolve: any) => resolve({
+            data: Array.from({ length: to - from + 1 }, (_unused, i) => {
+              const row = from + i;
+              return {
+                uuid: row % 5 === 0 ? dealerUuids[row / 5] ?? randomUUID() : randomUUID(),
+                id: row,
+                created_at: new Date(Date.UTC(2026, 0, 30 - row)).toISOString(),
+              };
+            }),
+            error: null,
+          }),
+        })),
+        then: (resolve: any) => resolve({ data: [], error: null }),
+      }));
+
+      // Candidate path: from -> select -> in('uuid', chunk) -> order -> await
+      mockSupabase.in.mockImplementation((column: string, values: string[]) => {
+        inCalls.push([column, values]);
+        return {
+          ...mockSupabase,
+          order: vi.fn().mockReturnValue({
+            then: (resolve: any) => resolve({
+              data: values.map((uuid, i) => ({
+                uuid,
+                id: i,
+                created_at: new Date(Date.UTC(2026, 0, 30 - i)).toISOString(),
+              })),
+              error: null,
+            }),
+          }),
+        };
+      });
+
+      // getVCon for each row of the page: vcon row via single(), children via the
+      // order() thenable above
+      mockSupabase.single.mockImplementation(() =>
+        Promise.resolve({
+          data: {
+            uuid: dealerUuids[0],
+            vcon_version: '0.4.0',
+            created_at: new Date().toISOString(),
+          },
+          error: null,
+        }),
+      );
+
+      const page = await queries.searchVCons({ dealerId: '1174', limit: 3, offset: 0 });
+
+      // The dealer predicate reached the query, rather than filtering the fetched page
+      expect(inCalls.length).toBeGreaterThan(0);
+      expect(inCalls[0][0]).toBe('uuid');
+      expect(inCalls[0][1]).toEqual(expect.arrayContaining(dealerUuids));
+
+      // Full page, not the one-or-two survivors of a post-filter
+      expect(page).toHaveLength(3);
+    });
+
+    it('should page a dealer-filtered search to exhaustion without gaps or repeats', async () => {
+      const dealerUuids = Array.from({ length: 5 }, () => randomUUID());
+
+      mockSupabase.rpc.mockResolvedValue({
+        data: dealerUuids.map(vcon_uuid => ({ vcon_uuid })),
+        error: null,
+      });
+      mockSupabase.in.mockImplementation((_column: string, values: string[]) => ({
+        ...mockSupabase,
+        order: vi.fn().mockReturnValue({
+          then: (resolve: any) => resolve({
+            // newest first, so the sort in searchVCons has a stable key to work with
+            data: values.map((uuid, i) => ({
+              uuid,
+              id: i,
+              created_at: new Date(Date.UTC(2026, 0, 30 - i)).toISOString(),
+            })),
+            error: null,
+          }),
+        }),
+      }));
+      // Unconstrained path kept working, dealer owning 1 row in 5 (see above)
+      mockSupabase.order.mockImplementation(() => ({
+        ...mockSupabase,
+        range: vi.fn().mockImplementation((from: number, to: number) => ({
+          then: (resolve: any) => resolve({
+            data: Array.from({ length: to - from + 1 }, (_unused, i) => {
+              const row = from + i;
+              return {
+                uuid: row % 5 === 0 ? dealerUuids[row / 5] ?? randomUUID() : randomUUID(),
+                id: row,
+                created_at: new Date(Date.UTC(2026, 0, 30 - row)).toISOString(),
+              };
+            }),
+            error: null,
+          }),
+        })),
+        then: (resolve: any) => resolve({ data: [], error: null }),
+      }));
+
+      // getVCon echoes back whichever uuid it was asked for, so pages are identifiable
+      let requested: string | undefined;
+      mockSupabase.eq.mockImplementation((column: string, value: string) => {
+        if (column === 'uuid') requested = value;
+        return mockSupabase;
+      });
+      mockSupabase.single.mockImplementation(() =>
+        Promise.resolve({
+          data: {
+            uuid: requested,
+            vcon_version: '0.4.0',
+            created_at: new Date().toISOString(),
+          },
+          error: null,
+        }),
+      );
+
+      const seen: string[] = [];
+      for (let offset = 0; ; offset += 2) {
+        const page = await queries.searchVCons({ dealerId: '1174', limit: 2, offset });
+        if (page.length === 0) break;
+        seen.push(...page.map(v => v.uuid));
+        if (page.length < 2) break;
+      }
+
+      expect(seen).toHaveLength(dealerUuids.length);
+      expect(new Set(seen).size).toBe(dealerUuids.length);
+      expect([...seen].sort()).toEqual([...dealerUuids].sort());
+    });
+
     // Note: Tag filtering tests are in tests/search-count-limit.test.ts
     // which uses a more sophisticated mock setup that properly handles query chaining
 
