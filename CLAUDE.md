@@ -344,6 +344,15 @@ npm run lint      # ESLint
 
 ---
 
+## Bug Fixes Require a Regression Test
+
+Every bug fix lands with a unit test that fails against the old code and passes against the fix.
+Put the test at the layer where the bug actually lived, not only at the layer that reported it
+(e.g. a REST pagination bug caused by a missing DB offset gets a `tests/db-queries.test.ts` test,
+optionally plus a route-level one). No fix is done until that test exists.
+
+---
+
 ## Quick Checklist Before Committing
 
 - [ ] `analysis.schema` NOT `analysis.schema_version`
@@ -357,6 +366,7 @@ npm run lint      # ESLint
 - [ ] `session_id` is `{local: string, remote: string}` NOT a plain string
 - [ ] Tags stored as attachment with `type: "tags"`, `encoding: "json"`
 - [ ] vcon version field is `"0.4.0"`
+- [ ] Bug fix? A unit test reproducing the bug exists and fails without the fix
 
 ---
 

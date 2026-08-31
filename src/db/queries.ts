@@ -1065,10 +1065,13 @@ export class SupabaseVConQueries implements IVConQueries {
     dealerId?: string;
     dealerName?: string;
     limit?: number;
-  }, limit: number): Promise<VCon[]> {
+    offset?: number;
+  }, limit: number, offset: number): Promise<VCon[]> {
+    // ponytail: deep paging is capped at TAG_ORDERED_FETCH_CAP rows; an offset past it
+    // returns empty rather than paging further. Keyset paging on created_at if that bites.
     const rpcMax = Math.min(
       SupabaseVConQueries.TAG_ORDERED_FETCH_CAP,
-      Math.max(limit, 1),
+      Math.max(offset + limit, 1),
     );
     let ordered = await this.searchByTagsAndDate(
       filters.tags,
@@ -1091,7 +1094,7 @@ export class SupabaseVConQueries implements IVConQueries {
       );
     }
 
-    const vconUuids = ordered.slice(0, limit);
+    const vconUuids = ordered.slice(offset, offset + limit);
     return Promise.all(vconUuids.map(uuid => this.getVCon(uuid)));
   }
 
@@ -1109,8 +1112,10 @@ export class SupabaseVConQueries implements IVConQueries {
     dealerId?: string;
     dealerName?: string;
     limit?: number;
+    offset?: number;
   }): Promise<VCon[]> {
     const limit = filters.limit || 10;
+    const offset = filters.offset || 0;
 
     if (filters.tags && Object.keys(filters.tags).length > 0) {
       return this.searchVConsTagOrdered(
@@ -1125,8 +1130,10 @@ export class SupabaseVConQueries implements IVConQueries {
           dealerId: filters.dealerId,
           dealerName: filters.dealerName,
           limit: filters.limit,
+          offset: filters.offset,
         },
         limit,
+        offset,
       );
     }
 
@@ -1162,16 +1169,17 @@ export class SupabaseVConQueries implements IVConQueries {
 
     const initialLimit = limit;
 
-    const applyFilters = <Q extends { ilike: any; gte: any; lte: any; order: any; limit: any }>(
+    const applyFilters = <Q extends { ilike: any; gte: any; lte: any; order: any; range: any }>(
       q: Q,
-      withLimit: boolean,
+      withRange: boolean,
     ): Q => {
       let out: any = q;
       if (filters.subject) out = out.ilike('subject', `%${filters.subject}%`);
       if (filters.startDate) out = out.gte('created_at', filters.startDate);
       if (filters.endDate) out = out.lte('created_at', filters.endDate);
       out = out.order('created_at', { ascending: false });
-      if (withLimit) out = out.limit(initialLimit);
+      // ponytail: offset paging via range; stable enough because created_at is the sort key
+      if (withRange) out = out.range(offset, offset + initialLimit - 1);
       return out;
     };
 
@@ -1197,7 +1205,7 @@ export class SupabaseVConQueries implements IVConQueries {
           accumulated.sort((a, b) =>
             (b.created_at || '').localeCompare(a.created_at || ''),
           );
-          data = accumulated.slice(0, initialLimit);
+          data = accumulated.slice(offset, offset + initialLimit);
         }
       } else {
         const query = applyFilters(

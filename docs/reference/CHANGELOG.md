@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- REST pagination honors `?offset`. `parsePagination()` parsed and validated it and the
+  envelope reported it back, but the list handler never put it into the search filters, and
+  neither `IVConQueries.searchVCons` nor the Supabase/Mongo implementations declared or read
+  it — so `GET /vcons?limit=10&offset=10` returned rows 1-10 while reporting `offset: 10`.
+  Offset now threads route -> interface -> both backends: Supabase's plain path uses
+  `.range()`, the party-filter and tag-ordered paths slice from the offset, and Mongo uses
+  `.skip()`. Deep paging in the tag-ordered path remains capped at
+  `TAG_ORDERED_FETCH_CAP` (100,000 rows) (CON-790)
+
+### Changed
+- `vitest.config.ts` excludes `.claude/**`, so a git worktree under `.claude/worktrees`
+  no longer doubles the local suite or drags its `tests/e2e` copies into `npm test`
+
 ---
 
 ## [1.6.1] - 2026-08-27

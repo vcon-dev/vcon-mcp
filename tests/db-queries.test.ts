@@ -239,10 +239,10 @@ describe('VConQueries', () => {
       const criteria = { subject: 'Test' };
       const testUuid = randomUUID();
 
-      // Mock the chain: select -> ilike -> order -> limit -> (thenable)
+      // Mock the chain: select -> ilike -> order -> range -> (thenable)
       mockSupabase.order.mockImplementationOnce(() => ({
         ...mockSupabase,
-        limit: vi.fn().mockReturnValue({
+        range: vi.fn().mockReturnValue({
           then: (resolve: any) => resolve({
             data: [{ uuid: testUuid }],
             error: null
@@ -280,10 +280,10 @@ describe('VConQueries', () => {
         endDate: '2024-12-31'
       };
 
-      // Mock the chain: select -> gte -> lte -> order -> limit -> (thenable)
+      // Mock the chain: select -> gte -> lte -> order -> range -> (thenable)
       mockSupabase.order.mockImplementationOnce(() => ({
         ...mockSupabase,
-        limit: vi.fn().mockReturnValue({
+        range: vi.fn().mockReturnValue({
           then: (resolve: any) => resolve({
             data: [],
             error: null
@@ -300,11 +300,11 @@ describe('VConQueries', () => {
     it('should limit results', async () => {
       const criteria = { limit: 10 };
 
-      // The chain is: select -> order -> limit -> (thenable)
-      // Need order to return something with limit that is thenable
+      // The chain is: select -> order -> range -> (thenable)
+      // Need order to return something with range that is thenable
       mockSupabase.order.mockImplementationOnce(() => ({
         ...mockSupabase,
-        limit: vi.fn().mockReturnValue({
+        range: vi.fn().mockReturnValue({
           then: (resolve: any) => resolve({
             data: [],
             error: null
@@ -314,8 +314,43 @@ describe('VConQueries', () => {
 
       await queries.searchVCons(criteria);
 
-      // The limit call happens on the object returned by order, not mockSupabase directly
+      // The range call happens on the object returned by order, not mockSupabase directly
       // Just verify the function completed without errors
+    });
+
+    it('should page with offset: different offsets return different rows', async () => {
+      const pageA = randomUUID();
+      const pageB = randomUUID();
+      const ranges: Array<[number, number]> = [];
+      const mockPage = (uuid: string) =>
+        mockSupabase.order.mockImplementationOnce(() => ({
+          ...mockSupabase,
+          range: vi.fn().mockImplementation((from: number, to: number) => {
+            ranges.push([from, to]);
+            return { then: (resolve: any) => resolve({ data: [{ uuid }], error: null }) };
+          }),
+        }));
+
+      const stubGetVCon = (uuid: string) => {
+        mockSupabase.single.mockResolvedValueOnce({
+          data: { uuid, vcon_version: '0.4.0', created_at: new Date().toISOString(), parties: [] },
+          error: null,
+        });
+      };
+      mockSupabase.order.mockResolvedValue({ data: [], error: null });
+
+      mockPage(pageA);
+      stubGetVCon(pageA);
+      const first = await queries.searchVCons({ limit: 3, offset: 0 });
+
+      mockPage(pageB);
+      stubGetVCon(pageB);
+      const second = await queries.searchVCons({ limit: 3, offset: 400 });
+
+      expect(ranges).toEqual([[0, 2], [400, 402]]);
+      expect(first[0].uuid).toBe(pageA);
+      expect(second[0].uuid).toBe(pageB);
+      expect(first[0].uuid).not.toBe(second[0].uuid);
     });
 
     // Note: Tag filtering tests are in tests/search-count-limit.test.ts

@@ -121,6 +121,27 @@ describe('vCon CRUD Routes', () => {
       expect(ctx.mocks.vconService.search).toHaveBeenCalledOnce();
     });
 
+    it('should forward offset to the search query', async () => {
+      const a = sampleVCon();
+      const b = sampleVCon();
+      ctx.mocks.vconService.search.mockResolvedValueOnce([a]).mockResolvedValueOnce([b]);
+
+      const first = await request(ctx.app.callback())
+        .get(`${BASE}/vcons?limit=1&offset=0&format=ids_only`)
+        .expect(200);
+      const second = await request(ctx.app.callback())
+        .get(`${BASE}/vcons?limit=1&offset=400&format=ids_only`)
+        .expect(200);
+
+      expect(ctx.mocks.vconService.search).toHaveBeenNthCalledWith(
+        1, expect.objectContaining({ limit: 1, offset: 0 }), expect.anything(),
+      );
+      expect(ctx.mocks.vconService.search).toHaveBeenNthCalledWith(
+        2, expect.objectContaining({ limit: 1, offset: 400 }), expect.anything(),
+      );
+      expect(first.body.data[0]).not.toBe(second.body.data[0]);
+    });
+
     it('should reject invalid limit', async () => {
       await request(ctx.app.callback())
         .get(`${BASE}/vcons?limit=-1`)
