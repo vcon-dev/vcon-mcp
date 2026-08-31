@@ -254,7 +254,11 @@ export async function insertVCon(db: SupabaseClient, raw: any): Promise<void> {
     const rows = (raw.attachments as any[]).map((a, i) => {
       let body: string | null;
       let encoding: string | null;
-      if (a.type === 'tags') {
+      // vCon 0.4.0 classifies attachments with `purpose`; `type` is the legacy
+      // spelling and the documented exception for lawful_basis. Read both, or a
+      // 0.4.0 corpus lands entirely unclassified and the tag tools see nothing.
+      const kind = a.purpose ?? a.type;
+      if (kind === 'tags') {
         body     = normaliseTagsBody(a.body);
         encoding = 'json';
       } else {
@@ -264,6 +268,7 @@ export async function insertVCon(db: SupabaseClient, raw: any): Promise<void> {
         vcon_id:          vconId,
         attachment_index: i,
         type:             a.type     || null,
+        purpose:          a.purpose  || null,
         party:            a.party    ?? null,
         dialog:           a.dialog   ?? null,
         mimetype:         a.mimetype || a.mediatype || null,

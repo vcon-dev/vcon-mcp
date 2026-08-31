@@ -67,7 +67,10 @@ const RAW_VCON = {
     },
   ],
   analysis: [{ type: 'summary', vendor: 'acme', body: '{}', encoding: 'json' }],
-  attachments: [{ purpose: 'tags', encoding: 'json', body: '["a:b"]' }],
+  attachments: [
+    { purpose: 'tags', encoding: 'json', body: '["a:b"]' },
+    { type: 'lawful_basis', encoding: 'json', body: '{"lawful_basis":"legitimate_interests"}' },
+  ],
 };
 
 let insertVCon: (db: SupabaseClient, raw: any) => Promise<void>;
@@ -77,6 +80,22 @@ beforeAll(async () => {
   process.env.SUPABASE_SERVICE_ROLE_KEY ??= 'test-service-role-key';
   process.env.SUPABASE_URL ??= 'http://127.0.0.1:54321';
   ({ insertVCon } = await import('../scripts/import-vcon-files.js'));
+});
+
+describe('insertVCon attachment classification (CON-793)', () => {
+  it('keeps purpose, so a 0.4.0 corpus does not land unclassified', async () => {
+    const { db, inserts } = makeDbSpy();
+
+    await insertVCon(db, RAW_VCON);
+
+    const [tags, basis] = inserts.attachments;
+    // 0.4.0 spells it `purpose`; dropping it strands the tag tools and any
+    // lawful-basis audit, since both look the attachment up by classification.
+    expect(tags.purpose).toBe('tags');
+    expect(tags.encoding).toBe('json');
+    // `type` remains the documented exception for lawful_basis.
+    expect(basis.type).toBe('lawful_basis');
+  });
 });
 
 describe('insertVCon child foreign keys (CON-793)', () => {
