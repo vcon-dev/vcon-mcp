@@ -152,7 +152,7 @@ async function fetchExistingUUIDs(): Promise<Set<string>> {
 
 // ─── Insert one vCon ─────────────────────────────────────────────────────────
 
-async function insertVCon(db: SupabaseClient, raw: any): Promise<void> {
+export async function insertVCon(db: SupabaseClient, raw: any): Promise<void> {
   const uuid: string = raw.uuid;
 
   // ── vcons ──────────────────────────────────────────────────────────────────
@@ -174,11 +174,14 @@ async function insertVCon(db: SupabaseClient, raw: any): Promise<void> {
       critical:   Array.isArray(criticalVal)    ? criticalVal    : null,
       tenant_id: TENANT_ID,
     })
-    .select('id')
+    .select('uuid')
     .single();
 
   if (vconErr) throw new Error(`vcons: ${vconErr.message}`);
-  const vconId: string = vconRow!.id;
+  // Every child FK (parties, dialog, analysis, attachments, groups, embeddings)
+  // references vcons(uuid), NOT the surrogate vcons.id. Reading .id here makes
+  // each child insert fail parties_vcon_id_fkey and leaves a childless shell.
+  const vconId: string = vconRow!.uuid;
 
   // ── parties ────────────────────────────────────────────────────────────────
   if (raw.parties?.length) {
@@ -404,4 +407,11 @@ async function postImportPipeline(skipEmbed: boolean, skipTags: boolean): Promis
   }
 }
 
-main().catch(err => { console.error('\nFatal:', err.message); process.exit(1); });
+// Only self-run when invoked as a script, so tests can import insertVCon.
+const invokedDirectly =
+  process.argv[1] !== undefined &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (invokedDirectly) {
+  main().catch(err => { console.error('\nFatal:', err.message); process.exit(1); });
+}
