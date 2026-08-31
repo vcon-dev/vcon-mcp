@@ -53,7 +53,7 @@ Deploy vCon MCP Server to major cloud providers with managed container services.
         }
       ],
       "healthCheck": {
-        "command": ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/v1/health || exit 1"],
+        "command": ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/api/v1/health || exit 1"],
         "interval": 30,
         "timeout": 10,
         "retries": 3,
