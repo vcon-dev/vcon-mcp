@@ -1137,34 +1137,24 @@ export class SupabaseVConQueries implements IVConQueries {
       );
     }
 
-    // Start with party filters if present - these constrain which vCons to consider
-    // Party filters must be applied FIRST to avoid missing results due to limit
-    let candidateVconIds: Set<string> | null = null;
+    // Every uuid-set pre-filter is resolved BEFORE the page is cut. Filtering a page after
+    // it has been bounded returns short pages while matching rows remain further on, which
+    // then reads to the caller as the end of the results.
+    const hasPartyFilter = !!(filters.partyName || filters.partyEmail || filters.partyTel);
+    const hasDealerFilter = !!(filters.dealerId || filters.dealerName);
+    let candidateUuids: Set<string> | null = null;
 
-    if (filters.partyName || filters.partyEmail || filters.partyTel) {
-      let partyQuery = this.supabase
-        .from('parties')
-        .select('vcon_id')
-        .limit(10000);
+    if (hasPartyFilter) {
+      candidateUuids = await this.partyMatchUuidSet(filters);
+      if (candidateUuids.size === 0) return [];
+    }
 
-      if (filters.partyName) {
-        partyQuery = partyQuery.ilike('name', `%${filters.partyName}%`);
-      }
-      if (filters.partyEmail) {
-        partyQuery = partyQuery.ilike('mailto', `%${filters.partyEmail}%`);
-      }
-      if (filters.partyTel) {
-        partyQuery = partyQuery.ilike('tel', `%${filters.partyTel}%`);
-      }
-
-      const { data: partyData, error: partyError } = await partyQuery;
-      if (partyError) throw partyError;
-
-      if (!partyData || partyData.length === 0) {
-        return [];
-      }
-
-      candidateVconIds = new Set(partyData.map(p => String(p.vcon_id)));
+    if (hasDealerFilter) {
+      const dealerSet = await this.dealerMatchUuidSet(filters.dealerId, filters.dealerName);
+      candidateUuids = candidateUuids
+        ? new Set([...candidateUuids].filter(uuid => dealerSet.has(uuid)))
+        : dealerSet;
+      if (candidateUuids.size === 0) return [];
     }
 
     const initialLimit = limit;
@@ -1187,14 +1177,17 @@ export class SupabaseVConQueries implements IVConQueries {
     let error: any = null;
 
     try {
-      if (candidateVconIds !== null) {
-        const idArray = Array.from(candidateVconIds);
+      if (candidateUuids !== null) {
+        const uuidArray = Array.from(candidateUuids);
+        // ponytail: 100 uuids per IN list is ~3.6KB of query string, clear of the 8KB
+        // request-line limit nginx defaults to in front of PostgREST. Raise it only with
+        // a proxy you control; a 414 here looks like an empty result set, not an error.
         const IN_BATCH = 100;
         const accumulated: Array<{ uuid: string; id: any; created_at: string }> = [];
-        for (let i = 0; i < idArray.length; i += IN_BATCH) {
-          const chunk = idArray.slice(i, i + IN_BATCH);
+        for (let i = 0; i < uuidArray.length; i += IN_BATCH) {
+          const chunk = uuidArray.slice(i, i + IN_BATCH);
           const chunkQuery = applyFilters(
-            this.supabase.from('vcons').select('uuid, id, created_at').in('id', chunk),
+            this.supabase.from('vcons').select('uuid, id, created_at').in('uuid', chunk),
             false,
           );
           const res = await chunkQuery;
@@ -1232,19 +1225,9 @@ export class SupabaseVConQueries implements IVConQueries {
       return [];
     }
 
-    let vconUuids = data.map(v => v.uuid);
-
-    if (filters.partyName || filters.partyEmail || filters.partyTel) {
-      const matchingUuidSet = await this.partyMatchUuidSet(filters);
-      vconUuids = vconUuids.filter(uuid => matchingUuidSet.has(uuid));
-    }
-
-    if (filters.dealerId || filters.dealerName) {
-      const dealerSet = await this.dealerMatchUuidSet(filters.dealerId, filters.dealerName);
-      vconUuids = vconUuids.filter(uuid => dealerSet.has(uuid));
-    }
-
-    vconUuids = vconUuids.slice(0, limit);
+    // No post-filtering here: party and dealer predicates already constrained the query
+    // above, so this page is as full as the result set allows.
+    const vconUuids = data.map(v => v.uuid);
 
     return Promise.all(
       vconUuids.map(uuid => this.getVCon(uuid))

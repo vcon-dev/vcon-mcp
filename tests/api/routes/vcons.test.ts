@@ -133,13 +133,42 @@ describe('vCon CRUD Routes', () => {
         .get(`${BASE}/vcons?limit=1&offset=400&format=ids_only`)
         .expect(200);
 
+      // limit is the requested page plus one probe row used to compute has_more
       expect(ctx.mocks.vconService.search).toHaveBeenNthCalledWith(
-        1, expect.objectContaining({ limit: 1, offset: 0 }), expect.anything(),
+        1, expect.objectContaining({ limit: 2, offset: 0 }), expect.anything(),
       );
       expect(ctx.mocks.vconService.search).toHaveBeenNthCalledWith(
-        2, expect.objectContaining({ limit: 1, offset: 400 }), expect.anything(),
+        2, expect.objectContaining({ limit: 2, offset: 400 }), expect.anything(),
       );
       expect(first.body.data[0]).not.toBe(second.body.data[0]);
+    });
+
+    it('should report has_more from a probe row rather than a full page', async () => {
+      // Exactly `limit` rows exist: the old `vcons.length === limit` check called this
+      // "there is more", costing the client an extra request for an empty page.
+      ctx.mocks.vconService.search.mockResolvedValueOnce([sampleVCon(), sampleVCon()]);
+
+      const exact = await request(ctx.app.callback())
+        .get(`${BASE}/vcons?limit=2&format=ids_only`)
+        .expect(200);
+
+      expect(exact.body.data).toHaveLength(2);
+      expect(exact.body.pagination.has_more).toBe(false);
+    });
+
+    it('should report has_more and withhold the probe row when a next page exists', async () => {
+      // limit + 1 rows come back; the extra one proves a next page and must not be served
+      ctx.mocks.vconService.search.mockResolvedValueOnce([
+        sampleVCon(), sampleVCon(), sampleVCon(),
+      ]);
+
+      const res = await request(ctx.app.callback())
+        .get(`${BASE}/vcons?limit=2&format=ids_only`)
+        .expect(200);
+
+      expect(res.body.data).toHaveLength(2);
+      expect(res.body.pagination.limit).toBe(2);
+      expect(res.body.pagination.has_more).toBe(true);
     });
 
     it('should reject invalid limit', async () => {

@@ -168,14 +168,19 @@ export function createVConRoutes(apiContext: RestApiContext): Router {
       startDate: normalizeDateString(ctx.query.start_date as string | undefined),
       endDate: normalizeDateString(ctx.query.end_date as string | undefined),
       tags,
-      limit,
+      // One row past the page tells us whether a next page exists, without a second query.
+      // Same probe the vcon://v1/vcons/ids resource uses. Only valid because the query layer
+      // returns full pages — a post-filtered page could shed the probe row and lie.
+      limit: limit + 1,
       offset,
     };
 
-    const vcons = await apiContext.vconService.search(
+    const probed = await apiContext.vconService.search(
       filters,
       { requestContext: { purpose: 'rest-api-list' } }
     );
+    const hasMore = probed.length > limit;
+    const vcons = hasMore ? probed.slice(0, limit) : probed;
 
     let total: number | undefined;
     if (includeCount) {
@@ -197,7 +202,7 @@ export function createVConRoutes(apiContext: RestApiContext): Router {
       limit,
       offset,
       total,
-      has_more: vcons.length === limit,
+      has_more: hasMore,
     }, { response_format: format });
   });
 
