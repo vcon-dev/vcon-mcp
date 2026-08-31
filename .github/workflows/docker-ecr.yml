@@ -36,8 +36,10 @@ jobs:
         run: |
           SHORT_SHA="${GITHUB_SHA::7}"
           BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          # Bare semver, no leading v: this must match what docker/metadata-action's
+          # type=semver actually pushes (1.6.1), not the git tag (v1.6.1).
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            VERSION="${GITHUB_REF#refs/tags/}"
+            VERSION="${GITHUB_REF#refs/tags/v}"
           else
             VERSION="main-${SHORT_SHA}"
           fi
@@ -95,9 +97,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v1
         with:
-          name: Release ${{ steps.version.outputs.version }}
+          name: Release ${{ github.ref_name }}
           body: |
-            ## vCon MCP Server ${{ steps.version.outputs.version }}
+            ## vCon MCP Server ${{ github.ref_name }}
 
             **Git Commit:** `${{ steps.version.outputs.short_sha }}`
             **Build Time:** `${{ steps.version.outputs.build_time }}`
@@ -153,8 +155,10 @@ jobs:
       - name: Resolve test tag
         id: tag
         run: |
+          # Strip the leading v to match the pushed semver tags (1.6.1 / 1.6 / 1).
+          # Pulling v1.6.1 fails with "manifest unknown" — see CON-791.
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+            echo "tag=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
           else
             echo "tag=latest" >> "$GITHUB_OUTPUT"
           fi
