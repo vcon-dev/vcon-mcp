@@ -163,7 +163,13 @@ export async function insertVCon(db: SupabaseClient, raw: any): Promise<void> {
   const { data: vconRow, error: vconErr } = await db
     .from('vcons')
     .insert({
+      // The server's own write path sets id = uuid, and every read resolves a
+      // child's vcon_id by selecting vcons.id. Letting id default to a fresh
+      // gen_random_uuid() here makes imported vCons read back with no parties,
+      // dialog or analysis even though the rows are present.
+      id: uuid,
       uuid,
+      vcon_version: typeof raw.vcon === 'string' ? raw.vcon : undefined,
       subject:    raw.subject    || null,
       created_at: raw.created_at || new Date().toISOString(),
       redacted:   typeof raw.redacted === 'object' && raw.redacted !== null ? raw.redacted : {},

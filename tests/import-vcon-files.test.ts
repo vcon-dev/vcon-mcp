@@ -82,6 +82,22 @@ beforeAll(async () => {
   ({ insertVCon } = await import('../scripts/import-vcon-files.js'));
 });
 
+describe('insertVCon vcons row (CON-793)', () => {
+  it('sets id = uuid and preserves the spec version from the file', async () => {
+    const { db, inserts } = makeDbSpy();
+
+    await insertVCon(db, RAW_VCON);
+
+    const row = inserts.vcons[0];
+    // Reads resolve a child's vcon_id via vcons.id, so a defaulted random id
+    // makes the whole vCon come back childless.
+    expect(row.id).toBe(VCON_UUID);
+    expect(row.uuid).toBe(VCON_UUID);
+    // Without this the column default ("0.3.0") misreports a 0.4.0 corpus.
+    expect(row.vcon_version).toBe('0.4.0');
+  });
+});
+
 describe('insertVCon attachment classification (CON-793)', () => {
   it('keeps purpose, so a 0.4.0 corpus does not land unclassified', async () => {
     const { db, inserts } = makeDbSpy();
