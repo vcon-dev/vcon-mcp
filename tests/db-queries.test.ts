@@ -159,6 +159,82 @@ describe('VConQueries', () => {
       expect(mockSupabase.eq).toHaveBeenCalledWith('uuid', uuid);
     });
 
+    // Regression: getVCon reconstructed only subject/extensions/critical and
+    // silently dropped the top-level redacted / amended / group parameters, so a
+    // de-identified vCon lost its back-reference to the production record.
+    it('should map top-level redacted, amended and group columns', async () => {
+      const uuid = randomUUID();
+      const redacted = { type: 'de-identified', uuid: '0197cc22-09bb-8c9d-9dd8-dd37220d739c' };
+      const amended = { uuid: 'aaaaaaaa-0000-0000-0000-000000000001' };
+      const group = [{ uuid: 'bbbbbbbb-0000-0000-0000-000000000002' }];
+
+      mockSupabase.single.mockResolvedValueOnce({
+        data: {
+          id: '1',
+          uuid,
+          vcon_version: '0.4.0',
+          created_at: new Date().toISOString(),
+          redacted,
+          amended,
+          group_data: group,
+        },
+        error: null
+      });
+      mockSupabase.order.mockResolvedValue({ data: [], error: null });
+
+      const result = await queries.getVCon(uuid);
+
+      expect(result.redacted).toEqual(redacted);
+      expect(result.amended).toEqual(amended);
+      expect(result.group).toEqual(group);
+    });
+
+    it('should omit empty top-level redacted/amended/group defaults', async () => {
+      const uuid = randomUUID();
+
+      mockSupabase.single.mockResolvedValueOnce({
+        data: {
+          id: '1',
+          uuid,
+          vcon_version: '0.4.0',
+          created_at: new Date().toISOString(),
+          redacted: {},
+          amended: {},
+          group_data: [],
+        },
+        error: null
+      });
+      mockSupabase.order.mockResolvedValue({ data: [], error: null });
+
+      const result = await queries.getVCon(uuid);
+
+      expect(result.redacted).toBeUndefined();
+      expect(result.amended).toBeUndefined();
+      expect(result.group).toBeUndefined();
+    });
+
+    // Pre-0.4.0 rows only have `appended`; the read path should still surface it.
+    it('should fall back to the legacy appended column', async () => {
+      const uuid = randomUUID();
+
+      mockSupabase.single.mockResolvedValueOnce({
+        data: {
+          id: '1',
+          uuid,
+          vcon_version: '0.3.0',
+          created_at: new Date().toISOString(),
+          amended: {},
+          appended: { uuid: 'cccccccc-0000-0000-0000-000000000003' },
+        },
+        error: null
+      });
+      mockSupabase.order.mockResolvedValue({ data: [], error: null });
+
+      const result = await queries.getVCon(uuid);
+
+      expect(result.amended).toEqual({ uuid: 'cccccccc-0000-0000-0000-000000000003' });
+    });
+
     it('should throw when vCon not found', async () => {
       const uuid = randomUUID();
 
