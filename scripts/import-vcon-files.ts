@@ -152,7 +152,7 @@ async function fetchExistingUUIDs(): Promise<Set<string>> {
 
 // ─── Insert one vCon ─────────────────────────────────────────────────────────
 
-async function insertVCon(db: SupabaseClient, raw: any): Promise<void> {
+export async function insertVCon(db: SupabaseClient, raw: any): Promise<void> {
   const uuid: string = raw.uuid;
 
   // ── vcons ──────────────────────────────────────────────────────────────────
@@ -163,7 +163,13 @@ async function insertVCon(db: SupabaseClient, raw: any): Promise<void> {
   const { data: vconRow, error: vconErr } = await db
     .from('vcons')
     .insert({
+      // The server's own write path sets id = uuid, and every read resolves a
+      // child's vcon_id by selecting vcons.id. Letting id default to a fresh
+      // gen_random_uuid() here makes imported vCons read back with no parties,
+      // dialog or analysis even though the rows are present.
+      id: uuid,
       uuid,
+      vcon_version: typeof raw.vcon === 'string' ? raw.vcon : undefined,
       subject:    raw.subject    || null,
       created_at: raw.created_at || new Date().toISOString(),
       redacted:   typeof raw.redacted === 'object' && raw.redacted !== null ? raw.redacted : {},
@@ -174,11 +180,14 @@ async function insertVCon(db: SupabaseClient, raw: any): Promise<void> {
       critical:   Array.isArray(criticalVal)    ? criticalVal    : null,
       tenant_id: TENANT_ID,
     })
-    .select('id')
+    .select('uuid')
     .single();
 
   if (vconErr) throw new Error(`vcons: ${vconErr.message}`);
-  const vconId: string = vconRow!.id;
+  // Every child FK (parties, dialog, analysis, attachments, groups, embeddings)
+  // references vcons(uuid), NOT the surrogate vcons.id. Reading .id here makes
+  // each child insert fail parties_vcon_id_fkey and leaves a childless shell.
+  const vconId: string = vconRow!.uuid;
 
   // ── parties ────────────────────────────────────────────────────────────────
   if (raw.parties?.length) {
@@ -251,7 +260,11 @@ async function insertVCon(db: SupabaseClient, raw: any): Promise<void> {
     const rows = (raw.attachments as any[]).map((a, i) => {
       let body: string | null;
       let encoding: string | null;
-      if (a.type === 'tags') {
+      // vCon 0.4.0 classifies attachments with `purpose`; `type` is the legacy
+      // spelling and the documented exception for lawful_basis. Read both, or a
+      // 0.4.0 corpus lands entirely unclassified and the tag tools see nothing.
+      const kind = a.purpose ?? a.type;
+      if (kind === 'tags') {
         body     = normaliseTagsBody(a.body);
         encoding = 'json';
       } else {
@@ -261,6 +274,7 @@ async function insertVCon(db: SupabaseClient, raw: any): Promise<void> {
         vcon_id:          vconId,
         attachment_index: i,
         type:             a.type     || null,
+        purpose:          a.purpose  || null,
         party:            a.party    ?? null,
         dialog:           a.dialog   ?? null,
         mimetype:         a.mimetype || a.mediatype || null,
@@ -404,4 +418,11 @@ async function postImportPipeline(skipEmbed: boolean, skipTags: boolean): Promis
   }
 }
 
-main().catch(err => { console.error('\nFatal:', err.message); process.exit(1); });
+// Only self-run when invoked as a script, so tests can import insertVCon.
+const invokedDirectly =
+  process.argv[1] !== undefined &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (invokedDirectly) {
+  main().catch(err => { console.error('\nFatal:', err.message); process.exit(1); });
+}
