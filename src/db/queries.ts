@@ -49,6 +49,17 @@ function nullifyUndefined<T extends Record<string, unknown>>(obj: T): T {
   return out as T;
 }
 
+/**
+ * vcons.redacted / amended / group_data default to '{}' / '[]', so an empty
+ * value means the parameter is absent. Drop it instead of round-tripping noise.
+ */
+function nonEmpty<T>(value: T | null | undefined): T | undefined {
+  if (value === null || value === undefined) return undefined;
+  if (Array.isArray(value)) return value.length ? value : undefined;
+  if (typeof value === 'object' && Object.keys(value as object).length === 0) return undefined;
+  return value;
+}
+
 export class SupabaseVConQueries implements IVConQueries {
   private redis: Redis | null = null;
   private cacheEnabled: boolean = false;
@@ -869,6 +880,11 @@ export class SupabaseVConQueries implements IVConQueries {
         created_at: vconData.created_at,
         updated_at: vconData.updated_at,
         subject: vconData.subject,
+        // Top-level params the writer/importer persist. Stored as '{}'/'[]' defaults,
+        // so empty means absent — emit null rather than a misleading empty object.
+        redacted: nonEmpty(vconData.redacted),
+        amended: nonEmpty(vconData.amended) ?? nonEmpty(vconData.appended),
+        group: nonEmpty(vconData.group_data),
         parties: parties?.map(p => ({
           tel: p.tel,
           sip: p.sip,

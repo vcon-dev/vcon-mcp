@@ -262,6 +262,7 @@ export function buildVconRow(vcon: VCon, tenantId: string | null) {
     critical: vcon.critical,
     redacted: vcon.redacted || {},
     amended: vcon.amended || {},
+    group_data: vcon.group || [],
     tenant_id: tenantId,
   };
 }
