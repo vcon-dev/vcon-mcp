@@ -82,6 +82,39 @@ beforeAll(async () => {
   ({ insertVCon } = await import('../scripts/import-vcon-files.js'));
 });
 
+describe('insertVCon tags body (CON-794)', () => {
+  it('unwraps a serialised tags body instead of double-encoding it', async () => {
+    const { db, inserts } = makeDbSpy();
+
+    // core-02: an attachment body is a STRING with encoding "json", so a
+    // spec-correct tags attachment arrives already serialised.
+    await insertVCon(db, {
+      ...RAW_VCON,
+      attachments: [
+        {
+          purpose: 'tags',
+          encoding: 'json',
+          body: '["source:cxm_email", "direction:out"]',
+        },
+      ],
+    });
+
+    const tags = inserts.attachments[0];
+    // Must be the array itself, not an array wrapping the serialised array —
+    // the latter makes every tag key read as `["source`.
+    expect(JSON.parse(tags.body)).toEqual(['source:cxm_email', 'direction:out']);
+  });
+
+  it('still accepts a tags body that arrives already parsed', async () => {
+    const { db, inserts } = makeDbSpy();
+    await insertVCon(db, {
+      ...RAW_VCON,
+      attachments: [{ purpose: 'tags', encoding: 'json', body: ['a:1', 'b:2'] }],
+    });
+    expect(JSON.parse(inserts.attachments[0].body)).toEqual(['a:1', 'b:2']);
+  });
+});
+
 describe('insertVCon vcons row (CON-793)', () => {
   it('sets id = uuid and preserves the spec version from the file', async () => {
     const { db, inserts } = makeDbSpy();

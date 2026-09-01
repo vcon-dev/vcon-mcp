@@ -105,6 +105,18 @@ function normaliseBody(body: any, encoding: string | undefined): { body: string 
 
 function normaliseTagsBody(body: any): string {
   if (!body) return '[]';
+  // Per core-02 an attachment body is a STRING with encoding "json", so the
+  // spec-correct tags body arrives already serialised. Parse it rather than
+  // letting it fall through to the String() branch, which wraps the serialised
+  // array in a second array and leaves every tag key looking like `["source`.
+  if (typeof body === 'string') {
+    try {
+      const parsed = JSON.parse(body);
+      if (parsed && typeof parsed === 'object') return normaliseTagsBody(parsed);
+    } catch {
+      // Not JSON — fall through and treat the string as a single tag.
+    }
+  }
   if (Array.isArray(body)) {
     if (body.length === 0 || typeof body[0] === 'string') return JSON.stringify(body);
     // [{key, value}] objects
