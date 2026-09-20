@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.8.0] - 2026-09-20
+
+### Added
+- `API_ANONYMOUS_READONLY=true` treats a request with no token as a read-only session:
+  `GET`/`HEAD`/`OPTIONS` on REST, read tools over MCP. Tokens in `API_KEYS` keep full
+  access and a wrong token is still rejected. Lets a public dataset be reached from MCP
+  clients that cannot send a bearer header (claude.ai and ChatGPT connectors) without
+  `API_AUTH_REQUIRED=false`, which also opens writes (#84)
+- `MCP_SERVER_INSTRUCTIONS` is returned in the `instructions` field of the MCP `initialize`
+  result, so a hosted dataset can tell a connecting agent what the corpus is, how its vCons
+  are shaped and which tools to start with (#85)
+
 ## [1.7.0] - 2026-09-20
 
 ### Added
