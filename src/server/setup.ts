@@ -65,6 +65,10 @@ export interface ServerContext {
  * Initialize MCP server
  */
 export function createServer(): Server {
+  // MCP_SERVER_INSTRUCTIONS is returned to every client on `initialize`. It is
+  // the one place a deployment can tell a connecting agent what this corpus
+  // is and how its vCons are shaped, so set it on hosted datasets.
+  const instructions = process.env.MCP_SERVER_INSTRUCTIONS?.trim() || undefined;
   return new Server(
     {
       name: 'vcon-mcp-server',
@@ -76,6 +80,7 @@ export function createServer(): Server {
         resources: {},
         prompts: {},
       },
+      ...(instructions ? { instructions } : {}),
     }
   );
 }

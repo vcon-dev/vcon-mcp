@@ -420,6 +420,8 @@ API_KEYS_READONLY=ro1,ro2      # Keys limited to GET on REST and read tools over
 API_AUTH_REQUIRED=true         # Set to false to disable auth entirely (local dev only)
 API_ANONYMOUS_READONLY=false   # true: requests with no token get read-only access;
                                # tokens in API_KEYS still get full access. For public datasets.
+MCP_SERVER_INSTRUCTIONS=       # Text returned to every MCP client on initialize: what this
+                               # corpus is, how its vCons are shaped, which tools to start with.
 ```
 
 ### Quick Example
