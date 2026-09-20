@@ -42,6 +42,7 @@ describe('validateHttpRequestAuth', () => {
   beforeEach(() => {
     vi.stubEnv('API_AUTH_REQUIRED', 'true');
     vi.stubEnv('API_KEYS', 'key1,key2');
+    vi.stubEnv('API_ANONYMOUS_READONLY', 'false');
   });
 
   it('returns ok when auth not required', () => {
@@ -60,6 +61,20 @@ describe('validateHttpRequestAuth', () => {
     const config = { ...getAuthConfig(), headerName: 'x-api-key' };
     const req = mockReq({ 'x-api-key': 'key2' });
     expect(validateHttpRequestAuth(req, config)).toEqual({ ok: true, readonly: false });
+  });
+
+  it('treats a missing token as read-only when API_ANONYMOUS_READONLY=true', () => {
+    vi.stubEnv('API_ANONYMOUS_READONLY', 'true');
+    const config = getAuthConfig();
+    expect(config.anonymousReadonly).toBe(true);
+    expect(validateHttpRequestAuth(mockReq({}), config)).toEqual({ ok: true, readonly: true });
+    // A full-access token still gets full access alongside anonymous readers.
+    expect(validateHttpRequestAuth(mockReq({ authorization: 'Bearer key1' }), config)).toEqual({
+      ok: true,
+      readonly: false,
+    });
+    // A wrong token is still rejected; anonymous is not a fallback for bad credentials.
+    expect(validateHttpRequestAuth(mockReq({ authorization: 'Bearer nope' }), config).ok).toBe(false);
   });
 
   it('returns 401 when token missing and auth required', () => {
