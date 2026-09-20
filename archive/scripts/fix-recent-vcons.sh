@@ -4,8 +4,8 @@
 # This is more practical for large databases than scanning everything
 
 DAYS_BACK=${1:-7}  # Default to last 7 days
-REMOTE_URL="https://ijuooeoejxyjmoxrwgzg.supabase.co"
-REMOTE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlqdW9vZW9lanh5am1veHJ3Z3pnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MDk4MDU5MywiZXhwIjoyMDc2NTU2NTkzfQ.E2b-hAzUIWPg39jTM3noAScqz8xBoEbpUN3hlFnQNus"
+REMOTE_URL="${SUPABASE_URL:?set SUPABASE_URL}"
+REMOTE_KEY="${SUPABASE_SERVICE_ROLE_KEY:?set SUPABASE_SERVICE_ROLE_KEY}"
 
 echo "======================================================"
 echo "Fixing vCons from last $DAYS_BACK days"
