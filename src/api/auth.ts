@@ -12,6 +12,8 @@ import { logWithContext } from '../observability/instrumentation.js';
 export interface AuthConfig {
   /** Full-access API keys (comma-separated in env API_KEYS) */
   apiKeys: string[];
+  /** Treat requests with no token as read-only instead of rejecting them (env API_ANONYMOUS_READONLY=true) */
+  anonymousReadonly: boolean;
   /** Read-only API keys (comma-separated in env API_KEYS_READONLY) */
   readonlyKeys: string[];
   /** Header name for API key (default: authorization, i.e. Authorization: Bearer <token>). */
@@ -43,6 +45,7 @@ export function getAuthConfig(): AuthConfig {
     readonlyKeys,
     headerName: process.env.API_KEY_HEADER || 'authorization',
     required: process.env.API_AUTH_REQUIRED !== 'false',
+    anonymousReadonly: process.env.API_ANONYMOUS_READONLY === 'true',
   };
 }
 
@@ -114,6 +117,10 @@ export function validateHttpRequestAuth(
   }
 
   const token = getTokenFromRequest(req, config.headerName);
+  if (!token && config.anonymousReadonly) {
+    // Public read-only access: no token means a read-only MCP session.
+    return { ok: true, readonly: true };
+  }
   if (!token) {
     return {
       ok: false,
@@ -181,6 +188,23 @@ export function createAuthMiddleware(config?: Partial<AuthConfig>) {
     const apiKey = trimmedAuthHeader?.toLowerCase().startsWith('bearer ')
       ? trimmedAuthHeader.slice(7).trim()
       : (ctx.get(authConfig.headerName) || '').trim();
+
+    if (!apiKey && authConfig.anonymousReadonly) {
+      // Public read-only access: an anonymous request is treated exactly like
+      // a read-only key, so the method check below applies to it too.
+      ctx.state.apiKey = undefined;
+      ctx.state.readonly = true;
+      if (!READ_METHODS.has(ctx.method.toUpperCase())) {
+        ctx.status = 403;
+        ctx.body = {
+          error: 'Forbidden',
+          message: `Anonymous access is read-only and cannot ${ctx.method} ${ctx.path}. Send a full-access token to write.`,
+        };
+        return;
+      }
+      await next();
+      return;
+    }
 
     if (!apiKey) {
       ctx.status = 401;

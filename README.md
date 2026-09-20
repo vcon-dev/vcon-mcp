@@ -415,8 +415,11 @@ REST_API_ENABLED=true          # Enable/disable REST API
 CORS_ORIGIN=*                  # CORS allowed origins
 
 # API Key Authentication
-API_KEYS=key1,key2             # Comma-separated valid API keys
-API_AUTH_REQUIRED=true         # Set to false to disable auth
+API_KEYS=key1,key2             # Comma-separated valid API keys (full read/write)
+API_KEYS_READONLY=ro1,ro2      # Keys limited to GET on REST and read tools over MCP
+API_AUTH_REQUIRED=true         # Set to false to disable auth entirely (local dev only)
+API_ANONYMOUS_READONLY=false   # true: requests with no token get read-only access;
+                               # tokens in API_KEYS still get full access. For public datasets.
 ```
 
 ### Quick Example
