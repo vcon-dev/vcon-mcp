@@ -10,7 +10,7 @@ The vCon MCP Server provides 9 prompt templates:
 2. **[find_by_semantic_search](#find_by_semantic_search)** - AI-powered meaning search
 3. **[find_by_keywords](#find_by_keywords)** - Keyword/phrase search
 4. **[find_recent_by_topic](#find_recent_by_topic)** - Recent conversations by topic
-5. **[find_by_customer](#find_by_customer)** - Search by party/customer
+5. **[find_by_party](#find_by_party)** - Search by party
 6. **[discover_available_tags](#discover_available_tags)** - Explore available tags
 7. **[complex_search](#complex_search)** - Multi-criteria searches
 8. **[find_similar_conversations](#find_similar_conversations)** - Find similar vCons
@@ -158,9 +158,9 @@ timeframe: "this week"
 
 ---
 
-### find_by_customer
+### find_by_party
 
-Find all vCons involving a specific customer, party, or participant.
+Find all vCons involving a specific party or participant.
 
 **Arguments:**
 - `party_identifier` (required): Customer/party identifier
@@ -334,6 +334,10 @@ what_you_want: "frustrated customers who complained about billing"
 
 ## Using Prompts
 
+Prompts are filtered by the same `MCP_TOOLS_PROFILE` categories as tools. Every prompt
+is in the `read` category except `daily_activity_report` (`analytics`), so `readonly` and
+`public` deployments do not list it. See [Tools](tools.md#tool-categories) for the profiles.
+
 ### Claude Desktop
 
 Prompts appear in the prompt selector:
@@ -383,7 +387,7 @@ const prompt = await client.getPrompt({
 🔍 Specific words → find_by_keywords
 🤖 Concepts/meaning → find_by_semantic_search
 📅 Recent + topic → find_recent_by_topic
-👤 Specific person → find_by_customer
+👤 Specific person → find_by_party
 🏷️  Explore tags → discover_available_tags
 🔧 Multiple criteria → complex_search
 🔗 Similar content → find_similar_conversations
@@ -422,7 +426,7 @@ Prompt: find_recent_by_topic
   timeframe: "this week"
 
 // Find all conversations with customer
-Prompt: find_by_customer
+Prompt: find_by_party
   party_identifier: "customer@example.com"
 
 // Find billing complaints

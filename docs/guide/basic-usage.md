@@ -573,7 +573,7 @@ Prompts guide Claude in using the right search strategy:
 2. **find_by_semantic_search** - Meaning-based search
 3. **find_by_keywords** - Text search
 4. **find_recent_by_topic** - Recent vCons on topic
-5. **find_by_customer** - Customer-specific vCons
+5. **find_by_party** - Party-specific vCons
 6. **discover_available_tags** - Explore tag schema
 7. **complex_search** - Multi-criteria queries
 8. **find_similar_conversations** - Similar to example

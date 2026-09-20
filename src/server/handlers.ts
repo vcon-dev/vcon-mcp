@@ -269,7 +269,9 @@ export function registerHandlers(context: ServerContext, options: { readonly?: b
       transport: transportType,
     });
 
-    const prompts = allPrompts.map((p) => ({
+    // Same profile/category filter as tools, so a public profile does not list
+    // prompts that assume another deployment's vocabulary or hidden analytics tools.
+    const prompts = filterEnabledTools(allPrompts, toolsConfig).map((p) => ({
       name: p.name,
       description: p.description,
       arguments: p.arguments?.map((arg) => ({
@@ -302,7 +304,7 @@ export function registerHandlers(context: ServerContext, options: { readonly?: b
       argument_keys: args ? Object.keys(args).join(', ') : 'none',
     });
 
-    const prompt = allPrompts.find((p) => p.name === name);
+    const prompt = filterEnabledTools(allPrompts, toolsConfig).find((p) => p.name === name);
     if (!prompt) {
       logWithContext('warn', 'MCP prompt not found', {
         request_id: requestId,

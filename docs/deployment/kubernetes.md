@@ -91,7 +91,7 @@ Key configuration for Kubernetes deployments:
 | `SUPABASE_SERVICE_ROLE_KEY` | Yes* | Service role key (bypasses RLS) |
 | `SUPABASE_ANON_KEY` | Yes* | Anonymous key (uses RLS) |
 | `MCP_HTTP_STATELESS` | Recommended | Set `true` for multi-replica deployments |
-| `MCP_TOOLS_PROFILE` | No | `full`, `readonly`, `user`, `admin`, `minimal` |
+| `MCP_TOOLS_PROFILE` | No | `full`, `readonly`, `user`, `admin`, `minimal`, `public` |
 | `MCP_DISABLED_TOOLS` | No | Comma-separated list of tools to disable |
 | `OPENAI_API_KEY` | No | For embedding generation |
 

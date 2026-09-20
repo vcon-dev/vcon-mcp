@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [1.7.0] - 2026-09-20
+
+### Added
+- `MCP_TOOLS_PROFILE=public` for hosted, read-only datasets. A context-free agent connecting
+  to a public corpus previously saw 28 tools on a read-only session, about half of them
+  operator tooling (`get_database_stats`, `analyze_query`, health and growth analytics). The
+  `public` profile keeps the read and search tools, `get_schema`, `get_examples`, and tag
+  discovery, and hides database internals, analytics, and the two deployment-shaped tools
+  `vcon_aggregate` and `vcon_taxonomy`. `MCP_DISABLED_TOOLS` now merges with a profile's own
+  disabled list instead of replacing it (VCON-1716)
+- Prompts carry a `category` and are filtered by the same profile and category rules as
+  tools, in both `prompts/list` and `prompts/get`. `daily_activity_report` is `analytics`;
+  every other prompt is `read` (VCON-1716)
+
+### Changed
+- Shared tool descriptions no longer carry one deployment's vocabulary. `vcon_aggregate`,
+  `vcon_search`, `vcon_fetch`, and `vcon_taxonomy` describe tag filters, include groups, and
+  the `strolid_dealer` attachment in neutral terms ("where a deployment stores one") instead
+  of "top dealers by portal-tag rate" and `tags.portal` examples. Field names and the API
+  contract are unchanged (VCON-1716)
+- The `find_by_customer` prompt is renamed `find_by_party`, with the customer wording removed
+  from its description and from `daily_activity_report`. Clients that request the old name
+  get `Unknown prompt` (VCON-1716)
+- `has_more` on `GET /vcons` is computed from a probe row (`limit + 1` requested, extra row
+  withheld) instead of `vcons.length === limit`, which reported `true` on any exactly-full
+  page and cost the client a request for an empty one. Same probe the
+  `vcon://v1/vcons/ids` resource already used (CON-792)
+- The redundant post-hoc party filter in `searchVCons` is gone; that path was already
+  constrained by the candidate set, so it was resolving the same party lookup twice per
+  request (CON-792)
+- `vitest.config.ts` excludes `.claude/**`, so a git worktree under `.claude/worktrees`
+  no longer doubles the local suite or drags its `tests/e2e` copies into `npm test`
+
 ### Fixed
 - REST pagination honors `?offset`. `parsePagination()` parsed and validated it and the
   envelope reported it back, but the list handler never put it into the search filters, and
@@ -23,17 +58,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   predicate now constrains the query before the page is cut, the way the party filter
   already did. Reached through the `vcon_search` MCP tool (`filters.dealer_id` /
   `filters.dealer_name`); REST exposes no dealer parameters and was unaffected (CON-792)
-
-### Changed
-- `has_more` on `GET /vcons` is computed from a probe row (`limit + 1` requested, extra row
-  withheld) instead of `vcons.length === limit`, which reported `true` on any exactly-full
-  page and cost the client a request for an empty one. Same probe the
-  `vcon://v1/vcons/ids` resource already used (CON-792)
-- The redundant post-hoc party filter in `searchVCons` is gone; that path was already
-  constrained by the candidate set, so it was resolving the same party lookup twice per
-  request (CON-792)
-- `vitest.config.ts` excludes `.claude/**`, so a git worktree under `.claude/worktrees`
-  no longer doubles the local suite or drags its `tests/e2e` copies into `npm test`
 
 ---
 

@@ -5,7 +5,7 @@
  * By default, all categories are enabled.
  *
  * Environment Variables:
- * - MCP_TOOLS_PROFILE: Use a preset profile (full, readonly, user, admin, minimal)
+ * - MCP_TOOLS_PROFILE: Use a preset profile (full, readonly, user, admin, minimal, public)
  * - MCP_ENABLED_CATEGORIES: Comma-separated list of categories to enable
  * - MCP_DISABLED_CATEGORIES: Comma-separated list of categories to disable
  * - MCP_DISABLED_TOOLS: Comma-separated list of individual tools to disable
@@ -81,6 +81,16 @@ export const DEPLOYMENT_PROFILES: Record<string, ToolsConfig> = {
   minimal: {
     enabledCategories: ['read', 'write'],
   },
+
+  // Public dataset - what a context-free agent should see on a hosted, read-only
+  // corpus: read and search tools, schema and examples, tag discovery. No database
+  // internals, no analytics, and none of the deployment-shaped rollups
+  // (vcon_aggregate groups by a dealer attachment; vcon_taxonomy describes one
+  // deployment's tag vocabulary). Prompts are filtered by the same profile.
+  public: {
+    enabledCategories: ['read', 'schema'],
+    disabledTools: ['vcon_aggregate', 'vcon_taxonomy'],
+  },
 };
 
 /**
@@ -93,10 +103,13 @@ export function loadToolsConfig(): ToolsConfig {
     logger.info({ profile }, 'Using tools profile');
     const config = { ...DEPLOYMENT_PROFILES[profile] };
 
-    // Allow additional disabled tools even with profile
+    // Allow additional disabled tools even with profile (merged with the profile's own)
     const disabledToolsEnv = process.env.MCP_DISABLED_TOOLS;
     if (disabledToolsEnv) {
-      config.disabledTools = disabledToolsEnv.split(',').map((t) => t.trim());
+      config.disabledTools = [
+        ...(config.disabledTools ?? []),
+        ...disabledToolsEnv.split(',').map((t) => t.trim()),
+      ];
     }
 
     return config;

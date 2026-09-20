@@ -509,7 +509,7 @@ Index-addressed edits to a vCon's child arrays. Update tools use PUT semantics (
 
 | Tool | Description |
 |------|-------------|
-| `vcon_aggregate` | Server-side rollup for analyst questions (e.g. top dealers by portal-tag rate); returns `filtered_count` and `baseline_count` per group |
+| `vcon_aggregate` | Server-side rollup for rate-style questions (share of vCons matching a tag filter, per group); returns `filtered_count` and `baseline_count` per group |
 | `vcon_graph_shape` | Return the default vCon shape graph for the corpus (analysis types, attachment purposes, tag keys, co-occurrence edges); same payload as resource `vcon://v1/graph/shape` |
 
 ### Search
@@ -589,7 +589,7 @@ Configure via environment variables:
 
 ```bash
 # Option 1: Use a preset profile
-MCP_TOOLS_PROFILE=readonly   # Options: full, readonly, user, admin, minimal
+MCP_TOOLS_PROFILE=readonly   # Options: full, readonly, user, admin, minimal, public
 
 # Option 2: Enable specific categories only
 MCP_ENABLED_CATEGORIES=read,write,schema
@@ -610,6 +610,14 @@ MCP_DISABLED_TOOLS=delete_vcon,analyze_query
 | `user` | read, write, schema | End-user facing |
 | `admin` | read, analytics, infra, schema | Admin dashboards |
 | `minimal` | read, write | Basic CRUD only |
+| `public` | read, schema, minus `vcon_aggregate` and `vcon_taxonomy` | Hosted public datasets; also filters prompts |
+
+The `public` profile is for hosted, read-only datasets where an agent with no prior context
+connects and has to work out what the corpus is about from `tools/list` alone. It keeps the
+read and search tools, `get_schema`, `get_examples`, and tag discovery, and hides database
+internals, analytics, and the two deployment-shaped tools (`vcon_aggregate`, `vcon_taxonomy`).
+Prompts carry the same categories, so the profile also drops `daily_activity_report`.
+`MCP_DISABLED_TOOLS` still applies on top of any profile.
 
 ### Example: Read-Only Deployment
 

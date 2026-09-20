@@ -17,6 +17,27 @@ import {
   queryStrategyPrompt,
   type PromptDefinition,
 } from '../../src/prompts/index.js';
+import { DEPLOYMENT_PROFILES, filterEnabledTools } from '../../src/config/tools.js';
+
+describe('Prompt profile filtering (VCON-1716)', () => {
+  it('every prompt carries a category so it can be filtered like a tool', () => {
+    for (const p of allPrompts) {
+      expect(['read', 'write', 'schema', 'analytics', 'infra']).toContain(p.category);
+    }
+  });
+
+  it('public profile hides the analytics report prompt and never lists a customer-vocabulary prompt', () => {
+    const names = filterEnabledTools(allPrompts, DEPLOYMENT_PROFILES.public).map((p) => p.name);
+    expect(names).not.toContain('daily_activity_report');
+    expect(names).not.toContain('find_by_customer');
+    expect(names).toContain('find_by_party');
+    expect(names).toContain('help_me_search');
+  });
+
+  it('full profile lists every prompt', () => {
+    expect(filterEnabledTools(allPrompts, DEPLOYMENT_PROFILES.full)).toHaveLength(allPrompts.length);
+  });
+});
 
 describe('Prompts', () => {
   describe('Prompt Definitions', () => {
@@ -51,7 +72,7 @@ describe('Prompts', () => {
     });
 
     it('should have findByPartyPrompt with correct structure', () => {
-      expect(findByPartyPrompt).toHaveProperty('name', 'find_by_customer');
+      expect(findByPartyPrompt).toHaveProperty('name', 'find_by_party');
       expect(findByPartyPrompt).toHaveProperty('description');
       expect(findByPartyPrompt.arguments).toBeDefined();
     });
@@ -84,7 +105,7 @@ describe('Prompts', () => {
       expect(promptNames).toContain('find_by_semantic_search');
       expect(promptNames).toContain('find_by_keywords');
       expect(promptNames).toContain('find_recent_by_topic');
-      expect(promptNames).toContain('find_by_customer');
+      expect(promptNames).toContain('find_by_party');
       expect(promptNames).toContain('discover_available_tags');
       expect(promptNames).toContain('complex_search');
       expect(promptNames).toContain('find_similar_conversations');

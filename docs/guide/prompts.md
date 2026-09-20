@@ -104,9 +104,9 @@ Prompts are pre-built query templates that help you effectively search and retri
 
 ---
 
-### 5. Find by Customer/Party
+### 5. Find by Party
 
-**Prompt:** `find_by_customer`
+**Prompt:** `find_by_party`
 
 **Use when:** You need all conversations involving a specific person.
 
@@ -269,7 +269,7 @@ Do you know the exact tag value?
       │  └─ YES → Use "find_by_semantic_search"
       └─ NO
          ├─ Is this a person/party search?
-         │  └─ YES → Use "find_by_customer"
+         │  └─ YES → Use "find_by_party"
          └─ NO
             ├─ Multiple criteria?
             │  └─ YES → Use "complex_search"
@@ -327,7 +327,7 @@ Here's a quick reference of the tools prompts will guide you to use:
 ### Customer Service
 - **Find escalated issues:** `find_by_exact_tags` with priority tags
 - **Search complaints:** `find_by_semantic_search` for "complaints" or "issues"
-- **Track customer history:** `find_by_customer` with email/phone
+- **Track a party's history:** `find_by_party` with email/phone
 
 ### Sales
 - **High-value opportunities:** `find_by_exact_tags` with priority + department
@@ -340,7 +340,7 @@ Here's a quick reference of the tools prompts will guide you to use:
 - **Trend discovery:** `find_recent_by_topic` with time ranges
 
 ### Compliance
-- **Audit trails:** `find_by_customer` for specific party interactions
+- **Audit trails:** `find_by_party` for specific party interactions
 - **Keyword monitoring:** `find_by_keywords` for compliance terms
 - **Tag validation:** `discover_available_tags` to review taxonomy
 
