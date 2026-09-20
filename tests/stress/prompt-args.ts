@@ -12,7 +12,7 @@ export function minimalPromptArgs(name: string): Record<string, string> {
       return { keywords: 'refund' };
     case 'find_recent_by_topic':
       return { topic: 'support', timeframe: 'recent' };
-    case 'find_by_customer':
+    case 'find_by_party':
       return { party_identifier: 'test@example.com' };
     case 'discover_available_tags':
       return { tag_category: 'all' };

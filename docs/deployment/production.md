@@ -17,7 +17,7 @@ MCP_HTTP_STATELESS=true  # Required for multi-instance deployments
 
 ```bash
 NODE_ENV=production
-MCP_TOOLS_PROFILE=full       # or: readonly, user, admin, minimal
+MCP_TOOLS_PROFILE=full       # or: readonly, user, admin, minimal, public
 LOG_LEVEL=info
 OTEL_ENABLED=true            # Enable observability
 OPENAI_API_KEY=your-key      # For embeddings

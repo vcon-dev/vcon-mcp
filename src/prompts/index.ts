@@ -10,6 +10,8 @@
  * - Combining multiple criteria
  */
 
+import type { ToolCategory } from '../config/tools.js';
+
 export interface PromptArgument {
   name: string;
   description: string;
@@ -19,6 +21,8 @@ export interface PromptArgument {
 export interface PromptDefinition {
   name: string;
   description: string;
+  /** Filtered with the same categories and profiles as tools (MCP_TOOLS_PROFILE). */
+  category: ToolCategory;
   arguments?: PromptArgument[];
 }
 
@@ -28,6 +32,7 @@ export interface PromptDefinition {
  */
 export const findByExactTagPrompt: PromptDefinition = {
   name: 'find_by_exact_tags',
+  category: 'read',
   description: 'Find vCons using exact tag matches. Perfect for precise queries like "find all angry customers from June" or "show me high-priority sales calls".',
   arguments: [
     {
@@ -49,6 +54,7 @@ export const findByExactTagPrompt: PromptDefinition = {
  */
 export const findBySemanticSearchPrompt: PromptDefinition = {
   name: 'find_by_semantic_search',
+  category: 'read',
   description: 'Find vCons using semantic search to understand meaning and intent. Perfect for natural language queries like "find angry customers" or "locate payment dispute conversations".',
   arguments: [
     {
@@ -70,6 +76,7 @@ export const findBySemanticSearchPrompt: PromptDefinition = {
  */
 export const findByKeywordPrompt: PromptDefinition = {
   name: 'find_by_keywords',
+  category: 'read',
   description: 'Find vCons containing specific keywords or phrases in the conversation content. Perfect for exact word matching like "find conversations mentioning \'refund\'" or "search for \'technical support\'".',
   arguments: [
     {
@@ -91,6 +98,7 @@ export const findByKeywordPrompt: PromptDefinition = {
  */
 export const findRecentByTopicPrompt: PromptDefinition = {
   name: 'find_recent_by_topic',
+  category: 'read',
   description: 'Find recent vCons filtered by topic or category. Perfect for queries like "show me recent support calls" or "find this week\'s sales conversations".',
   arguments: [
     {
@@ -107,16 +115,17 @@ export const findRecentByTopicPrompt: PromptDefinition = {
 };
 
 /**
- * Prompt: Find by Customer or Party
+ * Prompt: Find by Party
  * Use case: "find all conversations with john@example.com"
  */
 export const findByPartyPrompt: PromptDefinition = {
-  name: 'find_by_customer',
-  description: 'Find all vCons involving a specific customer, party, or participant. Perfect for queries like "find all conversations with John Smith" or "show me calls from 555-1234".',
+  name: 'find_by_party',
+  category: 'read',
+  description: 'Find all vCons involving a specific party or participant. Perfect for queries like "find all conversations with John Smith" or "show me calls from 555-1234".',
   arguments: [
     {
       name: 'party_identifier',
-      description: 'Customer/party identifier: name, email, or phone number',
+      description: 'Party identifier: name, email, or phone number',
       required: true
     },
     {
@@ -133,6 +142,7 @@ export const findByPartyPrompt: PromptDefinition = {
  */
 export const discoverTagsPrompt: PromptDefinition = {
   name: 'discover_available_tags',
+  category: 'read',
   description: 'Discover what tags are available in the system for filtering. Perfect for exploring your data and understanding what categories, departments, priorities, or other metadata exists.',
   arguments: [
     {
@@ -149,6 +159,7 @@ export const discoverTagsPrompt: PromptDefinition = {
  */
 export const complexSearchPrompt: PromptDefinition = {
   name: 'complex_search',
+  category: 'read',
   description: 'Perform complex searches combining multiple criteria: tags, keywords, dates, and semantic meaning. Perfect for queries like "find high-priority sales calls from Q1 mentioning pricing".',
   arguments: [
     {
@@ -165,6 +176,7 @@ export const complexSearchPrompt: PromptDefinition = {
  */
 export const findSimilarPrompt: PromptDefinition = {
   name: 'find_similar_conversations',
+  category: 'read',
   description: 'Find conversations similar to a specific vCon or topic. Uses semantic search to find conceptually related conversations.',
   arguments: [
     {
@@ -186,6 +198,7 @@ export const findSimilarPrompt: PromptDefinition = {
  */
 export const dailyReportPrompt: PromptDefinition = {
   name: 'daily_activity_report',
+  category: 'analytics',
   description: 'Generate a comprehensive daily activity report for a specific date. Uses analytics tools and targeted searches instead of manual sampling for accurate, efficient reporting.',
   arguments: [
     {
@@ -195,7 +208,7 @@ export const dailyReportPrompt: PromptDefinition = {
     },
     {
       name: 'focus_areas',
-      description: 'Optional focus areas for the report (e.g., "dealership coverage, notable conversations, agent activity")',
+      description: 'Optional focus areas for the report (e.g., "subject coverage, notable conversations, participant activity")',
       required: false
     }
   ]
@@ -207,6 +220,7 @@ export const dailyReportPrompt: PromptDefinition = {
  */
 export const queryStrategyPrompt: PromptDefinition = {
   name: 'help_me_search',
+  category: 'read',
   description: 'Get guidance on the best way to search for vCons based on your needs. Explains which search tool to use (exact tags, keywords, semantic, or hybrid) and how to structure your query.',
   arguments: [
     {
@@ -253,7 +267,7 @@ export function generatePromptMessage(name: string, args: Record<string, string>
       return generateFindByKeywordsMessage(args);
     case 'find_recent_by_topic':
       return generateFindRecentByTopicMessage(args);
-    case 'find_by_customer':
+    case 'find_by_party':
       return generateFindByPartyMessage(args);
     case 'discover_available_tags':
       return generateDiscoverTagsMessage(args);
@@ -924,7 +938,7 @@ This returns:
 - Exact count of vCons without dialog and without analysis (no sampling needed)
 
 ### Step 3: Get Metadata for Subject Analysis (1 tool call)
-Use \`search_vcons\` with date filters and metadata format to extract dealership/subject patterns:
+Use \`search_vcons\` with date filters and metadata format to extract subject patterns:
 \`\`\`json
 {
   "start_date": "${date}T00:00:00Z",
@@ -933,7 +947,7 @@ Use \`search_vcons\` with date filters and metadata format to extract dealership
   "limit": 200
 }
 \`\`\`
-Parse the subjects to identify dealership coverage and activity categories.
+Parse the subjects to identify coverage and activity categories.
 
 ### Step 4: Find Notable Conversations by Theme (2-3 tool calls)
 Use \`search_vcons_content\` with date filters to find interesting conversations by keyword:
@@ -965,14 +979,14 @@ Combine:
 - **Volume**: Exact count from Step 1
 - **Content Profile**: Dialog/analysis breakdowns from Step 2
 - **Completeness**: vcons_without_dialog / vcons_without_analysis counts from Step 2 (exact numbers, not estimates)
-- **Dealership Coverage**: Subject patterns from Step 3
+- **Subject Coverage**: Subject patterns from Step 3
 - **Notable Conversations**: Specific examples from Steps 4-5
 
 ### Report Structure
 1. **Volume** — Exact daily count with comparison context
 2. **Nature of Activity** — Grounded in aggregate analytics, not sample impressions
 3. **Notable Conversations** — Specific examples found via keyword search
-4. **Dealership Coverage** — Extracted from subjects
+4. **Subject Coverage** — Extracted from subjects
 5. **Observations** — Data-backed insights (e.g., "4,312 of 9,232 vCons (47%) had no dialog")
 
 ### What NOT to Do

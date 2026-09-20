@@ -163,7 +163,7 @@ docker run --rm \
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MCP_TOOLS_PROFILE` | `full` | Preset: `full`, `readonly`, `user`, `admin`, `minimal` |
+| `MCP_TOOLS_PROFILE` | `full` | Preset: `full`, `readonly`, `user`, `admin`, `minimal`, `public` |
 | `MCP_ENABLED_CATEGORIES` | (all) | Comma-separated: `read,write,schema,analytics,infra` |
 | `MCP_DISABLED_TOOLS` | (none) | Comma-separated tool names to disable |
 

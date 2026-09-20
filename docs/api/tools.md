@@ -54,7 +54,7 @@ Configure via environment variables:
 
 ```bash
 # Use a preset profile
-MCP_TOOLS_PROFILE=readonly   # Options: full, readonly, user, admin, minimal
+MCP_TOOLS_PROFILE=readonly   # Options: full, readonly, user, admin, minimal, public
 
 # Or enable specific categories only
 MCP_ENABLED_CATEGORIES=read,write,schema
@@ -75,6 +75,14 @@ MCP_DISABLED_TOOLS=delete_vcon,analyze_query
 | `user` | read, write, schema | End-user facing |
 | `admin` | read, analytics, infra, schema | Admin dashboards |
 | `minimal` | read, write | Basic CRUD only |
+| `public` | read, schema, minus `vcon_aggregate` and `vcon_taxonomy` | Hosted public datasets; also filters prompts |
+
+The `public` profile is for hosted, read-only datasets where an agent with no prior context
+connects and has to work out what the corpus is about from `tools/list` alone. It keeps the
+read and search tools, `get_schema`, `get_examples`, and tag discovery, and hides database
+internals, analytics, and the two deployment-shaped tools (`vcon_aggregate`, `vcon_taxonomy`).
+Prompts carry the same categories, so the profile also drops `daily_activity_report`.
+`MCP_DISABLED_TOOLS` still applies on top of any profile.
 
 See the [Configuration Guide](../guide/configuration.md) for more details.
 
@@ -151,7 +159,7 @@ Return the published JSON schema plus one concrete example for redesigned and le
 
 ### vcon_aggregate
 
-Server-side rollup for analyst questions such as "top dealers by portal-tag rate". Groups vCons that carry a `strolid_dealer` attachment by dealer id and returns `filtered_count` (rows matching the supplied tags) and `baseline_count` (all rows in the group), so a client can divide for a rate in one round trip. Requires the Postgres RPC `aggregate_vcons_by_dealer_stats` from the latest migration.
+Server-side rollup for rate-style questions: which groups have the highest share of vCons matching a tag filter. Groups vCons by an attachment-derived key (this release: the `strolid_dealer` attachment id, where a deployment stores one) and returns `filtered_count` (rows matching the supplied tags) and `baseline_count` (all rows in the group), so a client can divide for a rate in one round trip. Requires the Postgres RPC `aggregate_vcons_by_dealer_stats` from the latest migration.
 
 ---
 

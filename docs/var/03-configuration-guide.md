@@ -85,7 +85,7 @@ Restrict the tool catalog exposed to clients.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `MCP_TOOLS_PROFILE` | `full` | One of `full`, `readonly`, `user`, `admin`, `minimal` |
+| `MCP_TOOLS_PROFILE` | `full` | One of `full`, `readonly`, `user`, `admin`, `minimal`, `public` |
 | `MCP_ENABLED_CATEGORIES` | — | Comma-separated: e.g. `read,write` |
 | `MCP_DISABLED_CATEGORIES` | — | Comma-separated: e.g. `analytics` |
 | `MCP_DISABLED_TOOLS` | — | Specific tool names: e.g. `delete_vcon` |

@@ -19,7 +19,7 @@ export const vconFetchTool = {
     'Fetch a single vCon using the redesigned stable envelope: {ok, item}. ' +
     'Use the include array to request only the fields you need. Default include is ["core", "parties", "summary"]. ' +
     'Available include values: core, parties, summary, tags, dealer, counts, dialog, analysis, attachments. ' +
-    'Use include=["core","summary","dealer"] for lightweight Strolid browsing without loading full transcript payloads. ' +
+    'Use include=["core","summary"] for lightweight browsing without loading full transcript payloads. ' +
     'The primary identifier in the returned item is always "id". ' +
     'Use vcon_capabilities to inspect supported include values and byte-budget defaults before calling. ' +
     'If the response would exceed max_response_bytes, the tool returns {ok:false,error:{code:"RESPONSE_TOO_LARGE",...}} instead of truncating the payload.',
@@ -35,7 +35,7 @@ export const vconFetchTool = {
         type: 'array',
         description:
           'Explicit field groups to include. Default: ["core", "parties", "summary"]. ' +
-          'Use "dealer" to return the parsed strolid_dealer attachment only, and "tags" for parsed tag key/value pairs.',
+          'Use "tags" for parsed tag key/value pairs. "dealer" returns the parsed strolid_dealer attachment where a deployment stores one, and null otherwise.',
         items: {
           type: 'string',
           enum: [...fetchIncludeValues],
@@ -56,9 +56,8 @@ export const vconTaxonomyTool = {
   name: 'vcon_taxonomy',
   category: 'read' as ToolCategory,
   description:
-    'Return domain guidance for building vCon clients against this dataset. ' +
-    'Includes the portal taxonomy, common tag keys, sparse versus preferred fields, and attachment types such as strolid_dealer. ' +
-    'Read this before designing "bad call" or dealer-aware experiences.',
+    'Return domain guidance for building vCon clients against this dataset: the tag taxonomy, common tag keys, sparse versus preferred fields, and deployment-specific attachment types. ' +
+    'Read this before designing tag-driven views. Prefer vcon_graph_shape for a data-derived picture of the corpus.',
   inputSchema: {
     type: 'object' as const,
     properties: {}
@@ -98,8 +97,8 @@ export const vconSearchTool = {
     'Search vCons through one stable list envelope: {ok, items, page}. ' +
     'Use mode="metadata" for filters-only browsing, mode="keyword" for full-text search, mode="semantic" for meaning-based search, and mode="hybrid" to combine keyword and semantic ranking. ' +
     'Default include is ["core", "summary"]. ' +
-    'Use tags.portal with values like negative_experience, dnc_request, and bad_call_quality for upset-customer and bad-call views before falling back to semantic search. ' +
-    'Use include=["core","summary","dealer"] to get summary text plus parsed strolid_dealer data without loading the full attachments payload. ' +
+    'Filter on tags first when the corpus is tagged (see get_unique_tags) before falling back to semantic search. ' +
+    'Use include=["core","summary"] to get summary text without loading the full attachments payload. ' +
     'Use vcon_capabilities to inspect supported modes, includes, and byte budgets before calling. ' +
     'Pagination uses cursor, not offset. The cursor is opaque and should be passed back exactly as returned in page.next_cursor. ' +
     'If the response would exceed max_response_bytes, the tool returns RESPONSE_TOO_LARGE with narrowing suggestions.',
@@ -123,12 +122,12 @@ export const vconSearchTool = {
       },
       tags: {
         type: 'object',
-        description: 'Tag filters applied before ranking. Example: {"portal":"negative_experience"}.',
+        description: 'Tag filters applied before ranking, as key/value pairs. Example: {"department":"sales"}.',
         additionalProperties: { type: 'string' }
       },
       filters: {
         type: 'object',
-        description: 'Structured metadata filters for subject, dates, party fields, and strolid dealer attachment.',
+        description: 'Structured metadata filters for subject, dates, party fields, and (where a deployment stores one) the strolid_dealer attachment.',
         properties: {
           subject: { type: 'string' },
           start_date: { type: 'string' },
@@ -193,8 +192,8 @@ export const vconAggregateTool = {
   name: 'vcon_aggregate',
   category: 'read' as ToolCategory,
   description:
-    'Server-side rollup for analyst questions such as top dealers by portal-tag rate. ' +
-    'Groups vCons that carry a strolid_dealer attachment by dealer id, returning filtered_count (rows matching tags) and baseline_count (all rows in the group) so clients can divide for a rate in one round trip. ' +
+    'Server-side rollup for rate-style questions: which groups have the highest share of vCons matching a tag filter. ' +
+    'Groups vCons by an attachment-derived key (this release: the strolid_dealer attachment id, where a deployment stores one), returning filtered_count (rows matching tags) and baseline_count (all rows in the group) so clients can divide for a rate in one round trip. ' +
     'Requires Postgres RPC aggregate_vcons_by_dealer_stats from the latest migration.',
   inputSchema: {
     type: 'object' as const,
@@ -220,14 +219,14 @@ export const vconAggregateTool = {
       },
       having: {
         type: 'object',
-        description: 'Optional HAVING-style floor on baseline_count per dealer.',
+        description: 'Optional HAVING-style floor on baseline_count per group.',
         properties: {
           min_count: { type: 'number', minimum: 1, default: 1 },
         },
       },
       limit: {
         type: 'number',
-        description: 'Maximum number of dealer rows to return. Default 20, max 500.',
+        description: 'Maximum number of group rows to return. Default 20, max 500.',
         minimum: 1,
         maximum: 500,
         default: 20,

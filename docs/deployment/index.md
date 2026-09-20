@@ -143,6 +143,7 @@ Control which tools are available based on deployment type:
 | `user` | read, write, schema | End-user facing applications |
 | `admin` | read, analytics, infra, schema | Admin/monitoring dashboards |
 | `minimal` | read, write | Basic CRUD microservice |
+| `public` | read, schema, minus `vcon_aggregate` and `vcon_taxonomy` | Hosted public datasets; also filters prompts |
 
 ### Configuration Options
 

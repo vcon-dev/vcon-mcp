@@ -38,6 +38,7 @@ MCP_DISABLED_TOOLS=delete_vcon,execute_sql
 | `user` | CRUD without admin operations |
 | `admin` | Full access including schema changes |
 | `minimal` | Basic operations only |
+| `public` | Read and search tools for a hosted public dataset; hides database internals, analytics, deployment-shaped rollups, and the prompts that assume them |
 
 ## Container Security
 

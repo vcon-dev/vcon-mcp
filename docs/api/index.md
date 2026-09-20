@@ -73,7 +73,7 @@ URI-based access to vCon data:
 - **find_by_semantic_search** - AI-powered meaning search
 - **find_by_keywords** - Keyword/phrase search
 - **find_recent_by_topic** - Recent conversations by topic
-- **find_by_customer** - Search by party/customer
+- **find_by_party** - Search by party
 - **discover_available_tags** - Explore available tags
 - **complex_search** - Multi-criteria searches
 - **find_similar_conversations** - Find similar vCons

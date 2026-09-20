@@ -83,7 +83,7 @@ describe('Tool Categories Configuration', () => {
     });
 
     it('should have all deployment profiles defined', () => {
-      expect(Object.keys(DEPLOYMENT_PROFILES)).toEqual(['full', 'readonly', 'user', 'admin', 'minimal']);
+      expect(Object.keys(DEPLOYMENT_PROFILES)).toEqual(['full', 'readonly', 'user', 'admin', 'minimal', 'public']);
     });
   });
 
@@ -107,6 +107,19 @@ describe('Tool Categories Configuration', () => {
     it('minimal profile should only enable read and write', () => {
       expect(DEPLOYMENT_PROFILES.minimal.enabledCategories).toEqual(['read', 'write']);
     });
+
+    it('public profile enables read and schema, minus the deployment-shaped rollups (VCON-1716)', () => {
+      expect(DEPLOYMENT_PROFILES.public.enabledCategories).toEqual(['read', 'schema']);
+      expect(DEPLOYMENT_PROFILES.public.disabledTools).toEqual(['vcon_aggregate', 'vcon_taxonomy']);
+      const tools: ToolDefinition[] = [
+        ...sampleTools,
+        { name: 'vcon_aggregate', category: 'read', description: '', inputSchema: {} },
+        { name: 'vcon_taxonomy', category: 'read', description: '', inputSchema: {} },
+        { name: 'vcon_graph_shape', category: 'read', description: '', inputSchema: {} },
+      ];
+      const names = filterEnabledTools(tools, DEPLOYMENT_PROFILES.public).map((t) => t.name);
+      expect(names).toEqual(['get_vcon', 'search_vcons', 'get_schema', 'vcon_graph_shape']);
+    });
   });
 
   describe('loadToolsConfig', () => {
@@ -120,6 +133,15 @@ describe('Tool Categories Configuration', () => {
       process.env.MCP_TOOLS_PROFILE = 'readonly';
       const config = loadToolsConfig();
       expect(config.enabledCategories).toEqual(['read', 'schema']);
+    });
+
+    it('should merge MCP_DISABLED_TOOLS with a profile\'s own disabled tools', () => {
+      process.env.MCP_TOOLS_PROFILE = 'public';
+      process.env.MCP_DISABLED_TOOLS = 'vcon_graph_shape';
+      const config = loadToolsConfig();
+      expect(config.disabledTools).toEqual(['vcon_aggregate', 'vcon_taxonomy', 'vcon_graph_shape']);
+      // and the profile constant itself is left untouched
+      expect(DEPLOYMENT_PROFILES.public.disabledTools).toEqual(['vcon_aggregate', 'vcon_taxonomy']);
     });
 
     it('should load user profile from MCP_TOOLS_PROFILE', () => {
