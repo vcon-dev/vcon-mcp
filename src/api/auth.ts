@@ -93,7 +93,9 @@ export type ValidateHttpAuthResult =
  */
 export function validateHttpRequestAuth(
   req: IncomingMessage,
-  config: AuthConfig
+  config: AuthConfig,
+  /** logInvalid: false when another check (OAuth) still gets a turn and logs its own rejection */
+  options: { logInvalid?: boolean } = {}
 ): ValidateHttpAuthResult {
   if (!config.required) {
     return { ok: true, readonly: false };
@@ -136,7 +138,7 @@ export function validateHttpRequestAuth(
     };
   }
   if (!allKeys(config).includes(token)) {
-    logWithContext('warn', 'Invalid MCP auth token attempted', {
+    if (options.logInvalid !== false) logWithContext('warn', 'Invalid MCP auth token attempted', {
       remote_address: req.socket?.remoteAddress,
       token_prefix: token.substring(0, 8) + '...',
     });

@@ -178,6 +178,10 @@ export async function applyOAuth(
   if (token) {
     const verified = await verifyOAuthToken(token, config);
     if (verified) return { ok: true, readonly: verified.readonly };
+    logWithContext('warn', 'Invalid MCP auth token attempted', {
+      remote_address: req.socket?.remoteAddress,
+      token_prefix: token.substring(0, 8) + '...',
+    });
   }
   if (!token && authConfig.anonymousReadonly) return { ok: true, readonly: true };
   return {
