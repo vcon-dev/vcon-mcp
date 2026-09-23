@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [1.9.0] - 2026-09-23
+
 ### Added
 - OAuth 2.1 on the MCP HTTP endpoint so the server can be added as a custom connector in
   claude.ai and Claude Desktop, which only sign in with OAuth. vcon-mcp acts as the resource
@@ -19,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `OAUTH_ISSUER` is set; static `API_KEYS` / `API_KEYS_READONLY` tokens are checked first and
   keep working. OAuth sessions are read-only unless `OAUTH_READONLY=false`. The consent page
   signs in by emailed code or through a Supabase external provider such as Google
-  (`OAUTH_CONSENT_PROVIDERS`)
+  (`OAUTH_CONSENT_PROVIDERS`) (#89)
 
 ---
 
