@@ -110,7 +110,8 @@ the metadata instead of the "no API keys configured" `503`.
 ### Self-hosted Supabase
 
 The same steps apply, set through the auth container's environment instead of the dashboard.
-The OAuth server needs `supabase/gotrue` v2.186 or later.
+The OAuth server is in `supabase/gotrue` from v2.180; use v2.186 or later, which
+stores and enforces the `token_endpoint_auth_method` that dynamically registered clients declare.
 
 ```bash
 GOTRUE_JWT_ISSUER=https://mcp.example.com/auth/v1
