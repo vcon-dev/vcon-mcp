@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.9.2] - 2026-09-23
+
+### Fixed
+- Metadata `vcon_search` no longer fails past offset ~900. Each page used to load every vCon
+  from row 0 up to the cursor, all at once, until the Supabase client gave out with
+  `SEARCH_FAILED`. It now fetches one page (#93)
+- Growth, size, content-volume and temporal analytics no longer multiply counts through a
+  combined LEFT JOIN of dialog, analysis and attachments. Each child table is aggregated first,
+  and joins target `vcons.uuid`, which the child foreign keys reference (#93)
+- Attachment analytics group on `purpose`, falling back to the legacy `type`, so 0.4.0
+  attachments no longer report as `type: null` (#93)
+- Tag analytics, `get_unique_tags` and taxonomy coverage refresh `vcon_tags_mv` when it is
+  stale. Deployments without pg_cron kept the view empty and reported no tags on a tagged
+  corpus. Requires migration `20260923210000_refresh_vcon_tags_mv_if_stale.sql` (#93)
+- PostgREST errors report their message instead of `[object Object]` in tool responses and
+  batch-writer logs (#93)
+
+---
+
 ## [1.9.1] - 2026-09-23
 
 ### Changed
