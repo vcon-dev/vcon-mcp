@@ -13,10 +13,15 @@
  */
 
 import type { IncomingMessage } from 'http';
+import { webcrypto } from 'node:crypto';
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from 'jose';
 import { logWithContext } from '../observability/instrumentation.js';
 import { CONSENT_PATH, serveConsentPage } from './oauth-consent.js';
 import { getTokenFromRequest, type AuthConfig, type ValidateHttpAuthResult } from './auth.js';
+
+// jose needs the Web Crypto global, which Node 18 only exposes behind a flag.
+// ponytail: drop once Node 18 leaves the supported/CI matrix.
+if (!globalThis.crypto) (globalThis as { crypto: unknown }).crypto = webcrypto;
 
 export interface OAuthConfig {
   /** Authorization server issuer, e.g. https://<ref>.supabase.co/auth/v1 */
