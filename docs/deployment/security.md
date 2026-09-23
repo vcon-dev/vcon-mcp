@@ -107,6 +107,32 @@ the metadata instead of the "no API keys configured" `503`.
    accounts (`create_user: false`), so only existing users get through. Add `{{ .Token }}` to
    the Magic Link email template so the email carries the code.
 
+### Self-hosted Supabase
+
+The same steps apply, set through the auth container's environment instead of the dashboard.
+The OAuth server needs `supabase/gotrue` v2.186 or later.
+
+```bash
+GOTRUE_JWT_ISSUER=https://mcp.example.com/auth/v1
+GOTRUE_SITE_URL=https://mcp.example.com
+GOTRUE_OAUTH_SERVER_ENABLED=true
+GOTRUE_OAUTH_SERVER_AUTHORIZATION_PATH=/oauth/consent
+GOTRUE_OAUTH_SERVER_ALLOW_DYNAMIC_REGISTRATION=true
+GOTRUE_JWT_KEYS='[<ES256 signing JWK>, <existing HS256 secret as an oct verify-only JWK>]'
+GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED=true
+GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_URI=pg-functions://postgres/public/mcp_access_token_hook
+```
+
+Keeping the old HS256 secret in `GOTRUE_JWT_KEYS` as verify-only keeps the existing anon and
+service-role keys valid, so PostgREST and vcon-mcp's database access are unaffected.
+
+MCP clients call the authorization server without a Supabase `apikey`, which the stock Kong
+gateway requires. Route the OAuth paths from the reverse proxy straight to the auth container
+(port 9999) with `/auth/v1` stripped: `/auth/v1/oauth/*`, `/auth/v1/.well-known/*`,
+`/auth/v1/otp`, `/auth/v1/verify`, plus `/.well-known/oauth-authorization-server/auth/v1`
+rewritten to `/.well-known/oauth-authorization-server`. Give these routes priority over the
+vcon-mcp route. Nothing else on the auth API needs to be public.
+
 ### Connect a client
 
 In claude.ai: Settings > Connectors > Add custom connector, URL `https://mcp.example.com/mcp`.

@@ -78,7 +78,7 @@ export function wwwAuthenticate(config: OAuthConfig, error?: 'invalid_token'): s
  * Answer the discovery paths without auth. Returns true when the request was handled.
  *
  * - /.well-known/oauth-protected-resource and the resource-path-suffixed variant: RFC 9728 metadata
- * - /.well-known/oauth-authorization-server: redirect to the issuer's metadata, for clients that
+ * - /.well-known/oauth-authorization-server (exact): redirect to the issuer's metadata, for clients that
  *   look for it on the resource origin (the 2025-03-26 MCP auth spec did this)
  * - /oauth/consent: the Supabase consent page, when OAUTH_CONSENT_ANON_KEY is set
  */
@@ -109,7 +109,9 @@ export function handleOAuthDiscovery(
     serveConsentPage(res, config, config.consentAnonKey);
     return true;
   }
-  if (path.startsWith('/.well-known/oauth-authorization-server')) {
+  // Exact path only: when the issuer shares this origin (self-hosted auth routed at /auth/v1),
+  // the issuer's own path-suffixed metadata URL lands here too and must reach the issuer.
+  if (path === '/.well-known/oauth-authorization-server') {
     res.writeHead(302, {
       Location: authorizationServerMetadataUrl(config),
       'Access-Control-Allow-Origin': '*',

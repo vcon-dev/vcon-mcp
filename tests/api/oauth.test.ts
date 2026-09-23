@@ -118,6 +118,16 @@ describe('discovery', () => {
     expect(on.res.body).toContain('anon\\u003c/script>');
   });
 
+  it('does not loop when the issuer shares the resource origin', () => {
+    const sameOrigin = { ...config, issuer: 'https://mcp.example.com/auth/v1' };
+    const bare = mockRes();
+    expect(handleOAuthDiscovery('/.well-known/oauth-authorization-server', bare.obj, sameOrigin)).toBe(true);
+    expect(bare.res.headers.Location).toBe('https://mcp.example.com/.well-known/oauth-authorization-server/auth/v1');
+    // The redirect target itself belongs to the issuer, not to this handler.
+    const target = mockRes();
+    expect(handleOAuthDiscovery('/.well-known/oauth-authorization-server/auth/v1', target.obj, sameOrigin)).toBe(false);
+  });
+
   it('leaves other paths alone', () => {
     const { obj } = mockRes();
     expect(handleOAuthDiscovery('/mcp', obj, config)).toBe(false);
