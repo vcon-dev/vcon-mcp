@@ -40,6 +40,86 @@ MCP_DISABLED_TOOLS=delete_vcon,execute_sql
 | `minimal` | Basic operations only |
 | `public` | Read and search tools for a hosted public dataset; hides database internals, analytics, deployment-shaped rollups, and the prompts that assume them |
 
+## OAuth for MCP Connectors
+
+claude.ai and the Claude Desktop chat add remote MCP servers as custom connectors, and those
+only sign in with OAuth 2.1. Claude Code and scripts keep using a static bearer token from
+`API_KEYS` or `API_KEYS_READONLY`; the server checks static keys first, so turning OAuth on
+changes nothing for them.
+
+vcon-mcp is the **resource server** only. An external authorization server handles sign-in,
+PKCE, dynamic client registration and token issuance. The steps below use Supabase OAuth
+Server; any issuer that signs JWTs and publishes `<issuer>/.well-known/jwks.json` works the
+same way.
+
+### What the server does
+
+| Path | Auth | Response |
+|------|------|----------|
+| `/.well-known/oauth-protected-resource` and `/.well-known/oauth-protected-resource/mcp` | none | RFC 9728 metadata naming `OAUTH_ISSUER` as the authorization server |
+| `/.well-known/oauth-authorization-server` | none | `302` to the issuer's RFC 8414 metadata |
+| `/oauth/consent` | none | Consent page, when `OAUTH_CONSENT_ANON_KEY` is set |
+| `/mcp` with no or bad token | | `401` with `WWW-Authenticate: Bearer resource_metadata="<origin>/.well-known/oauth-protected-resource/mcp"` |
+| `/mcp` with an OAuth token | JWT | Checked on every request: signature against the issuer JWKS, `iss`, `exp`, `aud` equal to `OAUTH_RESOURCE`, optional email domain |
+
+The REST API (`/api/v1`) still takes static keys only.
+
+### Environment
+
+```bash
+OAUTH_ISSUER=https://<project-ref>.supabase.co/auth/v1
+OAUTH_RESOURCE=https://mcp.example.com/mcp     # the exact URL users paste into the connector
+OAUTH_READONLY=true                             # default; false gives OAuth sessions write tools
+OAUTH_ALLOWED_EMAIL_DOMAINS=example.com         # optional
+OAUTH_CONSENT_ANON_KEY=<publishable key>        # Supabase publishable (anon) key, safe to expose
+```
+
+With OAuth on, `API_KEYS` may be empty: an OAuth-only deployment gets `401`s that point at
+the metadata instead of the "no API keys configured" `503`.
+
+### Supabase setup
+
+1. **Signing keys.** Authentication > JWT Keys: move to asymmetric keys (ES256 or RS256). The
+   server verifies against the JWKS and cannot check legacy HS256 tokens.
+2. **OAuth Server.** Authentication > OAuth Server: enable it, turn on dynamic client
+   registration (claude.ai registers itself), and set the Authorization Path to
+   `/oauth/consent`. Set the project's Site URL to the MCP server's origin
+   (`https://mcp.example.com`) so the consent link lands on this server.
+3. **Audience.** Supabase access tokens carry `aud: "authenticated"`, which the server
+   rejects. Add a Custom Access Token hook that sets `aud` to `OAUTH_RESOURCE` on OAuth-issued
+   tokens (those carrying `client_id`):
+
+   ```sql
+   create or replace function public.mcp_access_token_hook(event jsonb)
+   returns jsonb language plpgsql stable as $$
+   begin
+     if event->'claims' ? 'client_id' then
+       event := jsonb_set(event, '{claims,aud}', to_jsonb('https://mcp.example.com/mcp'::text));
+     end if;
+     return event;
+   end $$;
+   grant execute on function public.mcp_access_token_hook to supabase_auth_admin;
+   revoke execute on function public.mcp_access_token_hook from authenticated, anon, public;
+   ```
+
+   Then select it under Authentication > Hooks > Custom Access Token.
+4. **Sign-in.** The consent page signs users in with a six-digit emailed code and never creates
+   accounts (`create_user: false`), so only existing users get through. Add `{{ .Token }}` to
+   the Magic Link email template so the email carries the code.
+
+### Connect a client
+
+In claude.ai: Settings > Connectors > Add custom connector, URL `https://mcp.example.com/mcp`.
+Leave the OAuth client ID and secret empty; the client registers itself. Sign in, enter the
+emailed code, approve. The connector then shows in Claude Desktop chat as well.
+
+### Checks
+
+```bash
+curl -s https://mcp.example.com/.well-known/oauth-protected-resource/mcp
+curl -si -X POST https://mcp.example.com/mcp | grep -i www-authenticate
+```
+
 ## Container Security
 
 The Docker image includes security defaults:

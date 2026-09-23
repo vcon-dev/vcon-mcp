@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- OAuth 2.1 on the MCP HTTP endpoint so the server can be added as a custom connector in
+  claude.ai and Claude Desktop, which only sign in with OAuth. vcon-mcp acts as the resource
+  server: it serves protected-resource metadata (RFC 9728) at
+  `/.well-known/oauth-protected-resource` and the resource-path variant without auth, redirects
+  `/.well-known/oauth-authorization-server` to the issuer, answers 401 with
+  `WWW-Authenticate: Bearer resource_metadata="..."`, and verifies JWT access tokens on every
+  request (JWKS signature, issuer, expiry, audience equal to `OAUTH_RESOURCE`). An optional
+  consent page at `/oauth/consent` completes the Supabase OAuth Server flow. Off unless
+  `OAUTH_ISSUER` is set; static `API_KEYS` / `API_KEYS_READONLY` tokens are checked first and
+  keep working. OAuth sessions are read-only unless `OAUTH_READONLY=false`
+
 ---
 
 ## [1.8.0] - 2026-09-20
