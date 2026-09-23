@@ -72,6 +72,7 @@ OAUTH_RESOURCE=https://mcp.example.com/mcp     # the exact URL users paste into 
 OAUTH_READONLY=true                             # default; false gives OAuth sessions write tools
 OAUTH_ALLOWED_EMAIL_DOMAINS=example.com         # optional
 OAUTH_CONSENT_ANON_KEY=<publishable key>        # Supabase publishable (anon) key, safe to expose
+OAUTH_CONSENT_PROVIDERS=email                   # or google, or email,google
 ```
 
 With OAuth on, `API_KEYS` may be empty: an OAuth-only deployment gets `401`s that point at
@@ -103,9 +104,13 @@ the metadata instead of the "no API keys configured" `503`.
    ```
 
    Then select it under Authentication > Hooks > Custom Access Token.
-4. **Sign-in.** The consent page signs users in with a six-digit emailed code and never creates
-   accounts (`create_user: false`), so only existing users get through. Add `{{ .Token }}` to
-   the Magic Link email template so the email carries the code.
+4. **Sign-in.** `OAUTH_CONSENT_PROVIDERS` picks what the consent page offers.
+   - `email` (default): a six-digit emailed code, existing users only (`create_user: false`).
+     Needs working SMTP, and `{{ .Token }}` in the Magic Link email template.
+   - A Supabase external provider such as `google`: PKCE redirect through the provider, no
+     SMTP. Enable the provider in Supabase, with its callback at `<issuer>/callback`. With
+     signups disabled, create each allowed user first (admin API, verified email); Supabase
+     links the Google identity to that user on first sign-in.
 
 ### Self-hosted Supabase
 
@@ -116,6 +121,7 @@ stores and enforces the `token_endpoint_auth_method` that dynamically registered
 ```bash
 GOTRUE_JWT_ISSUER=https://mcp.example.com/auth/v1
 GOTRUE_SITE_URL=https://mcp.example.com
+API_EXTERNAL_URL=https://mcp.example.com/auth/v1
 GOTRUE_OAUTH_SERVER_ENABLED=true
 GOTRUE_OAUTH_SERVER_AUTHORIZATION_PATH=/oauth/consent
 GOTRUE_OAUTH_SERVER_ALLOW_DYNAMIC_REGISTRATION=true
@@ -129,8 +135,9 @@ service-role keys valid, so PostgREST and vcon-mcp's database access are unaffec
 
 MCP clients call the authorization server without a Supabase `apikey`, which the stock Kong
 gateway requires. Route the OAuth paths from the reverse proxy straight to the auth container
-(port 9999) with `/auth/v1` stripped: `/auth/v1/oauth/*`, `/auth/v1/.well-known/*`,
-`/auth/v1/otp`, `/auth/v1/verify`, plus `/.well-known/oauth-authorization-server/auth/v1`
+(port 9999) with `/auth/v1` stripped: `/auth/v1/oauth/*`, `/auth/v1/.well-known/*`, then
+`/auth/v1/otp` and `/auth/v1/verify` for email sign-in, or `/auth/v1/authorize`,
+`/auth/v1/callback` and `/auth/v1/token` for a provider such as Google, plus `/.well-known/oauth-authorization-server/auth/v1`
 rewritten to `/.well-known/oauth-authorization-server`. Give these routes priority over the
 vcon-mcp route. Nothing else on the auth API needs to be public.
 

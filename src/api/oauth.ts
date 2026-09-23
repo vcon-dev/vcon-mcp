@@ -29,6 +29,8 @@ export interface OAuthConfig {
   allowedEmailDomains: string[];
   /** Supabase publishable (anon) key; when set, the consent page is served at /oauth/consent */
   consentAnonKey?: string;
+  /** Consent-page sign-in methods: "email" and/or GoTrue external providers ("google") */
+  consentProviders: string[];
   /** Key source for signature checks (the issuer's JWKS) */
   jwks: JWTVerifyGetKey;
 }
@@ -51,6 +53,10 @@ export function getOAuthConfig(): OAuthConfig | null {
       .map(d => d.trim().toLowerCase())
       .filter(Boolean),
     consentAnonKey: process.env.OAUTH_CONSENT_ANON_KEY?.trim() || undefined,
+    consentProviders: (process.env.OAUTH_CONSENT_PROVIDERS || 'email')
+      .split(',')
+      .map(p => p.trim().toLowerCase())
+      .filter(p => /^[a-z0-9_-]+$/.test(p)),
     // ponytail: Supabase's JWKS path. Add OAUTH_JWKS_URL if an issuer puts it elsewhere.
     jwks: createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`)),
   };

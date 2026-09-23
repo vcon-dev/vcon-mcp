@@ -34,6 +34,7 @@ beforeAll(async () => {
     resource: RESOURCE,
     readonly: true,
     allowedEmailDomains: [],
+    consentProviders: ['email'],
     jwks: createLocalJWKSet({ keys: [jwk] }),
   };
 });
@@ -126,6 +127,25 @@ describe('discovery', () => {
     // The redirect target itself belongs to the issuer, not to this handler.
     const target = mockRes();
     expect(handleOAuthDiscovery('/.well-known/oauth-authorization-server/auth/v1', target.obj, sameOrigin)).toBe(false);
+  });
+
+  it('passes the configured sign-in providers to the consent page', () => {
+    vi.stubEnv('OAUTH_ISSUER', ISSUER);
+    vi.stubEnv('OAUTH_RESOURCE', RESOURCE);
+    vi.stubEnv('OAUTH_CONSENT_PROVIDERS', 'Google, bad"name');
+    const c = { ...getOAuthConfig()!, consentAnonKey: 'anon' };
+    expect(c.consentProviders).toEqual(['google']);
+    const page = mockRes();
+    handleOAuthDiscovery('/oauth/consent', page.obj, c);
+    expect(page.res.body).toContain('"providers":["google"]');
+  });
+
+  it('renders a consent script that parses', () => {
+    // The page lives in a template literal, which silently eats regex backslashes.
+    const page = mockRes();
+    handleOAuthDiscovery('/oauth/consent', page.obj, { ...config, consentAnonKey: 'anon', consentProviders: ['google', 'email'] });
+    const js = page.res.body.split('<script>')[1].split('</script>')[0];
+    expect(() => new Function(js)).not.toThrow();
   });
 
   it('leaves other paths alone', () => {

@@ -17,7 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   request (JWKS signature, issuer, expiry, audience equal to `OAUTH_RESOURCE`). An optional
   consent page at `/oauth/consent` completes the Supabase OAuth Server flow. Off unless
   `OAUTH_ISSUER` is set; static `API_KEYS` / `API_KEYS_READONLY` tokens are checked first and
-  keep working. OAuth sessions are read-only unless `OAUTH_READONLY=false`
+  keep working. OAuth sessions are read-only unless `OAUTH_READONLY=false`. The consent page
+  signs in by emailed code or through a Supabase external provider such as Google
+  (`OAUTH_CONSENT_PROVIDERS`)
 
 ---
 

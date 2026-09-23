@@ -2,12 +2,17 @@
  * OAuth consent page for Supabase OAuth Server.
  *
  * Supabase sends the user to `<Site URL><Authorization Path>?authorization_id=...`.
- * This page signs the user in with an emailed one-time code (existing users only,
- * no signup), shows which client is asking and where it will redirect, and posts
- * approve or deny back to Supabase, which returns the client's redirect URL.
+ * This page signs the user in, shows which client is asking and where it will
+ * redirect, and posts approve or deny back to Supabase, which returns the client's
+ * redirect URL.
+ *
+ * Sign-in methods come from OAUTH_CONSENT_PROVIDERS: "email" (emailed one-time code,
+ * existing users only) and/or GoTrue external providers such as "google" (PKCE
+ * redirect, so no token ever appears in the URL).
  *
  * Plain fetch against the GoTrue REST API, so no browser bundle is shipped. The
- * user's access token lives only in page memory.
+ * user's access token lives only in page memory; only the PKCE verifier touches
+ * sessionStorage, for the length of the provider round trip.
  */
 
 import type { ServerResponse } from 'http';
@@ -17,7 +22,12 @@ export const CONSENT_PATH = '/oauth/consent';
 
 export function serveConsentPage(res: ServerResponse, config: OAuthConfig, anonKey: string): void {
   // JSON in a script block: escape "<" so a value can never close the tag.
-  const boot = JSON.stringify({ authUrl: config.issuer, anonKey, resource: config.resource }).replace(/</g, '\\u003c');
+  const boot = JSON.stringify({
+    authUrl: config.issuer,
+    anonKey,
+    resource: config.resource,
+    providers: config.consentProviders,
+  }).replace(/</g, '\\u003c');
   res.writeHead(200, {
     'Content-Type': 'text/html; charset=utf-8',
     'Cache-Control': 'no-store',
@@ -42,11 +52,14 @@ button.secondary{background:#fff;color:#1a1a1a}
 <h1>Authorize access</h1>
 <div id="signin" hidden>
   <p>Sign in to continue.</p>
-  <label>Email<input id="email" type="email" autocomplete="email" required></label>
-  <button id="send">Email me a code</button>
-  <div id="codebox" hidden>
-    <label>Code<input id="code" inputmode="numeric" autocomplete="one-time-code"></label>
-    <button id="verify">Sign in</button>
+  <p id="external"></p>
+  <div id="emailbox" hidden>
+    <label>Email<input id="email" type="email" autocomplete="email" required></label>
+    <button id="send">Email me a code</button>
+    <div id="codebox" hidden>
+      <label>Code<input id="code" inputmode="numeric" autocomplete="one-time-code"></label>
+      <button id="verify">Sign in</button>
+    </div>
   </div>
 </div>
 <div id="consent" hidden>
@@ -58,7 +71,8 @@ button.secondary{background:#fff;color:#1a1a1a}
 <script>
 const B = __BOOT__;
 const $ = (id) => document.getElementById(id);
-const id = new URLSearchParams(location.search).get('authorization_id');
+const q = new URLSearchParams(location.search);
+const id = q.get('authorization_id');
 let jwt = null;
 function say(text, err) { $('msg').textContent = text; $('msg').className = err ? 'err' : ''; }
 async function api(method, path, body) {
@@ -88,6 +102,31 @@ async function decide(action) {
     if (d.redirect_url) go(d.redirect_url); else say('Done. You can close this window.');
   } catch (e) { say(e.message, true); }
 }
+const b64u = (a) => btoa(String.fromCharCode(...a)).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');
+async function startProvider(provider) {
+  // PKCE: GoTrue returns ?code= to this page; the verifier never leaves the browser.
+  const verifier = b64u(crypto.getRandomValues(new Uint8Array(32)));
+  const challenge = b64u(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))));
+  sessionStorage.setItem('pkce_verifier', verifier);
+  const back = location.origin + location.pathname + '?authorization_id=' + encodeURIComponent(id);
+  go(B.authUrl + '/authorize?' + new URLSearchParams({ provider, redirect_to: back, code_challenge: challenge, code_challenge_method: 's256' }));
+}
+async function finishProvider(code) {
+  const verifier = sessionStorage.getItem('pkce_verifier');
+  sessionStorage.removeItem('pkce_verifier');
+  history.replaceState(null, '', location.pathname + '?authorization_id=' + encodeURIComponent(id));
+  if (!verifier) throw new Error('Sign-in expired. Start again from your MCP client.');
+  const s = await api('POST', '/token?grant_type=pkce', { auth_code: code, code_verifier: verifier });
+  jwt = s.access_token;
+  await loadConsent();
+}
+for (const p of B.providers) {
+  if (p === 'email') { $('emailbox').hidden = false; continue; }
+  const btn = document.createElement('button');
+  btn.textContent = 'Sign in with ' + p.charAt(0).toUpperCase() + p.slice(1);
+  btn.onclick = () => startProvider(p).catch((e) => say(e.message, true));
+  $('external').appendChild(btn);
+}
 $('send').onclick = async () => {
   try {
     await api('POST', '/otp', { email: $('email').value.trim(), create_user: false });
@@ -103,6 +142,8 @@ $('verify').onclick = async () => {
 };
 $('approve').onclick = () => decide('approve');
 $('deny').onclick = () => decide('deny');
+const failed = q.get('error_description') || new URLSearchParams(location.hash.slice(1)).get('error_description');
 if (!id) say('Missing authorization_id. Start from your MCP client.', true);
-else $('signin').hidden = false;
+else if (q.get('code')) { say('Signing in...'); finishProvider(q.get('code')).catch((e) => { $('signin').hidden = false; say(e.message, true); }); }
+else { $('signin').hidden = false; if (failed) say(failed, true); }
 </script></body></html>`;
