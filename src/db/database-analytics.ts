@@ -17,6 +17,41 @@ import {
   ContentAnalyticsOptions,
   DatabaseHealthOptions
 } from './types.js';
+import { refreshTagsMvIfStale } from './tags-mv.js';
+
+/**
+ * One row per vCon with its child counts and sizes. Joining dialog, analysis and attachments
+ * straight onto vcons multiplies every count by the other tables' row counts (CON-996), so
+ * each child table is aggregated on its own first. Children reference vcons.uuid, not id.
+ * ponytail: rolls up the whole child tables each call; push the date window into the
+ * subqueries if these ever get slow.
+ */
+function perVconRollup(where: string): string {
+  return `
+    per_vcon AS (
+      SELECT v.uuid, v.created_at,
+        COALESCE(d.cnt, 0) AS dialog_count,
+        COALESCE(d.sz, 0) AS dialog_size,
+        COALESCE(d.dur, 0) AS total_duration,
+        COALESCE(an.cnt, 0) AS analysis_count,
+        COALESCE(att.cnt, 0) AS attachment_count,
+        COALESCE(att.sz, 0) AS attachment_size
+      FROM vcons v
+      LEFT JOIN (
+        SELECT vcon_id, COUNT(*) AS cnt,
+          SUM(COALESCE(size_bytes, octet_length(body), 0)) AS sz,
+          SUM(COALESCE(duration_seconds, 0)) AS dur
+        FROM dialog GROUP BY vcon_id
+      ) d ON d.vcon_id = v.uuid
+      LEFT JOIN (SELECT vcon_id, COUNT(*) AS cnt FROM analysis GROUP BY vcon_id) an ON an.vcon_id = v.uuid
+      LEFT JOIN (
+        SELECT vcon_id, COUNT(*) AS cnt,
+          SUM(COALESCE(size_bytes, octet_length(body), 0)) AS sz
+        FROM attachments GROUP BY vcon_id
+      ) att ON att.vcon_id = v.uuid
+      ${where}
+    )`;
+}
 
 export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
   constructor(private supabase: SupabaseClient) { }
@@ -178,6 +213,7 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
    * Get tag analytics
    */
   async getTagAnalytics(options: TagAnalyticsOptions = {}) {
+    await refreshTagsMvIfStale(this.supabase);
     const {
       includeFrequencyAnalysis = true,
       includeValueDistribution = true,
@@ -429,20 +465,18 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
 
   private async getGrowthTrends(monthsBack: number) {
     const query = `
-      WITH monthly_stats AS (
+      WITH ${perVconRollup(`WHERE v.created_at >= NOW() - INTERVAL '${monthsBack} months'`)},
+      monthly_stats AS (
         SELECT
-          DATE_TRUNC('month', v.created_at) as month,
+          DATE_TRUNC('month', created_at) as month,
           COUNT(*) as vcon_count,
-          COUNT(DISTINCT v.id) as unique_vcons,
-          SUM(COALESCE(d.size_bytes, octet_length(d.body), 0)) as dialog_size,
-          SUM(COALESCE(a.size_bytes, octet_length(a.body), 0)) as attachment_size,
-          COUNT(d.id) as dialog_count,
-          COUNT(a.id) as attachment_count
-        FROM vcons v
-        LEFT JOIN dialog d ON d.vcon_id = v.id
-        LEFT JOIN attachments a ON a.vcon_id = v.id
-        WHERE v.created_at >= NOW() - INTERVAL '${monthsBack} months'
-        GROUP BY DATE_TRUNC('month', v.created_at)
+          COUNT(DISTINCT uuid) as unique_vcons,
+          SUM(dialog_size) as dialog_size,
+          SUM(attachment_size) as attachment_size,
+          SUM(dialog_count) as dialog_count,
+          SUM(attachment_count) as attachment_count
+        FROM per_vcon
+        GROUP BY DATE_TRUNC('month', created_at)
         ORDER BY month
       )
       SELECT 
@@ -499,18 +533,16 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
     const dateTrunc = granularity === 'daily' ? 'day' : granularity === 'weekly' ? 'week' : 'month';
 
     const query = `
-      WITH size_trends AS (
-        SELECT 
-          DATE_TRUNC('${dateTrunc}', v.created_at) as period,
-          SUM(COALESCE(d.size_bytes, octet_length(d.body), 0)) as dialog_size,
-          SUM(COALESCE(a.size_bytes, octet_length(a.body), 0)) as attachment_size,
-          COUNT(d.id) as dialog_count,
-          COUNT(a.id) as attachment_count
-        FROM vcons v
-        LEFT JOIN dialog d ON d.vcon_id = v.id
-        LEFT JOIN attachments a ON a.vcon_id = v.id
-        WHERE v.created_at >= NOW() - INTERVAL '${monthsBack} months'
-        GROUP BY DATE_TRUNC('${dateTrunc}', v.created_at)
+      WITH ${perVconRollup(`WHERE v.created_at >= NOW() - INTERVAL '${monthsBack} months'`)},
+      size_trends AS (
+        SELECT
+          DATE_TRUNC('${dateTrunc}', created_at) as period,
+          SUM(dialog_size) as dialog_size,
+          SUM(attachment_size) as attachment_size,
+          SUM(dialog_count) as dialog_count,
+          SUM(attachment_count) as attachment_count
+        FROM per_vcon
+        GROUP BY DATE_TRUNC('${dateTrunc}', created_at)
       )
       SELECT 
         period,
@@ -536,20 +568,17 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
     const dateTrunc = granularity === 'daily' ? 'day' : granularity === 'weekly' ? 'week' : 'month';
 
     const query = `
-      WITH content_trends AS (
-        SELECT 
-          DATE_TRUNC('${dateTrunc}', v.created_at) as period,
-          COUNT(DISTINCT v.id) as vcon_count,
-          COUNT(d.id) as dialog_count,
-          COUNT(an.id) as analysis_count,
-          COUNT(att.id) as attachment_count,
-          SUM(COALESCE(d.duration_seconds, 0)) as total_duration
-        FROM vcons v
-        LEFT JOIN dialog d ON d.vcon_id = v.id
-        LEFT JOIN analysis an ON an.vcon_id = v.id
-        LEFT JOIN attachments att ON att.vcon_id = v.id
-        WHERE v.created_at >= NOW() - INTERVAL '${monthsBack} months'
-        GROUP BY DATE_TRUNC('${dateTrunc}', v.created_at)
+      WITH ${perVconRollup(`WHERE v.created_at >= NOW() - INTERVAL '${monthsBack} months'`)},
+      content_trends AS (
+        SELECT
+          DATE_TRUNC('${dateTrunc}', created_at) as period,
+          COUNT(*) as vcon_count,
+          SUM(dialog_count) as dialog_count,
+          SUM(analysis_count) as analysis_count,
+          SUM(attachment_count) as attachment_count,
+          SUM(total_duration) as total_duration
+        FROM per_vcon
+        GROUP BY DATE_TRUNC('${dateTrunc}', created_at)
       )
       SELECT 
         period,
@@ -624,7 +653,7 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
         AVG(COALESCE(size_bytes, octet_length(body), 0)) as avg_size,
         MIN(COALESCE(size_bytes, octet_length(body), 0)) as min_size,
         MAX(COALESCE(size_bytes, octet_length(body), 0)) as max_size,
-        COUNT(DISTINCT type) as unique_types,
+        COUNT(DISTINCT COALESCE(purpose, type)) as unique_types,
         COUNT(DISTINCT vcon_id) as vcons_with_attachments
       FROM attachments
     `;
@@ -640,14 +669,14 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
 
   private async getAttachmentTypeBreakdown(topNTypes: number) {
     const query = `
-      SELECT 
-        type,
+      SELECT
+        COALESCE(purpose, type) as type,
         COUNT(*) as count,
         SUM(COALESCE(size_bytes, octet_length(body), 0)) as total_size,
         AVG(COALESCE(size_bytes, octet_length(body), 0)) as avg_size,
         ROUND(COUNT(*)::numeric / SUM(COUNT(*)) OVER () * 100, 2) as percentage
       FROM attachments
-      GROUP BY type
+      GROUP BY COALESCE(purpose, type)
       ORDER BY count DESC
       LIMIT ${topNTypes}
     `;
@@ -826,7 +855,7 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
       FROM attachments a
       JOIN vcon_tags_mv mv ON mv.vcon_id = a.vcon_id
       CROSS JOIN LATERAL jsonb_each_text(mv.tags) AS t(key, value)
-      WHERE a.type = 'tags'
+      WHERE COALESCE(a.purpose, a.type) = 'tags'
         AND a.created_at >= NOW() - INTERVAL '12 months'
       GROUP BY DATE_TRUNC('month', a.created_at), t.key
       ORDER BY month, usage_count DESC
@@ -845,7 +874,7 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
     const hasDateFilter = dateFilter.vconWhere !== '';
     const query = hasDateFilter ? `
       WITH filtered_vcons AS (
-        SELECT id FROM vcons v ${dateFilter.vconWhere}
+        SELECT uuid AS id FROM vcons v ${dateFilter.vconWhere}
       )
       SELECT
         (SELECT COUNT(*) FROM filtered_vcons) as total_vcons,
@@ -879,7 +908,7 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
     const hasDateFilter = dateFilter.vconWhere !== '';
     const query = hasDateFilter ? `
       WITH filtered_vcons AS (
-        SELECT id FROM vcons v ${dateFilter.vconWhere}
+        SELECT uuid AS id FROM vcons v ${dateFilter.vconWhere}
       )
       SELECT
         type,
@@ -920,7 +949,7 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
     const hasDateFilter = dateFilter.vconWhere !== '';
     const query = hasDateFilter ? `
       WITH filtered_vcons AS (
-        SELECT id FROM vcons v ${dateFilter.vconWhere}
+        SELECT uuid AS id FROM vcons v ${dateFilter.vconWhere}
       )
       SELECT
         type,
@@ -958,7 +987,7 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
     // parties table has no 'role' column — group by identifier type instead
     const query = hasDateFilter ? `
       WITH filtered_vcons AS (
-        SELECT id FROM vcons v ${dateFilter.vconWhere}
+        SELECT uuid AS id FROM vcons v ${dateFilter.vconWhere}
       )
       SELECT
         COUNT(*) as total_parties,
@@ -994,12 +1023,11 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
   }
 
   private async getConversationMetrics(dateFilter: { vconWhere: string } = { vconWhere: '' }) {
-    const hasDateFilter = dateFilter.vconWhere !== '';
-    // When date-filtered, use pre-aggregated CTEs to avoid cartesian explosion
-    // from 4-way LEFT JOIN. Each child table is aggregated independently first.
-    const query = hasDateFilter ? `
+    // Each child table is aggregated on its own first; a 4-way LEFT JOIN fans out the
+    // SUMs, and the undated path used to do exactly that (CON-996).
+    const query = `
       WITH filtered_vcons AS (
-        SELECT id FROM vcons v ${dateFilter.vconWhere}
+        SELECT uuid AS id FROM vcons v ${dateFilter.vconWhere}
       ),
       party_counts AS (
         SELECT vcon_id, COUNT(*) as cnt
@@ -1040,37 +1068,7 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
       LEFT JOIN dialog_counts dc ON dc.vcon_id = fv.id
       LEFT JOIN analysis_counts ac ON ac.vcon_id = fv.id
       LEFT JOIN attachment_counts atc ON atc.vcon_id = fv.id
-    ` : `
-      WITH conversation_metrics AS (
-        SELECT
-          v.id as vcon_id,
-          COUNT(DISTINCT p.id) as party_count,
-          COUNT(DISTINCT d.id) as dialog_count,
-          COUNT(DISTINCT an.id) as analysis_count,
-          COUNT(DISTINCT att.id) as attachment_count,
-          SUM(COALESCE(d.duration_seconds, 0)) as total_duration,
-          SUM(COALESCE(d.size_bytes, octet_length(d.body), 0)) as total_size
-        FROM vcons v
-        LEFT JOIN parties p ON p.vcon_id = v.id
-        LEFT JOIN dialog d ON d.vcon_id = v.id
-        LEFT JOIN analysis an ON an.vcon_id = v.id
-        LEFT JOIN attachments att ON att.vcon_id = v.id
-        GROUP BY v.id
-      )
-      SELECT
-        COUNT(*) as total_conversations,
-        AVG(party_count) as avg_parties_per_conversation,
-        AVG(dialog_count) as avg_dialogs_per_conversation,
-        AVG(analysis_count) as avg_analysis_per_conversation,
-        AVG(attachment_count) as avg_attachments_per_conversation,
-        AVG(total_duration) as avg_duration_per_conversation,
-        AVG(total_size) as avg_size_per_conversation,
-        MAX(party_count) as max_parties_in_conversation,
-        MAX(dialog_count) as max_dialogs_in_conversation,
-        SUM(CASE WHEN dialog_count = 0 THEN 1 ELSE 0 END) as vcons_without_dialog,
-        SUM(CASE WHEN analysis_count = 0 THEN 1 ELSE 0 END) as vcons_without_analysis
-      FROM conversation_metrics
-    `;
+        `;
 
     const { data, error } = await this.supabase.rpc('exec_sql', {
       q: query,
@@ -1083,19 +1081,16 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
 
   private async getTemporalContentPatterns() {
     const query = `
-      SELECT 
-        DATE_TRUNC('month', v.created_at) as month,
-        COUNT(DISTINCT v.id) as vcon_count,
-        COUNT(d.id) as dialog_count,
-        COUNT(an.id) as analysis_count,
-        COUNT(att.id) as attachment_count,
-        SUM(COALESCE(d.duration_seconds, 0)) as total_duration
-      FROM vcons v
-      LEFT JOIN dialog d ON d.vcon_id = v.id
-      LEFT JOIN analysis an ON an.vcon_id = v.id
-      LEFT JOIN attachments att ON att.vcon_id = v.id
-      WHERE v.created_at >= NOW() - INTERVAL '12 months'
-      GROUP BY DATE_TRUNC('month', v.created_at)
+      WITH ${perVconRollup(`WHERE v.created_at >= NOW() - INTERVAL '12 months'`)}
+      SELECT
+        DATE_TRUNC('month', created_at) as month,
+        COUNT(*) as vcon_count,
+        SUM(dialog_count) as dialog_count,
+        SUM(analysis_count) as analysis_count,
+        SUM(attachment_count) as attachment_count,
+        SUM(total_duration) as total_duration
+      FROM per_vcon
+      GROUP BY DATE_TRUNC('month', created_at)
       ORDER BY month
     `;
 

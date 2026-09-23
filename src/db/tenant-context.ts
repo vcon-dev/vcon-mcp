@@ -7,6 +7,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { getTenantConfig } from '../config/tenant-config.js';
 import { logWithContext } from '../observability/instrumentation.js';
+import { extractErrorMessage } from '../utils/errors.js';
 
 /**
  * Set tenant context in PostgreSQL session for RLS policies
@@ -68,7 +69,7 @@ export async function setTenantContext(
     });
   } catch (error) {
     logWithContext('error', 'Exception setting tenant context', {
-      error_message: error instanceof Error ? error.message : String(error),
+      error_message: extractErrorMessage(error),
       tenant_id: config.currentTenantId,
     });
     throw error;
@@ -113,7 +114,7 @@ export async function verifyTenantContext(
     }
   } catch (error) {
     logWithContext('warn', 'Exception during tenant context verification', {
-      error_message: error instanceof Error ? error.message : String(error),
+      error_message: extractErrorMessage(error),
     });
   }
 }
@@ -158,7 +159,7 @@ export async function debugTenantVisibility(
     });
   } catch (error) {
     logWithContext('warn', 'Exception during tenant visibility debug', {
-      error_message: error instanceof Error ? error.message : String(error),
+      error_message: extractErrorMessage(error),
     });
   }
 }

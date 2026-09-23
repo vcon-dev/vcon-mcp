@@ -20,6 +20,7 @@ import {
   validateNonEmptyString,
   validateResponseFormat,
 } from '../validation.js';
+import { extractErrorMessage } from '../../utils/errors.js';
 
 export function createSearchRoutes(apiContext: RestApiContext): Router {
   const router = new Router();
@@ -172,7 +173,7 @@ export function createSearchRoutes(apiContext: RestApiContext): Router {
     } catch (error) {
       logWithContext('warn', 'Failed to generate embedding for hybrid search REST, falling back to keyword-only', {
         query,
-        error: error instanceof Error ? error.message : String(error),
+        error: extractErrorMessage(error),
       });
     }
 

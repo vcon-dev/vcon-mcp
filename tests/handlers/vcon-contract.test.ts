@@ -235,6 +235,26 @@ describe('Redesigned vCon contract handlers', () => {
     expect(response.items[0].search.mode).toBe('metadata');
   });
 
+  it('vcon_search metadata asks the database for one page, not every row up to the cursor', async () => {
+    // Regression for CON-993: the handler used to request offset+limit+1 rows and slice,
+    // hydrating ~1,000 full vCons at offset 900 until the Supabase client gave out.
+    const handler = new VConSearchHandler();
+    mockQueries.searchVConsCount.mockResolvedValueOnce(2000);
+    const cursor = Buffer.from(JSON.stringify({ offset: 900 })).toString('base64url');
+
+    const result = await handler.handle({ mode: 'metadata', limit: 100, cursor }, mockContext);
+    const response = JSON.parse(result.content[0].text);
+
+    expect(mockQueries.searchVCons).toHaveBeenCalledWith(
+      expect.objectContaining({ offset: 900, limit: 100 }),
+    );
+    expect(response.ok).toBe(true);
+    expect(response.items).toHaveLength(1);
+    expect(response.page.next_cursor).toBe(
+      Buffer.from(JSON.stringify({ offset: 1000 })).toString('base64url'),
+    );
+  });
+
   it('vcon_search returns a normalized keyword page', async () => {
     const handler = new VConSearchHandler();
 

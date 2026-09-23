@@ -14,6 +14,7 @@ import Redis from 'ioredis';
 import { Analysis, Attachment, Dialog, Party, VCon } from '../types/vcon.js';
 import { serializeBody } from '../utils/body-serialization.js';
 import { logWithContext, recordCounter } from '../observability/instrumentation.js';
+import { extractErrorMessage } from '../utils/errors.js';
 
 export const BATCH_SIZE = 100;
 export const BATCH_MAX_AGE_MS = 200;
@@ -156,7 +157,7 @@ async function _flush(key: TenantKey): Promise<void> {
     logWithContext('error', 'batch-writer flush failed', {
       batch_size: pending.length,
       tenant_id: tenantId ?? '(null)',
-      error_message: err instanceof Error ? err.message : String(err),
+      error_message: extractErrorMessage(err),
     });
     for (const p of pending) {
       p.reject(err);
@@ -236,7 +237,7 @@ async function commitBatch(pending: Pending[], tenantId: string | null): Promise
         redis.del(vconCacheKey(p.vcon.uuid)).catch(e => {
           logWithContext('warn', 'cache invalidation failed', {
             vcon_uuid: p.vcon.uuid,
-            error_message: e instanceof Error ? e.message : String(e),
+            error_message: extractErrorMessage(e),
           });
         })
       )

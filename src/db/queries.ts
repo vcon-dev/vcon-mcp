@@ -14,6 +14,7 @@ import Redis from 'ioredis';
 import { extractTenantFromVCon, getTenantConfig } from '../config/tenant-config.js';
 import { ATTR_CACHE_HIT, ATTR_DB_OPERATION, ATTR_SEARCH_RESULTS_COUNT, ATTR_SEARCH_THRESHOLD, ATTR_SEARCH_TYPE, ATTR_VCON_UUID } from '../observability/attributes.js';
 import { logWithContext, recordCounter, withSpan } from '../observability/instrumentation.js';
+import { refreshTagsMvIfStale } from './tags-mv.js';
 import { createLogger } from '../observability/logger.js';
 import { Analysis, Attachment, Dialog, Party, VCon } from '../types/vcon.js';
 import {
@@ -37,6 +38,7 @@ import {
 const logger = createLogger('queries');
 
 import { DistinctValuesResult, IVConQueries } from './interfaces.js';
+import { extractErrorMessage } from '../utils/errors.js';
 
 /**
  * Replace undefined values with null so a supabase-js UPDATE clears omitted
@@ -762,7 +764,7 @@ export class SupabaseVConQueries implements IVConQueries {
       logger.warn({
         vcon_uuid: uuid,
         err: error,
-        error_message: error instanceof Error ? error.message : String(error)
+        error_message: extractErrorMessage(error)
       }, 'Cache read error');
       return null; // Fall through to database
     }
@@ -789,7 +791,7 @@ export class SupabaseVConQueries implements IVConQueries {
       logger.warn({
         vcon_uuid: uuid,
         err: error,
-        error_message: error instanceof Error ? error.message : String(error)
+        error_message: extractErrorMessage(error)
       }, 'Cache write error');
       // Non-fatal: continue without caching
     }
@@ -809,7 +811,7 @@ export class SupabaseVConQueries implements IVConQueries {
       logger.warn({
         vcon_uuid: uuid,
         err: error,
-        error_message: error instanceof Error ? error.message : String(error)
+        error_message: extractErrorMessage(error)
       }, 'Cache invalidation error');
     }
   }
@@ -1184,7 +1186,8 @@ export class SupabaseVConQueries implements IVConQueries {
       if (filters.startDate) out = out.gte('created_at', filters.startDate);
       if (filters.endDate) out = out.lte('created_at', filters.endDate);
       out = out.order('created_at', { ascending: false });
-      // ponytail: offset paging via range; stable enough because created_at is the sort key
+      // ponytail: offset paging shifts by one row per insert landing mid-walk; keyset cursor on
+      // created_at if a live corpus needs gap-free walks
       if (withRange) out = out.range(offset, offset + initialLimit - 1);
       return out;
     };
@@ -1916,6 +1919,8 @@ export class SupabaseVConQueries implements IVConQueries {
     const keyFilter = options?.keyFilter?.toLowerCase();
     const minCount = options?.minCount ?? 1;
 
+    await refreshTagsMvIfStale(this.supabase);
+
     // ── Fast path: aggregate in SQL using the vcon_tags_mv materialized view ──
     // This replaces the old approach of fetching 100k+ rows in JS batches
     // (which caused 9–15s query times). Falls back to JS batch scan if the
@@ -2335,6 +2340,7 @@ export class SupabaseVConQueries implements IVConQueries {
       with_strolid_dealer_attachment_pct: null as number | null,
       with_dealer_name_tag_pct: null as number | null,
     };
+    await refreshTagsMvIfStale(this.supabase);
     try {
       const { count: totalV, error: e1 } = await this.supabase
         .from('vcons')
