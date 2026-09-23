@@ -194,7 +194,7 @@ export async function startHttpServer(
 
     // MCP path: static API keys first, then an OAuth access token if enabled
     (async () => {
-      let authResult = validateHttpRequestAuth(req, mcpAuthConfig);
+      let authResult = validateHttpRequestAuth(req, mcpAuthConfig, { logInvalid: !oauthConfig });
       if (oauthConfig && mcpAuthConfig.required) {
         authResult = await applyOAuth(req, authResult, mcpAuthConfig, oauthConfig);
       }

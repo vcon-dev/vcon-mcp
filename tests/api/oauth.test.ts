@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import type { IncomingMessage, ServerResponse } from 'http';
 import { SignJWT, createLocalJWKSet, exportJWK, generateKeyPair } from 'jose';
 import { getAuthConfig, validateHttpRequestAuth } from '../../src/api/auth.js';
+import { logWithContext } from '../../src/observability/instrumentation.js';
 import {
   applyOAuth,
   getOAuthConfig,
@@ -186,11 +187,14 @@ describe('applyOAuth after the static-key check', () => {
     vi.stubEnv('API_ANONYMOUS_READONLY', 'false');
   });
 
+  // Mirrors src/transport/http.ts: the static check stays quiet while OAuth gets a turn.
   async function run(headers: Record<string, string>) {
     const auth = getAuthConfig();
     const req = mockReq(headers);
-    return applyOAuth(req, validateHttpRequestAuth(req, auth), auth, config);
+    return applyOAuth(req, validateHttpRequestAuth(req, auth, { logInvalid: false }), auth, config);
   }
+  const invalidWarnings = () =>
+    vi.mocked(logWithContext).mock.calls.filter(([level, msg]) => level === 'warn' && msg === 'Invalid MCP auth token attempted').length;
 
   it('keeps static bearer tokens working with full access', async () => {
     expect(await run({ authorization: 'Bearer static-key' })).toEqual({ ok: true, readonly: false });
@@ -198,6 +202,14 @@ describe('applyOAuth after the static-key check', () => {
 
   it('accepts an OAuth token', async () => {
     expect(await run({ authorization: `Bearer ${await sign()}` })).toEqual({ ok: true, readonly: true });
+  });
+
+  it('logs no invalid-token warning for a valid OAuth token, one for a bad token', async () => {
+    vi.mocked(logWithContext).mockClear();
+    await run({ authorization: `Bearer ${await sign()}` });
+    expect(invalidWarnings()).toBe(0);
+    await run({ authorization: 'Bearer nope' });
+    expect(invalidWarnings()).toBe(1);
   });
 
   it('points a tokenless client at the resource metadata', async () => {
