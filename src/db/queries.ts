@@ -14,6 +14,7 @@ import Redis from 'ioredis';
 import { extractTenantFromVCon, getTenantConfig } from '../config/tenant-config.js';
 import { ATTR_CACHE_HIT, ATTR_DB_OPERATION, ATTR_SEARCH_RESULTS_COUNT, ATTR_SEARCH_THRESHOLD, ATTR_SEARCH_TYPE, ATTR_VCON_UUID } from '../observability/attributes.js';
 import { logWithContext, recordCounter, withSpan } from '../observability/instrumentation.js';
+import { refreshTagsMvIfStale } from './tags-mv.js';
 import { createLogger } from '../observability/logger.js';
 import { Analysis, Attachment, Dialog, Party, VCon } from '../types/vcon.js';
 import {
@@ -1917,6 +1918,8 @@ export class SupabaseVConQueries implements IVConQueries {
     const keyFilter = options?.keyFilter?.toLowerCase();
     const minCount = options?.minCount ?? 1;
 
+    await refreshTagsMvIfStale(this.supabase);
+
     // ── Fast path: aggregate in SQL using the vcon_tags_mv materialized view ──
     // This replaces the old approach of fetching 100k+ rows in JS batches
     // (which caused 9–15s query times). Falls back to JS batch scan if the
@@ -2336,6 +2339,7 @@ export class SupabaseVConQueries implements IVConQueries {
       with_strolid_dealer_attachment_pct: null as number | null,
       with_dealer_name_tag_pct: null as number | null,
     };
+    await refreshTagsMvIfStale(this.supabase);
     try {
       const { count: totalV, error: e1 } = await this.supabase
         .from('vcons')
