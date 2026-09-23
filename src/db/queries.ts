@@ -38,6 +38,7 @@ import {
 const logger = createLogger('queries');
 
 import { DistinctValuesResult, IVConQueries } from './interfaces.js';
+import { extractErrorMessage } from '../utils/errors.js';
 
 /**
  * Replace undefined values with null so a supabase-js UPDATE clears omitted
@@ -763,7 +764,7 @@ export class SupabaseVConQueries implements IVConQueries {
       logger.warn({
         vcon_uuid: uuid,
         err: error,
-        error_message: error instanceof Error ? error.message : String(error)
+        error_message: extractErrorMessage(error)
       }, 'Cache read error');
       return null; // Fall through to database
     }
@@ -790,7 +791,7 @@ export class SupabaseVConQueries implements IVConQueries {
       logger.warn({
         vcon_uuid: uuid,
         err: error,
-        error_message: error instanceof Error ? error.message : String(error)
+        error_message: extractErrorMessage(error)
       }, 'Cache write error');
       // Non-fatal: continue without caching
     }
@@ -810,7 +811,7 @@ export class SupabaseVConQueries implements IVConQueries {
       logger.warn({
         vcon_uuid: uuid,
         err: error,
-        error_message: error instanceof Error ? error.message : String(error)
+        error_message: extractErrorMessage(error)
       }, 'Cache invalidation error');
     }
   }

@@ -9,6 +9,7 @@ import { VCon } from '../../types/vcon.js';
 import { EmbeddingError, generateEmbedding } from '../../utils/embeddings.js';
 import { BaseToolHandler, ToolHandlerContext, ToolResponse } from './base.js';
 import { normalizeDateString, requireNonEmptyString } from './validation.js';
+import { extractErrorMessage } from '../../utils/errors.js';
 
 /**
  * Handler for search_vcons tool
@@ -91,7 +92,7 @@ export class SearchVConsHandler extends BaseToolHandler {
       } catch (countError: any) {
         logWithContext('warn', 'Failed to get total count for search', {
           tool_name: this.toolName,
-          error_message: countError instanceof Error ? countError.message : String(countError),
+          error_message: extractErrorMessage(countError),
         });
       }
     }
@@ -180,7 +181,7 @@ export class SearchVConsContentHandler extends BaseToolHandler {
       } catch (countError: any) {
         logWithContext('warn', 'Failed to get total count for keyword search', {
           tool_name: this.toolName,
-          error_message: countError instanceof Error ? countError.message : String(countError),
+          error_message: extractErrorMessage(countError),
         });
       }
     }
@@ -278,7 +279,7 @@ export class SearchVConsHybridHandler extends BaseToolHandler {
         logWithContext('warn', 'Failed to generate embedding for hybrid search, falling back to keyword-only', {
           tool_name: this.toolName,
           query,
-          error: e instanceof Error ? e.message : String(e)
+          error: extractErrorMessage(e)
         });
       }
     }

@@ -4,6 +4,7 @@ import { VCon, Attachment, Analysis } from '../../types/vcon.js';
 import { VCON_SHAPE_GRAPH_JSON_SCHEMA } from '../../types/vcon-shape-graph.js';
 import { generateEmbedding } from '../../utils/embeddings.js';
 import { normalizeDateString } from './validation.js';
+import { extractErrorMessage } from '../../utils/errors.js';
 
 const VALID_FETCH_INCLUDES = [
   'core',
@@ -745,7 +746,7 @@ export class VConFetchHandler extends BaseToolHandler {
     try {
       vcon = await context.queries.getVCon(id);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = extractErrorMessage(error);
       if (message.toLowerCase().includes('not found')) {
         return this.createErrorEnvelopeResponse({
           code: 'NOT_FOUND',
@@ -803,7 +804,7 @@ export class VConGraphShapeHandler extends BaseToolHandler {
       const graph = await context.queries.getVconShapeGraph();
       return this.createOkItemResponse(graph);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = extractErrorMessage(error);
       return this.createErrorEnvelopeResponse({
         code: 'SHAPE_GRAPH_FAILED',
         message,
@@ -1139,7 +1140,7 @@ export class VConSearchHandler extends BaseToolHandler {
         }
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = extractErrorMessage(error);
       return this.createErrorEnvelopeResponse({
         code: 'SEARCH_FAILED',
         message,
@@ -1281,7 +1282,7 @@ export class VConAggregateHandler extends BaseToolHandler {
         rows,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = extractErrorMessage(error);
       return this.createErrorEnvelopeResponse({
         code: 'AGGREGATE_FAILED',
         message,
