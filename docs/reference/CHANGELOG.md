@@ -7,16 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [1.9.1] - 2026-09-23
+
 ### Changed
 - OAuth consent page redesigned: a card with the server host, a standard Google button,
   and a consent step that names the signed-in account and states whether access is
   read-only. Buttons disable while a request is in flight. Follows the system light or
-  dark theme and fits phone widths
+  dark theme and fits phone widths (#91)
 
 ### Fixed
 - A request carrying a valid OAuth token no longer logs "Invalid MCP auth token attempted".
   The static-key check stays quiet when OAuth is enabled, and the warning is logged only
-  when both checks reject the token
+  when both checks reject the token (#91)
 
 ---
 
