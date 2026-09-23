@@ -1184,7 +1184,8 @@ export class SupabaseVConQueries implements IVConQueries {
       if (filters.startDate) out = out.gte('created_at', filters.startDate);
       if (filters.endDate) out = out.lte('created_at', filters.endDate);
       out = out.order('created_at', { ascending: false });
-      // ponytail: offset paging via range; stable enough because created_at is the sort key
+      // ponytail: offset paging shifts by one row per insert landing mid-walk; keyset cursor on
+      // created_at if a live corpus needs gap-free walks
       if (withRange) out = out.range(offset, offset + initialLimit - 1);
       return out;
     };

@@ -937,11 +937,14 @@ export class VConSearchHandler extends BaseToolHandler {
       let hasNextPage = false;
 
       if (mode === 'metadata') {
+        // Fetch only this page. Asking for offset+limit rows and slicing hydrated every vCon
+        // from row 0 on each call, which fell over around offset 900 (CON-993).
         const results = await context.queries.searchVCons({
           ...filters,
-          limit: fetchLimit,
+          limit,
+          offset: cursor.offset,
         });
-        const pageResults = results.slice(cursor.offset, cursor.offset + limit);
+        const pageResults = results.slice(0, limit);
         total = await context.queries.searchVConsCount(filters);
         const effectiveUpper =
           tags && total !== undefined
