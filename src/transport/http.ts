@@ -18,6 +18,7 @@ import {
   validateHttpRequestAuth,
   type RestApiContext,
 } from '../api/index.js';
+import { applyOAuth, getOAuthConfig, handleOAuthDiscovery, resourceMetadataUrl } from '../api/oauth.js';
 import { logWithContext } from '../observability/instrumentation.js';
 import { setupHttpMiddleware } from './middleware.js';
 
@@ -160,6 +161,16 @@ export async function startHttpServer(
     full_access_keys: mcpAuthConfig.apiKeys.length,
     readonly_keys: mcpAuthConfig.readonlyKeys.length,
   });
+  const oauthConfig = getOAuthConfig();
+  if (oauthConfig) {
+    logWithContext('info', 'MCP OAuth enabled', {
+      issuer: oauthConfig.issuer,
+      resource: oauthConfig.resource,
+      resource_metadata: resourceMetadataUrl(oauthConfig),
+      oauth_readonly: oauthConfig.readonly,
+      allowed_email_domains: oauthConfig.allowedEmailDomains,
+    });
+  }
   if (mcpAuthConfig.required && mcpAuthConfig.readonlyKeys.length === 0) {
     logWithContext('warn', 'All configured API keys grant full read/write/delete access', {
       hint: 'Set API_KEYS_READONLY for consumers that should only read',
@@ -176,20 +187,28 @@ export async function startHttpServer(
       return;
     }
 
-    // MCP path: validate auth (Authorization: Bearer <token> or configured header)
-    const authResult = validateHttpRequestAuth(req, mcpAuthConfig);
-    if (authResult.ok === false) {
-      const { statusCode, body, wwwAuth } = authResult;
-      res.writeHead(statusCode, {
-        'Content-Type': 'application/json',
-        ...(wwwAuth ? { 'WWW-Authenticate': wwwAuth } : {}),
-      });
-      res.end(JSON.stringify(body));
+    // OAuth discovery is public: clients read it before they have a token.
+    if (oauthConfig && ['GET', 'HEAD', 'OPTIONS'].includes(req.method || '') && handleOAuthDiscovery(path, res, oauthConfig)) {
       return;
     }
 
-    // Fall through to MCP transport
-    handleMcpRequest(req, res, authResult.readonly).catch((error) => {
+    // MCP path: static API keys first, then an OAuth access token if enabled
+    (async () => {
+      let authResult = validateHttpRequestAuth(req, mcpAuthConfig);
+      if (oauthConfig && mcpAuthConfig.required) {
+        authResult = await applyOAuth(req, authResult, mcpAuthConfig, oauthConfig);
+      }
+      if (authResult.ok === false) {
+        const { statusCode, body, wwwAuth } = authResult;
+        res.writeHead(statusCode, {
+          'Content-Type': 'application/json',
+          ...(wwwAuth ? { 'WWW-Authenticate': wwwAuth } : {}),
+        });
+        res.end(JSON.stringify(body));
+        return;
+      }
+      await handleMcpRequest(req, res, authResult.readonly);
+    })().catch((error) => {
       logWithContext('error', 'MCP request handling failed', {
         error_message: error instanceof Error ? error.message : String(error),
         error_stack: error instanceof Error ? error.stack : undefined,

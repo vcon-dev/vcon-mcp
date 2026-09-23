@@ -100,6 +100,7 @@
     "dotenv": "^16.4.0",
     "fast-json-stable-stringify": "^2.1.0",
     "ioredis": "^5.4.1",
+    "jose": "^6.2.12",
     "koa": "^3.1.1",
     "koa-bodyparser": "^4.4.1",
     "mongodb": "^7.1.0",
