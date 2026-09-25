@@ -30,6 +30,17 @@ shadow_port = 54320
 # server_version;` on the remote database to check.
 major_version = 17
 
+# Postgres runs with development defaults here (shared_buffers = 128MB). That is
+# fine on a laptop but makes keyword search time out once a deployment holds a
+# few hundred thousand vCons (CON-1071): search tsvectors no longer fit in cache
+# and every ranked match becomes a disk read. For a deployment, uncomment and
+# size to the host: shared_buffers ~25% of RAM, effective_cache_size ~65%.
+# See docs/deployment/production.md, "Database tuning for large corpora".
+# [db.settings]
+# shared_buffers = "4GB"
+# effective_cache_size = "10GB"
+# maintenance_work_mem = "512MB"
+
 [db.pooler]
 enabled = true
 # Port to use for the local connection pooler.

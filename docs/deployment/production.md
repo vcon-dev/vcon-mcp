@@ -56,6 +56,55 @@ services:
 | Medium | 1 | 1Gi | 2-3 |
 | Large | 2 | 2Gi | 3+ |
 
+## Database tuning for large corpora
+
+The Supabase CLI starts Postgres with development defaults: `shared_buffers = 128MB`, `effective_cache_size = 128MB`, `effective_io_concurrency = 1`. Past a few hundred thousand vCons, keyword search (`search_vcons_keyword`, REST `/vcons/search/content`, MCP `search_vcons_content`) starts returning `canceling statement due to statement timeout`. The `authenticated` role has `statement_timeout = 8s`.
+
+The query itself is not the problem. It ranks every match, and each match's `body_tsvector` is stored out of line (TOAST). While those pages are cached, a common term on ~260k vCons takes 1–3 s. Cold, the same search needs one random read per match: measured at 22–46 s for terms matching 6k–56k analysis and dialog rows (CON-1071). With 128MB of shared buffers and any concurrent load (ingest, embedding backfill), the working set never stays cached.
+
+For a deployment on a dedicated host, size Postgres to the machine. On a 16 GB host:
+
+1. **Memory.** Set these in `supabase/config.toml`; the CLI applies them on `supabase start`:
+
+   ```toml
+   [db.settings]
+   shared_buffers = "4GB"          # ~25% of RAM; should hold the search working set
+   effective_cache_size = "10GB"   # ~65% of RAM
+   maintenance_work_mem = "512MB"
+   ```
+
+   Leave `work_mem` at its default. The CLI's database container has a 64 MB `/dev/shm`, so a larger `work_mem` makes parallel queries fail with `could not resize shared memory segment ... No space left on device`.
+
+2. **SSD planner settings.** `[db.settings]` doesn't accept these, so set them as the superuser over the container's socket:
+
+   ```bash
+   docker exec supabase_db_vcon-mcp psql -U supabase_admin -d postgres \
+     -c "alter system set effective_io_concurrency = 200" \
+     -c "alter system set random_page_cost = 1.1" \
+     -c "select pg_reload_conf()"
+   ```
+
+3. **Keep the cache warm across restarts.** Run `create extension if not exists pg_prewarm;` as `supabase_admin`. Then append `pg_prewarm` to `shared_preload_libraries` and restart the database container. Autoprewarm records the buffer contents every few minutes and reloads them at startup. `shared_preload_libraries` replaces the image's list rather than adding to it: read the current value with `show shared_preload_libraries`, append `, pg_prewarm`, and write the list as **one** plain quoted string. Dollar-quoting the value turns the whole list into a single library name, and Postgres will not start.
+
+4. **Warm the working set once** after tuning or a bulk load:
+
+   ```sql
+   select sum(pg_prewarm(r)) from (
+     select c.oid::regclass r from pg_class c
+      where c.relname in ('analysis','dialog','vcons','parties') and c.relnamespace = 'public'::regnamespace
+     union all
+     select c.reltoastrelid::regclass from pg_class c
+      where c.relname in ('analysis','dialog','vcons') and c.relnamespace = 'public'::regnamespace
+     union all
+     select i.indexrelid::regclass from pg_index i join pg_class c on c.oid = i.indrelid
+      where c.relname in ('analysis','dialog','vcons','parties','vcon_tags_mv') and c.relnamespace = 'public'::regnamespace
+   ) x;
+   ```
+
+Measured on 259,596 vCons, a 16 GB host and gp3 storage, with an embedding backfill running: after these steps, keyword searches through the REST API took 0.8–2.4 s. The worst case was "call", which matches ~520k rows, at 5.3 s. Before, they timed out.
+
+Tag-filtered searches also need `vcon_tags_mv` refreshed. Self-hosted boxes have nothing that does this automatically; see [pg_cron setup](../setup-pg-cron-guide.md).
+
 ## Health Check
 
 ```bash
