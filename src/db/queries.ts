@@ -23,10 +23,10 @@ import {
   type VconShapeGraphNode,
   type VconShapeGraphPayload,
 } from '../types/vcon-shape-graph.js';
-import { deserializeBody, serializeBody } from '../utils/body-serialization.js';
 import { parseTagsBody } from '../utils/read-surfaces.js';
 import { ChildIndexError } from '../utils/vcon-children.js';
 import {
+  assembleVCon,
   batchSaveVCon,
   buildAnalysisRow,
   buildAttachmentRow,
@@ -49,17 +49,6 @@ function nullifyUndefined<T extends Record<string, unknown>>(obj: T): T {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(obj)) out[k] = v === undefined ? null : v;
   return out as T;
-}
-
-/**
- * vcons.redacted / amended / group_data default to '{}' / '[]', so an empty
- * value means the parameter is absent. Drop it instead of round-tripping noise.
- */
-function nonEmpty<T>(value: T | null | undefined): T | undefined {
-  if (value === null || value === undefined) return undefined;
-  if (Array.isArray(value)) return value.length ? value : undefined;
-  if (typeof value === 'object' && Object.keys(value as object).length === 0) return undefined;
-  return value;
 }
 
 export class SupabaseVConQueries implements IVConQueries {
@@ -343,30 +332,9 @@ export class SupabaseVConQueries implements IVConQueries {
         : 0;
     }
 
-    // ✅ CRITICAL CORRECTIONS:
-    // - Uses 'schema' field (NOT 'schema_version')
-    // - 'vendor' is required and provided
-    // - 'body' is TEXT type (can store any string format)
     const { error: analysisError } = await this.supabase
       .from('analysis')
-      .insert({
-        vcon_id: vcon.id,
-        analysis_index: nextIndex,
-        type: analysis.type,
-        dialog_indices: Array.isArray(analysis.dialog)
-          ? analysis.dialog
-          : (analysis.dialog !== undefined ? [analysis.dialog] : null),
-        mediatype: analysis.mediatype,
-        filename: analysis.filename,
-        vendor: analysis.vendor,              // ✅ REQUIRED field
-        product: analysis.product,
-        schema: analysis.schema,              // ✅ CORRECT: 'schema' NOT 'schema_version'
-        body: serializeBody(analysis.body, analysis.encoding),  // Serialize only for encoding='none'
-        encoding: analysis.encoding,
-        url: analysis.url,
-        content_hash: analysis.content_hash,
-        created_at: vcon.created_at,
-      });
+      .insert({ ...buildAnalysisRow(vcon.id, analysis, nextIndex), created_at: vcon.created_at });
 
     if (analysisError) throw analysisError;
   }
@@ -403,37 +371,9 @@ export class SupabaseVConQueries implements IVConQueries {
         : 0;
     }
 
-    // Normalize parties array
-    let parties = null;
-    if (dialog.parties !== undefined) {
-      if (Array.isArray(dialog.parties)) {
-        parties = dialog.parties;
-      } else {
-        parties = [dialog.parties];
-      }
-    }
-
     const { data: dialogData, error: dialogError } = await this.supabase
       .from('dialog')
-      .insert({
-        vcon_id: vcon.id,
-        dialog_index: nextIndex,
-        type: dialog.type,
-        start_time: dialog.start,
-        duration_seconds: dialog.duration,
-        parties: parties,
-        originator: dialog.originator,
-        mediatype: dialog.mediatype,
-        filename: dialog.filename,
-        body: dialog.body,
-        encoding: dialog.encoding,
-        url: dialog.url,
-        content_hash: dialog.content_hash,
-        disposition: dialog.disposition,
-        session_id: dialog.session_id,        // ✅ Added per spec Section 4.3.10
-        application: dialog.application,      // ✅ Added per spec Section 4.3.13
-        message_id: dialog.message_id,        // ✅ Added per spec Section 4.3.14
-      })
+      .insert(buildDialogRow(vcon.id, dialog, nextIndex))
       .select('id')
       .single();
 
@@ -488,22 +428,7 @@ export class SupabaseVConQueries implements IVConQueries {
 
     const { error: attachmentError } = await this.supabase
       .from('attachments')
-      .insert({
-        vcon_id: vcon.id,
-        attachment_index: nextIndex,
-        type: attachment.type,
-        purpose: attachment.purpose,
-        start_time: attachment.start,
-        party: attachment.party,
-        dialog: attachment.dialog,            // ✅ Added per spec Section 4.4.4
-        mimetype: attachment.mediatype,
-        filename: attachment.filename,
-        body: serializeBody(attachment.body, attachment.encoding),  // Serialize only for encoding='none'
-        encoding: attachment.encoding,
-        url: attachment.url,
-        content_hash: attachment.content_hash,
-        created_at: vcon.created_at,
-      });
+      .insert({ ...buildAttachmentRow(vcon.id, attachment, nextIndex), created_at: vcon.created_at });
 
     if (attachmentError) throw attachmentError;
   }
@@ -621,7 +546,7 @@ export class SupabaseVConQueries implements IVConQueries {
       tel: null, sip: null, stir: null, mailto: null,
       name: options.anonymize ? 'anonymous' : null,
       did: null, uuid: null, validation: null, jcard: null,
-      gmlpos: null, civicaddress: null, timezone: null,
+      gmlpos: null, civicaddress: null, timezone: null, extra: null,
     };
     const { data, error } = await this.supabase
       .from('parties')
@@ -671,6 +596,7 @@ export class SupabaseVConQueries implements IVConQueries {
       start_time: null, duration_seconds: null, parties: null, originator: null,
       mediatype: null, filename: null, body: null, encoding: null, url: null,
       content_hash: null, disposition: null, session_id: null, application: null, message_id: null,
+      extra: null,
     };
     const { error } = await this.supabase
       .from('dialog')
@@ -873,78 +799,7 @@ export class SupabaseVConQueries implements IVConQueries {
         this.supabase.from('attachments').select('*').eq('vcon_id', vconData.id).order('attachment_index'),
       ]);
 
-      // Reconstruct vCon with v0.4.0 field names
-      const vcon: VCon = {
-        vcon: vconData.vcon_version || '0.4.0',
-        uuid: vconData.uuid,
-        extensions: vconData.extensions,
-        critical: vconData.critical,          // ✅ v0.4.0 (was must_support)
-        created_at: vconData.created_at,
-        updated_at: vconData.updated_at,
-        subject: vconData.subject,
-        // Top-level params the writer/importer persist. Stored as '{}'/'[]' defaults,
-        // so empty means absent — emit null rather than a misleading empty object.
-        redacted: nonEmpty(vconData.redacted),
-        amended: nonEmpty(vconData.amended) ?? nonEmpty(vconData.appended),
-        group: nonEmpty(vconData.group_data),
-        parties: parties?.map(p => ({
-          tel: p.tel,
-          sip: p.sip,
-          stir: p.stir,
-          mailto: p.mailto,
-          name: p.name,
-          did: p.did,
-          uuid: p.uuid,
-          validation: p.validation,
-          jcard: p.jcard,
-          gmlpos: p.gmlpos,
-          civicaddress: p.civicaddress,
-          timezone: p.timezone,
-        })) || [],
-        dialog: dialogs?.map(d => ({
-          type: d.type,
-          start: d.start_time,
-          duration: d.duration_seconds,
-          parties: d.parties,
-          originator: d.originator,
-          mediatype: d.mediatype,
-          filename: d.filename,
-          body: d.body,
-          encoding: d.encoding,
-          url: d.url,
-          content_hash: d.content_hash,
-          disposition: d.disposition,
-          session_id: d.session_id,
-          application: d.application,
-          message_id: d.message_id,
-        })),
-        analysis: analysis?.map(a => ({
-          type: a.type,
-          dialog: a.dialog_indices?.length === 1 ? a.dialog_indices[0] : a.dialog_indices,
-          mediatype: a.mediatype,
-          filename: a.filename,
-          vendor: a.vendor,
-          product: a.product,
-          schema: a.schema,                   // ✅ 'schema' NOT 'schema_version'
-          body: deserializeBody(a.body, a.encoding),
-          encoding: a.encoding,
-          url: a.url,
-          content_hash: a.content_hash,
-        })),
-        attachments: attachments?.map(att => ({
-          type: att.type,
-          purpose: att.purpose,
-          start: att.start_time,
-          party: att.party,
-          dialog: att.dialog,
-          mediatype: att.mimetype,
-          filename: att.filename,
-          body: deserializeBody(att.body, att.encoding),
-          encoding: att.encoding,
-          url: att.url,
-          content_hash: att.content_hash,
-        })),
-      };
+      const vcon = assembleVCon(vconData, parties, dialogs, analysis, attachments);
 
       // Cache the result for future reads
       await this.setCachedVCon(uuid, vcon);

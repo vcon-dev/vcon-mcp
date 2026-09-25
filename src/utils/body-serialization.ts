@@ -1,17 +1,20 @@
 /**
  * Body serialization utilities for vCon TEXT columns.
  *
- * Encoding semantics:
- *   'none' or unset  – body is a native JS object/array; stringify on write, parse on read.
- *   'json'           – body is intentionally a JSON string; leave as-is.
- *   'base64url'      – body is a base64url string; leave as-is.
+ * Write: a string body is stored verbatim; any other non-null body (object,
+ * array, number, boolean) is stored as its JSON text, whatever the
+ * encoding. Whether the original was a string is recorded by the row builders
+ * (see SHAPE_KEY in db/batch-writer.ts), since the TEXT column cannot say.
+ *
+ * Legacy read (rows without a shape hint):
+ *   'none' or unset  – JSON.parse when the text parses, else the string.
+ *   'json'           – returned as stored.
+ *   'base64url'      – returned as stored.
  */
 
-export function serializeBody(body: unknown, encoding?: string): unknown {
-  if ((!encoding || encoding === 'none') && typeof body !== 'string') {
-    return JSON.stringify(body);
-  }
-  return body;
+export function serializeBody(body: unknown): unknown {
+  if (body === undefined || body === null || typeof body === 'string') return body;
+  return JSON.stringify(body);
 }
 
 export function deserializeBody(body: string, encoding?: string): unknown {

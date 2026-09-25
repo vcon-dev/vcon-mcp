@@ -115,6 +115,7 @@ The vCon JSON structure is **normalized** into PostgreSQL tables for efficient q
 - **Child tables**: Arrays are broken out (parties, dialog, analysis, attachments, groups)
 - **Indexes**: Strategic indexes on UUIDs, foreign keys, timestamps, and search fields
 - **JSONB fields**: Complex nested data preserved as JSONB (redacted, appended, metadata)
+- **`extra` JSONB** (vcons, parties, dialog, analysis, attachments): any input key without its own column (e.g. `meta`, party `id`/`role`, dialog `signature`), merged back on read so a stored vCon reads back unchanged
 
 This normalization allows:
 - Fast searching across all conversations
