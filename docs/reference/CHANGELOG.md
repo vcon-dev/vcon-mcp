@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `add_analysis`/`add_dialog`/`add_attachment` (MCP tools and their REST equivalents:
+  `POST`/`PATCH /vcons/:uuid/{analysis,dialog,attachments}`) now accept a JSON `body`
+  (object, array, number, boolean, or null) when `encoding: "json"`, per
+  draft-ietf-vcon-vcon-core-04 Section 2.3.2. Previously only whole-vCon creation
+  (`create_vcon`, `POST /vcons`, `/vcons/batch`) accepted a non-string body; the
+  per-item add/update paths rejected it with a 400/tool error. A string body is
+  still accepted unchanged regardless of encoding. The Postgres/Supabase and
+  MongoDB storage layers already round-tripped JSON bodies correctly (CON-1047);
+  this closes the validation gap in front of them (CON-1113)
+
 ---
 
 ## [1.9.2] - 2026-09-23
