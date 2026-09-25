@@ -432,6 +432,54 @@ describe('vCon CRUD Routes', () => {
         .send({ type: 'summary' })
         .expect(400);
     });
+
+    // CON-1113: draft-ietf-vcon-vcon-core-04 Section 2.3.2 — body is any JSON
+    // value when encoding is "json".
+    it('accepts a JSON object body when encoding is json, and a subsequent read returns the object', async () => {
+      const uuid = randomUUID();
+      const res = await request(ctx.app.callback())
+        .post(`${BASE}/vcons/${uuid}/analysis`)
+        .send({ type: 'sentiment', vendor: 'TestAI', body: { score: 0.9, label: 'positive' }, encoding: 'json' })
+        .expect(201);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.analysis.body).toEqual({ score: 0.9, label: 'positive' });
+      expect(ctx.mocks.queries.addAnalysis).toHaveBeenCalledWith(uuid, expect.objectContaining({
+        body: { score: 0.9, label: 'positive' },
+        encoding: 'json',
+      }));
+
+      // A subsequent read (mocked DB/service) returns the object unchanged, not stringified.
+      const vcon = sampleVCon({
+        uuid,
+        analysis: [{ type: 'sentiment', vendor: 'TestAI', body: { score: 0.9, label: 'positive' }, encoding: 'json' } as any],
+      });
+      ctx.mocks.vconService.get.mockResolvedValueOnce(vcon);
+
+      const getRes = await request(ctx.app.callback())
+        .get(`${BASE}/vcons/${uuid}/analysis`)
+        .expect(200);
+
+      expect(getRes.body.analysis[0].body).toEqual({ score: 0.9, label: 'positive' });
+    });
+
+    it('returns 400 for a non-string body with encoding base64url', async () => {
+      const uuid = randomUUID();
+      await request(ctx.app.callback())
+        .post(`${BASE}/vcons/${uuid}/analysis`)
+        .send({ type: 'sentiment', vendor: 'TestAI', body: { score: 0.9 }, encoding: 'base64url' })
+        .expect(400);
+    });
+
+    it('still accepts a legacy string JSON body unchanged', async () => {
+      const uuid = randomUUID();
+      const res = await request(ctx.app.callback())
+        .post(`${BASE}/vcons/${uuid}/analysis`)
+        .send({ type: 'summary', vendor: 'TestAI', body: '{"legacy":true}', encoding: 'none' })
+        .expect(201);
+
+      expect(res.body.analysis.body).toBe('{"legacy":true}');
+    });
   });
 
   // ── POST /vcons/:uuid/attachments ───────────────────────────────────────
@@ -446,6 +494,43 @@ describe('vCon CRUD Routes', () => {
 
       expect(res.body.success).toBe(true);
       expect(ctx.mocks.queries.addAttachment).toHaveBeenCalledOnce();
+    });
+
+    // CON-1113: draft-ietf-vcon-vcon-core-04 Section 2.3.2 — body is any JSON
+    // value when encoding is "json".
+    it('accepts a JSON array body when encoding is json, and a subsequent read returns the array', async () => {
+      const uuid = randomUUID();
+      const res = await request(ctx.app.callback())
+        .post(`${BASE}/vcons/${uuid}/attachments`)
+        .send({ purpose: 'tags', body: ['priority:high'], encoding: 'json' })
+        .expect(201);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.attachment.body).toEqual(['priority:high']);
+      expect(ctx.mocks.queries.addAttachment).toHaveBeenCalledWith(uuid, expect.objectContaining({
+        body: ['priority:high'],
+        encoding: 'json',
+      }));
+
+      const vcon = sampleVCon({
+        uuid,
+        attachments: [{ purpose: 'tags', body: ['priority:high'], encoding: 'json' } as any],
+      });
+      ctx.mocks.vconService.get.mockResolvedValueOnce(vcon);
+
+      const getRes = await request(ctx.app.callback())
+        .get(`${BASE}/vcons/${uuid}/attachments`)
+        .expect(200);
+
+      expect(getRes.body.attachments[0].body).toEqual(['priority:high']);
+    });
+
+    it('returns 400 for a non-string body with encoding none', async () => {
+      const uuid = randomUUID();
+      await request(ctx.app.callback())
+        .post(`${BASE}/vcons/${uuid}/attachments`)
+        .send({ purpose: 'note', body: { not: 'a string' }, encoding: 'none' })
+        .expect(400);
     });
   });
 

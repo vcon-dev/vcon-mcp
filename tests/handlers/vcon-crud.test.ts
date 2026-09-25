@@ -426,6 +426,67 @@ describe('vCon CRUD Handlers', () => {
         vcon_uuid: randomUUID(),
       }, mockContext)).rejects.toThrow(McpError);
     });
+
+    // CON-1113: draft-ietf-vcon-vcon-core-04 Section 2.3.2 — body is any JSON
+    // value when encoding is "json".
+    it('accepts an object body when encoding is json', async () => {
+      const handler = new AddAnalysisHandler();
+      const uuid = randomUUID();
+      const analysis = {
+        type: 'sentiment',
+        vendor: 'TestVendor',
+        body: { score: 0.9, label: 'positive' },
+        encoding: 'json',
+      };
+
+      mockQueries.addAnalysis.mockResolvedValue(undefined);
+
+      const result = await handler.handle({ vcon_uuid: uuid, analysis }, mockContext);
+
+      expect(mockQueries.addAnalysis).toHaveBeenCalledWith(uuid, expect.objectContaining({
+        body: { score: 0.9, label: 'positive' },
+        encoding: 'json',
+      }));
+
+      const response = JSON.parse(result.content[0].text);
+      expect(response.success).toBe(true);
+      // Reflects what would come back from a subsequent read (mocked DB): the
+      // object round-trips, it is not stringified.
+      expect(response.analysis.body).toEqual({ score: 0.9, label: 'positive' });
+    });
+
+    it('rejects a non-string body when encoding is base64url', async () => {
+      const handler = new AddAnalysisHandler();
+      await expect(handler.handle({
+        vcon_uuid: randomUUID(),
+        analysis: { type: 'sentiment', vendor: 'TestVendor', body: { score: 0.9 }, encoding: 'base64url' },
+      }, mockContext)).rejects.toThrow(McpError);
+    });
+
+    it('rejects a non-string body when encoding is omitted', async () => {
+      const handler = new AddAnalysisHandler();
+      await expect(handler.handle({
+        vcon_uuid: randomUUID(),
+        analysis: { type: 'sentiment', vendor: 'TestVendor', body: { score: 0.9 } },
+      }, mockContext)).rejects.toThrow(McpError);
+    });
+
+    it('still accepts a legacy string body with no encoding', async () => {
+      const handler = new AddAnalysisHandler();
+      const uuid = randomUUID();
+      mockQueries.addAnalysis.mockResolvedValue(undefined);
+
+      const result = await handler.handle({
+        vcon_uuid: uuid,
+        analysis: { type: 'summary', vendor: 'TestVendor', body: '{"legacy":true}' },
+      }, mockContext);
+
+      expect(mockQueries.addAnalysis).toHaveBeenCalledWith(uuid, expect.objectContaining({
+        body: '{"legacy":true}',
+      }));
+      const response = JSON.parse(result.content[0].text);
+      expect(response.success).toBe(true);
+    });
   });
 
   describe('AddDialogHandler', () => {
@@ -459,6 +520,31 @@ describe('vCon CRUD Handlers', () => {
         vcon_uuid: randomUUID(),
       }, mockContext)).rejects.toThrow(McpError);
     });
+
+    // CON-1113: Dialog Content (Section 4.3.10) shares the Section 2.3 inline
+    // file rules with analysis/attachment, so a JSON body is accepted here too.
+    it('accepts an object body when encoding is json', async () => {
+      const handler = new AddDialogHandler();
+      const uuid = randomUUID();
+      const dialog = { type: 'text', body: { transcript: 'hi' }, encoding: 'json' };
+
+      mockQueries.addDialog.mockResolvedValue(undefined);
+
+      await handler.handle({ vcon_uuid: uuid, dialog }, mockContext);
+
+      expect(mockQueries.addDialog).toHaveBeenCalledWith(uuid, expect.objectContaining({
+        body: { transcript: 'hi' },
+        encoding: 'json',
+      }));
+    });
+
+    it('rejects a non-string body when encoding is base64url', async () => {
+      const handler = new AddDialogHandler();
+      await expect(handler.handle({
+        vcon_uuid: randomUUID(),
+        dialog: { type: 'recording', body: { not: 'base64' }, encoding: 'base64url' },
+      }, mockContext)).rejects.toThrow(McpError);
+    });
   });
 
   describe('AddAttachmentHandler', () => {
@@ -489,6 +575,35 @@ describe('vCon CRUD Handlers', () => {
       const handler = new AddAttachmentHandler();
       await expect(handler.handle({
         vcon_uuid: randomUUID(),
+      }, mockContext)).rejects.toThrow(McpError);
+    });
+
+    // CON-1113: draft-ietf-vcon-vcon-core-04 Section 2.3.2 — body is any JSON
+    // value when encoding is "json".
+    it('accepts an array body when encoding is json', async () => {
+      const handler = new AddAttachmentHandler();
+      const uuid = randomUUID();
+      const attachment = { purpose: 'tags', body: ['priority:high', 'dept:sales'], encoding: 'json' };
+
+      mockQueries.addAttachment.mockResolvedValue(undefined);
+
+      const result = await handler.handle({ vcon_uuid: uuid, attachment }, mockContext);
+
+      expect(mockQueries.addAttachment).toHaveBeenCalledWith(uuid, expect.objectContaining({
+        body: ['priority:high', 'dept:sales'],
+        encoding: 'json',
+      }));
+
+      const response = JSON.parse(result.content[0].text);
+      expect(response.success).toBe(true);
+      expect(response.attachment.body).toEqual(['priority:high', 'dept:sales']);
+    });
+
+    it('rejects a non-string body when encoding is none', async () => {
+      const handler = new AddAttachmentHandler();
+      await expect(handler.handle({
+        vcon_uuid: randomUUID(),
+        attachment: { body: { not: 'a string' }, encoding: 'none' },
       }, mockContext)).rejects.toThrow(McpError);
     });
   });
