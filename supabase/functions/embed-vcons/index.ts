@@ -53,7 +53,7 @@ interface TextUnit {
   content_text: string;
 }
 
-async function listMissingTextUnits(limit: number, vconId?: string): Promise<TextUnit[]> {
+async function listMissingTextUnits(limit: number, vconId?: string, analysisTypes?: string[]): Promise<TextUnit[]> {
   // Gather subject
   const subjectSql = `
     SELECT v.id as vcon_id,
@@ -96,6 +96,7 @@ async function listMissingTextUnits(limit: number, vconId?: string): Promise<Tex
     WHERE a.body IS NOT NULL AND a.body <> ''
       AND (a.encoding = 'none' OR a.encoding IS NULL)
       AND e.id IS NULL
+      ${analysisTypes ? `AND a.type IN (${analysisTypes.map((t) => `'${t}'`).join(",")})` : ""}
       ${vconId ? "AND a.vcon_id = :vcon_id" : ""}
     ORDER BY 
       CASE WHEN a.encoding = 'none' THEN 0 ELSE 1 END,
@@ -162,6 +163,13 @@ serve(async (req) => {
     const mode = url.searchParams.get("mode") ?? "backfill"; // backfill | embed
     const vconId = url.searchParams.get("vcon_id") ?? undefined;
     const limit = Math.max(1, Math.min(500, Number(url.searchParams.get("limit") ?? "100")));
+    // Optional: only embed these analysis types, e.g. ?analysis_types=summary,crexendo_summary.
+    // Values are inlined into SQL, so they must be plain identifiers.
+    const typesParam = url.searchParams.get("analysis_types");
+    const analysisTypes = typesParam ? typesParam.split(",").map((t) => t.trim()).filter(Boolean) : undefined;
+    if (analysisTypes && (analysisTypes.length === 0 || !analysisTypes.every((t) => /^[A-Za-z0-9_.:-]{1,64}$/.test(t)))) {
+      return new Response(JSON.stringify({ error: "analysis_types must be a comma-separated list of identifiers" }), { status: 400 });
+    }
 
     if (PROVIDER === "litellm" && (!LITELLM_PROXY_URL || !LITELLM_MASTER_KEY)) {
       return new Response(JSON.stringify({ error: "LITELLM_PROXY_URL and LITELLM_MASTER_KEY (or LITELLM_API_KEY) missing" }), { status: 400 });
@@ -176,7 +184,7 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "HF_API_TOKEN missing" }), { status: 400 });
     }
 
-    const units = await listMissingTextUnits(limit, mode === "embed" ? vconId : undefined);
+    const units = await listMissingTextUnits(limit, mode === "embed" ? vconId : undefined, analysisTypes);
     if (units.length === 0) {
       return new Response(JSON.stringify({ embedded: 0, skipped: 0, errors: 0 }), {
         headers: { "Content-Type": "application/json" }
