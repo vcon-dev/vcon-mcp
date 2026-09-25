@@ -128,6 +128,17 @@ The tool displays progress and a summary of embedded, skipped, and error counts.
 
 ---
 
+### Restricting which analyses are embedded (edge function)
+
+The `embed-vcons` edge function accepts an optional `analysis_types` query parameter: a comma-separated list of analysis `type` values. Only analyses of those types are embedded:
+
+```bash
+curl -X POST "$SUPABASE_URL/functions/v1/embed-vcons?mode=backfill&limit=100&analysis_types=summary,crexendo_summary" \
+  -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" -H "Content-Type: application/json" -d '{}'
+```
+
+Use it when a corpus carries many analyses that aren't worth embedding, such as one-word scores or long raw transcripts, and gte-small throughput makes embedding everything impractical. Each value must match `^[A-Za-z0-9_.:-]{1,64}$`; anything else returns 400. The filter narrows analyses only: subjects and dialog bodies are still embedded, and they are fetched first. Without the parameter, behaviour is unchanged.
+
 ### Optional: DB queue + trigger for near‑real‑time embedding
 
 Apply the migration that creates a simple queue and a trigger that enqueues newly inserted vCons:
