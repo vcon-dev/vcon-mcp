@@ -15,7 +15,8 @@
  *   2. body and url are mutually exclusive for content storage
  *   3. HTTPS MUST be used for external content retrieval
  *   4. encoding: 'base64url' | 'json' | 'none'
- *   5. Analysis: vendor is REQUIRED, schema (not schema_version), body is string
+ *   5. Analysis: vendor is REQUIRED, schema (not schema_version); body is a string unless
+ *      encoding is "json", in which case body is any JSON value (draft -04 Section 2.3.2)
  *   6. Dialog types: 'recording' | 'text' | 'transfer' | 'incomplete'
  *   7. 'transfer' and 'incomplete' MUST NOT have Dialog Content parameters
  */
@@ -27,6 +28,13 @@
 /** @deprecated Version field is deprecated; any string or missing is accepted. Kept for compatibility. */
 export type VConVersion = '0.4.0';
 export type Encoding = 'base64url' | 'json' | 'none';
+
+/**
+ * A JSON value as defined in [JSON]: object, array, number, string, boolean, or null.
+ * Per draft-ietf-vcon-vcon-core-04 Section 2.3.2, when encoding is "json" the body
+ * parameter holds a value of this type; otherwise body is a plain string.
+ */
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 export type DialogType = 'recording' | 'text' | 'transfer' | 'incomplete';
 export type DialogDisposition = 'no-answer' | 'congestion' | 'failed' | 'busy' | 'hung-up' | 'voicemail-no-message';
 export type PartyEventType = 'join' | 'drop' | 'hold' | 'unhold' | 'mute' | 'unmute';
@@ -113,8 +121,9 @@ export interface Dialog {
   mediatype?: string;       // ✅ 'mediatype' (was 'mimetype' pre-0.0.2)
   filename?: string;
 
-  // Inline content (mutually exclusive with url)
-  body?: string;
+  // Inline content (mutually exclusive with url). Per -04 Section 2.3/4.3.10,
+  // body is a string unless encoding is "json", in which case it is any JSON value.
+  body?: string | JsonValue;
   encoding?: Encoding;
 
   // External content (mutually exclusive with body)
@@ -150,7 +159,7 @@ export interface Attachment {
   dialog?: number;          // Section 4.4.4
   mediatype?: string;       // ✅ 'mediatype' (was 'mimetype' pre-0.0.2)
   filename?: string;
-  body?: unknown;           // Can be string, object, or array depending on encoding
+  body?: string | JsonValue; // String unless encoding is "json" (any JSON value); -04 Section 2.3/4.4.7
   encoding?: Encoding;
   url?: string;
   content_hash?: string | string[];
@@ -167,7 +176,8 @@ export interface Attachment {
  *
  * ⚠️  CRITICAL: 'vendor' is REQUIRED (no ?)
  * ⚠️  CORRECT field name is 'schema' NOT 'schema_version'
- * ⚠️  'body' MUST be a string (JSON.stringify objects before storing)
+ * ⚠️  'body' is a string unless encoding is "json", in which case it is any JSON
+ *     value (object, array, number, string, boolean, or null) — -04 Section 2.3.2
  */
 export interface Analysis {
   type: string;             // e.g., 'summary', 'transcript', 'translation', 'sentiment'
@@ -177,7 +187,7 @@ export interface Analysis {
   vendor: string;           // ✅ REQUIRED — no optional marker
   product?: string;
   schema?: string;          // ✅ CORRECT: 'schema' NOT 'schema_version' (Section 4.5.7)
-  body?: unknown;           // Can be string, object, or array depending on content/encoding
+  body?: string | JsonValue; // String unless encoding is "json" (any JSON value); -04 Section 2.3/4.5.9
   encoding?: Encoding;
   url?: string;
   content_hash?: string | string[];

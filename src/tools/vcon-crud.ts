@@ -1,10 +1,11 @@
 /**
  * MCP Tool Definitions for vCon Operations
- * 
+ *
  * ⚠️ CRITICAL: All schemas use corrected field names
  * - analysis.schema (NOT schema_version)
  * - analysis.vendor (REQUIRED)
- * - analysis.body (string type)
+ * - analysis.body/dialog.body/attachment.body: string, or any JSON value when
+ *   encoding is "json" (draft-ietf-vcon-vcon-core-04 Section 2.3)
  */
 
 import { z } from 'zod';
@@ -14,11 +15,47 @@ import { z } from 'zod';
 // ============================================================================
 
 /**
+ * Inline body (draft-ietf-vcon-vcon-core-04 Section 2.3 "Inline Files", shared
+ * by Dialog Section 4.3.10, Attachment Section 4.4.7 and Analysis Section
+ * 4.5.9): body is a string, unless encoding is "json", in which case it is any
+ * JSON value (object, array, number, string, boolean, or null).
+ *
+ * Encoding-absent decision: legacy callers routinely omit `encoding` on a
+ * string body (see tests/handlers/vcon-crud.test.ts), so that keeps working
+ * unchanged. A non-string body is only accepted when `encoding` is explicitly
+ * "json" — with encoding absent, "base64url" or "none" there is no signal
+ * that a non-string value is meant to be a raw JSON value rather than data
+ * the caller forgot to stringify, so it is rejected.
+ */
+const BodySchema = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.null(),
+  z.array(z.unknown()),
+  z.record(z.unknown()),
+]).optional().describe(
+  'Inline content. A string, unless encoding is "json", in which case any JSON value ' +
+  '(object, array, number, string, boolean, or null) is accepted as-is.'
+);
+
+/** Reject a non-string body unless encoding is explicitly "json" (see BodySchema doc). */
+function refineJsonBody(val: { body?: unknown; encoding?: string }, ctx: z.RefinementCtx): void {
+  if (val.body !== undefined && typeof val.body !== 'string' && val.encoding !== 'json') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['body'],
+      message: 'body must be a string unless encoding is "json" (draft-ietf-vcon-vcon-core-04 Section 2.3.2)',
+    });
+  }
+}
+
+/**
  * Analysis Schema
  * ✅ CRITICAL CORRECTIONS:
  * - Uses 'schema' field (NOT 'schema_version')
  * - 'vendor' is REQUIRED
- * - 'body' is string type
+ * - 'body' is a string, or any JSON value when encoding is "json"
  */
 export const AnalysisSchema = z.object({
   type: z.string().describe('Analysis type (e.g., summary, transcript, sentiment)'),
@@ -29,11 +66,12 @@ export const AnalysisSchema = z.object({
   vendor: z.string().describe('REQUIRED: Vendor who produced this analysis'),  // ✅ REQUIRED
   product: z.string().optional().describe('Product name or version'),
   schema: z.string().optional().describe('Schema identifier for this analysis'),  // ✅ CORRECT: 'schema'
-  body: z.string().optional().describe('Analysis content as string (supports JSON, CSV, XML, etc.)'),  // ✅ String type
+  body: BodySchema,
   encoding: z.enum(['base64url', 'json', 'none']).optional(),
   url: z.string().optional(),
   content_hash: z.union([z.string(), z.array(z.string())]).optional(),
-}).passthrough(); // extension keys are stored in `extra` (CON-1047)
+}).passthrough() // extension keys are stored in `extra` (CON-1047)
+  .superRefine(refineJsonBody);
 
 /**
  * Dialog Schema
@@ -52,7 +90,7 @@ export const DialogSchema = z.object({
   originator: z.number().optional(),
   mediatype: z.string().optional(),
   filename: z.string().optional(),
-  body: z.string().optional(),
+  body: BodySchema,
   encoding: z.enum(['base64url', 'json', 'none']).optional(),
   url: z.string().optional(),
   content_hash: z.union([z.string(), z.array(z.string())]).optional(),
@@ -73,7 +111,8 @@ export const DialogSchema = z.object({
   original: z.union([z.number(), z.array(z.number())]).optional(),
   consultation: z.union([z.number(), z.array(z.number())]).optional(),
   target_dialog: z.union([z.number(), z.array(z.number())]).optional(),
-}).passthrough(); // extension keys are stored in `extra` (CON-1047)
+}).passthrough() // extension keys are stored in `extra` (CON-1047)
+  .superRefine(refineJsonBody);
 
 /**
  * Party Schema
@@ -108,11 +147,12 @@ export const AttachmentSchema = z.object({
   dialog: z.number().optional().describe('Dialog index this attachment relates to'),  // ✅ Added
   mediatype: z.string().optional(),
   filename: z.string().optional(),
-  body: z.string().optional(),
+  body: BodySchema,
   encoding: z.enum(['base64url', 'json', 'none']).optional(),
   url: z.string().optional(),
   content_hash: z.union([z.string(), z.array(z.string())]).optional(),
-}).passthrough(); // extension keys are stored in `extra` (CON-1047)
+}).passthrough() // extension keys are stored in `extra` (CON-1047)
+  .superRefine(refineJsonBody);
 
 // ============================================================================
 // MCP Tool Definitions
@@ -142,6 +182,21 @@ const PARTY_INDEX = { type: 'integer', minimum: 0 } as const;
 const INDEX_OR_LIST = {
   oneOf: [{ type: 'integer', minimum: 0 }, { type: 'array', items: { type: 'integer', minimum: 0 } }],
 } as const;
+// Inline content: a string, or (when encoding is "json") any JSON value —
+// draft-ietf-vcon-vcon-core-04 Section 2.3, shared by dialog/analysis/attachment.
+const BODY_PROP = {
+  oneOf: [
+    { type: 'string' },
+    { type: 'object' },
+    { type: 'array' },
+    { type: 'number' },
+    { type: 'boolean' },
+    { type: 'null' },
+  ],
+  description: 'Inline content. A string, unless encoding is "json", in which case any JSON value ' +
+    '(object, array, number, string, boolean, or null) is accepted as-is.',
+} as const;
+
 const PARTY_HISTORY_PROP = {
   type: 'array',
   description: 'Party join/drop/hold/mute events',
@@ -183,7 +238,7 @@ const dialogProperties = {
     description: 'Party index, list of indexes, or nested groupings',
   },
   originator: { ...PARTY_INDEX, description: 'Originating party index' },
-  body: { type: 'string', description: 'Dialog content' },
+  body: BODY_PROP,
   encoding: { type: 'string', enum: ['base64url', 'json', 'none'] },
   mediatype: { type: 'string', description: 'MIME type of the content' },
   filename: { type: 'string' },
@@ -209,7 +264,7 @@ const analysisProperties = {
   vendor: { type: 'string', description: 'REQUIRED: Vendor who produced this analysis' },
   product: { type: 'string' },
   schema: { type: 'string', description: 'Schema identifier for this analysis format' },
-  body: { type: 'string', description: 'Analysis content as string' },
+  body: BODY_PROP,
   encoding: { type: 'string', enum: ['base64url', 'json', 'none'] },
   mediatype: { type: 'string' },
   filename: { type: 'string' },
@@ -225,7 +280,7 @@ const attachmentProperties = {
   start: { type: 'string' },
   mediatype: { type: 'string' },
   filename: { type: 'string' },
-  body: { type: 'string', description: 'Attachment content' },
+  body: BODY_PROP,
   encoding: { type: 'string', enum: ['base64url', 'json', 'none'] },
   url: { type: 'string' },
   content_hash: { oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] },
@@ -596,9 +651,9 @@ export const addAnalysisTool = {
             type: 'string',
             description: 'Schema identifier for this analysis format'
           },
-          body: {  // ✅ String type
-            type: 'string',
-            description: 'Analysis content as string (can be JSON, CSV, XML, plain text, etc.)'
+          body: {
+            ...BODY_PROP,
+            description: 'Analysis content. A string, unless encoding is "json", in which case any JSON value.'
           },
           encoding: {
             type: 'string',
@@ -657,8 +712,8 @@ export const addDialogTool = {
             description: 'Party indexes involved in this dialog'
           },
           body: {
-            type: 'string',
-            description: 'Dialog content (text, transcript, or recording)'
+            ...BODY_PROP,
+            description: 'Dialog content (text, transcript, or recording). A string, unless encoding is "json", in which case any JSON value.'
           },
           encoding: {
             type: 'string',
@@ -725,8 +780,8 @@ export const addAttachmentTool = {
           mediatype: { type: 'string' },
           filename: { type: 'string' },
           body: {
-            type: 'string',
-            description: 'Attachment content'
+            ...BODY_PROP,
+            description: 'Attachment content. A string, unless encoding is "json", in which case any JSON value.'
           },
           encoding: {
             type: 'string',

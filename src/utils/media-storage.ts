@@ -256,8 +256,8 @@ export class MediaStorage {
     }
 
     try {
-      // Decode the base64url content
-      const content = decodeBase64Url(dialog.body!);
+      // Decode the base64url content (hasEmbeddedMedia confirmed encoding === 'base64url', so body is a string)
+      const content = decodeBase64Url(dialog.body! as string);
       const sizeBytes = content.length;
 
       // Generate S3 key
@@ -348,7 +348,8 @@ export async function processDialogsForMedia(
     }
 
     stats.withEmbeddedMedia++;
-    const estimatedSize = estimateBase64Size(dialog.body!);
+    // hasEmbeddedMedia confirmed encoding === 'base64url', so body is a string
+    const estimatedSize = estimateBase64Size(dialog.body! as string);
 
     // Skip small media files
     if (estimatedSize < minSize) {
