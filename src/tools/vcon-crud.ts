@@ -33,7 +33,7 @@ export const AnalysisSchema = z.object({
   encoding: z.enum(['base64url', 'json', 'none']).optional(),
   url: z.string().optional(),
   content_hash: z.union([z.string(), z.array(z.string())]).optional(),
-});
+}).passthrough(); // extension keys are stored in `extra` (CON-1047)
 
 /**
  * Dialog Schema
@@ -73,7 +73,7 @@ export const DialogSchema = z.object({
   original: z.union([z.number(), z.array(z.number())]).optional(),
   consultation: z.union([z.number(), z.array(z.number())]).optional(),
   target_dialog: z.union([z.number(), z.array(z.number())]).optional(),
-});
+}).passthrough(); // extension keys are stored in `extra` (CON-1047)
 
 /**
  * Party Schema
@@ -94,7 +94,7 @@ export const PartySchema = z.object({
   gmlpos: z.string().optional().describe('GML position'),
   civicaddress: z.record(z.unknown()).optional().describe('Civic address object'),
   timezone: z.string().optional(),
-});
+}).passthrough(); // extension keys are stored in `extra` (CON-1047)
 
 /**
  * Attachment Schema
@@ -112,7 +112,7 @@ export const AttachmentSchema = z.object({
   encoding: z.enum(['base64url', 'json', 'none']).optional(),
   url: z.string().optional(),
   content_hash: z.union([z.string(), z.array(z.string())]).optional(),
-});
+}).passthrough(); // extension keys are stored in `extra` (CON-1047)
 
 // ============================================================================
 // MCP Tool Definitions

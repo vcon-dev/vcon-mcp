@@ -12,7 +12,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import Redis from 'ioredis';
 import { Analysis, Attachment, Dialog, Party, VCon } from '../types/vcon.js';
-import { serializeBody } from '../utils/body-serialization.js';
+import { deserializeBody, serializeBody } from '../utils/body-serialization.js';
 import { logWithContext, recordCounter } from '../observability/instrumentation.js';
 import { extractErrorMessage } from '../utils/errors.js';
 
@@ -251,6 +251,102 @@ async function commitBatch(pending: Pending[], tenantId: string | null): Promise
 // (PostgREST builds DO UPDATE SET ... from the provided columns only).
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Extension fields (CON-1047). Every key a builder does not map to a column is
+// kept in the row's `extra` jsonb (null when nothing is left over) and merged
+// back by assembleVCon, so a stored vCon reads back as it was written.
+//
+// `extra` may also carry one reserved key, SHAPE_KEY, with hints for values the
+// columns cannot express faithfully. Hints are written only when the legacy
+// reader would get the value wrong, so rows written before this change read
+// exactly as they did:
+//   body: 'string' -> a string body the legacy reader would JSON.parse (e.g. "false")
+//   body: 'json'   -> a non-string body stored as JSON text the legacy reader returns as a string
+//   dialog: 'array' -> analysis.dialog was a one-element array, not a bare int
+// ponytail: a client-supplied key named SHAPE_KEY is shadowed; rename if that ever collides.
+// ---------------------------------------------------------------------------
+
+export const SHAPE_KEY = '_vcon_mcp_shape';
+
+type Shape = { body?: 'string' | 'json'; dialog?: 'array' };
+type Row = Record<string, any>;
+
+const VCON_KEYS = new Set([
+  'vcon', 'uuid', 'subject', 'created_at', 'updated_at', 'extensions', 'critical',
+  'redacted', 'amended', 'group', 'parties', 'dialog', 'analysis', 'attachments',
+]);
+const PARTY_KEYS = new Set([
+  'tel', 'sip', 'stir', 'mailto', 'name', 'did', 'uuid', 'validation', 'jcard',
+  'gmlpos', 'civicaddress', 'timezone',
+]);
+// party_history and transfer fields are not dialog columns, so they ride in extra.
+const DIALOG_KEYS = new Set([
+  'type', 'start', 'duration', 'parties', 'originator', 'mediatype', 'filename', 'body',
+  'encoding', 'url', 'content_hash', 'disposition', 'session_id', 'application', 'message_id',
+]);
+const ANALYSIS_KEYS = new Set([
+  'type', 'dialog', 'mediatype', 'filename', 'vendor', 'product', 'schema', 'body',
+  'encoding', 'url', 'content_hash',
+]);
+const ATTACHMENT_KEYS = new Set([
+  'type', 'purpose', 'start', 'party', 'dialog', 'mediatype', 'filename', 'body',
+  'encoding', 'url', 'content_hash',
+]);
+
+function extraOf(obj: object, known: Set<string>, shape: Shape = {}): Row | null {
+  const extra: Row = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (!known.has(k) && v !== undefined) extra[k] = v;
+  }
+  if (Object.keys(shape).length > 0) extra[SHAPE_KEY] = shape;
+  return Object.keys(extra).length > 0 ? extra : null;
+}
+
+/** Column values win; extra keys fill in the rest. SHAPE_KEY never reaches clients. */
+function withExtra<T extends object>(cols: T, extra: Row | null | undefined): T {
+  if (!extra) return cols;
+  const out: Row = { ...cols };
+  for (const [k, v] of Object.entries(extra)) {
+    if (k !== SHAPE_KEY && !(k in out)) out[k] = v;
+  }
+  return out as T;
+}
+
+/** Legacy analysis/attachment reads JSON.parse bodies with no/none encoding; dialog reads raw. */
+function legacyParses(table: 'dialog' | 'other', encoding?: string | null): boolean {
+  return table === 'other' && (!encoding || encoding === 'none');
+}
+
+/** Shape hint needed so readBody restores the original type (see SHAPE_KEY). */
+function bodyShape(body: unknown, parses: boolean): Shape {
+  if (body === undefined || body === null) return {};
+  if (typeof body !== 'string') return parses ? {} : { body: 'json' };
+  if (!parses) return {};
+  try {
+    JSON.parse(body);
+    return { body: 'string' };
+  } catch {
+    return {};
+  }
+}
+
+function readBody(stored: unknown, parses: boolean, encoding: string | null | undefined, shape?: Shape): any {
+  if (shape?.body === 'string') return stored;
+  if (shape?.body === 'json') return typeof stored === 'string' ? JSON.parse(stored) : stored;
+  return parses ? deserializeBody(stored as string, encoding ?? undefined) : stored;
+}
+
+/**
+ * vcons.redacted / amended / group_data default to '{}' / '[]', so an empty
+ * value means the parameter is absent. Drop it instead of round-tripping noise.
+ */
+function nonEmpty<T>(value: T | null | undefined): T | undefined {
+  if (value === null || value === undefined) return undefined;
+  if (Array.isArray(value)) return value.length ? value : undefined;
+  if (typeof value === 'object' && Object.keys(value as object).length === 0) return undefined;
+  return value;
+}
+
 export function buildVconRow(vcon: VCon, tenantId: string | null) {
   return {
     id: vcon.uuid,
@@ -265,14 +361,14 @@ export function buildVconRow(vcon: VCon, tenantId: string | null) {
     amended: vcon.amended || {},
     group_data: vcon.group || [],
     tenant_id: tenantId,
+    extra: extraOf(vcon, VCON_KEYS),
   };
 }
 
 // Single-row builders. These own the column-name mapping (start->start_time,
 // duration->duration_seconds, dialog->dialog_indices, mediatype->mimetype) and
 // body serialization, so per-child update/insert paths in the query layer reuse
-// exactly the same shaping as batch creation. NOTE: dialog body is stored RAW
-// (no serializeBody); analysis/attachment bodies use serializeBody.
+// exactly the same shaping as batch creation.
 
 export function buildPartyRow(vconUuid: string, party: Party, index: number) {
   return {
@@ -290,6 +386,7 @@ export function buildPartyRow(vconUuid: string, party: Party, index: number) {
     gmlpos: party.gmlpos,
     civicaddress: party.civicaddress,
     timezone: party.timezone,
+    extra: extraOf(party, PARTY_KEYS),
   };
 }
 
@@ -308,7 +405,7 @@ export function buildDialogRow(vconUuid: string, dialog: Dialog, index: number) 
     originator: dialog.originator,
     mediatype: dialog.mediatype,
     filename: dialog.filename,
-    body: dialog.body,
+    body: serializeBody(dialog.body),
     encoding: dialog.encoding,
     url: dialog.url,
     content_hash: dialog.content_hash,
@@ -316,10 +413,14 @@ export function buildDialogRow(vconUuid: string, dialog: Dialog, index: number) 
     session_id: dialog.session_id,
     application: dialog.application,
     message_id: dialog.message_id,
+    extra: extraOf(dialog, DIALOG_KEYS, bodyShape(dialog.body, legacyParses('dialog'))),
   };
 }
 
 export function buildAnalysisRow(vconUuid: string, analysis: Analysis, index: number) {
+  // dialog_indices is always an array. A one-element array is recorded in the
+  // shape hint so it does not read back as the bare int the legacy reader emits.
+  const dialogShape: Shape = Array.isArray(analysis.dialog) && analysis.dialog.length === 1 ? { dialog: 'array' } : {};
   return {
     vcon_id: vconUuid,
     analysis_index: index,
@@ -332,10 +433,14 @@ export function buildAnalysisRow(vconUuid: string, analysis: Analysis, index: nu
     vendor: analysis.vendor,
     product: analysis.product,
     schema: analysis.schema,
-    body: serializeBody(analysis.body, analysis.encoding),
+    body: serializeBody(analysis.body),
     encoding: analysis.encoding,
     url: analysis.url,
     content_hash: analysis.content_hash,
+    extra: extraOf(analysis, ANALYSIS_KEYS, {
+      ...bodyShape(analysis.body, legacyParses('other', analysis.encoding)),
+      ...dialogShape,
+    }),
   };
 }
 
@@ -350,11 +455,97 @@ export function buildAttachmentRow(vconUuid: string, attachment: Attachment, ind
     dialog: attachment.dialog,
     mimetype: attachment.mediatype,
     filename: attachment.filename,
-    body: serializeBody(attachment.body, attachment.encoding),
+    body: serializeBody(attachment.body),
     encoding: attachment.encoding,
     url: attachment.url,
     content_hash: attachment.content_hash,
+    extra: extraOf(attachment, ATTACHMENT_KEYS, bodyShape(attachment.body, legacyParses('other', attachment.encoding))),
   };
+}
+
+/**
+ * Rebuild a vCon from its vcons row and child rows (inverse of the builders).
+ * Pure, so the store/read round trip is unit-testable without a database.
+ */
+export function assembleVCon(
+  vconData: Row,
+  parties: Row[] | null | undefined,
+  dialogs: Row[] | null | undefined,
+  analysis: Row[] | null | undefined,
+  attachments: Row[] | null | undefined
+): VCon {
+  return withExtra({
+    vcon: vconData.vcon_version || '0.4.0',
+    uuid: vconData.uuid,
+    extensions: vconData.extensions,
+    critical: vconData.critical,
+    created_at: vconData.created_at,
+    updated_at: vconData.updated_at,
+    subject: vconData.subject,
+    // Stored as '{}'/'[]' defaults, so empty means absent.
+    redacted: nonEmpty(vconData.redacted),
+    amended: nonEmpty(vconData.amended) ?? nonEmpty(vconData.appended),
+    group: nonEmpty(vconData.group_data),
+    parties: parties?.map(p => withExtra({
+      tel: p.tel,
+      sip: p.sip,
+      stir: p.stir,
+      mailto: p.mailto,
+      name: p.name,
+      did: p.did,
+      uuid: p.uuid,
+      validation: p.validation,
+      jcard: p.jcard,
+      gmlpos: p.gmlpos,
+      civicaddress: p.civicaddress,
+      timezone: p.timezone,
+    }, p.extra)) || [],
+    dialog: dialogs?.map(d => withExtra({
+      type: d.type,
+      start: d.start_time,
+      duration: d.duration_seconds,
+      parties: d.parties,
+      originator: d.originator,
+      mediatype: d.mediatype,
+      filename: d.filename,
+      body: readBody(d.body, legacyParses('dialog'), d.encoding, d.extra?.[SHAPE_KEY]),
+      encoding: d.encoding,
+      url: d.url,
+      content_hash: d.content_hash,
+      disposition: d.disposition,
+      session_id: d.session_id,
+      application: d.application,
+      message_id: d.message_id,
+    }, d.extra)),
+    analysis: analysis?.map(a => withExtra({
+      type: a.type,
+      dialog: a.extra?.[SHAPE_KEY]?.dialog === 'array' || a.dialog_indices?.length !== 1
+        ? a.dialog_indices
+        : a.dialog_indices[0],
+      mediatype: a.mediatype,
+      filename: a.filename,
+      vendor: a.vendor,
+      product: a.product,
+      schema: a.schema,
+      body: readBody(a.body, legacyParses('other', a.encoding), a.encoding, a.extra?.[SHAPE_KEY]),
+      encoding: a.encoding,
+      url: a.url,
+      content_hash: a.content_hash,
+    }, a.extra)),
+    attachments: attachments?.map(att => withExtra({
+      type: att.type,
+      purpose: att.purpose,
+      start: att.start_time,
+      party: att.party,
+      dialog: att.dialog,
+      mediatype: att.mimetype,
+      filename: att.filename,
+      body: readBody(att.body, legacyParses('other', att.encoding), att.encoding, att.extra?.[SHAPE_KEY]),
+      encoding: att.encoding,
+      url: att.url,
+      content_hash: att.content_hash,
+    }, att.extra)),
+  }, vconData.extra);
 }
 
 export function buildPartyRows(vcon: VCon) {

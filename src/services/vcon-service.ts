@@ -380,6 +380,7 @@ export class VConService {
    */
   private normalizeVCon(data: Partial<VCon>): VCon {
     return {
+      ...data, // keep extension keys such as top-level meta (CON-1047)
       vcon: (data.vcon || '0.4.0') as '0.4.0',
       uuid: data.uuid || randomUUID(),
       created_at: data.created_at || new Date().toISOString(),

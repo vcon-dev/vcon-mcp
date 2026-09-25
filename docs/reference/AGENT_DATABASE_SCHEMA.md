@@ -22,6 +22,8 @@ Typical extensions enabled (see early migrations):
 
 ## 2. Core vCon tables (normalized)
 
+Each of `vcons`, `parties`, `dialog`, `analysis`, `attachments` also has a nullable `extra JSONB` holding input keys with no column of their own; the reader merges it back and never returns `extra` itself.
+
 ### `vcons`
 
 Root row per vCon. Internal primary key is `id`; `uuid` is the vCon document UUID.
