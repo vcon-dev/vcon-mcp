@@ -1,10 +1,10 @@
 # API Reference
 
-Complete API documentation for the vCon MCP Server.
+API documentation for the vCon MCP Server.
 
 ## Overview
 
-The vCon MCP Server provides a comprehensive API for managing virtual conversations through the Model Context Protocol (MCP). All interfaces are fully compliant with [IETF vCon Core](https://datatracker.ietf.org/doc/html/draft-ietf-vcon-vcon-core-02) specification.
+The vCon MCP Server provides an API for managing virtual conversations through the Model Context Protocol (MCP) and an HTTP REST API. Both follow the [IETF vCon Core](https://datatracker.ietf.org/doc/html/draft-ietf-vcon-vcon-core-02) specification (syntax 0.4.0).
 
 For new MCP clients, start with the redesigned contract surface: `vcon_capabilities`, `vcon_taxonomy`, `vcon_search`, `vcon_fetch`, and `describe_response_shape`. The older tools remain available for backward compatibility and specialized workflows.
 
@@ -14,13 +14,13 @@ For new MCP clients, start with the redesigned contract surface: `vcon_capabilit
 
 ### 🌐 [REST API](./rest-api.md)
 
-Full HTTP REST API with parity to all MCP tools (30+ endpoints):
+HTTP REST API for ingestion and operations (46 routes). It covers most MCP functions but is not a full mirror: the contract tools (`vcon_search`, `vcon_fetch`, and the rest), `create_vcon_from_template`, and `get_smart_search_limits` have no REST route, and `POST /vcons/batch` and the discovery routes have no MCP tool. See the [comparison](./rest-api.md#comparison-rest-api-vs-mcp-tools).
 
 - **vCon CRUD** - Create, read, update, delete + batch ingest
 - **Discovery + Filtered Reads** - Discover live categories, then read by attachment `purpose` or analysis `type`
-- **Sub-resources** - Read or append analysis and attachments, append dialog
+- **Sub-resources** - Read analysis and attachments; add, replace, and remove parties, dialog, analysis, and attachments
 - **Tags** - Per-vCon tag management + tag discovery
-- **Search** - Keyword, semantic, and hybrid search
+- **Search** - Filtered list, plus keyword, semantic, and hybrid search
 - **Database** - Schema shape, stats, size, health monitoring
 - **Analytics** - Growth, content, tag, and attachment analytics
 - **Infrastructure** - Health, version, schema, examples
@@ -36,9 +36,10 @@ Full HTTP REST API with parity to all MCP tools (30+ endpoints):
 - **Redesigned Contract Tools** - Discovery-first search, fetch, and aggregation with predictable envelopes
 - **Core Operations** - Create, read, update, delete vCons
 - **Component Management** - Add, update, and remove parties, dialog, analysis, attachments
-- **Search & Query** - Keyword, semantic, and hybrid search
+- **Search & Query** - Metadata, keyword, semantic, and hybrid search
 - **Tag Management** - Organize with key-value metadata
 - **Database Tools** - Inspect and optimize database
+- **Database Analytics and Size Tools** - Growth, content, tag, and health reporting; size-aware limits
 - **Schema & Examples** - Get schemas and example vCons
 
 [View Tools Reference →](./tools.md)
@@ -118,23 +119,21 @@ PostgreSQL/Supabase schema:
 
 ```typescript
 const result = await callTool("create_vcon", {
-  vcon_data: {
-    vcon: "0.4.0",
-    subject: "Customer Support Call",
-    parties: [
-      {
-        name: "Agent Smith",
-        mailto: "smith@company.com"
-      },
-      {
-        name: "John Doe",
-        tel: "+1-555-1234"
-      }
-    ]
-  }
+  subject: "Customer Support Call",
+  parties: [
+    {
+      name: "Agent Smith",
+      mailto: "smith@company.com"
+    },
+    {
+      name: "John Doe",
+      tel: "+1-555-1234"
+    }
+  ]
 });
 
 console.log("Created vCon:", result.uuid);
+// result.warnings lists lawful basis findings; it is never blocking
 ```
 
 ### Search vCons
@@ -147,11 +146,9 @@ const capabilities = await callTool("vcon_capabilities", {});
 const results = await callTool("vcon_search", {
   mode: "keyword",
   query: "billing issue refund",
-  filters: {
-    tags: {
-      department: "support",
-      priority: "high"
-    }
+  tags: {
+    department: "support",
+    priority: "high"
   },
   include: ["core", "summary", "dealer", "tags"],
   limit: 20
@@ -211,10 +208,10 @@ const prompt = await getPrompt("find_by_exact_tags", {
 ┌───────────────▼─────────────────────────────────▼────────────┐
 │                     vCon MCP Server                          │
 │  ┌──────────────────────────┬───────────────────────────┐    │
-│  │   MCP Handlers           │   REST API (30+ routes)   │    │
-│  │  - Tools (30+)           │  - CRUD + sub-resources   │    │
+│  │   MCP Handlers           │   REST API (46 routes)    │    │
+│  │  - Tools (46)            │  - CRUD + sub-resources   │    │
 │  │  - Resources             │  - Tags + tag discovery   │    │
-│  │  - Prompts               │  - Search (3 modes)       │    │
+│  │  - Prompts               │  - Search (list + 3 modes)│    │
 │  │                          │  - Database + analytics   │    │
 │  │                          │  - Health, schema, docs   │    │
 │  └────────────┬─────────────┴────────────┬──────────────┘    │
@@ -260,13 +257,16 @@ const prompt = await getPrompt("find_by_exact_tags", {
 
 ### Search Modes
 
-| Mode | Best For | Performance | Accuracy |
-|------|----------|-------------|----------|
-| **Metadata** | Exact filters | Fast (~50ms) | Exact match |
-| **Keyword** | Specific words | Medium (~100ms) | High precision |
-| **Semantic** | Concepts/meaning | Slower (~200ms) | Contextual |
-| **Hybrid** | Best of both | Slower (~300ms) | Balanced |
-| **Tag** | Categories | Fast (~50ms) | Exact match |
+`vcon_search` takes four `mode` values. Tag filtering is a parameter on every mode, not a mode of its own.
+
+| Mode | Best For | Notes |
+|------|----------|-------|
+| **Metadata** | Exact filters on subject, parties, dates, dealer | Supports `filters` and `tags`; reports `page.total` |
+| **Keyword** | Specific words | Full-text; honours `tags` and the date filters |
+| **Semantic** | Concepts/meaning | Needs embeddings; honours `tags` and `threshold` |
+| **Hybrid** | Best of both | Keyword plus semantic, weighted by `semantic_weight` |
+
+For tag-only lookups, pass `tags` to `vcon_search` or call `search_by_tags`.
 
 ### Operations
 
@@ -285,11 +285,11 @@ const prompt = await getPrompt("find_by_exact_tags", {
 
 ### vCon Specification
 
-✅ **Draft IETF vCon Core 00**
+✅ **IETF vCon Core, draft -02 (syntax 0.4.0)**
 - All required fields supported
 - Optional extensions available
 - Group references implemented
-- Redaction/appending supported
+- Redaction and amendment supported (`redacted`, `amended`)
 
 ### MCP Protocol
 
@@ -340,6 +340,10 @@ CREATE POLICY "Users can view own vCons"
   USING (auth.uid() = user_id);
 ```
 
+### HTTP API Keys
+
+The REST API and the MCP HTTP endpoint share one set of API keys. `API_KEYS` grants full access, `API_KEYS_READONLY` grants read-only access, and `API_ANONYMOUS_READONLY=true` lets requests with no token read. Send the key as `Authorization: Bearer <token>`. See [REST API authentication](./rest-api.md#authentication).
+
 ### API Key Management
 
 For production deployments:
@@ -353,22 +357,42 @@ For production deployments:
 
 ## Error Handling
 
-All API responses include error information:
+Error format depends on the interface.
+
+**MCP legacy and CRUD tools** throw MCP protocol errors. The client receives a JSON-RPC error with a code and a message:
+
+| Code | Meaning |
+|------|---------|
+| `InvalidParams` | Bad or missing input, including schema and validation failures |
+| `InvalidRequest` | `delete_vcon` on a UUID that does not exist |
+| `MethodNotFound` | Unknown tool, or a tool disabled by configuration or a read-only key |
+| `InternalError` | Any other failure, reported as `Tool execution failed: <cause>` |
+
+**MCP contract tools** (`vcon_fetch`, `vcon_search`, `vcon_aggregate`, `vcon_graph_shape`, `describe_response_shape`) return failures as a normal result:
 
 ```typescript
-interface ErrorResponse {
+interface ContractErrorResponse {
+  ok: false;
+  error: {
+    code: string;     // INVALID_ARGUMENT, NOT_FOUND, FETCH_FAILED, SEARCH_FAILED,
+                      // AGGREGATE_FAILED, SHAPE_GRAPH_FAILED, RESPONSE_TOO_LARGE, UNKNOWN_TOOL
+    message: string;
+  };
+}
+```
+
+**REST API** errors use an HTTP status plus a JSON body, usually:
+
+```typescript
+interface RestErrorResponse {
   success: false;
-  error: string;
+  error: string;     // "Error" or "Internal Server Error"
+  message: string;
   details?: any;
 }
 ```
 
-### Common Error Codes
-
-- `VALIDATION_ERROR` - Invalid input parameters
-- `NOT_FOUND` - vCon or resource not found
-- `DATABASE_ERROR` - Database operation failed
-- `PERMISSION_DENIED` - Insufficient permissions
+Authentication failures (401, 403, 503) return `{ error, message }` without `success`. See [Tools: Error Responses](./tools.md#error-responses) and [REST API: Error Handling](./rest-api.md#error-handling).
 
 ---
 
@@ -376,7 +400,7 @@ interface ErrorResponse {
 
 ### API Version
 
-Current: **1.2.0**
+The server version is reported by `GET /api/v1/version`, the `X-Version` response header, and `/api/v1/health`.
 
 The API follows semantic versioning:
 - **Major** - Breaking changes
