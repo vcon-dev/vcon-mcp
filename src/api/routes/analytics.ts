@@ -9,7 +9,7 @@ import Router from '@koa/router';
 import type { Context } from 'koa';
 import { RestApiContext } from '../context.js';
 import { sendError, sendSuccess } from '../response.js';
-import { validateIntRange } from '../validation.js';
+import { validateDateField, validateIntRange } from '../validation.js';
 
 function parseBoolParam(value: unknown, defaultValue: boolean = true): boolean {
   if (value === 'false' || value === '0') return false;
@@ -53,6 +53,9 @@ export function createAnalyticsRoutes(apiContext: RestApiContext): Router {
 
   // ── GET /analytics/content — Content analytics ────────────────────────────
   router.get('/analytics/content', async (ctx: Context) => {
+    const { result: dateFieldResult, value: dateField } = validateDateField(ctx.query.date_field);
+    if (!dateFieldResult.valid) return sendError(ctx, 400, dateFieldResult.errors[0]);
+
     const result = await apiContext.dbAnalytics.getContentAnalytics({
       includeDialogAnalysis: parseBoolParam(ctx.query.include_dialog),
       includeAnalysisBreakdown: parseBoolParam(ctx.query.include_analysis),
@@ -61,6 +64,7 @@ export function createAnalyticsRoutes(apiContext: RestApiContext): Router {
       includeTemporalContent: parseBoolParam(ctx.query.include_temporal, false),
       startDate: ctx.query.start_date as string | undefined,
       endDate: ctx.query.end_date as string | undefined,
+      ...(dateField ? { dateField } : {}),
     });
     sendSuccess(ctx, { data: result });
   });

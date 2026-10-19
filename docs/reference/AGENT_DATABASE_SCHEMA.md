@@ -35,6 +35,7 @@ Root row per vCon. Internal primary key is `id`; `uuid` is the vCon document UUI
 | `vcon_version` | VARCHAR(10) | DB default from initial migration is still `'0.3.0'` unless changed; **application code targets `0.4.0`** |
 | `subject` | TEXT | |
 | `created_at`, `updated_at` | TIMESTAMPTZ | |
+| `conversation_start` | TIMESTAMPTZ | Earliest `dialog.start_time` / `attachments.start_time`, else `created_at`. Trigger-maintained; indexed. Target of search `date_field: "conversation"` |
 | `basename`, `filename` | TEXT | |
 | `done`, `corrupt` | BOOLEAN | |
 | `processed_by` | TEXT | |
@@ -49,7 +50,7 @@ Root row per vCon. Internal primary key is `id`; `uuid` is the vCon document UUI
 | `tenant_id` | TEXT | Multi-tenant scope; `NULL` can mean shared (see RLS) |
 | `subject_tsvector` | TSVECTOR | Materialized for FTS; maintained by trigger |
 
-**Triggers:** `sync_deprecated_fields_trigger` keeps `must_support`/`critical` and `appended`/`amended` aligned during transition.
+**Triggers:** `sync_deprecated_fields_trigger` keeps `must_support`/`critical` and `appended`/`amended` aligned during transition. `trg_vcons_conversation_start` (vcons) plus statement-level `trg_dialog_conversation_start_*` and `trg_attachments_conversation_start_*` keep `conversation_start` current.
 
 **Views:** `vcons_legacy` exposes old column names; `vcon_field_usage` shows which side is populated.
 

@@ -113,3 +113,25 @@ export function extractTags(vcon: VCon): Record<string, string> {
   const tagsAttachment = (vcon.attachments || []).find(isTagsAttachment);
   return parseTagsBody(tagsAttachment?.body);
 }
+
+/**
+ * When the conversation happened: the earliest dialog[].start or
+ * attachments[].start, else created_at. Same definition as the
+ * vcons.conversation_start column, computed from the loaded vCon so it needs
+ * no extra query (and no migration). Returns the winning value as stored;
+ * unparseable starts are skipped.
+ */
+export function conversationStartOf(vcon: VCon): string | undefined {
+  let best: string | undefined;
+  let bestMs = Infinity;
+  const consider = (value: unknown) => {
+    if (typeof value !== 'string' || value === '') return;
+    const ms = Date.parse(value);
+    if (Number.isNaN(ms) || ms >= bestMs) return;
+    best = value;
+    bestMs = ms;
+  };
+  for (const d of vcon.dialog ?? []) consider(d?.start);
+  for (const a of vcon.attachments ?? []) consider(a?.start);
+  return best ?? vcon.created_at;
+}

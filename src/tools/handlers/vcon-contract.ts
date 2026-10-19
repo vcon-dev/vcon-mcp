@@ -4,6 +4,8 @@ import { VCon, Attachment, Analysis } from '../../types/vcon.js';
 import { VCON_SHAPE_GRAPH_JSON_SCHEMA } from '../../types/vcon-shape-graph.js';
 import { generateEmbedding } from '../../utils/embeddings.js';
 import { normalizeDateString } from './validation.js';
+import { DATE_FIELDS, DateField } from '../../db/interfaces.js';
+import { conversationStartOf } from '../../utils/read-surfaces.js';
 import { extractErrorMessage } from '../../utils/errors.js';
 
 const VALID_FETCH_INCLUDES = [
@@ -58,11 +60,21 @@ function pickCore(vcon: VCon) {
     id: vcon.uuid,
     vcon_version: vcon.vcon ?? '0.4.0',
     created_at: vcon.created_at,
+    conversation_start: conversationStartOf(vcon),
     updated_at: vcon.updated_at,
     subject: vcon.subject,
     extensions: vcon.extensions,
     critical: vcon.critical,
   };
+}
+
+/** filters.date_field: undefined when absent, `{ invalid }` when not a DATE_FIELDS value. */
+function parseFiltersDateField(value: unknown): DateField | undefined | { invalid: string } {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value === 'string' && (DATE_FIELDS as readonly string[]).includes(value)) {
+    return value as DateField;
+  }
+  return { invalid: `filters.date_field must be one of: ${DATE_FIELDS.join(', ')}` };
 }
 
 function validateSearchMode(value: unknown): SearchMode {
@@ -229,6 +241,10 @@ const SHAPE_DESCRIPTORS: Record<string, ShapeDescriptor> = {
             id: { type: 'string' },
             vcon_version: { type: 'string' },
             created_at: { type: 'string' },
+            conversation_start: {
+              type: 'string',
+              description: 'Earliest dialog or attachment start, else created_at. What filters.date_field="conversation" matches on.',
+            },
             updated_at: { type: ['string', 'null'] },
             subject: { type: ['string', 'null'] },
             parties: { type: 'array' },
@@ -252,6 +268,7 @@ const SHAPE_DESCRIPTORS: Record<string, ShapeDescriptor> = {
         id: '11111111-1111-1111-1111-111111111111',
         vcon_version: '0.4.0',
         created_at: '2026-05-11T14:00:00Z',
+        conversation_start: '2026-05-11T13:52:10Z',
         subject: 'Upset customer call',
         parties: [{ name: 'Customer' }, { name: 'Agent' }],
         summary: [
@@ -422,6 +439,8 @@ const SHAPE_DESCRIPTORS: Record<string, ShapeDescriptor> = {
             required: ['id'],
             properties: {
               id: { type: 'string' },
+              created_at: { type: 'string' },
+              conversation_start: { type: 'string' },
               subject: { type: ['string', 'null'] },
               summary: { type: 'array' },
               dealer: { type: ['object', 'null'] },
@@ -856,6 +875,11 @@ export class VConCapabilitiesHandler extends BaseToolHandler {
         supported_include: VALID_FETCH_INCLUDES,
         default_limit: 25,
         max_limit: 100,
+        date_fields: DATE_FIELDS,
+        default_date_field: 'created',
+        date_field_semantics:
+          'filters.start_date/end_date apply to filters.date_field: "created" (vCon created_at, the default) or ' +
+          '"conversation" (earliest dialog or attachment start, else created_at). Use "conversation" for imported history.',
         recommended_patterns: [
           'Use tags.portal filters before semantic search for upset-customer and bad-call experiences.',
           'Use include=["core","summary","dealer"] for browse views that need dealer context.',
@@ -915,6 +939,15 @@ export class VConSearchHandler extends BaseToolHandler {
     }
 
     const include = includeResult;
+    const dateFieldResult = parseFiltersDateField(args?.filters?.date_field);
+    if (typeof dateFieldResult === 'object') {
+      return this.createErrorEnvelopeResponse({
+        code: 'INVALID_ARGUMENT',
+        message: dateFieldResult.invalid,
+        valid_values: [...DATE_FIELDS],
+      });
+    }
+    const dateField = dateFieldResult;
     const tags = args?.tags as Record<string, string> | undefined;
     const filters = {
       subject: args?.filters?.subject as string | undefined,
@@ -923,6 +956,7 @@ export class VConSearchHandler extends BaseToolHandler {
       partyTel: args?.filters?.party_tel as string | undefined,
       startDate: normalizeDateString(args?.filters?.start_date as string | undefined),
       endDate: normalizeDateString(args?.filters?.end_date as string | undefined),
+      ...(dateField ? { dateField } : {}),
       tags,
       dealerId: args?.filters?.dealer_id != null ? String(args.filters.dealer_id) : undefined,
       dealerName: args?.filters?.dealer_name as string | undefined,
@@ -967,6 +1001,7 @@ export class VConSearchHandler extends BaseToolHandler {
           query,
           startDate: filters.startDate,
           endDate: filters.endDate,
+          ...(dateField ? { dateField } : {}),
           tags,
           limit: fetchLimit,
         });
@@ -974,6 +1009,7 @@ export class VConSearchHandler extends BaseToolHandler {
           query,
           startDate: filters.startDate,
           endDate: filters.endDate,
+          ...(dateField ? { dateField } : {}),
           tags,
         });
 
@@ -1268,12 +1304,21 @@ export class VConAggregateHandler extends BaseToolHandler {
     );
     const startDate = normalizeDateString(args?.filters?.start_date as string | undefined);
     const endDate = normalizeDateString(args?.filters?.end_date as string | undefined);
+    const dateField = parseFiltersDateField(args?.filters?.date_field);
+    if (typeof dateField === 'object') {
+      return this.createErrorEnvelopeResponse({
+        code: 'INVALID_ARGUMENT',
+        message: dateField.invalid,
+        valid_values: [...DATE_FIELDS],
+      });
+    }
 
     try {
       const rows = await context.queries.aggregateVconsByDealerStats({
         tagFilter: tags,
         startDate,
         endDate,
+        ...(dateField ? { dateField } : {}),
         minBaseline,
         limit,
       });

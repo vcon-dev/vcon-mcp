@@ -5,6 +5,8 @@
  * Route handlers check the result and set appropriate HTTP status codes.
  */
 
+import { DATE_FIELDS, DateField } from '../db/interfaces.js';
+
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface ValidationResult {
@@ -113,6 +115,25 @@ export function validateResponseFormat(
     };
   }
   return { result: ok(), value };
+}
+
+/**
+ * Validate the optional date_field query parameter ('created' | 'conversation').
+ * Absent or empty yields undefined, which the query layer treats as 'created'.
+ */
+export function validateDateField(
+  value: unknown
+): { result: ValidationResult; value: DateField | undefined } {
+  if (value === undefined || value === null || value === '') {
+    return { result: ok(), value: undefined };
+  }
+  if (typeof value !== 'string' || !(DATE_FIELDS as readonly string[]).includes(value)) {
+    return {
+      result: fail(`date_field must be one of: ${DATE_FIELDS.join(', ')}`),
+      value: undefined,
+    };
+  }
+  return { result: ok(), value: value as DateField };
 }
 
 /**

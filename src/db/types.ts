@@ -1,3 +1,4 @@
+import type { DateField } from './interfaces.js';
 
 /**
  * Database Inspector Interface
@@ -75,6 +76,8 @@ export interface ContentAnalyticsOptions {
     includeTemporalContent?: boolean;
     startDate?: string;
     endDate?: string;
+    /** Column the date range applies to. Omitted means `created` (vcons.created_at). */
+    dateField?: DateField;
 }
 
 export interface DatabaseHealthOptions {

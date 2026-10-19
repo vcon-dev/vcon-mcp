@@ -87,6 +87,8 @@ export interface SearchCriteria {
   partyTel?: string;
   startDate?: string;
   endDate?: string;
+  /** Column startDate/endDate apply to; omitted means 'created'. */
+  dateField?: 'created' | 'conversation';
   limit?: number;
   [key: string]: any;
 }

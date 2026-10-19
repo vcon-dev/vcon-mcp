@@ -425,6 +425,7 @@ export const searchVConsTool = {
   description: 'Search for vCons using various criteria including tags, date ranges, and party info. Returns matching vCons. ' +
     'For full-text or semantic search of conversation content, use search_vcons_content instead. ' +
     'For daily reports: use start_date/end_date with response_format="metadata" to get subjects and counts without loading bodies. ' +
+    'Dates filter on created_at by default; pass date_field="conversation" to filter on when the conversation happened (imported history). ' +
     '⚠️ LARGE DATABASE WARNING: Use response_format="metadata" or "ids_only" for large result sets to avoid memory issues.',
   inputSchema: {
     type: 'object' as const,
@@ -447,11 +448,19 @@ export const searchVConsTool = {
       },
       start_date: {
         type: 'string',
-        description: 'Filter by vCons created on or after this date (ISO 8601 format)'
+        description: 'Filter by vCons dated on or after this date (ISO 8601 format). The date is created_at unless date_field="conversation".'
       },
       end_date: {
         type: 'string',
-        description: 'Filter by vCons created on or before this date (ISO 8601 format)'
+        description: 'Filter by vCons dated on or before this date (ISO 8601 format). The date is created_at unless date_field="conversation".'
+      },
+      date_field: {
+        type: 'string',
+        enum: ['created', 'conversation'],
+        description: 'Which timestamp start_date/end_date apply to. "created" (default): vcon created_at, when the vCon object was created. ' +
+          '"conversation": when the conversation happened, the earliest dialog or attachment start (falls back to created_at). ' +
+          'Use "conversation" for imported historical conversations, whose created_at is the import time.',
+        default: 'created'
       },
       tags: {
         type: 'object',
@@ -500,11 +509,19 @@ export const searchVConsContentTool = {
       },
       start_date: {
         type: 'string',
-        description: 'Filter by vCons created on or after this date (ISO 8601 format)'
+        description: 'Filter by vCons dated on or after this date (ISO 8601 format). The date is created_at unless date_field="conversation".'
       },
       end_date: {
         type: 'string',
-        description: 'Filter by vCons created on or before this date (ISO 8601 format)'
+        description: 'Filter by vCons dated on or before this date (ISO 8601 format). The date is created_at unless date_field="conversation".'
+      },
+      date_field: {
+        type: 'string',
+        enum: ['created', 'conversation'],
+        description: 'Which timestamp start_date/end_date apply to. "created" (default): vcon created_at, when the vCon object was created. ' +
+          '"conversation": when the conversation happened, the earliest dialog or attachment start (falls back to created_at). ' +
+          'Use "conversation" for imported historical conversations, whose created_at is the import time.',
+        default: 'created'
       },
       tags: {
         type: 'object',

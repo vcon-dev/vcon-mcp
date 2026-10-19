@@ -571,11 +571,12 @@ List and filter vCons. Results are paginated with `limit` and `offset`.
 | `party_name` | string | | Case-insensitive partial match |
 | `party_email` | string | | Party email |
 | `party_tel` | string | | Party telephone number |
-| `start_date` | string | | Created on or after. `YYYY-MM-DD` is read as midnight UTC |
-| `end_date` | string | | Created on or before |
+| `start_date` | string | | On or after. `YYYY-MM-DD` is read as midnight UTC |
+| `end_date` | string | | On or before |
+| `date_field` | string | `created` | Date the window applies to: `created` (`created_at`) or `conversation` (earliest dialog or attachment start, else `created_at`) |
 | `tags` | JSON string | | URL-encoded JSON object, for example `{"department":"sales"}` |
 
-An invalid `limit`, `offset`, `format`, or `tags` value returns `400`.
+An invalid `limit`, `offset`, `format`, `tags`, or `date_field` value returns `400`.
 
 **Response (200 OK):**
 
@@ -731,7 +732,7 @@ Search routes sit under `/vcons/search/` and are matched before `/vcons/:uuid`.
 
 | Endpoint | Query parameters | Response |
 |----------|------------------|----------|
-| `GET /vcons/search/content` | `q` (required), `format` (`snippets` default, `metadata`, `ids_only`, `full`), `limit` (1 to 1000, default 50), `tags`, `start_date`, `end_date`, `include_count=true` | `{ success, count, response_format, results, total_count? }`, with the same row shapes as `search_vcons_content` |
+| `GET /vcons/search/content` | `q` (required), `format` (`snippets` default, `metadata`, `ids_only`, `full`), `limit` (1 to 1000, default 50), `tags`, `start_date`, `end_date`, `date_field`, `include_count=true` | `{ success, count, response_format, results, total_count? }`, with the same row shapes as `search_vcons_content` |
 | `GET /vcons/search/semantic` | `q` or `embedding` (URL-encoded JSON array of 384 numbers), `threshold` (0 to 1, default 0.7), `limit` (1 to 1000, default 50), `tags` | `{ success, count, results }` with rows `{ vcon_id, content_type, content_reference, content_text, similarity_score }` |
 | `GET /vcons/search/hybrid` | `q` (required), `semantic_weight` (0 to 1, default 0.6), `limit` (1 to 1000, default 50), `tags` | `{ success, count, results }` with rows `{ vcon_id, combined_score, semantic_score, keyword_score }` |
 
@@ -754,7 +755,7 @@ All are `GET` except `POST /database/analyze`. Responses are `{ success: true, d
 | `POST /database/analyze` | Body `{ "query": "SELECT ...", "mode": "explain" \| "explain_analyze" }`. Only `SELECT` is accepted; anything else returns `400` |
 | `GET /analytics` | `months_back` (1 to 60, default 12), `include_growth`, `include_content`, `include_attachments`, `include_tags`, `include_health` (all true) |
 | `GET /analytics/growth` | `months_back` (1 to 60, default 12), `granularity` (`monthly` default, `weekly`, `daily`), `include_projections` (true) |
-| `GET /analytics/content` | `start_date`, `end_date`, `include_dialog`, `include_analysis`, `include_parties`, `include_metrics` (true), `include_temporal` (false) |
+| `GET /analytics/content` | `start_date`, `end_date`, `date_field`, `include_dialog`, `include_analysis`, `include_parties`, `include_metrics` (true), `include_temporal` (false) |
 | `GET /analytics/tags` | `top_n` (1 to 100, default 20), `min_count` (1 to 100000, default 1), `include_frequency` (true), `include_distribution` (true), `include_trends` (false) |
 | `GET /analytics/attachments` | `top_n` (1 to 50, default 10), `include_sizes` (true), `include_types` (true), `include_temporal` (false) |
 

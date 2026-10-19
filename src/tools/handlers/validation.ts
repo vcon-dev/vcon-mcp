@@ -16,6 +16,7 @@ import {
 } from '../../utils/validation.js';
 import { Attachment, Dialog, Analysis, Party } from '../../types/vcon.js';
 import { isValidEncoding } from '../../types/vcon.js';
+import { DATE_FIELDS, DateField } from '../../db/interfaces.js';
 
 /**
  * Validate UUID and throw McpError if invalid
@@ -200,6 +201,16 @@ export function requireOneOf<T>(value: any, paramName: string, allowedValues: re
     );
   }
   return value;
+}
+
+/**
+ * Parse the optional `date_field` search argument. Absent or empty returns
+ * undefined, which every query treats as `created` (vcons.created_at).
+ * Anything else outside DATE_FIELDS is an InvalidParams error.
+ */
+export function parseDateField(value: unknown, paramName: string = 'date_field'): DateField | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  return requireOneOf<DateField>(value, paramName, DATE_FIELDS);
 }
 
 /**
