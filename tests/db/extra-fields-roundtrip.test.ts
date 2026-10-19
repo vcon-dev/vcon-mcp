@@ -110,6 +110,37 @@ describe('store/read round trip (CON-1047)', () => {
     expect(row.extra).toBeNull();
   });
 
+  // CON-1242: session_id (JSONB column) round-trips in each accepted shape.
+  it('round-trips session_id as object, array, or legacy string', () => {
+    const sid = { local: 'aaaa1111', remote: 'bbbb2222' };
+    const input = {
+      ...fixture,
+      dialog: [
+        { type: 'recording', parties: [0, 1], session_id: sid },
+        { type: 'recording', parties: [0, 1], session_id: [sid, { local: 'cccc3333', remote: 'dddd4444' }] },
+        { type: 'text', parties: [0], body: 'x', encoding: 'none', session_id: 'legacy-session' },
+      ],
+    } as unknown as VCon;
+    const rows = buildDialogRows(input);
+    expect(rows[0].session_id).toEqual(sid);
+    expect(rows[0].extra).toBeNull();
+    const out = roundTrip(input);
+    expect(out.dialog![0].session_id).toEqual(sid);
+    expect(out.dialog![1].session_id).toEqual(input.dialog![1].session_id);
+    expect(out.dialog![2].session_id).toBe('legacy-session');
+  });
+
+  it('reads an existing string session_id row back as a string', () => {
+    const out = assembleVCon(
+      { uuid: fixture.uuid, created_at: fixture.created_at },
+      [],
+      [{ type: 'text', body: 'x', encoding: 'none', session_id: 'sess-0.3.0' }],
+      [],
+      []
+    );
+    expect(out.dialog![0].session_id).toBe('sess-0.3.0');
+  });
+
   it('reads rows written before the extra column as it always did', () => {
     const out = assembleVCon(
       { uuid: fixture.uuid, created_at: fixture.created_at },

@@ -538,6 +538,28 @@ describe('vCon CRUD Handlers', () => {
       }));
     });
 
+    // CON-1242: adapters emit the 0.4.0 SessionId object; add_dialog rejected it.
+    it('accepts a SessionId object session_id and forwards it unchanged', async () => {
+      const handler = new AddDialogHandler();
+      const uuid = randomUUID();
+      const session_id = { local: 'aaaa1111', remote: 'bbbb2222' };
+      mockQueries.addDialog.mockResolvedValue(undefined);
+
+      await handler.handle({ vcon_uuid: uuid, dialog: { type: 'recording', session_id } }, mockContext);
+
+      expect(mockQueries.addDialog).toHaveBeenCalledWith(uuid, expect.objectContaining({ session_id }));
+    });
+
+    it('still accepts a legacy string session_id', async () => {
+      const handler = new AddDialogHandler();
+      const uuid = randomUUID();
+      mockQueries.addDialog.mockResolvedValue(undefined);
+
+      await handler.handle({ vcon_uuid: uuid, dialog: { type: 'text', session_id: 'sess-1' } }, mockContext);
+
+      expect(mockQueries.addDialog).toHaveBeenCalledWith(uuid, expect.objectContaining({ session_id: 'sess-1' }));
+    });
+
     it('rejects a non-string body when encoding is base64url', async () => {
       const handler = new AddDialogHandler();
       await expect(handler.handle({
@@ -642,6 +664,16 @@ describe('vCon CRUD Handlers', () => {
         { vcon_uuid: randomUUID(), index: 9, dialog: { type: 'text' } },
         mockContext
       )).rejects.toThrow(McpError);
+    });
+
+    it('accepts a SessionId object session_id (CON-1242)', async () => {
+      const uuid = randomUUID();
+      const session_id = [{ local: 'aaaa1111', remote: 'bbbb2222' }];
+      await new UpdateDialogHandler().handle(
+        { vcon_uuid: uuid, index: 0, dialog: { type: 'text', session_id } },
+        mockContext
+      );
+      expect(mockQueries.updateDialog).toHaveBeenCalledWith(uuid, 0, expect.objectContaining({ session_id }));
     });
 
     it('preserves party_history (DialogSchema must not strip it)', async () => {

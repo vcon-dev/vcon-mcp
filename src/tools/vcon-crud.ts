@@ -51,6 +51,31 @@ function refineJsonBody(val: { body?: unknown; encoding?: string }, ctx: z.Refin
 }
 
 /**
+ * Dialog session_id (draft-ietf-vcon-vcon-core-02 Section 4.3.10, syntax 0.4.0):
+ * a SessionId object {local, remote}, or an array of them.
+ *
+ * Legacy decision (CON-1242): a plain string, the pre-0.4.0 form, is still
+ * accepted. The corpus mixes 0.3.0 and 0.4.0 vCons and older writers emit
+ * strings, so rejecting them would break re-imports and updates of existing
+ * records. The string is stored and returned as-is; it is never rewritten
+ * into an invented {local, remote} object. Unknown keys on the object are
+ * kept (passthrough) rather than silently dropped.
+ */
+const SessionIdObjectSchema = z.object({
+  local: z.string().describe('Local UUID (RFC 7989)'),
+  remote: z.string().describe('Remote UUID (RFC 7989)'),
+}).passthrough();
+
+const SessionIdSchema = z.union([
+  SessionIdObjectSchema,
+  z.array(SessionIdObjectSchema),
+  z.string(),
+]).optional().describe(
+  'SessionId object {local, remote} or an array of them (vCon 0.4.0). ' +
+  'A plain string is accepted as the legacy pre-0.4.0 form and stored verbatim.'
+);
+
+/**
  * Analysis Schema
  * ✅ CRITICAL CORRECTIONS:
  * - Uses 'schema' field (NOT 'schema_version')
@@ -95,7 +120,7 @@ export const DialogSchema = z.object({
   url: z.string().optional(),
   content_hash: z.union([z.string(), z.array(z.string())]).optional(),
   disposition: z.string().optional().describe('Call disposition; any string accepted (spec suggests no-answer, congestion, failed, busy, hung-up, voicemail-no-message)'),
-  session_id: z.string().optional().describe('Session identifier'),  // ✅ New field
+  session_id: SessionIdSchema,
   application: z.string().optional().describe('Application that created this dialog'),  // ✅ New field
   message_id: z.string().optional().describe('Message identifier'),  // ✅ New field
   // party_history must be in the schema or update_dialog would strip it and always clear existing history.
@@ -197,6 +222,25 @@ const BODY_PROP = {
     '(object, array, number, string, boolean, or null) is accepted as-is.',
 } as const;
 
+// session_id: SessionId object or array (0.4.0), or a legacy string (see SessionIdSchema).
+const SESSION_ID_OBJECT = {
+  type: 'object',
+  properties: {
+    local: { type: 'string', description: 'Local UUID (RFC 7989)' },
+    remote: { type: 'string', description: 'Remote UUID (RFC 7989)' },
+  },
+  required: ['local', 'remote'],
+} as const;
+const SESSION_ID_PROP = {
+  oneOf: [
+    SESSION_ID_OBJECT,
+    { type: 'array', items: SESSION_ID_OBJECT },
+    { type: 'string' },
+  ],
+  description: 'SessionId object {local, remote} or an array of them (vCon 0.4.0). ' +
+    'A plain string is accepted as the legacy pre-0.4.0 form and stored verbatim.',
+} as const;
+
 const PARTY_HISTORY_PROP = {
   type: 'array',
   description: 'Party join/drop/hold/mute events',
@@ -245,7 +289,7 @@ const dialogProperties = {
   url: { type: 'string', description: 'URL to external content' },
   content_hash: { oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] },
   disposition: { type: 'string' },
-  session_id: { type: 'string' },
+  session_id: SESSION_ID_PROP,
   application: { type: 'string' },
   message_id: { type: 'string' },
   party_history: PARTY_HISTORY_PROP,
@@ -713,10 +757,7 @@ export const addDialogTool = {
             type: 'string',
             description: 'MIME type of the content'
           },
-          session_id: {
-            type: 'string',
-            description: 'Session identifier for this dialog'
-          },
+          session_id: SESSION_ID_PROP,
           application: {
             type: 'string',
             description: 'Application that created this dialog'

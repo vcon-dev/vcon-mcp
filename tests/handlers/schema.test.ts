@@ -61,6 +61,17 @@ describe('Schema Handlers', () => {
       expect(response.definitions?.VCon?.properties?.parties).toBeDefined();
     });
 
+    it('describes dialog session_id as a SessionId object, array, or legacy string (CON-1242)', async () => {
+      const result = await new GetSchemaHandler().handle({ format: 'json_schema' }, mockContext);
+      const text = result.content[0].text;
+      const response = JSON.parse(text);
+      const sid = response.definitions.VCon.properties.dialog.items.properties.session_id;
+      const variants = sid.anyOf ?? sid.oneOf;
+      expect(variants.map((v: any) => v.type)).toEqual(expect.arrayContaining(['object', 'array', 'string']));
+      const obj = variants.find((v: any) => v.type === 'object');
+      expect(obj.required).toEqual(expect.arrayContaining(['local', 'remote']));
+    });
+
     it('should return TypeScript format when requested', async () => {
       const handler = new GetSchemaHandler();
       const result = await handler.handle({
