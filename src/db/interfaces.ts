@@ -11,8 +11,9 @@ import type { VconShapeGraphPayload } from '../types/vcon-shape-graph.js';
 /**
  * Which vCon timestamp start/end date filters apply to.
  * - `created`: vcons.created_at, when the vCon object was created (default).
- * - `conversation`: vcons.conversation_start, the earliest dialog or attachment
- *   `start`, falling back to created_at. Use this for imported historical
+ * - `conversation`: vcons.conversation_start, the earliest dialog start, else the
+ *   earliest attachment start capped at created_at, else created_at (starts before
+ *   1990 are ignored as placeholders). Use this for imported historical
  *   conversations, whose created_at is the ingest time.
  */
 export type DateField = 'created' | 'conversation';

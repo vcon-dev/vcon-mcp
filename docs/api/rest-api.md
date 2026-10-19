@@ -573,7 +573,7 @@ List and filter vCons. Results are paginated with `limit` and `offset`.
 | `party_tel` | string | | Party telephone number |
 | `start_date` | string | | On or after. `YYYY-MM-DD` is read as midnight UTC |
 | `end_date` | string | | On or before |
-| `date_field` | string | `created` | Date the window applies to: `created` (`created_at`) or `conversation` (earliest dialog or attachment start, else `created_at`) |
+| `date_field` | string | `created` | Date the window applies to: `created` (`created_at`) or `conversation` (earliest dialog start, else earliest attachment start capped at `created_at`, else `created_at`; starts before 1990 ignored) |
 | `tags` | JSON string | | URL-encoded JSON object, for example `{"department":"sales"}` |
 
 An invalid `limit`, `offset`, `format`, `tags`, or `date_field` value returns `400`.

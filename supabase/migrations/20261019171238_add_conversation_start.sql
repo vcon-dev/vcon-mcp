@@ -8,9 +8,19 @@
 -- The conversation time lives in dialog[].start (dialog.start_time) and
 -- attachments[].start (attachments.start_time).
 --
---   conversation_start = earliest of every dialog.start_time and
---                        attachments.start_time for the vCon,
---                        else vcons.created_at.
+-- Rule ("plausible" start = start_time >= 1990-01-01T00:00:00Z; earlier values,
+-- such as 1970 epoch placeholders, are ignored, as are NULLs):
+--
+--   1. any dialog row has a plausible start -> min(dialog start)
+--   2. else any attachment has one          -> LEAST(min(attachment start), created_at)
+--   3. else                                 -> created_at
+--
+--   i.e. COALESCE(dialog_min, LEAST(attachment_min, created_at))
+--
+-- Attachment starts are capped at created_at because some vCon libraries stamp
+-- every attachment's start with the write time, so enrichment attachments
+-- added later would otherwise push conversation_start past created_at. Dialog
+-- starts are taken as-is: they are the conversation.
 --
 -- Search RPCs gain an optional `date_field` parameter ('created' default,
 -- 'conversation') that selects which column start/end dates apply to. Callers
@@ -47,7 +57,7 @@
 ALTER TABLE vcons ADD COLUMN IF NOT EXISTS conversation_start TIMESTAMPTZ;
 
 COMMENT ON COLUMN vcons.conversation_start IS
-  'Earliest dialog.start_time / attachments.start_time for this vCon, else created_at. Maintained by triggers; do not write directly.';
+  'COALESCE(min dialog.start_time, LEAST(min attachments.start_time, created_at)), ignoring starts before 1990-01-01. Maintained by triggers; do not write directly.';
 
 -- ============================================================================
 -- 2. Recompute helper
@@ -75,11 +85,13 @@ BEGIN
       FROM (
         SELECT v2.id,
                COALESCE(
+                 (SELECT min(d.start_time) FROM %1$I.dialog d
+                   WHERE d.vcon_id = v2.id AND d.start_time >= '1990-01-01T00:00:00Z'),
                  LEAST(
-                   (SELECT min(d.start_time) FROM %1$I.dialog d WHERE d.vcon_id = v2.id),
-                   (SELECT min(a.start_time) FROM %1$I.attachments a WHERE a.vcon_id = v2.id)
-                 ),
-                 v2.created_at
+                   (SELECT min(a.start_time) FROM %1$I.attachments a
+                     WHERE a.vcon_id = v2.id AND a.start_time >= '1990-01-01T00:00:00Z'),
+                   v2.created_at
+                 )
                ) AS new_start
           FROM %1$I.vcons v2
          WHERE v2.id = ANY($1)
@@ -99,7 +111,8 @@ LANGUAGE plpgsql
 SECURITY INVOKER
 AS $$
 DECLARE
-  child_start TIMESTAMPTZ;
+  dialog_start TIMESTAMPTZ;
+  attachment_start TIMESTAMPTZ;
 BEGIN
   IF TG_OP = 'INSERT' THEN
     -- Children reference vcons(id), so none exist yet. An upsert that hits
@@ -114,13 +127,14 @@ BEGIN
   END IF;
 
   EXECUTE format($f$
-    SELECT LEAST(
-      (SELECT min(d.start_time) FROM %1$I.dialog d WHERE d.vcon_id = $1),
-      (SELECT min(a.start_time) FROM %1$I.attachments a WHERE a.vcon_id = $1)
-    )
-  $f$, TG_TABLE_SCHEMA) INTO child_start USING NEW.id;
+    SELECT
+      (SELECT min(d.start_time) FROM %1$I.dialog d
+        WHERE d.vcon_id = $1 AND d.start_time >= '1990-01-01T00:00:00Z'),
+      (SELECT min(a.start_time) FROM %1$I.attachments a
+        WHERE a.vcon_id = $1 AND a.start_time >= '1990-01-01T00:00:00Z')
+  $f$, TG_TABLE_SCHEMA) INTO dialog_start, attachment_start USING NEW.id;
 
-  NEW.conversation_start := COALESCE(child_start, NEW.created_at);
+  NEW.conversation_start := COALESCE(dialog_start, LEAST(attachment_start, NEW.created_at));
   RETURN NEW;
 END;
 $$;
@@ -208,19 +222,24 @@ CREATE TRIGGER trg_attachments_conversation_start_del
 -- 5. Backfill and index
 -- ============================================================================
 -- One set-based pass. Rows already correct (a re-run) are skipped.
-WITH child AS (
-  SELECT s.vcon_id, min(s.start_time) AS first_start
-    FROM (
-      SELECT vcon_id, start_time FROM dialog WHERE start_time IS NOT NULL
-      UNION ALL
-      SELECT vcon_id, start_time FROM attachments WHERE start_time IS NOT NULL
-    ) s
-   GROUP BY s.vcon_id
+WITH dmin AS (
+  SELECT vcon_id, min(start_time) AS first_start
+    FROM dialog
+   WHERE start_time >= '1990-01-01T00:00:00Z'
+   GROUP BY vcon_id
+),
+amin AS (
+  SELECT vcon_id, min(start_time) AS first_start
+    FROM attachments
+   WHERE start_time >= '1990-01-01T00:00:00Z'
+   GROUP BY vcon_id
 ),
 target AS (
-  SELECT v.id, COALESCE(c.first_start, v.created_at) AS new_start
+  SELECT v.id,
+         COALESCE(d.first_start, LEAST(a.first_start, v.created_at)) AS new_start
     FROM vcons v
-    LEFT JOIN child c ON c.vcon_id = v.id
+    LEFT JOIN dmin d ON d.vcon_id = v.id
+    LEFT JOIN amin a ON a.vcon_id = v.id
 )
 UPDATE vcons v
    SET conversation_start = t.new_start

@@ -114,24 +114,40 @@ export function extractTags(vcon: VCon): Record<string, string> {
   return parseTagsBody(tagsAttachment?.body);
 }
 
+/** Starts before this are placeholders (1970 epoch defaults and the like), not conversation times. */
+const PLAUSIBLE_START_MS = Date.parse('1990-01-01T00:00:00Z');
+
+/** Earliest plausible start among `values`, returned as stored; undefined if none. */
+function earliestStart(values: unknown[]): { value: string; ms: number } | undefined {
+  let best: { value: string; ms: number } | undefined;
+  for (const value of values) {
+    if (typeof value !== 'string' || value === '') continue;
+    const ms = Date.parse(value);
+    if (Number.isNaN(ms) || ms < PLAUSIBLE_START_MS) continue;
+    if (!best || ms < best.ms) best = { value, ms };
+  }
+  return best;
+}
+
 /**
- * When the conversation happened: the earliest dialog[].start or
- * attachments[].start, else created_at. Same definition as the
- * vcons.conversation_start column, computed from the loaded vCon so it needs
- * no extra query (and no migration). Returns the winning value as stored;
- * unparseable starts are skipped.
+ * When the conversation happened. Same rule as the vcons.conversation_start
+ * column (migration 20261019171238), computed from the loaded vCon so it needs
+ * no extra query and no migration:
+ *
+ *   1. earliest plausible dialog[].start, if any
+ *   2. else earliest plausible attachments[].start, capped at created_at
+ *      (some libraries stamp attachment start with the write time)
+ *   3. else created_at
+ *
+ * Starts before 1990-01-01 and unparseable values are ignored. The winning
+ * value is returned as stored.
  */
 export function conversationStartOf(vcon: VCon): string | undefined {
-  let best: string | undefined;
-  let bestMs = Infinity;
-  const consider = (value: unknown) => {
-    if (typeof value !== 'string' || value === '') return;
-    const ms = Date.parse(value);
-    if (Number.isNaN(ms) || ms >= bestMs) return;
-    best = value;
-    bestMs = ms;
-  };
-  for (const d of vcon.dialog ?? []) consider(d?.start);
-  for (const a of vcon.attachments ?? []) consider(a?.start);
-  return best ?? vcon.created_at;
+  const dialog = earliestStart((vcon.dialog ?? []).map(d => d?.start));
+  if (dialog) return dialog.value;
+  const attachment = earliestStart((vcon.attachments ?? []).map(a => a?.start));
+  if (!attachment) return vcon.created_at;
+  const createdMs = vcon.created_at ? Date.parse(vcon.created_at) : NaN;
+  if (!Number.isNaN(createdMs) && createdMs < attachment.ms) return vcon.created_at;
+  return attachment.value;
 }

@@ -35,7 +35,7 @@ Root row per vCon. Internal primary key is `id`; `uuid` is the vCon document UUI
 | `vcon_version` | VARCHAR(10) | DB default from initial migration is still `'0.3.0'` unless changed; **application code targets `0.4.0`** |
 | `subject` | TEXT | |
 | `created_at`, `updated_at` | TIMESTAMPTZ | |
-| `conversation_start` | TIMESTAMPTZ | Earliest `dialog.start_time` / `attachments.start_time`, else `created_at`. Trigger-maintained; indexed. Target of search `date_field: "conversation"` |
+| `conversation_start` | TIMESTAMPTZ | `COALESCE(min dialog.start_time, LEAST(min attachments.start_time, created_at))`, ignoring starts before 1990-01-01. Trigger-maintained; indexed; verified by `supabase/tests/conversation_start.sql`. Target of search `date_field: "conversation"` |
 | `basename`, `filename` | TEXT | |
 | `done`, `corrupt` | BOOLEAN | |
 | `processed_by` | TEXT | |

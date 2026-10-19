@@ -243,7 +243,7 @@ const SHAPE_DESCRIPTORS: Record<string, ShapeDescriptor> = {
             created_at: { type: 'string' },
             conversation_start: {
               type: 'string',
-              description: 'Earliest dialog or attachment start, else created_at. What filters.date_field="conversation" matches on.',
+              description: 'Earliest dialog start, else earliest attachment start capped at created_at, else created_at. What filters.date_field="conversation" matches on.',
             },
             updated_at: { type: ['string', 'null'] },
             subject: { type: ['string', 'null'] },
@@ -879,7 +879,7 @@ export class VConCapabilitiesHandler extends BaseToolHandler {
         default_date_field: 'created',
         date_field_semantics:
           'filters.start_date/end_date apply to filters.date_field: "created" (vCon created_at, the default) or ' +
-          '"conversation" (earliest dialog or attachment start, else created_at). Use "conversation" for imported history.',
+          '"conversation" (earliest dialog start, else earliest attachment start capped at created_at, else created_at). Use "conversation" for imported history.',
         recommended_patterns: [
           'Use tags.portal filters before semantic search for upset-customer and bad-call experiences.',
           'Use include=["core","summary","dealer"] for browse views that need dealer context.',

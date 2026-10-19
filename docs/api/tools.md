@@ -825,9 +825,19 @@ Every tool that takes `start_date`/`end_date` also takes `date_field`:
 | Value | Column | Meaning |
 |-------|--------|---------|
 | `created` (default) | `vcons.created_at` | When the vCon object was created. The vCon core draft does not allow it to be backdated |
-| `conversation` | `vcons.conversation_start` | When the conversation happened: the earliest `dialog[].start` or `attachments[].start`, falling back to `created_at` |
+| `conversation` | `vcons.conversation_start` | When the conversation happened. See the rule below |
 
 Use `conversation` for imported historical conversations, where `created_at` is the import time.
+
+`conversation_start` is, ignoring NULL starts and starts before `1990-01-01T00:00:00Z` (placeholders):
+
+1. the earliest `dialog[].start`, if any dialog has one
+2. otherwise the earliest `attachments[].start`, capped at `created_at`
+3. otherwise `created_at`
+
+Attachment starts are capped because some vCon libraries stamp every attachment's `start` with the
+write time, so an enrichment attachment added later would otherwise move the conversation past
+`created_at`. Dialog starts are not capped.
 `conversation_start` is maintained by database triggers (migration
 `20261019171238_add_conversation_start.sql`); without that migration, `date_field: "conversation"`
 fails with a database error while the default keeps working. The MongoDB backend rejects

@@ -458,7 +458,7 @@ export const searchVConsTool = {
         type: 'string',
         enum: ['created', 'conversation'],
         description: 'Which timestamp start_date/end_date apply to. "created" (default): vcon created_at, when the vCon object was created. ' +
-          '"conversation": when the conversation happened, the earliest dialog or attachment start (falls back to created_at). ' +
+          '"conversation": when the conversation happened: the earliest dialog start, else the earliest attachment start capped at created_at, else created_at. ' +
           'Use "conversation" for imported historical conversations, whose created_at is the import time.',
         default: 'created'
       },
@@ -519,7 +519,7 @@ export const searchVConsContentTool = {
         type: 'string',
         enum: ['created', 'conversation'],
         description: 'Which timestamp start_date/end_date apply to. "created" (default): vcon created_at, when the vCon object was created. ' +
-          '"conversation": when the conversation happened, the earliest dialog or attachment start (falls back to created_at). ' +
+          '"conversation": when the conversation happened: the earliest dialog start, else the earliest attachment start capped at created_at, else created_at. ' +
           'Use "conversation" for imported historical conversations, whose created_at is the import time.',
         default: 'created'
       },

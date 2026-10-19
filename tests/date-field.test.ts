@@ -1,6 +1,7 @@
 /**
  * date_field: filter search dates on vcons.created_at (default) or
- * vcons.conversation_start (earliest dialog/attachment start).
+ * vcons.conversation_start (earliest dialog start, else earliest attachment
+ * start capped at created_at, else created_at).
  *
  * Covers the query layer (column and RPC argument selection, default payloads
  * unchanged), argument parsing and threading in the MCP and REST handlers, and
@@ -430,18 +431,44 @@ describe('conversationStartOf', () => {
     expect(conversationStartOf({ ...base, dialog: [{ type: 'text' } as any] })).toBe('2026-10-01T00:00:00Z');
   });
 
-  it('takes the earliest dialog or attachment start, even when later than created_at', () => {
+  it('prefers the earliest dialog start over attachments, even when later than created_at', () => {
     expect(conversationStartOf({
       ...base,
       dialog: [{ type: 'text', start: '2026-05-10T00:00:00Z' } as any, { type: 'text', start: '2026-05-03T00:00:00Z' } as any],
-      attachments: [{ purpose: 'x', start: '2026-05-05T00:00:00Z' } as any],
+      attachments: [{ purpose: 'x', start: '2026-04-01T00:00:00Z' } as any],
     })).toBe('2026-05-03T00:00:00Z');
 
     expect(conversationStartOf({
       ...base,
+      dialog: [{ type: 'text', start: '2026-12-01T00:00:00Z' } as any],
+    })).toBe('2026-12-01T00:00:00Z');
+  });
+
+  it('uses the earliest attachment start when there is no dialog start, capped at created_at', () => {
+    expect(conversationStartOf({
+      ...base,
+      attachments: [{ purpose: 'x', start: '2026-05-05T00:00:00Z' } as any, { purpose: 'y', start: '2026-05-01T00:00:00Z' } as any],
+    })).toBe('2026-05-01T00:00:00Z');
+
+    // Every attachment stamped after created_at (write-time stamps): created_at wins
+    expect(conversationStartOf({
+      ...base,
       created_at: '2026-01-01T00:00:00Z',
       attachments: [{ purpose: 'x', start: '2026-02-01T00:00:00Z' } as any],
-    })).toBe('2026-02-01T00:00:00Z');
+    })).toBe('2026-01-01T00:00:00Z');
+  });
+
+  it('ignores placeholder starts before 1990', () => {
+    expect(conversationStartOf({
+      ...base,
+      dialog: [{ type: 'text', start: '1970-01-01T00:00:00Z' } as any],
+      attachments: [{ purpose: 'x', start: '2026-05-05T00:00:00Z' } as any],
+    })).toBe('2026-05-05T00:00:00Z');
+
+    expect(conversationStartOf({
+      ...base,
+      attachments: [{ purpose: 'x', start: '1970-01-01T00:00:00Z' } as any],
+    })).toBe('2026-10-01T00:00:00Z');
   });
 
   it('compares instants, not strings, and skips unparseable values', () => {

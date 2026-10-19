@@ -109,7 +109,8 @@ The tools below remain supported and useful. They are especially helpful for old
 
 **Dates:** `start_date`/`end_date` match `created_at` by default. For imported history, where
 `created_at` is the import time, pass `"date_field": "conversation"` to match on when the
-conversation happened (earliest dialog or attachment start). The same argument works on
+conversation happened (earliest dialog start, else earliest attachment start capped at
+`created_at`, else `created_at`). The same argument works on
 `search_vcons`, `vcon_search` (`filters.date_field`), `vcon_aggregate` and `get_content_analytics`.
 
 **Returns:** Ranked results with snippets showing where matches were found
