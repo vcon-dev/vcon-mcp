@@ -9,7 +9,10 @@ import {
   AnalysisSchema,
   DialogSchema,
   PartySchema,
-  AttachmentSchema
+  AttachmentSchema,
+  addDialogTool,
+  updateDialogTool,
+  createVConTool,
 } from '../src/tools/vcon-crud.js';
 
 describe('CRUD Schema Validation', () => {
@@ -156,6 +159,37 @@ describe('CRUD Schema Validation', () => {
       const result = DialogSchema.safeParse(dialog);
       
       expect(result.success).toBe(false);
+    });
+
+    // CON-1242: core-02 / 0.4.0 session_id is SessionId {local, remote} or an array of them.
+    describe('session_id (CON-1242)', () => {
+      const sid = { local: '0e4c6f9a9b2d4f1e8a3b5c7d9e1f2a3b', remote: '1f5d7a0b0c3e5a2f9b4c6d8e0f2a3b4c' };
+
+      it('accepts a SessionId object unchanged', () => {
+        const result = DialogSchema.safeParse({ type: 'text', body: 'x', encoding: 'none', session_id: sid });
+        expect(result.success).toBe(true);
+        if (result.success) expect(result.data.session_id).toEqual(sid);
+      });
+
+      it('accepts an array of SessionId objects', () => {
+        const result = DialogSchema.safeParse({ type: 'text', session_id: [sid, sid] });
+        expect(result.success).toBe(true);
+        if (result.success) expect(result.data.session_id).toEqual([sid, sid]);
+      });
+
+      it('accepts a legacy string verbatim (not converted to an object)', () => {
+        const result = DialogSchema.safeParse({ type: 'text', session_id: 'legacy-session' });
+        expect(result.success).toBe(true);
+        if (result.success) expect(result.data.session_id).toBe('legacy-session');
+      });
+
+      it('rejects an object missing remote', () => {
+        expect(DialogSchema.safeParse({ type: 'text', session_id: { local: 'a' } }).success).toBe(false);
+      });
+
+      it('rejects a number', () => {
+        expect(DialogSchema.safeParse({ type: 'text', session_id: 42 }).success).toBe(false);
+      });
     });
 
     it('should accept new fields (session_id, application, message_id)', () => {
@@ -443,5 +477,19 @@ describe('CRUD Schema Validation', () => {
       }
     });
   });
-});
 
+  // CON-1242: the advertised JSON inputSchemas must accept the SessionId object too.
+  describe('session_id in tool inputSchemas (CON-1242)', () => {
+    const cases: Array<[string, any]> = [
+      ['add_dialog', (addDialogTool.inputSchema.properties.dialog as any).properties.session_id],
+      ['update_dialog', (updateDialogTool.inputSchema.properties.dialog as any).properties.session_id],
+      ['create_vcon', (createVConTool.inputSchema.properties.dialog as any).items.properties.session_id],
+    ];
+    it.each(cases)('%s session_id allows object, array, and legacy string', (_name, prop) => {
+      const types = prop.oneOf.map((s: any) => s.type);
+      expect(types).toEqual(expect.arrayContaining(['object', 'array', 'string']));
+      const obj = prop.oneOf.find((s: any) => s.type === 'object');
+      expect(obj.required).toEqual(['local', 'remote']);
+    });
+  });
+});

@@ -135,7 +135,7 @@ interface Dialog {
     | "voicemail-no-message";
   
   // Session Tracking (Section 4.3.10, 4.3.13, 4.3.14)
-  session_id?: string;             // Session identifier
+  session_id?: SessionId | SessionId[] | string;  // {local, remote} (0.4.0); string = legacy
   application?: string;            // Application that created dialog
   message_id?: string;             // Message identifier
   
@@ -176,7 +176,7 @@ interface Dialog {
   duration: 3600,
   parties: [0, 1, 2],
   mediatype: "video/mp4",
-  session_id: "video-call-abc123",
+  session_id: { local: "6a1f0c2e9b3d4e5f8a7b6c5d4e3f2a1b", remote: "00000000000000000000000000000000" },
   application: "Zoom",
   disposition: "hung-up"
 }

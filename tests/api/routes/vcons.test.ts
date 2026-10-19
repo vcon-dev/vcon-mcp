@@ -401,6 +401,18 @@ describe('vCon CRUD Routes', () => {
       expect(ctx.mocks.queries.addDialog).toHaveBeenCalledOnce();
     });
 
+    it('accepts a SessionId object session_id (CON-1242)', async () => {
+      const uuid = randomUUID();
+      const session_id = { local: 'aaaa1111', remote: 'bbbb2222' };
+      const res = await request(ctx.app.callback())
+        .post(`${BASE}/vcons/${uuid}/dialog`)
+        .send({ type: 'recording', session_id })
+        .expect(201);
+
+      expect(res.body.dialog.session_id).toEqual(session_id);
+      expect(ctx.mocks.queries.addDialog).toHaveBeenCalledWith(uuid, expect.objectContaining({ session_id }));
+    });
+
     it('should return 400 for invalid dialog', async () => {
       const uuid = randomUUID();
       await request(ctx.app.callback())
@@ -546,6 +558,15 @@ describe('vCon CRUD Routes', () => {
         .expect(200);
       expect(res.body.success).toBe(true);
       expect(ctx.mocks.queries.updateDialog).toHaveBeenCalledWith(uuid, 1, expect.objectContaining({ type: 'text' }));
+    });
+
+    it('PATCH accepts a SessionId object session_id (CON-1242)', async () => {
+      const session_id = { local: 'aaaa1111', remote: 'bbbb2222' };
+      await request(ctx.app.callback())
+        .patch(`${BASE}/vcons/${uuid}/dialog/0`)
+        .send({ type: 'text', session_id })
+        .expect(200);
+      expect(ctx.mocks.queries.updateDialog).toHaveBeenCalledWith(uuid, 0, expect.objectContaining({ session_id }));
     });
 
     it('DELETE removes the dialog at the index', async () => {

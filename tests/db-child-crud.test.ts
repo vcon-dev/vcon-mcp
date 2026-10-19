@@ -117,6 +117,27 @@ describe('Supabase child CRUD', () => {
     expect(ph[0]).toMatchObject({ party_index: 0, event: 'join' });
   });
 
+  // CON-1242: dialog.session_id is JSONB, so the SessionId object goes in as-is
+  // (not stringified, not pushed into extra).
+  it('updateDialog writes a SessionId object session_id as-is', async () => {
+    const { supabase, calls } = makeMock();
+    const q = new VConQueries(supabase);
+    const session_id = { local: 'aaaa1111', remote: 'bbbb2222' };
+    await q.updateDialog(UUID, 0, { type: 'text', session_id });
+    const p = payloadsOf(calls, 'update')[0];
+    expect(p.session_id).toEqual(session_id);
+    expect(p.extra).toBeNull();
+  });
+
+  it('addDialog writes a SessionId object session_id as-is', async () => {
+    const { supabase, calls } = makeMock({ data: [], error: null });
+    const q = new VConQueries(supabase);
+    const session_id = [{ local: 'aaaa1111', remote: 'bbbb2222' }];
+    await q.addDialog(UUID, { type: 'recording', session_id });
+    const row = payloadsOf(calls, 'insert').find((r: any) => r && !Array.isArray(r) && r.type === 'recording');
+    expect(row.session_id).toEqual(session_id);
+  });
+
   it('removeDialog keeps type, nulls content, and clears party_history', async () => {
     const { supabase, calls } = makeMock();
     const q = new VConQueries(supabase);

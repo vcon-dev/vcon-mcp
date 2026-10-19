@@ -131,7 +131,10 @@ export interface Dialog {
   content_hash?: string | string[];
 
   disposition?: string;  // Any string accepted; spec suggests no-answer, congestion, failed, busy, hung-up, voicemail-no-message
-  session_id?: string;      // Section 4.3.10 - Session identifier (object in v0.4.0 spec, string for compatibility)
+  // Section 4.3.10 - SessionId object (or array of them) since 0.4.0. A plain string is the
+  // pre-0.4.0 form: the corpus mixes 0.3.0 and 0.4.0 vCons, so it is still accepted and
+  // stored/returned verbatim, never converted into an invented {local, remote} (CON-1242).
+  session_id?: SessionId | SessionId[] | string;
   party_history?: PartyHistory[];  // Section 4.3.11
   application?: string;     // Section 4.3.13 - Application identifier
   message_id?: string;      // Section 4.3.14 - Message identifier
