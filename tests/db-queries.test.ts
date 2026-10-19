@@ -318,6 +318,8 @@ describe('VConQueries', () => {
       // Mock the chain: select -> ilike -> order -> range -> (thenable)
       mockSupabase.order.mockImplementationOnce(() => ({
         ...mockSupabase,
+        // searchVCons chains a second order() (uuid tie-break)
+        order() { return this; },
         range: vi.fn().mockReturnValue({
           then: (resolve: any) => resolve({
             data: [{ uuid: testUuid }],
@@ -359,6 +361,8 @@ describe('VConQueries', () => {
       // Mock the chain: select -> gte -> lte -> order -> range -> (thenable)
       mockSupabase.order.mockImplementationOnce(() => ({
         ...mockSupabase,
+        // searchVCons chains a second order() (uuid tie-break)
+        order() { return this; },
         range: vi.fn().mockReturnValue({
           then: (resolve: any) => resolve({
             data: [],
@@ -373,6 +377,25 @@ describe('VConQueries', () => {
       expect(mockSupabase.lte).toHaveBeenCalledWith('created_at', '2024-12-31');
     });
 
+    it('should order by created_at then uuid so cursor paging has a stable tie-break', async () => {
+      const orderCalls: Array<[string, any]> = [];
+      const result = {
+        range: vi.fn().mockReturnValue({ then: (resolve: any) => resolve({ data: [], error: null }) }),
+        order(column: string, opts: any) { orderCalls.push([column, opts]); return this; },
+      };
+      mockSupabase.order.mockImplementationOnce((column: string, opts: any) => {
+        orderCalls.push([column, opts]);
+        return result;
+      });
+
+      await queries.searchVCons({ limit: 5 });
+
+      expect(orderCalls).toEqual([
+        ['created_at', { ascending: false }],
+        ['uuid', { ascending: false }],
+      ]);
+    });
+
     it('should limit results', async () => {
       const criteria = { limit: 10 };
 
@@ -380,6 +403,8 @@ describe('VConQueries', () => {
       // Need order to return something with range that is thenable
       mockSupabase.order.mockImplementationOnce(() => ({
         ...mockSupabase,
+        // searchVCons chains a second order() (uuid tie-break)
+        order() { return this; },
         range: vi.fn().mockReturnValue({
           then: (resolve: any) => resolve({
             data: [],
@@ -401,6 +426,8 @@ describe('VConQueries', () => {
       const mockPage = (uuid: string) =>
         mockSupabase.order.mockImplementationOnce(() => ({
           ...mockSupabase,
+          // searchVCons chains a second order() (uuid tie-break)
+          order() { return this; },
           range: vi.fn().mockImplementation((from: number, to: number) => {
             ranges.push([from, to]);
             return { then: (resolve: any) => resolve({ data: [{ uuid }], error: null }) };
@@ -446,6 +473,8 @@ describe('VConQueries', () => {
       // gets a short page here rather than a mock error.
       mockSupabase.order.mockImplementation(() => ({
         ...mockSupabase,
+        // searchVCons chains a second order() (uuid tie-break)
+        order() { return this; },
         range: vi.fn().mockImplementation((from: number, to: number) => ({
           then: (resolve: any) => resolve({
             data: Array.from({ length: to - from + 1 }, (_unused, i) => {
@@ -468,6 +497,7 @@ describe('VConQueries', () => {
         return {
           ...mockSupabase,
           order: vi.fn().mockReturnValue({
+            order() { return this; },
             then: (resolve: any) => resolve({
               data: values.map((uuid, i) => ({
                 uuid,
@@ -514,6 +544,7 @@ describe('VConQueries', () => {
       mockSupabase.in.mockImplementation((_column: string, values: string[]) => ({
         ...mockSupabase,
         order: vi.fn().mockReturnValue({
+          order() { return this; },
           then: (resolve: any) => resolve({
             // newest first, so the sort in searchVCons has a stable key to work with
             data: values.map((uuid, i) => ({
@@ -528,6 +559,8 @@ describe('VConQueries', () => {
       // Unconstrained path kept working, dealer owning 1 row in 5 (see above)
       mockSupabase.order.mockImplementation(() => ({
         ...mockSupabase,
+        // searchVCons chains a second order() (uuid tie-break)
+        order() { return this; },
         range: vi.fn().mockImplementation((from: number, to: number) => ({
           then: (resolve: any) => resolve({
             data: Array.from({ length: to - from + 1 }, (_unused, i) => {

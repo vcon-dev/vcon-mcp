@@ -17,6 +17,7 @@
  */
 
 import { IVConQueries } from '../db/interfaces.js';
+import type { VCon } from '../types/vcon.js';
 import {
   extractTags,
   filterAnalysis,
@@ -163,6 +164,107 @@ export function getCoreResources(): ResourceDescriptor[] {
   ];
 }
 
+export interface ResourceTemplateDescriptor {
+  uriTemplate: string;
+  name: string;
+  description: string;
+  mimeType: string;
+}
+
+/** True for parameterised URIs ("vcon://v1/vcons/{uuid}"), which belong in resources/templates/list. */
+export function isResourceTemplateUri(uri: string): boolean {
+  return /\{[^}]+\}/.test(uri);
+}
+
+/** Concrete, directly readable resources for resources/list. */
+export function getConcreteCoreResources(): ResourceDescriptor[] {
+  return getCoreResources().filter((r) => !isResourceTemplateUri(r.uri));
+}
+
+/** Parameterised resources for resources/templates/list (RFC 6570 uriTemplate). */
+export function getCoreResourceTemplates(): ResourceTemplateDescriptor[] {
+  const fromCatalog = getCoreResources()
+    .filter((r) => isResourceTemplateUri(r.uri))
+    .map((r) => ({
+      uriTemplate: r.uri,
+      name: r.name,
+      description: r.description,
+      mimeType: r.mimeType,
+    }));
+  const json = 'application/json';
+  return [
+    ...fromCatalog,
+    {
+      uriTemplate: 'vcon://v1/vcons/recent/{limit}',
+      name: 'Get recent vCons with limit',
+      description: 'Recent vCons with full data. {limit} is 1 to 100.',
+      mimeType: json,
+    },
+    {
+      uriTemplate: 'vcon://v1/vcons/recent/ids/{limit}',
+      name: 'Get recent vCon IDs with limit',
+      description: 'UUIDs, timestamps and subjects of recent vCons. {limit} is 1 to 100.',
+      mimeType: json,
+    },
+    {
+      uriTemplate: 'vcon://v1/vcons/ids/{limit}',
+      name: 'List vCon IDs with limit',
+      description: 'First page of vCon IDs, newest first. {limit} is 1 to 1000.',
+      mimeType: json,
+    },
+    {
+      uriTemplate: 'vcon://v1/vcons/ids/{limit}/after/{cursor}',
+      name: 'List vCon IDs after a cursor',
+      description: 'Next page of vCon IDs, strictly older than the cursor. Pass next_cursor from the previous page as {cursor}; a bare created_at timestamp is also accepted.',
+      mimeType: json,
+    },
+  ];
+}
+
+interface IdsCursor {
+  createdAt: string;
+  uuid?: string;
+}
+
+/**
+ * Cursor is "<created_at>,<uuid>". A bare "<created_at>" (the original format) is still
+ * accepted and means every row strictly older than that timestamp.
+ */
+function parseIdsCursor(raw: string | undefined): IdsCursor | undefined {
+  if (!raw) return undefined;
+  const comma = raw.indexOf(',');
+  if (comma === -1) return { createdAt: raw };
+  return { createdAt: raw.slice(0, comma), uuid: raw.slice(comma + 1).toLowerCase() };
+}
+
+/**
+ * Epoch microseconds of a Postgres timestamptz string. Date.getTime() would drop the
+ * microseconds, and the DB orders and filters at full precision.
+ */
+function toEpochMicros(ts: string): bigint {
+  const m = ts.match(/^(\d{4})-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(?:\.(\d+))?(Z|[+-]\d\d(?::?\d\d)?)?$/);
+  if (!m) return BigInt(new Date(ts).getTime()) * 1000n;
+  const [, y, mo, d, h, mi, sec, frac = '', zone = 'Z'] = m;
+  const wholeMs = Date.UTC(+y, +mo - 1, +d, +h, +mi, +sec);
+  let micros = BigInt(wholeMs) * 1000n + BigInt(frac.padEnd(6, '0').slice(0, 6));
+  if (zone !== 'Z') {
+    const z = zone.match(/^([+-])(\d\d):?(\d\d)?$/)!;
+    const offsetMin = (+z[2]) * 60 + (+(z[3] || 0));
+    micros -= BigInt(z[1] === '-' ? -offsetMin : offsetMin) * 60n * 1_000_000n;
+  }
+  return micros;
+}
+
+/** True when the row was already served on an earlier page (ordering: created_at DESC, uuid DESC). */
+function isAtOrBeforeCursor(v: VCon, cursor: IdsCursor): boolean {
+  const row = toEpochMicros(v.created_at as string);
+  const cur = toEpochMicros(cursor.createdAt);
+  if (row > cur) return true;
+  if (row < cur) return false;
+  if (cursor.uuid === undefined) return true;
+  return v.uuid.toLowerCase() >= cursor.uuid;
+}
+
 export async function resolveCoreResource(queries: IVConQueries, uri: string): Promise<{ mimeType: string; content: any } | undefined> {
   const json = (data: any) => ({ mimeType: 'application/json', content: data });
 
@@ -228,30 +330,40 @@ export async function resolveCoreResource(queries: IVConQueries, uri: string): P
   const matchListIds = uri.match(/^vcon:\/\/v1\/vcons\/ids(?:\/(\d+))?(?:\/after\/([^/]+))?$/);
   if (matchListIds) {
     const limit = matchListIds[1] ? Math.min(parseInt(matchListIds[1], 10), 1000) : 100;
-    const afterTimestamp = matchListIds[2] ? decodeURIComponent(matchListIds[2]) : undefined;
-    
-    // Fetch one extra to determine if there are more results
+    const cursor = parseIdsCursor(matchListIds[2] ? decodeURIComponent(matchListIds[2]) : undefined);
+
+    // searchVCons orders created_at DESC (uuid DESC as tie-break), so the next page is the
+    // rows strictly after the cursor in that order: an inclusive upper bound on created_at,
+    // then drop the cursor-tied rows already served. Fetch one extra to detect more results.
     const fetchLimit = limit + 1;
-    const vcons = await queries.searchVCons({ 
-      limit: fetchLimit,
-      startDate: afterTimestamp ? new Date(new Date(afterTimestamp).getTime() + 1).toISOString() : undefined
-    });
-    
-    // Check if there are more results
-    const hasMore = vcons.length > limit;
-    const resultsToReturn = hasMore ? vcons.slice(0, limit) : vcons;
-    
-    const ids = resultsToReturn.map(v => ({ 
-      uuid: v.uuid, 
+    const kept: VCon[] = [];
+    let offset = 0;
+    for (;;) {
+      const batch = await queries.searchVCons(
+        cursor ? { limit: fetchLimit, offset, endDate: cursor.createdAt } : { limit: fetchLimit },
+      );
+      for (const v of batch) {
+        if (cursor && isAtOrBeforeCursor(v, cursor)) continue;
+        kept.push(v);
+      }
+      offset += batch.length;
+      // Rows skipped by the cursor sit at the head of the result, so a short batch ends it.
+      if (!cursor || kept.length > limit || batch.length < fetchLimit) break;
+    }
+
+    const hasMore = kept.length > limit;
+    const resultsToReturn = hasMore ? kept.slice(0, limit) : kept;
+
+    const ids = resultsToReturn.map(v => ({
+      uuid: v.uuid,
       created_at: v.created_at,
-      subject: v.subject 
+      subject: v.subject
     }));
-    
-    // Get the last timestamp for next cursor
-    const nextCursor = resultsToReturn.length > 0 
-      ? resultsToReturn[resultsToReturn.length - 1].created_at 
-      : null;
-    
+
+    // Compound cursor "<created_at>,<uuid>" of the last row served
+    const last = resultsToReturn[resultsToReturn.length - 1];
+    const nextCursor = last ? `${last.created_at},${last.uuid}` : null;
+
     return json({ 
       count: ids.length, 
       limit: limit,
