@@ -17,6 +17,7 @@ import {
   normalizeDateString,
   parseJsonQueryParam,
   validateIntRange,
+  validateNumberRange,
   validateNonEmptyString,
   validateResponseFormat,
 } from '../validation.js';
@@ -36,7 +37,8 @@ export function createSearchRoutes(apiContext: RestApiContext): Router {
     );
     if (!fmtResult.valid) return sendError(ctx, 400, fmtResult.errors[0]);
 
-    const { value: limit } = validateIntRange(ctx.query.limit, 'limit', 1, 1000, 50);
+    const { result: limitResult, value: limit } = validateIntRange(ctx.query.limit, 'limit', 1, 1000, 50);
+    if (!limitResult.valid) return sendError(ctx, 400, limitResult.errors[0]);
     const { result: tagsResult, value: tags } = parseJsonQueryParam(ctx.query.tags, 'tags');
     if (!tagsResult.valid) return sendError(ctx, 400, tagsResult.errors[0]);
 
@@ -107,7 +109,13 @@ export function createSearchRoutes(apiContext: RestApiContext): Router {
   router.get('/vcons/search/semantic', async (ctx: Context) => {
     const query = ctx.query.q as string | undefined;
     // Embedding can optionally be passed as JSON query param
-    const { value: embeddingRaw } = parseJsonQueryParam(ctx.query.embedding, 'embedding');
+    const { result: embeddingResult, value: embeddingRaw } = parseJsonQueryParam(ctx.query.embedding, 'embedding');
+    if (!embeddingResult.valid) return sendError(ctx, 400, embeddingResult.errors[0]);
+
+    const { result: limitResult, value: limit } = validateIntRange(ctx.query.limit, 'limit', 1, 1000, 50);
+    if (!limitResult.valid) return sendError(ctx, 400, limitResult.errors[0]);
+    const { result: thresholdResult, value: threshold } = validateNumberRange(ctx.query.threshold, 'threshold', 0, 1, 0.7);
+    if (!thresholdResult.valid) return sendError(ctx, 400, thresholdResult.errors[0]);
 
     let embedding: number[] | undefined = embeddingRaw;
 
@@ -129,8 +137,6 @@ export function createSearchRoutes(apiContext: RestApiContext): Router {
       return sendError(ctx, 400, 'Embedding must be 384 dimensions');
     }
 
-    const { value: limit } = validateIntRange(ctx.query.limit, 'limit', 1, 1000, 50);
-    const threshold = ctx.query.threshold ? Number(ctx.query.threshold) : 0.7;
     const { result: tagsResult, value: tags } = parseJsonQueryParam(ctx.query.tags, 'tags');
     if (!tagsResult.valid) return sendError(ctx, 400, tagsResult.errors[0]);
 
@@ -161,8 +167,10 @@ export function createSearchRoutes(apiContext: RestApiContext): Router {
     if (!qCheck.valid) return sendError(ctx, 400, qCheck.errors[0]);
 
     const query = ctx.query.q as string;
-    const { value: limit } = validateIntRange(ctx.query.limit, 'limit', 1, 1000, 50);
-    const semanticWeight = ctx.query.semantic_weight ? Number(ctx.query.semantic_weight) : 0.6;
+    const { result: limitResult, value: limit } = validateIntRange(ctx.query.limit, 'limit', 1, 1000, 50);
+    if (!limitResult.valid) return sendError(ctx, 400, limitResult.errors[0]);
+    const { result: weightResult, value: semanticWeight } = validateNumberRange(ctx.query.semantic_weight, 'semantic_weight', 0, 1, 0.6);
+    if (!weightResult.valid) return sendError(ctx, 400, weightResult.errors[0]);
     const { result: tagsResult, value: tags } = parseJsonQueryParam(ctx.query.tags, 'tags');
     if (!tagsResult.valid) return sendError(ctx, 400, tagsResult.errors[0]);
 

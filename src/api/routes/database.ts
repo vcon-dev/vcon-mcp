@@ -6,6 +6,7 @@
 
 import Router from '@koa/router';
 import type { Context } from 'koa';
+import { InvalidQueryError } from '../../db/database-inspector.js';
 import { RestApiContext } from '../context.js';
 import { sendError, sendSuccess } from '../response.js';
 
@@ -69,8 +70,15 @@ export function createDatabaseRoutes(apiContext: RestApiContext): Router {
     }
 
     const mode = body.mode === 'explain_analyze' ? 'explain_analyze' : 'explain';
-    const result = await apiContext.dbInspector.analyzeQuery(body.query, mode);
-    sendSuccess(ctx, { data: result });
+    try {
+      const result = await apiContext.dbInspector.analyzeQuery(body.query, mode);
+      sendSuccess(ctx, { data: result });
+    } catch (error) {
+      if (error instanceof InvalidQueryError) {
+        return sendError(ctx, 400, error.message);
+      }
+      throw error;
+    }
   });
 
   return router;

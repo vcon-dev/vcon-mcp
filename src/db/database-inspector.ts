@@ -6,6 +6,14 @@ import { SupabaseClient } from '@supabase/supabase-js';
 
 import { IDatabaseInspector, InspectorOptions, InspectorStatsOptions } from './types.js';
 
+/** Caller-supplied query is not allowed (a client error, not a server fault). */
+export class InvalidQueryError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidQueryError';
+  }
+}
+
 export class SupabaseDatabaseInspector implements IDatabaseInspector {
   constructor(private supabase: SupabaseClient) { }
 
@@ -279,7 +287,7 @@ export class SupabaseDatabaseInspector implements IDatabaseInspector {
     // Safety check: only allow SELECT queries
     const trimmedQuery = query.trim().toLowerCase();
     if (!trimmedQuery.startsWith('select')) {
-      throw new Error('Only SELECT queries are allowed for analysis');
+      throw new InvalidQueryError('Only SELECT queries are allowed for analysis');
     }
 
     // exec_sql cannot run EXPLAIN — it wraps every query as

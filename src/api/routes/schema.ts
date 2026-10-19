@@ -7,6 +7,7 @@
 import { randomUUID } from 'crypto';
 import Router from '@koa/router';
 import type { Context } from 'koa';
+import { getAuthConfig, getTokenFromRequest, validateHttpRequestAuth } from '../auth.js';
 import { RestApiContext } from '../context.js';
 import { sendError, sendSuccess } from '../response.js';
 import { getVersionInfo } from '../../version.js';
@@ -48,8 +49,17 @@ export function createSchemaRoutes(apiContext: RestApiContext): Router {
   const router = new Router();
 
   // ── GET /health — Health check ────────────────────────────────────────────
+  // /health skips the auth middleware so load balancers and the Docker
+  // HEALTHCHECK can probe it. Unauthenticated callers get status only; database
+  // connection details and raw error text are returned only to a request that
+  // presents a valid API key (or when auth is disabled outright).
   router.get('/health', async (ctx: Context) => {
     const versionInfo = getVersionInfo();
+    const authConfig = getAuthConfig();
+    const authed = !authConfig.required || (
+      !!getTokenFromRequest(ctx.req, authConfig.headerName) &&
+      validateHttpRequestAuth(ctx.req, authConfig, { logInvalid: false }).ok
+    );
     // Which group/schema this instance serves (for multi-instance isolation).
     const instance = process.env.VCON_INSTANCE_LABEL || null;
     const schema = process.env.SUPABASE_DB_SCHEMA || 'public';
@@ -60,12 +70,10 @@ export function createSchemaRoutes(apiContext: RestApiContext): Router {
         status: 'healthy',
         timestamp: new Date().toISOString(),
         database: 'connected',
-        instance,
-        schema,
         version: versionInfo.version,
         gitCommit: versionInfo.gitCommit,
         buildTime: versionInfo.buildTime,
-        ...connInfo,
+        ...(authed ? { instance, schema, ...connInfo } : {}),
       };
     } catch (error) {
       ctx.status = 503;
@@ -73,12 +81,12 @@ export function createSchemaRoutes(apiContext: RestApiContext): Router {
         status: 'unhealthy',
         timestamp: new Date().toISOString(),
         database: 'error',
-        instance,
-        schema,
-        error: error instanceof Error ? error.message : 'Unknown error',
         version: versionInfo.version,
         gitCommit: versionInfo.gitCommit,
         buildTime: versionInfo.buildTime,
+        ...(authed
+          ? { instance, schema, error: error instanceof Error ? error.message : 'Unknown error' }
+          : {}),
       };
     }
   });

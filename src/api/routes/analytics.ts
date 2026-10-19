@@ -8,7 +8,7 @@
 import Router from '@koa/router';
 import type { Context } from 'koa';
 import { RestApiContext } from '../context.js';
-import { sendSuccess } from '../response.js';
+import { sendError, sendSuccess } from '../response.js';
 import { validateIntRange } from '../validation.js';
 
 function parseBoolParam(value: unknown, defaultValue: boolean = true): boolean {
@@ -22,7 +22,8 @@ export function createAnalyticsRoutes(apiContext: RestApiContext): Router {
 
   // ── GET /analytics — Full analytics dashboard ─────────────────────────────
   router.get('/analytics', async (ctx: Context) => {
-    const { value: monthsBack } = validateIntRange(ctx.query.months_back, 'months_back', 1, 60, 12);
+    const { result: monthsBackResult, value: monthsBack } = validateIntRange(ctx.query.months_back, 'months_back', 1, 60, 12);
+    if (!monthsBackResult.valid) return sendError(ctx, 400, monthsBackResult.errors[0]);
     const result = await apiContext.dbAnalytics.getDatabaseAnalytics({
       includeGrowthTrends: parseBoolParam(ctx.query.include_growth),
       includeContentAnalytics: parseBoolParam(ctx.query.include_content),
@@ -36,7 +37,8 @@ export function createAnalyticsRoutes(apiContext: RestApiContext): Router {
 
   // ── GET /analytics/growth — Monthly growth trends ─────────────────────────
   router.get('/analytics/growth', async (ctx: Context) => {
-    const { value: monthsBack } = validateIntRange(ctx.query.months_back, 'months_back', 1, 60, 12);
+    const { result: monthsBackResult, value: monthsBack } = validateIntRange(ctx.query.months_back, 'months_back', 1, 60, 12);
+    if (!monthsBackResult.valid) return sendError(ctx, 400, monthsBackResult.errors[0]);
     const granularity = (['monthly', 'weekly', 'daily'].includes(ctx.query.granularity as string))
       ? ctx.query.granularity as 'monthly' | 'weekly' | 'daily'
       : 'monthly';
@@ -65,8 +67,10 @@ export function createAnalyticsRoutes(apiContext: RestApiContext): Router {
 
   // ── GET /analytics/tags — Tag analytics ───────────────────────────────────
   router.get('/analytics/tags', async (ctx: Context) => {
-    const { value: topNKeys } = validateIntRange(ctx.query.top_n, 'top_n', 1, 100, 20);
-    const { value: minUsageCount } = validateIntRange(ctx.query.min_count, 'min_count', 1, 100000, 1);
+    const { result: topNKeysResult, value: topNKeys } = validateIntRange(ctx.query.top_n, 'top_n', 1, 100, 20);
+    if (!topNKeysResult.valid) return sendError(ctx, 400, topNKeysResult.errors[0]);
+    const { result: minUsageCountResult, value: minUsageCount } = validateIntRange(ctx.query.min_count, 'min_count', 1, 100000, 1);
+    if (!minUsageCountResult.valid) return sendError(ctx, 400, minUsageCountResult.errors[0]);
 
     const result = await apiContext.dbAnalytics.getTagAnalytics({
       includeFrequencyAnalysis: parseBoolParam(ctx.query.include_frequency),
@@ -80,7 +84,8 @@ export function createAnalyticsRoutes(apiContext: RestApiContext): Router {
 
   // ── GET /analytics/attachments — Attachment analytics ─────────────────────
   router.get('/analytics/attachments', async (ctx: Context) => {
-    const { value: topNTypes } = validateIntRange(ctx.query.top_n, 'top_n', 1, 50, 10);
+    const { result: topNTypesResult, value: topNTypes } = validateIntRange(ctx.query.top_n, 'top_n', 1, 50, 10);
+    if (!topNTypesResult.valid) return sendError(ctx, 400, topNTypesResult.errors[0]);
 
     const result = await apiContext.dbAnalytics.getAttachmentAnalytics({
       includeSizeDistribution: parseBoolParam(ctx.query.include_sizes),
