@@ -566,6 +566,60 @@ describe('VConService', () => {
     });
   });
 
+  describe('searchPage (CON-1243)', () => {
+    const mk = (uuid: string): VCon =>
+      ({ vcon: '0.4.0', uuid, created_at: new Date().toISOString(), parties: [] });
+
+    it('queries one probe row past the page size', async () => {
+      mockQueries.searchVCons.mockResolvedValue([]);
+      mockPluginManager.executeHook.mockResolvedValue(undefined);
+
+      await service.searchPage({ subject: 's', limit: 2, offset: 4 });
+
+      expect(mockQueries.searchVCons).toHaveBeenCalledWith({ subject: 's', limit: 3, offset: 4 });
+    });
+
+    it('keeps has_more true when a filtering plugin drops rows, including the probe', async () => {
+      // DB has a next page (limit + 1 rows). The plugin keeps only uuid-1. Counting after
+      // the hook (old behaviour) saw 1 row <= limit and reported has_more: false.
+      mockQueries.searchVCons.mockResolvedValue([mk('uuid-1'), mk('uuid-2'), mk('uuid-3')]);
+      mockPluginManager.executeHook.mockImplementation((hook: string, data: any) => {
+        if (hook === 'afterSearch') return Promise.resolve((data as VCon[]).filter(v => v.uuid === 'uuid-1'));
+        return Promise.resolve(undefined);
+      });
+
+      const res = await service.searchPage({ limit: 2 });
+
+      expect(res.hasMore).toBe(true);
+      expect(res.vcons.map(v => v.uuid)).toEqual(['uuid-1']);
+    });
+
+    it('reports has_more false on the last page even if the plugin passes rows through', async () => {
+      mockQueries.searchVCons.mockResolvedValue([mk('uuid-1'), mk('uuid-2')]);
+      mockPluginManager.executeHook.mockResolvedValue(undefined);
+
+      const res = await service.searchPage({ limit: 2 });
+
+      expect(res.hasMore).toBe(false);
+      expect(res.vcons).toHaveLength(2);
+    });
+
+    it('hands afterSearch the page without the probe row', async () => {
+      mockQueries.searchVCons.mockResolvedValue([mk('uuid-1'), mk('uuid-2'), mk('uuid-3')]);
+      mockPluginManager.executeHook.mockResolvedValue(undefined);
+
+      const res = await service.searchPage({ limit: 2 });
+
+      expect(mockPluginManager.executeHook).toHaveBeenCalledWith(
+        'afterSearch',
+        [expect.objectContaining({ uuid: 'uuid-1' }), expect.objectContaining({ uuid: 'uuid-2' })],
+        expect.anything(),
+      );
+      expect(res.vcons.map(v => v.uuid)).toEqual(['uuid-1', 'uuid-2']);
+      expect(res.hasMore).toBe(true);
+    });
+  });
+
   describe('VConValidationError', () => {
     it('should contain validation errors', () => {
       const error = new VConValidationError(['Error 1', 'Error 2']);

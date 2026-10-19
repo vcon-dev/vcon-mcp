@@ -9,7 +9,8 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { VConQueries } from '../src/db/queries.js';
-import { _resetBatchWriterForTests } from '../src/db/batch-writer.js';
+import { _resetBatchWriterForTests, assembleVCon } from '../src/db/batch-writer.js';
+import { ChildIndexError } from '../src/utils/vcon-children.js';
 
 type Call = { op: string; args: any[] };
 
@@ -18,7 +19,10 @@ type Call = { op: string; args: any[] };
  * `.insert()`, `.order()`) resolves to. `.single()` always resolves the vcons
  * id (resolveVConId); `.maybeSingle()` resolves an existing dialog row.
  */
-function makeMock(thenResult: any = { data: [{ id: 'child-1' }], error: null }) {
+function makeMock(
+  thenResult: any = { data: [{ id: 'child-1' }], error: null },
+  rpcResult: any = { data: null, error: null },
+) {
   const calls: Call[] = [];
   const chain: any = {};
   const record = (op: string) => (...args: any[]) => { calls.push({ op, args }); return chain; };
@@ -28,7 +32,10 @@ function makeMock(thenResult: any = { data: [{ id: 'child-1' }], error: null }) 
   chain.single = vi.fn().mockResolvedValue({ data: { id: 'vid' }, error: null });
   chain.maybeSingle = vi.fn().mockResolvedValue({ data: { id: 'did-1', type: 'recording' }, error: null });
   chain.then = (resolve: any) => resolve(thenResult);
-  const supabase: any = { from: vi.fn((t: string) => { calls.push({ op: 'from', args: [t] }); return chain; }) };
+  const supabase: any = {
+    from: vi.fn((t: string) => { calls.push({ op: 'from', args: [t] }); return chain; }),
+    rpc: vi.fn((fn: string, args: any) => { calls.push({ op: 'rpc', args: [fn, args] }); return Promise.resolve(rpcResult); }),
+  };
   return { supabase, calls };
 }
 
@@ -102,19 +109,36 @@ describe('Supabase child CRUD', () => {
     expect(p.purpose).toBe('doc');
   });
 
-  it('updateDialog updates the dialog row and rewrites party_history', async () => {
+  it('updateDialog carries party_history in extra and only clears the legacy table', async () => {
     const { supabase, calls } = makeMock();
     const q = new VConQueries(supabase);
-    await q.updateDialog(UUID, 0, {
-      type: 'text', body: 'hi', parties: [0, 1],
-      party_history: [{ party: 0, time: '2026-01-01T00:00:00Z', event: 'join' }],
-    });
-    const tables = tablesTouched(calls);
-    expect(tables).toContain('dialog');
-    expect(tables).toContain('party_history');
-    expect(payloadsOf(calls, 'delete').length).toBeGreaterThan(0);  // party_history cleared first
-    const ph = payloadsOf(calls, 'insert').find((r: any) => Array.isArray(r) && r[0]?.event);
-    expect(ph[0]).toMatchObject({ party_index: 0, event: 'join' });
+    const history = [{ party: 0, time: '2026-01-01T00:00:00Z', event: 'join' as const }];
+    await q.updateDialog(UUID, 0, { type: 'text', body: 'hi', parties: [0, 1], party_history: history });
+    const p = payloadsOf(calls, 'update')[0];
+    expect(p.extra).toEqual({ party_history: history });
+    // legacy party_history rows are deleted, never re-inserted (CON-1243)
+    expect(tablesTouched(calls)).toContain('party_history');
+    expect(payloadsOf(calls, 'insert')).toHaveLength(0);
+  });
+
+  it('addDialog writes party_history once, in dialog.extra, and it round-trips through assembleVCon', async () => {
+    const { supabase, calls } = makeMock({ data: [], error: null });
+    const q = new VConQueries(supabase);
+    const history = [
+      { party: 0, time: '2026-01-01T00:00:00Z', event: 'join' as const },
+      { party: 1, time: '2026-01-01T00:01:00Z', event: 'drop' as const },
+    ];
+    await q.addDialog(UUID, { type: 'text', body: 'hi', encoding: 'none', parties: [0, 1], party_history: history });
+
+    expect(tablesTouched(calls)).not.toContain('party_history');
+    const inserts = payloadsOf(calls, 'insert');
+    expect(inserts).toHaveLength(1);
+    const row = inserts[0];
+    expect(row.extra).toEqual({ party_history: history });
+
+    // getVCon assembles from the dialog row alone (it never selects party_history)
+    const vcon = assembleVCon({ uuid: UUID }, [], [row], [], []);
+    expect(vcon.dialog?.[0].party_history).toEqual(history);
   });
 
   it('removeDialog keeps type, nulls content, and clears party_history', async () => {
@@ -128,26 +152,92 @@ describe('Supabase child CRUD', () => {
     expect(tablesTouched(calls)).toContain('party_history');
   });
 
-  it('removeAnalysis hard-deletes and reinserts shifted rows (compaction)', async () => {
-    const { supabase, calls } = makeMock({ data: [{ analysis_index: 0 }, { analysis_index: 1 }], error: null });
+  it('removeAnalysis compacts atomically through the RPC with the right args', async () => {
+    const { supabase, calls } = makeMock();
     const q = new VConQueries(supabase);
-    await q.removeAnalysis(UUID, 0);
-    expect(payloadsOf(calls, 'delete').length).toBeGreaterThan(0);
-    const reinserted = payloadsOf(calls, 'insert').find((r: any) => Array.isArray(r));
-    expect(reinserted).toEqual([{ analysis_index: 0 }]);   // old index 1 shifted to 0
+    await q.removeAnalysis(UUID, 2);
+    expect(supabase.rpc).toHaveBeenCalledWith('remove_vcon_child_and_compact', {
+      p_table: 'analysis', p_vcon_id: 'vid', p_index: 2,
+    });
+    // nothing done client-side on the analysis table
+    expect(payloadsOf(calls, 'delete')).toHaveLength(0);
+    expect(payloadsOf(calls, 'insert')).toHaveLength(0);
+    expect(payloadsOf(calls, 'update')).toHaveLength(0);
   });
 
-  it('removeAttachment hard-deletes (compaction path)', async () => {
-    const { supabase, calls } = makeMock({ data: [{ attachment_index: 0 }], error: null });
+  it('removeAttachment compacts through the RPC on the attachments table', async () => {
+    const { supabase } = makeMock();
     const q = new VConQueries(supabase);
     await q.removeAttachment(UUID, 0);
-    expect(tablesTouched(calls)).toContain('attachments');
-    expect(payloadsOf(calls, 'delete').length).toBeGreaterThan(0);
+    expect(supabase.rpc).toHaveBeenCalledWith('remove_vcon_child_and_compact', {
+      p_table: 'attachments', p_vcon_id: 'vid', p_index: 0,
+    });
   });
 
-  it('removeAnalysis throws when the index is absent', async () => {
-    const { supabase } = makeMock({ data: [{ analysis_index: 5 }], error: null });
+  it('maps the RPC not-found error (P0002) to ChildIndexError', async () => {
+    const { supabase } = makeMock(undefined, { data: null, error: { code: 'P0002', message: 'analysis index 9 not found' } });
     const q = new VConQueries(supabase);
-    await expect(q.removeAnalysis(UUID, 0)).rejects.toThrow();
+    await expect(q.removeAnalysis(UUID, 9)).rejects.toBeInstanceOf(ChildIndexError);
+  });
+
+  it('an RPC failure propagates with no client-side writes and no fallback', async () => {
+    const boom = { code: '23505', message: 'duplicate key' };
+    const { supabase, calls } = makeMock(undefined, { data: null, error: boom });
+    const q = new VConQueries(supabase);
+    await expect(q.removeAnalysis(UUID, 0)).rejects.toBe(boom);
+    expect(tablesTouched(calls)).not.toContain('analysis');
+    expect(payloadsOf(calls, 'delete')).toHaveLength(0);
+    expect(payloadsOf(calls, 'insert')).toHaveLength(0);
+  });
+
+  it('falls back when the RPC is missing (PGRST202): deletes only the target, shifts the rest by UPDATE', async () => {
+    const rows = [
+      { id: 'a0', analysis_index: 0 },
+      { id: 'a1', analysis_index: 1 },
+      { id: 'a2', analysis_index: 2 },
+    ];
+    const { supabase, calls } = makeMock(
+      { data: rows, error: null },
+      { data: null, error: { code: 'PGRST202', message: 'Could not find the function' } },
+    );
+    const q = new VConQueries(supabase);
+    await q.removeAnalysis(UUID, 0);
+    // the only delete is by the target row's id, never a >= range
+    expect(calls.filter(c => c.op === 'delete')).toHaveLength(1);
+    expect(calls.some(c => c.op === 'gte' && calls.indexOf(c) > calls.findIndex(d => d.op === 'delete'))).toBe(false);
+    expect(calls).toContainEqual({ op: 'eq', args: ['id', 'a0'] });
+    // later rows shift down one at a time, ascending, with no reinsert
+    expect(payloadsOf(calls, 'update')).toEqual([{ analysis_index: 0 }, { analysis_index: 1 }]);
+    expect(payloadsOf(calls, 'insert')).toHaveLength(0);
+  });
+
+  it('fallback stops on a failed shift without deleting any row but the target', async () => {
+    // Old path: delete the whole >= index range, then reinsert. A failed reinsert lost rows.
+    const rows = [{ id: 'a0', analysis_index: 0 }, { id: 'a1', analysis_index: 1 }];
+    const { supabase, calls } = makeMock(
+      { data: rows, error: null },
+      { data: null, error: { code: '42883', message: 'function does not exist' } },
+    );
+    const q = new VConQueries(supabase);
+    const chain = supabase.from('analysis');
+    calls.length = 0;
+    const origUpdate = chain.update;
+    chain.update = vi.fn((...args: any[]) => {
+      origUpdate(...args);
+      return { eq: () => Promise.resolve({ data: null, error: { message: 'update failed' } }) };
+    });
+    await expect(q.removeAnalysis(UUID, 0)).rejects.toMatchObject({ message: 'update failed' });
+    expect(calls.filter(c => c.op === 'delete')).toHaveLength(1);
+    expect(calls).toContainEqual({ op: 'eq', args: ['id', 'a0'] });
+    expect(payloadsOf(calls, 'insert')).toHaveLength(0);
+  });
+
+  it('fallback throws ChildIndexError when the index is absent', async () => {
+    const { supabase } = makeMock(
+      { data: [{ id: 'a5', analysis_index: 5 }], error: null },
+      { data: null, error: { code: 'PGRST202', message: 'missing' } },
+    );
+    const q = new VConQueries(supabase);
+    await expect(q.removeAnalysis(UUID, 0)).rejects.toBeInstanceOf(ChildIndexError);
   });
 });

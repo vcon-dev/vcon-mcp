@@ -373,6 +373,47 @@ export class VConService {
     return results;
   }
 
+  /**
+   * Search one page of vCons and report whether a next page exists.
+   *
+   * `filters.limit` is the page size. The query asks for one extra row and
+   * `hasMore` is decided from the raw DB result, BEFORE the afterSearch hook
+   * runs: a filtering plugin could otherwise drop the probe row (or any row) and
+   * make has_more lie (CON-1243). The hook sees only the page, never the probe.
+   */
+  async searchPage(
+    filters: Parameters<IVConQueries['searchVCons']>[0] & { limit: number },
+    options: { requestContext?: Partial<RequestContext>; skipHooks?: boolean } = {}
+  ): Promise<{ vcons: VCon[]; hasMore: boolean }> {
+    const requestContext = this.normalizeRequestContext(options.requestContext, 'search');
+
+    let searchFilters = filters;
+    if (!options.skipHooks) {
+      const modifiedFilters = await this.context.pluginManager.executeHook<typeof filters>(
+        'beforeSearch', filters, requestContext
+      );
+      if (modifiedFilters) {
+        searchFilters = modifiedFilters;
+      }
+    }
+
+    const pageSize = searchFilters.limit ?? filters.limit;
+    const probed = await this.context.queries.searchVCons({ ...searchFilters, limit: pageSize + 1 });
+    const hasMore = probed.length > pageSize;
+    const page = hasMore ? probed.slice(0, pageSize) : probed;
+
+    if (!options.skipHooks) {
+      const modifiedResults = await this.context.pluginManager.executeHook<VCon[]>(
+        'afterSearch', page, requestContext
+      );
+      if (modifiedResults) {
+        return { vcons: modifiedResults, hasMore };
+      }
+    }
+
+    return { vcons: page, hasMore };
+  }
+
   // ========== Private Helpers ==========
 
   /**

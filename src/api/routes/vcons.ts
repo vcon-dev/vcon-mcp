@@ -168,19 +168,16 @@ export function createVConRoutes(apiContext: RestApiContext): Router {
       startDate: normalizeDateString(ctx.query.start_date as string | undefined),
       endDate: normalizeDateString(ctx.query.end_date as string | undefined),
       tags,
-      // One row past the page tells us whether a next page exists, without a second query.
-      // Same probe the vcon://v1/vcons/ids resource uses. Only valid because the query layer
-      // returns full pages — a post-filtered page could shed the probe row and lie.
-      limit: limit + 1,
+      limit,
       offset,
     };
 
-    const probed = await apiContext.vconService.search(
+    // searchPage probes one row past the page and decides has_more from the raw
+    // DB result, before the afterSearch hook can filter rows (CON-1243).
+    const { vcons, hasMore } = await apiContext.vconService.searchPage(
       filters,
       { requestContext: { purpose: 'rest-api-list' } }
     );
-    const hasMore = probed.length > limit;
-    const vcons = hasMore ? probed.slice(0, limit) : probed;
 
     let total: number | undefined;
     if (includeCount) {

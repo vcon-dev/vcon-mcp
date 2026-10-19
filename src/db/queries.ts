@@ -51,6 +51,15 @@ function nullifyUndefined<T extends Record<string, unknown>>(obj: T): T {
   return out as T;
 }
 
+/**
+ * True only when an RPC failed because the function itself is absent
+ * (PostgREST PGRST202: not in the schema cache; Postgres 42883: undefined_function).
+ * Anything else is a real failure and must not trigger a fallback.
+ */
+function isMissingFunctionError(error: { code?: string } | null | undefined): boolean {
+  return error?.code === 'PGRST202' || error?.code === '42883';
+}
+
 export class SupabaseVConQueries implements IVConQueries {
   private redis: Redis | null = null;
   private cacheEnabled: boolean = false;
@@ -371,27 +380,14 @@ export class SupabaseVConQueries implements IVConQueries {
         : 0;
     }
 
-    const { data: dialogData, error: dialogError } = await this.supabase
+    // party_history rides in dialog.extra (buildDialogRow) and reads back via
+    // assembleVCon. The party_history table is not written (CON-1243): nothing
+    // reads it, and a duplicate write could fail or drift independently.
+    const { error: dialogError } = await this.supabase
       .from('dialog')
-      .insert(buildDialogRow(vcon.id, dialog, nextIndex))
-      .select('id')
-      .single();
+      .insert(buildDialogRow(vcon.id, dialog, nextIndex));
 
     if (dialogError) throw dialogError;
-
-    // Handle party_history if present
-    if (dialog.party_history && dialog.party_history.length > 0 && dialogData) {
-      const historyData = dialog.party_history.map(h => ({
-        dialog_id: dialogData.id,
-        party_index: h.party,
-        time: h.time,
-        event: h.event,
-      }));
-
-      await this.supabase
-        .from('party_history')
-        .insert(historyData);
-    }
   }
 
   /**
@@ -460,8 +456,44 @@ export class SupabaseVConQueries implements IVConQueries {
     return data.id;
   }
 
-  /** Delete + reinsert-shifted to keep a child table contiguous after removing one index. */
+  /**
+   * Remove one analysis/attachment row and shift every later index down by one,
+   * atomically, via the remove_vcon_child_and_compact RPC (one transaction, RLS
+   * applies). CON-1243: the old client-side delete-range + reinsert lost rows
+   * when the reinsert failed.
+   *
+   * Deployments that have not applied the migration fall back to
+   * compactChildTableLegacy, but only when the function is missing.
+   */
   private async compactChildTable(
+    table: 'analysis' | 'attachments',
+    indexCol: 'analysis_index' | 'attachment_index',
+    vconId: string,
+    index: number
+  ): Promise<void> {
+    const { error } = await this.supabase.rpc('remove_vcon_child_and_compact', {
+      p_table: table,
+      p_vcon_id: vconId,
+      p_index: index,
+    });
+    if (!error) return;
+    if (error.code === 'P0002') throw new ChildIndexError(`${table} index ${index} not found`);
+    if (!isMissingFunctionError(error)) throw error;
+    logWithContext('warn', 'remove_vcon_child_and_compact RPC missing; using non-atomic fallback. Apply migration 20261019120000_remove_vcon_child_compact.sql', {
+      table,
+      reason: error.message,
+    });
+    await this.compactChildTableLegacy(table, indexCol, vconId, index);
+  }
+
+  /**
+   * Fallback for databases without remove_vcon_child_and_compact. Not atomic,
+   * but never deletes anything except the target: later rows are moved down one
+   * at a time in ascending order, each into the slot the previous move freed,
+   * so UNIQUE(vcon_id, *_index) never collides. A failure part-way leaves a gap
+   * in the numbering, not lost rows.
+   */
+  private async compactChildTableLegacy(
     table: 'analysis' | 'attachments',
     indexCol: 'analysis_index' | 'attachment_index',
     vconId: string,
@@ -469,29 +501,26 @@ export class SupabaseVConQueries implements IVConQueries {
   ): Promise<void> {
     const { data: rows, error } = await this.supabase
       .from(table)
-      .select('*')
+      .select(`id, ${indexCol}`)
       .eq('vcon_id', vconId)
       .gte(indexCol, index)
       .order(indexCol, { ascending: true });
     if (error) throw error;
-    if (!rows || !rows.some((r: any) => r[indexCol] === index)) {
+    const target = (rows || []).find((r: any) => r[indexCol] === index);
+    if (!target) {
       throw new ChildIndexError(`${table} index ${index} not found`);
     }
-    // Delete the target and its entire trailing run, then reinsert the trailing
-    // rows shifted down by one. Emptying the whole >= index range first means no
-    // transient UNIQUE(vcon_id, *_index) collision on reinsert.
     const { error: delErr } = await this.supabase
       .from(table)
       .delete()
-      .eq('vcon_id', vconId)
-      .gte(indexCol, index);
+      .eq('id', (target as any).id);
     if (delErr) throw delErr;
-    const shifted = rows
-      .filter((r: any) => r[indexCol] > index)
-      .map((r: any) => ({ ...r, [indexCol]: r[indexCol] - 1 }));
-    if (shifted.length > 0) {
-      const { error: insErr } = await this.supabase.from(table).insert(shifted);
-      if (insErr) throw insErr;
+    for (const r of (rows || []).filter((row: any) => row[indexCol] > index)) {
+      const { error: updErr } = await this.supabase
+        .from(table)
+        .update({ [indexCol]: (r as any)[indexCol] - 1 })
+        .eq('id', (r as any).id);
+      if (updErr) throw updErr;
     }
   }
 
@@ -560,7 +589,8 @@ export class SupabaseVConQueries implements IVConQueries {
   }
 
   /**
-   * Replace the dialog at `index` (PUT). Rewrites party_history for that dialog.
+   * Replace the dialog at `index` (PUT). party_history is replaced with the
+   * rest of the dialog via `extra`; legacy party_history table rows are cleared.
    */
   async updateDialog(vconUuid: string, index: number, dialog: Dialog): Promise<void> {
     const vconId = await this.resolveVConId(vconUuid);
@@ -573,7 +603,7 @@ export class SupabaseVConQueries implements IVConQueries {
       .select('id');
     if (error) throw error;
     if (!data || data.length === 0) throw new ChildIndexError(`dialog index ${index} not found`);
-    await this.replacePartyHistory(data[0].id, dialog.party_history);
+    await this.clearLegacyPartyHistory(data[0].id);
     await this.invalidateCachedVCon(vconUuid);
   }
 
@@ -604,19 +634,20 @@ export class SupabaseVConQueries implements IVConQueries {
       .eq('vcon_id', vconId)
       .eq('dialog_index', index);
     if (error) throw error;
-    await this.replacePartyHistory(existing.id, undefined);
+    await this.clearLegacyPartyHistory(existing.id);
     await this.invalidateCachedVCon(vconUuid);
   }
 
-  /** Replace the party_history rows for a dialog row (delete-all then insert). */
-  private async replacePartyHistory(dialogId: string, history: Dialog['party_history']): Promise<void> {
-    const { error: delErr } = await this.supabase.from('party_history').delete().eq('dialog_id', dialogId);
-    if (delErr) throw delErr;
-    if (history && history.length > 0) {
-      const rows = history.map(h => ({ dialog_id: dialogId, party_index: h.party, time: h.time, event: h.event }));
-      const { error } = await this.supabase.from('party_history').insert(rows);
-      if (error) throw error;
-    }
+  /**
+   * Delete any party_history table rows for a dialog row. Since CON-1047 the
+   * dialog's party_history lives in dialog.extra, which is what getVCon returns;
+   * the table is never read and no longer written (CON-1243). Rows written
+   * before that are cleared when their dialog is replaced or removed, so a
+   * removed (redacted) dialog leaves no history behind in the table.
+   */
+  private async clearLegacyPartyHistory(dialogId: string): Promise<void> {
+    const { error } = await this.supabase.from('party_history').delete().eq('dialog_id', dialogId);
+    if (error) throw error;
   }
 
   /**
