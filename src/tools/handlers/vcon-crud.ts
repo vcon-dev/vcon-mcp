@@ -4,6 +4,7 @@
  * Uses VConService for unified lifecycle handling with hooks, validation, and metrics.
  */
 
+import { lawfulBasisWarnings } from '../../utils/lawful-basis.js';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { BaseToolHandler, ToolHandlerContext, ToolResponse } from './base.js';
 import { VCon, Analysis, Dialog, Attachment, Party } from '../../types/vcon.js';
@@ -64,6 +65,7 @@ export class CreateVConHandler extends BaseToolHandler {
         uuid: result.uuid,
         message: `Created vCon with UUID: ${result.uuid}`,
         vcon: result.vcon,
+        warnings: lawfulBasisWarnings(result.vcon),
       });
     } catch (error) {
       if (error instanceof VConValidationError) {
@@ -102,6 +104,7 @@ export class CreateVConFromTemplateHandler extends BaseToolHandler {
       return this.createSuccessResponse({
         uuid: result.uuid,
         vcon: result.vcon,
+        warnings: lawfulBasisWarnings(result.vcon),
       });
     } catch (error) {
       if (error instanceof VConValidationError) {

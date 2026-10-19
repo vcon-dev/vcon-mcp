@@ -5,6 +5,7 @@
  * and sub-resource append operations (dialog, analysis, attachments).
  */
 
+import { lawfulBasisWarnings } from '../../utils/lawful-basis.js';
 import Router from '@koa/router';
 import type { Context } from 'koa';
 import { AnalysisSchema, DialogSchema, AttachmentSchema, PartySchema } from '../../tools/vcon-crud.js';
@@ -107,6 +108,7 @@ export function createVConRoutes(apiContext: RestApiContext): Router {
         id: result.id,
         message: 'vCon created successfully',
         duration_ms: duration,
+        warnings: lawfulBasisWarnings(result.vcon),
       });
     } catch (error) {
       if (error instanceof VConValidationError) {
@@ -144,7 +146,10 @@ export function createVConRoutes(apiContext: RestApiContext): Router {
       total: batchResult.total,
       created: batchResult.created,
       failed: batchResult.failed,
-      results: batchResult.results,
+      // Results are index-aligned with the input; add per-item lawful basis warnings.
+      results: batchResult.results.map((r, i) =>
+        r.success ? { ...r, warnings: lawfulBasisWarnings(vcons[i]) } : r
+      ),
       duration_ms: duration,
     };
   });

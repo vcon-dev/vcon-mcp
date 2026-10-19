@@ -48,6 +48,19 @@ describe('vCon CRUD Routes', () => {
       expect(ctx.mocks.vconService.create).toHaveBeenCalledOnce();
     });
 
+    it('should include a lawful_basis warning when absent, without rejecting', async () => {
+      ctx.mocks.vconService.create.mockResolvedValueOnce({
+        uuid: randomUUID(),
+        id: '1',
+        vcon: { parties: [{ name: 'Test' }] },
+      });
+      const res = await request(ctx.app.callback())
+        .post(`${BASE}/vcons`)
+        .send({ parties: [{ name: 'Test' }] })
+        .expect(201);
+      expect(res.body.warnings.join()).toContain('no lawful_basis attachment');
+    });
+
     it('should return 400 for validation errors', async () => {
       const { VConValidationError } = await import('../../../src/services/vcon-service.js');
       ctx.mocks.vconService.create.mockRejectedValueOnce(new VConValidationError(['parties required']));
@@ -77,6 +90,16 @@ describe('vCon CRUD Routes', () => {
       expect(res.body.success).toBe(true);
       expect(res.body.total).toBe(2);
       expect(res.body.created).toBe(2);
+    });
+
+    it('should add per-item lawful_basis warnings', async () => {
+      const lb = { purpose: 'lawful_basis', mediatype: 'application/json', encoding: 'json', body: { lawful_basis: 'legitimate_interests', expiration: null, purpose_grants: [{ purpose: 'recording', granted: true }], proof_mechanisms: [{ mechanism_type: 'external_system' }] } };
+      const res = await request(ctx.app.callback())
+        .post(`${BASE}/vcons/batch`)
+        .send([{ parties: [{ name: 'A' }] }, { parties: [{ name: 'B' }], attachments: [lb] }])
+        .expect(201);
+      expect(res.body.results[0].warnings.join()).toContain('no lawful_basis attachment');
+      expect(res.body.results[1].warnings).toEqual([]);
     });
 
     it('should return 400 for non-array body', async () => {

@@ -147,6 +147,26 @@ describe('Schema Handlers', () => {
       expect(response.attachments).toBeDefined();
     });
 
+    it('should use purpose and mediatype, spec-format hashes, and a synthetic lawful_basis', async () => {
+      const handler = new GetExamplesHandler();
+      for (const example_type of ['phone_call', 'email', 'video', 'full_featured']) {
+        const r = JSON.parse((await handler.handle({ example_type }, mockContext)).content[0].text);
+        for (const a of r.attachments ?? []) {
+          expect(a.type).toBeUndefined();
+          expect(a.purpose).toBeDefined();
+        }
+        for (const d of [...(r.dialog ?? []), ...(r.attachments ?? [])]) {
+          if (d.content_hash) expect(d.content_hash).toMatch(/^sha512-[A-Za-z0-9_-]{86}$/);
+        }
+      }
+      const full = JSON.parse((await handler.handle({ example_type: 'full_featured' }, mockContext)).content[0].text);
+      expect(full.extensions).toContain('lawful_basis');
+      const lb = full.attachments.find((a: any) => a.purpose === 'lawful_basis');
+      expect(lb.body.lawful_basis).toBe('legitimate_interests');
+      expect(lb.body.expiration).toBeNull();
+      expect(lb.body.proof_mechanisms[0].mechanism_type).toBe('external_system');
+    });
+
     it('should return YAML format when requested', async () => {
       const handler = new GetExamplesHandler();
       const result = await handler.handle({
