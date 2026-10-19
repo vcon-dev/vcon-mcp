@@ -5,6 +5,7 @@
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { ATTR_SEARCH_TYPE } from '../../observability/attributes.js';
 import { logWithContext, recordCounter } from '../../observability/instrumentation.js';
+import { RequestContext } from '../../hooks/plugin-interface.js';
 import { VCon } from '../../types/vcon.js';
 import { EmbeddingError, generateEmbedding } from '../../utils/embeddings.js';
 import { BaseToolHandler, ToolHandlerContext, ToolResponse } from './base.js';
@@ -215,14 +216,32 @@ async function formatHitResults<T extends { vcon_id: string }>(
   hits: T[],
   responseFormat: string,
   toRow: (hit: T) => unknown,
-  context: ToolHandlerContext
+  context: ToolHandlerContext,
+  requestContext?: RequestContext
 ): Promise<unknown[]> {
   if (responseFormat === 'ids_only') {
     return [...new Set(hits.map(h => h.vcon_id))];
   }
   if (responseFormat === 'full') {
     const ids = [...new Set(hits.map(h => h.vcon_id))].slice(0, 20);
-    return Promise.all(ids.map(id => context.queries.getVCon(id)));
+    // Read through the service so beforeRead/afterRead hooks run. A vCon deleted
+    // (or otherwise unreadable) between the search and this fetch is skipped
+    // rather than failing the whole call.
+    const settled = await Promise.allSettled(
+      ids.map(id => context.vconService.get(id, { requestContext }))
+    );
+    const vcons: unknown[] = [];
+    settled.forEach((outcome, i) => {
+      if (outcome.status === 'fulfilled') {
+        vcons.push(outcome.value);
+      } else {
+        logWithContext('warn', 'Skipping vCon in full search results', {
+          vcon_uuid: ids[i],
+          reason: extractErrorMessage(outcome.reason),
+        });
+      }
+    });
+    return vcons;
   }
   return hits.map(toRow);
 }
@@ -268,7 +287,7 @@ export class SearchVConsSemanticHandler extends BaseToolHandler {
       content_reference: r.content_reference,
       content_text: r.content_text,
       similarity_score: r.similarity
-    }), context);
+    }), context, this.createRequestContext(args));
 
     return this.createSuccessResponse({
       count: results.length,
@@ -328,7 +347,7 @@ export class SearchVConsHybridHandler extends BaseToolHandler {
       combined_score: r.combined_score,
       semantic_score: r.semantic_score,
       keyword_score: r.keyword_score
-    }), context);
+    }), context, this.createRequestContext(args));
 
     return this.createSuccessResponse({
       count: results.length,

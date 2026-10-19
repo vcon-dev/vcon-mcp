@@ -65,6 +65,7 @@ describe('tool schema drift (CON-1240)', () => {
       dbAnalytics: {},
       dbSizeAnalyzer: {},
       supabase: {},
+      vconService: new VConService({ queries: mockQueries, pluginManager: mockPluginManager } as any),
     } as unknown as ToolHandlerContext;
   });
 
@@ -157,6 +158,45 @@ describe('tool schema drift (CON-1240)', () => {
       const res = await new SearchVConsSemanticHandler().handle(
         { embedding, response_format: 'full' }, ctx);
       expect(JSON.parse(res.content[0].text).results).toEqual([{ uuid: 'a' }, { uuid: 'b' }]);
+    });
+
+    it('full reads through the service so afterRead hooks run', async () => {
+      mockQueries.semanticSearch.mockResolvedValue(hits);
+      mockQueries.getVCon.mockImplementation(async (id: string) => ({ uuid: id }));
+      mockPluginManager.executeHook.mockImplementation(async (name: string, arg: any) =>
+        name === 'afterRead' ? { ...arg, redacted_by_hook: true } : undefined);
+      const res = await new SearchVConsSemanticHandler().handle(
+        { embedding, response_format: 'full' }, ctx);
+      expect(JSON.parse(res.content[0].text).results).toEqual([
+        { uuid: 'a', redacted_by_hook: true },
+        { uuid: 'b', redacted_by_hook: true },
+      ]);
+      expect(mockPluginManager.executeHook.mock.calls.filter((c: any[]) => c[0] === 'afterRead')).toHaveLength(2);
+    });
+
+    it('full skips a vCon deleted between search and fetch instead of failing the call', async () => {
+      mockQueries.semanticSearch.mockResolvedValue(hits);
+      mockQueries.getVCon.mockImplementation(async (id: string) => {
+        if (id === 'a') throw new Error('vCon not found: a');
+        return { uuid: id };
+      });
+      const res = await new SearchVConsSemanticHandler().handle(
+        { embedding, response_format: 'full' }, ctx);
+      expect(JSON.parse(res.content[0].text).results).toEqual([{ uuid: 'b' }]);
+    });
+
+    it('hybrid full skips a failing fetch too', async () => {
+      mockQueries.hybridSearch.mockResolvedValue([
+        { vcon_id: 'a', combined_score: 1, semantic_score: 1, keyword_score: 1 },
+        { vcon_id: 'b', combined_score: 1, semantic_score: 1, keyword_score: 1 },
+      ]);
+      mockQueries.getVCon.mockImplementation(async (id: string) => {
+        if (id === 'b') throw new Error('gone');
+        return { uuid: id };
+      });
+      const res = await new SearchVConsHybridHandler().handle(
+        { query: 'q', embedding, response_format: 'full' }, ctx);
+      expect(JSON.parse(res.content[0].text).results).toEqual([{ uuid: 'a' }]);
     });
 
     it('semantic default stays hit-level rows', async () => {
