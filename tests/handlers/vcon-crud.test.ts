@@ -165,6 +165,54 @@ describe('vCon CRUD Handlers', () => {
       );
     });
 
+    it('should warn (without rejecting) when no lawful_basis attachment', async () => {
+      const handler = new CreateVConHandler();
+      const testUuid = randomUUID();
+      mockVConService.create.mockResolvedValue({
+        uuid: testUuid,
+        id: '1',
+        vcon: { vcon: '0.4.0', uuid: testUuid, created_at: new Date().toISOString(), parties: [{ name: 'A' }] },
+      });
+      const result = await handler.handle({ parties: [{ name: 'A' }] }, mockContext);
+      const response = JSON.parse(result.content[0].text);
+      expect(response.uuid).toBe(testUuid);
+      expect(response.warnings.join()).toContain('no lawful_basis attachment');
+    });
+
+    it('should pass a lawful_basis attachment through intact with no warnings', async () => {
+      const handler = new CreateVConHandler();
+      const testUuid = randomUUID();
+      const attachment = {
+        purpose: 'lawful_basis',
+        start: '2025-01-02T12:15:30Z',
+        party: 0,
+        dialog: 0,
+        mediatype: 'application/json',
+        encoding: 'json',
+        body: {
+          lawful_basis: 'consent',
+          expiration: '2999-01-02T12:00:00Z',
+          purpose_grants: [{ purpose: 'recording', granted: true, granted_at: '2025-01-02T12:15:30Z' }],
+          proof_mechanisms: [{ mechanism_type: 'audio_recording', dialog_index: 0, description: 'Verbal consent' }],
+        },
+      };
+      mockVConService.create.mockImplementation(async (data: any) => ({
+        uuid: testUuid,
+        id: '1',
+        vcon: { vcon: '0.4.0', uuid: testUuid, created_at: new Date().toISOString(), ...data },
+      }));
+      const result = await handler.handle({ parties: [{ name: 'A' }], attachments: [attachment] }, mockContext);
+      expect(mockVConService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ attachments: [attachment] }),
+        expect.anything()
+      );
+      const response = JSON.parse(result.content[0].text);
+      expect(response.vcon.attachments[0].purpose).toBe('lawful_basis');
+      expect(response.vcon.attachments[0].body).toEqual(attachment.body);
+      expect(response.vcon.extensions).toBeUndefined();
+      expect(response.warnings).toEqual([]);
+    });
+
     it('should apply plugin modifications from beforeCreate hook', async () => {
       const handler = new CreateVConHandler();
       const testUuid = randomUUID();
@@ -231,6 +279,19 @@ describe('vCon CRUD Handlers', () => {
       const response = JSON.parse(result.content[0].text);
       expect(response.success).toBe(true);
       expect(response.uuid).toBe(uuid);
+    });
+
+    it('should include a lawful_basis warning for template-created vCons', async () => {
+      const handler = new CreateVConFromTemplateHandler();
+      const uuid = randomUUID();
+      mockVConService.create.mockResolvedValue({
+        uuid,
+        id: '1',
+        vcon: { vcon: '0.4.0', uuid, created_at: new Date().toISOString(), parties: [{ name: 'A' }] },
+      });
+      const result = await handler.handle({ template_name: 'phone_call', parties: [{ name: 'A' }] }, mockContext);
+      const response = JSON.parse(result.content[0].text);
+      expect(response.warnings.join()).toContain('no lawful_basis attachment');
     });
 
     it('should throw error if template_name is missing', async () => {
