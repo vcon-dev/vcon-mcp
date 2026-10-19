@@ -531,7 +531,8 @@ export class MongoVConQueries implements IVConQueries {
 
         const results = await collection
             .find(query)
-            .sort({ created_at: -1 })
+            // uuid DESC tie-break keeps ids cursor paging stable (matches Supabase searchVCons)
+            .sort({ created_at: -1, uuid: -1 })
             .skip(filters.offset || 0)
             .limit(filters.limit || 10)
             .toArray();
