@@ -18,8 +18,7 @@ export const createFromTemplateTool = {
         items: { type: 'object' },
         description: 'Participants in the conversation',
       },
-      subject: { type: 'string' },
-      metadata: { type: 'object' }
+      subject: { type: 'string' }
     },
     required: ['template_name', 'parties']
   }

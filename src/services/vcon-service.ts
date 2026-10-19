@@ -271,6 +271,9 @@ export class VConService {
     }
     if (Object.prototype.hasOwnProperty.call(updates, 'critical')) {
       allowed.critical = updates.critical as string[] | undefined;
+    } else if (Object.prototype.hasOwnProperty.call(updates, 'must_support')) {
+      // 'must_support' is the pre-0.4.0 name; critical wins when both are given.
+      allowed.critical = (updates as any).must_support as string[] | undefined;
     }
 
     // Hook: beforeUpdate
@@ -380,24 +383,45 @@ export class VConService {
    * Normalize vCon data with defaults
    */
   private normalizeVCon(data: Partial<VCon>): VCon {
+    // Strip legacy (pre-0.4.0) key spellings so they are not carried through `...data`.
+    // The 0.4.0 name wins when both are present.
+    const { must_support, appended, ...rest } = data as Partial<VCon> & {
+      must_support?: string[];
+      appended?: VCon['amended'];
+    };
     return {
-      ...data, // keep extension keys such as top-level meta (CON-1047)
+      ...rest, // keep extension keys such as top-level meta (CON-1047)
       vcon: (data.vcon || '0.4.0') as '0.4.0',
       uuid: data.uuid || randomUUID(),
       created_at: data.created_at || new Date().toISOString(),
       updated_at: data.updated_at,
       subject: data.subject,
       parties: data.parties || [],
-      dialog: data.dialog,
-      analysis: data.analysis,
-      attachments: data.attachments,
+      dialog: renameLegacyMimetype(data.dialog),
+      analysis: renameLegacyMimetype(data.analysis),
+      attachments: renameLegacyMimetype(data.attachments),
       group: data.group,
       extensions: data.extensions,
-      critical: data.critical,
+      critical: data.critical ?? must_support,
       redacted: data.redacted,
-      amended: data.amended,
+      amended: data.amended ?? appended,
     };
   }
+}
+
+/**
+ * Rename legacy `mimetype` to `mediatype` on each entry (new name wins; the
+ * legacy key is never left behind).
+ */
+function renameLegacyMimetype<T>(items: T[] | undefined): T[] | undefined {
+  if (!Array.isArray(items)) return items;
+  return items.map(item => {
+    if (!item || typeof item !== 'object' || !('mimetype' in item)) return item;
+    const { mimetype, ...others } = item as T & { mimetype?: string };
+    const out: any = { ...others };
+    if (out.mediatype === undefined && mimetype !== undefined) out.mediatype = mimetype;
+    return out as T;
+  });
 }
 
 // ============================================================================

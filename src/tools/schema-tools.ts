@@ -7,7 +7,6 @@ export const getSchemaTool = {
   inputSchema: {
     type: 'object' as const,
     properties: {
-      version: { type: 'string', default: 'latest' },
       format: { type: 'string', enum: ['json_schema', 'typescript'], default: 'json_schema' }
     }
   }

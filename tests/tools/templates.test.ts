@@ -19,7 +19,7 @@ describe('Templates', () => {
       expect(createFromTemplateTool.inputSchema.properties).toHaveProperty('template_name');
       expect(createFromTemplateTool.inputSchema.properties).toHaveProperty('parties');
       expect(createFromTemplateTool.inputSchema.properties).toHaveProperty('subject');
-      expect(createFromTemplateTool.inputSchema.properties).toHaveProperty('metadata');
+      expect(createFromTemplateTool.inputSchema.properties).not.toHaveProperty('metadata');
     });
 
     it('should have required fields', () => {

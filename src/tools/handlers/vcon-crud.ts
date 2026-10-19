@@ -187,6 +187,9 @@ export class UpdateVConHandler extends BaseToolHandler {
     }
     if (Object.prototype.hasOwnProperty.call(updates, 'critical')) {
       allowed.critical = updates.critical as string[] | undefined;
+    } else if (Object.prototype.hasOwnProperty.call(updates, 'must_support')) {
+      // 'must_support' is the pre-0.4.0 name; critical wins when both are given.
+      allowed.critical = (updates as any).must_support as string[] | undefined;
     }
 
     const requestContext = this.createRequestContext(args);
