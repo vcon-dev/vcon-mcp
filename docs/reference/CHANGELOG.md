@@ -7,7 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [1.10.0] - 2026-10-19
+
+### Migrations
+Apply with `supabase db push` (or your migration runner) before or after deploying; the
+code works either way.
+- `20260925000000_preserve_extra_fields.sql` adds the `extra` jsonb columns (#95)
+- `20261019120000_remove_vcon_child_compact.sql` adds `remove_vcon_child_and_compact`.
+  Until it exists, removals fall back to the old non-atomic path and log a warning once.
+  It is created in `public`; per-group schemas bootstrapped earlier need it created there (#111)
+- `20261019130000_restore_legacy_session_id.sql` restores dialog `session_id` values that
+  the 2025-11 data migration rewrote as `{local: <old>, remote: "nil"}`. Only rows still
+  holding exactly that object change; `session_id_legacy` is kept (#110)
+
+### Added
+- Create responses (`create_vcon`, `create_vcon_from_template`, `POST /vcons`, each batch
+  item) carry `warnings: string[]`, which flags a missing or incomplete `lawful_basis`
+  attachment. Nothing is defaulted or invented (#112)
+- `resources/templates/list`: parameterised resource URIs are served as templates;
+  `resources/list` now returns only concrete URIs (#109)
+- `response_format` (`metadata`, `ids_only`, `full`) on `search_vcons_semantic` and
+  `search_vcons_hybrid` (#108)
+- `embed-vcons` accepts `?analysis_types=` to restrict which analyses are embedded (#97)
+
+### Changed
+- REST returns 400 for invalid query params (`limit`, `min_count`, `top_n`, `months_back`,
+  `threshold`, `semantic_weight`, `embedding`) instead of silently using the default (#107)
+- REST child writes (dialog, analysis, attachments, parties) run the same semantic validation
+  as the MCP tools and return 400 when it fails (#107)
+- Unauthenticated `GET /health` returns status only; database connection details need a
+  valid API key (#107)
+- MCP tools report bad input as `InvalidParams` instead of `InternalError` (#108)
+- `update_vcon` declares `critical`; `must_support` is still accepted as an alias. REST create
+  maps `must_support`, `appended` and `mimetype` to their 0.4.0 names (#108)
+- Removed unused tool parameters: `create_vcon_from_template.metadata`,
+  `get_schema.version`, and `include_count` on semantic and hybrid search (#108)
+- Ids-resource `next_cursor` is now `<created_at>,<uuid>`; bare timestamps still work (#109)
+- `get_examples` attachments use `purpose` and `mediatype`; `full_featured` carries a
+  synthetic lawful_basis attachment (#112)
+- The `party_history` table is no longer written; dialog `party_history` round-trips through
+  `extra` (#111)
+- API reference, resources, prompts, env var and CLAUDE.md docs rewritten against the code;
+  56 broken relative links fixed (#113, #114)
+- Postgres tuning guide for large corpora in `docs/deployment/production.md` (#96)
+
 ### Fixed
+- A missing vCon returns 404, not 500, on REST child, index and tag routes (#107)
+- Non-SELECT `POST /database/analyze` returns 400, not 500 (#107)
+- `update_vcon` could not set `critical` when following its own schema (#108)
+- `threshold: 0` and `semantic_weight: 0` were replaced by their defaults (#108)
+- `vcon://v1/vcons/ids/{n}/after/{cursor}` returned the first page again; it now pages older
+  rows with a uuid tie-break on both Supabase and MongoDB (#109)
+- Dialog `session_id` accepts the core-02 `{local, remote}` object or an array of them;
+  legacy strings are still accepted (#110)
+- Removing an analysis or attachment could lose later rows if the reinsert failed; it is now
+  one transaction (#111)
+- `GET /vcons` `has_more` could be wrong when a plugin filtered results (#111)
+- Storing a vCon dropped fields outside each table's columns and changed some body types on
+  read; they now round-trip through `extra` (CON-1047, #95)
+- A tenant attachment with `purpose: "tenant"` and no `type` left `tenant_id` NULL on the
+  vCon and its children (#99)
 - `add_analysis`/`add_dialog`/`add_attachment` (MCP tools and their REST equivalents:
   `POST`/`PATCH /vcons/:uuid/{analysis,dialog,attachments}`) now accept a JSON `body`
   (object, array, number, boolean, or null) when `encoding: "json"`, per
