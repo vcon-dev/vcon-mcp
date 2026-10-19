@@ -15,8 +15,18 @@
 --
 -- SECURITY INVOKER so the caller's RLS (tenant isolation) applies to every row
 -- touched. No `SET search_path`: table names resolve against the caller's
--- search_path, which PostgREST sets to the instance's SUPABASE_DB_SCHEMA, so
--- one definition serves public and per-group schemas (scripts/bootstrap-schema.sh).
+-- search_path, which PostgREST sets from the request's schema profile.
+--
+-- This definition is NOT shared across schemas. supabase-js sends .rpc() to the
+-- configured db.schema (src/db/client.ts, SUPABASE_DB_SCHEMA), so PostgREST
+-- resolves <schema>.remove_vcon_child_and_compact. This migration creates the
+-- function in public only. A per-group schema created by
+-- scripts/bootstrap-schema.sh before this migration has no copy, and removals
+-- there take the non-atomic fallback (logged once per process). The bootstrap
+-- script does not apply migrations: it dumps the current public schema, so a
+-- schema bootstrapped after this migration reaches public inherits the function.
+-- For an existing group schema, re-run the bootstrap or create the function in
+-- that schema by hand.
 --
 -- Raises P0002 (no_data_found) when no row has that index; the service maps it
 -- to ChildIndexError.

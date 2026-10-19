@@ -60,6 +60,15 @@ function isMissingFunctionError(error: { code?: string } | null | undefined): bo
   return error?.code === 'PGRST202' || error?.code === '42883';
 }
 
+// The compaction-fallback warning is about the deployment, not the removal, so
+// log it once per process instead of on every removal.
+let compactionFallbackWarned = false;
+
+/** Test hook: re-arm the once-per-process compaction fallback warning. */
+export function _resetCompactionFallbackWarningForTests(): void {
+  compactionFallbackWarned = false;
+}
+
 export class SupabaseVConQueries implements IVConQueries {
   private redis: Redis | null = null;
   private cacheEnabled: boolean = false;
@@ -479,10 +488,13 @@ export class SupabaseVConQueries implements IVConQueries {
     if (!error) return;
     if (error.code === 'P0002') throw new ChildIndexError(`${table} index ${index} not found`);
     if (!isMissingFunctionError(error)) throw error;
-    logWithContext('warn', 'remove_vcon_child_and_compact RPC missing; using non-atomic fallback. Apply migration 20261019120000_remove_vcon_child_compact.sql', {
-      table,
-      reason: error.message,
-    });
+    if (!compactionFallbackWarned) {
+      compactionFallbackWarned = true;
+      logWithContext('warn', 'remove_vcon_child_and_compact RPC missing; using non-atomic fallback. Apply migration 20261019120000_remove_vcon_child_compact.sql (and create the function in each per-group schema)', {
+        table,
+        reason: error.message,
+      });
+    }
     await this.compactChildTableLegacy(table, indexCol, vconId, index);
   }
 
