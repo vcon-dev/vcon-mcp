@@ -169,6 +169,6 @@ For a database with 1GB of text data, expect ~100-200MB additional storage for t
 ## Related Documentation
 
 - [Search Tools Guide](./guide/search.md) - How to use search tools
-- [Database Architecture](./DATABASE_ARCHITECTURE_FOR_LLMS.md) - Complete database design
+- [Database Architecture](../DATABASE_ARCHITECTURE_FOR_LLMS.md) - Complete database design
 - [Index Analysis Script](../scripts/analyze-search-indexes.ts) - Analyze your indexes
 

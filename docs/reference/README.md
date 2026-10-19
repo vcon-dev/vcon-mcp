@@ -78,7 +78,7 @@ This implementation fixes 7 critical issues found in many vCon implementations:
 
 All corrections are based on:
 - **Specification:** `draft-ietf-vcon-vcon-core-02`
-- **Location:** `../background_docs/draft-ietf-vcon-vcon-core-02.txt`
+- **Location:** https://datatracker.ietf.org/doc/draft-ietf-vcon-vcon-core/ (the repo's `background_docs/` holds only the -00 text)
 - **Working Group:** https://datatracker.ietf.org/wg/vcon/
 
 ## Related Documentation
@@ -86,7 +86,7 @@ All corrections are based on:
 - **[Main README](../../README.md)** - Project overview and quick start
 - **[Building Guide](../development/building.md)** - Complete build instructions
 - **[Getting Started](../guide/getting-started.md)** - User guide
-- **[Background Docs](../background_docs/)** - IETF specifications
+- **[Background Docs](https://github.com/vcon-dev/vcon-mcp/tree/main/background_docs)** - IETF specifications
  - **[AGENT_DATABASE_SCHEMA.md](AGENT_DATABASE_SCHEMA.md)** - Embeddings table and vector dimensions
  - **[Search tools guide](../guide/search.md)** - Hybrid and semantic search from MCP
 

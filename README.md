@@ -33,7 +33,7 @@ The Model Context Protocol (MCP) enables AI assistants to use external tools and
 - ✅ **Database Analytics** - Comprehensive analytics for size, growth, content patterns, and health monitoring
 - ✅ **Large Database Support** - Smart response limiting, metadata-only options, and memory-safe queries
 - ✅ **OpenTelemetry Observability** - Full traces, metrics, and structured logs with console or OTLP export
-- ✅ **Query Prompts** - 9 pre-built prompts to guide effective searching and retrieval:
+- ✅ **Query Prompts** - 10 pre-built prompts to guide effective searching and retrieval:
   - Exact tag matching (e.g., "find angry customers from June")
   - Semantic search (e.g., "find frustrated users")
   - Keyword search (e.g., "find conversations mentioning refund")
@@ -310,7 +310,7 @@ HTTP server mode enables browser-based clients and remote connections using the 
 - ✅ **Stateful or stateless** session management
 - ✅ **SSE streaming** for real-time responses
 - ✅ **JSON-only mode** for simple request/response
-- ✅ **CORS support** for browser clients
+- ✅ **CORS support** for the REST API (`CORS_ORIGIN`)
 - ✅ **DNS rebinding protection** for security
 - ✅ **Session resumability** (optional)
 
@@ -328,9 +328,8 @@ MCP_HTTP_PORT=3000
 # Optional: JSON-only responses (no SSE streaming)
 # MCP_HTTP_JSON_ONLY=true
 
-# Optional: CORS for browser clients
-# MCP_HTTP_CORS=true
-# MCP_HTTP_CORS_ORIGIN=*
+# Optional: CORS origin for the REST API (default *). There is no MCP_HTTP_CORS switch.
+# CORS_ORIGIN=*
 
 # Optional: DNS rebinding protection
 # MCP_HTTP_DNS_PROTECTION=true
@@ -412,7 +411,7 @@ When running in HTTP transport mode, the server exposes a full RESTful HTTP API 
 # REST API settings (optional - defaults work for most cases)
 REST_API_BASE_PATH=/api/v1     # Base path for endpoints
 REST_API_ENABLED=true          # Enable/disable REST API
-CORS_ORIGIN=*                  # CORS allowed origins
+CORS_ORIGIN=*                  # CORS allowed origin for the REST API (default *)
 
 # API Key Authentication
 API_KEYS=key1,key2             # Comma-separated valid API keys (full read/write)
@@ -651,6 +650,10 @@ The server exposes URI-based resources for direct reads:
 - `vcon://v1/discovery/attachments/purposes` – discovered attachment purposes with counts
 - `vcon://v1/discovery/attachments/types` – discovered legacy attachment types with counts
 - `vcon://v1/discovery/analysis/types` – discovered analysis types with counts
+- `vcon://v1/graph/shape` – corpus shape graph (same payload as the `vcon_graph_shape` tool)
+- `vcon://v1/vcons/recent` – most recent vCons (`/recent/{limit}`, max 100)
+- `vcon://v1/vcons/recent/ids` – recent vCon IDs (`/recent/ids/{limit}`, max 100)
+- `vcon://v1/vcons/ids` – all vCon IDs, cursor paged (`/ids/{limit}`, max 1000; `/ids/{limit}/after/{cursor}` with the compound `next_cursor`)
 - `vcon://v1/vcons/{uuid}` – full vCon JSON
 - `vcon://v1/vcons/{uuid}/metadata` – metadata only
 - `vcon://v1/vcons/{uuid}/parties` – parties array
@@ -663,6 +666,8 @@ The server exposes URI-based resources for direct reads:
 - `vcon://v1/vcons/{uuid}/transcript` – transcript analysis (filtered)
 - `vcon://v1/vcons/{uuid}/summary` – summary analysis (filtered)
 - `vcon://v1/vcons/{uuid}/tags` – tags as object (parsed)
+
+Concrete URIs appear in `resources/list`; parameterised ones (`{uuid}`, `{limit}`, `{cursor}`, ...) appear in `resources/templates/list`.
 
 For attachment- or analysis-backed classifications, start with the discovery resources and then read the matching filtered surface. For attachments, prefer `purpose`; use `type` only for compatibility with older datasets. Prefer tags only when the data is actually stored as tags.
 

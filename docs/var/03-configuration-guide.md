@@ -30,8 +30,6 @@ this guide as the reseller-lens grouping with one-line meanings.
 | `MCP_HTTP_PORT` | `3000` | |
 | `MCP_HTTP_STATELESS` | `false` | Set `true` to disable session tracking |
 | `MCP_HTTP_JSON_ONLY` | `false` | Set `true` to disable SSE streaming |
-| `MCP_HTTP_CORS` | `false` | Enable CORS for browser clients |
-| `MCP_HTTP_CORS_ORIGIN` | `*` | Allowed origin |
 | `MCP_HTTP_DNS_PROTECTION` | `false` | DNS rebinding protection |
 | `MCP_HTTP_ALLOWED_HOSTS` | — | Comma-separated whitelist |
 | `MCP_HTTP_ALLOWED_ORIGINS` | — | Comma-separated whitelist |
@@ -42,7 +40,7 @@ this guide as the reseller-lens grouping with one-line meanings.
 |---|---|---|
 | `REST_API_ENABLED` | `true` | Enable REST endpoints alongside MCP |
 | `REST_API_BASE_PATH` | `/api/v1` | Endpoint prefix |
-| `CORS_ORIGIN` | `*` | REST API CORS |
+| `CORS_ORIGIN` | `*` | Allowed CORS origin for the REST API (the server does not read `MCP_HTTP_CORS` or `MCP_HTTP_CORS_ORIGIN`) |
 
 ## Authentication
 
@@ -99,6 +97,7 @@ Semantic and hybrid search require an embeddings provider.
 | `OPENAI_API_KEY` | for OpenAI direct | Key for embedding generation |
 | `LITELLM_PROXY_URL` | for LiteLLM | Proxy endpoint, e.g. `http://localhost:4000` |
 | `LITELLM_MASTER_KEY` | for LiteLLM | LiteLLM master key |
+| `EMBEDDING_PROVIDER` | no | Forces the provider used to embed search queries: `supabase` or `openai`. Unset, the server uses `openai` when `OPENAI_API_KEY` is set, otherwise `supabase`. Use the provider that built the corpus; `vcon_embeddings.embedding_model` records it, and mixing providers makes similarity scores meaningless |
 
 If neither is set, content search and tag search still work; semantic
 search returns no results.
@@ -124,6 +123,21 @@ them.
 
 Architecture: [Plugin reference](../reference/plugin-architecture.md),
 [Plugin development](../development/plugins.md).
+
+## Media storage
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `AWS_REGION` | `us-east-1` | S3 region for media storage, used when the media storage config sets no region |
+
+## Build and migration variables
+
+| Variable | Meaning |
+|---|---|
+| `VCON_MCP_VERSION` | Version string reported by `/version` and in logs. Set at image build time; `dev` when unset |
+| `VCON_MCP_GIT_COMMIT` | Commit reported with the version. `unknown` when unset |
+| `VCON_MCP_BUILD_TIME` | Build timestamp. Falls back to server start time when unset |
+| `SUPABASE_DB_URL` | Postgres connection string. Not read by the server. The Docker image's `migrate` and `migrate-status` commands require it to run `supabase db push` and `supabase migration list` |
 
 ## Observability
 

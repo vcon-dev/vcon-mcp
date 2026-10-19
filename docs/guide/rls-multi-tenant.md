@@ -449,7 +449,7 @@ ALTER TABLE vcons DROP COLUMN IF EXISTS tenant_id;
 ## Related Documentation
 
 - [Configuration Guide](configuration.md) - Environment variable reference
-- [Security Best Practices](../development/security.md) - General security guidelines
+- [Security Best Practices](../../SECURITY.md) - General security guidelines
 - [Supabase RLS Documentation](https://supabase.com/docs/guides/auth/row-level-security)
 
 ## Support

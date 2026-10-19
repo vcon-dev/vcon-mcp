@@ -28,7 +28,7 @@ docker pull public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp:latest
 ```
 
 Tags published per build: `main-<7-char-sha>`, `latest` (main HEAD), and
-semver tags (e.g. `1.2.0`, `1.2`, `1`) on tagged releases.
+semver tags (e.g. `1.9.2`, `1.9`, `1`) on tagged releases.
 
 ## 2. Apply database migrations
 

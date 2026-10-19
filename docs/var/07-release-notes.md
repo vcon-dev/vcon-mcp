@@ -7,8 +7,11 @@ canonical, developer-oriented changelog see
 > Versions track the underlying `vcon-mcp` package. The current published
 > version is read from
 > [`package.json`](https://github.com/vcon-dev/vcon-mcp/blob/main/package.json).
+> This page summarizes 1.2.0 only. Releases after 1.2.0 are listed in the
+> canonical [Changelog](../reference/CHANGELOG.md); this page has not been
+> updated for them.
 
-## Current version
+## Version 1.2.0 summary
 
 ### 1.2.0
 
@@ -46,8 +49,8 @@ Standard stop-the-world procedure — see
 
 ## Prior versions
 
-For the full version history, including 1.0.x and 1.1.x details, see
-the canonical [Changelog](../reference/CHANGELOG.md).
+For the full version history, including 1.0.x and 1.1.x details and every
+release after 1.2.0, see the canonical [Changelog](../reference/CHANGELOG.md).
 
 ---
 

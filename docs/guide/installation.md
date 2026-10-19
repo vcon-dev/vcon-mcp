@@ -563,7 +563,12 @@ Embedding provider priority: **LiteLLM → Azure OpenAI → OpenAI → Hugging F
 | `HF_API_TOKEN` | ❌ No | Hugging Face API token for embeddings (lowest priority fallback) | - |
 | `VCON_PLUGINS_PATH` | ❌ No | Comma-separated plugin paths | - |
 | `VCON_LICENSE_KEY` | ❌ No | Enterprise license key | - |
-| `MCP_SERVER_NAME` | ❌ No | Server name for MCP | `vcon-mcp-server` |
+| `EMBEDDING_PROVIDER` | ❌ No | Forces the query embedding provider: `supabase` or `openai`. Unset: `openai` if `OPENAI_API_KEY` is set, else `supabase` | auto |
+| `AWS_REGION` | ❌ No | S3 region for media storage when none is configured | `us-east-1` |
+| `VCON_MCP_VERSION` | ❌ No | Version reported by `/version`; set at image build time | `dev` |
+| `VCON_MCP_GIT_COMMIT` | ❌ No | Commit reported with the version | `unknown` |
+| `VCON_MCP_BUILD_TIME` | ❌ No | Build timestamp reported with the version | server start time |
+| `SUPABASE_DB_URL` | ❌ No | Used only by the Docker image's `migrate` and `migrate-status` commands, not by the server | - |
 | `LOG_LEVEL` | ❌ No | Logging level (debug/info/warn/error) | `info` |
 
 ---

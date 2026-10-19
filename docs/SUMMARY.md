@@ -21,6 +21,8 @@
 * [MCP Resources](api/resources.md)
 * [MCP Prompts](api/prompts.md)
 * [TypeScript Types](api/types.md)
+* [Database Schema](api/schema.md)
+* [Shape Graph and Plugins](api/shape-graph-and-plugins.md)
 
 ## Development
 
