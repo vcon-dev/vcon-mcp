@@ -376,10 +376,79 @@ describe('Resources Endpoint Tests', () => {
       const result = await resolveCoreResource(queries, `vcon://v1/vcons/ids/50/after/${encodeURIComponent(afterTimestamp)}`);
 
       expect(result).toBeDefined();
+      // Next page is strictly older rows: an upper bound, never a startDate
       expect(queries.searchVCons).toHaveBeenCalledWith({
         limit: 51,
-        startDate: expect.stringContaining('2024-01-01'),
+        offset: 0,
+        endDate: afterTimestamp,
       });
+    });
+
+    it('should walk every row exactly once across pages, including a timestamp tie at a page boundary', async () => {
+      // CON-1241: the cursor was fed back as startDate, so page 2 returned page 1.
+      const T = (n: number) => new Date(Date.UTC(2026, 0, 31 - n)).toISOString();
+      const rows: VCon[] = [
+        // rows 2 and 3 tie on created_at and straddle the page-1/page-2 boundary
+        ...[0, 1].map(i => ({ uuid: `00000000-0000-4000-8000-00000000000${i}`, created_at: T(i) })),
+        ...[2, 3].map(i => ({ uuid: `00000000-0000-4000-8000-00000000000${i}`, created_at: T(2) })),
+        ...[4, 5, 6, 7, 8].map(i => ({ uuid: `00000000-0000-4000-8000-00000000000${i}`, created_at: T(i - 1) })),
+      ].map(r => ({ vcon: '0.4.0', subject: r.uuid, parties: [], ...r }) as VCon);
+      // Serve in the order searchVCons does: created_at DESC, uuid DESC
+      rows.sort((a, b) => b.created_at!.localeCompare(a.created_at!) || b.uuid.localeCompare(a.uuid));
+
+      // Faithful stand-in for searchVCons: endDate is inclusive (lte), then order, then range
+      vi.spyOn(queries, 'searchVCons').mockImplementation(async (f: any) => {
+        const matching = rows.filter(r => !f.endDate || r.created_at! <= f.endDate);
+        return matching.slice(f.offset || 0, (f.offset || 0) + f.limit);
+      });
+
+      const seen: string[] = [];
+      let uri = 'vcon://v1/vcons/ids/3';
+      let pages = 0;
+      for (;;) {
+        const result = await resolveCoreResource(queries, uri);
+        const page = result!.content as any;
+        pages++;
+        seen.push(...page.vcons.map((v: any) => v.uuid));
+        if (!page.has_more) break;
+        expect(page.next_cursor).toBeTruthy();
+        uri = `vcon://v1/vcons/ids/3/after/${encodeURIComponent(page.next_cursor)}`;
+        expect(pages).toBeLessThan(10);
+      }
+
+      expect(pages).toBeGreaterThanOrEqual(3);
+      expect(seen).toEqual(rows.map(r => r.uuid)); // no repeats, no gaps, newest first
+    });
+
+    it('should not treat same-millisecond rows with different microseconds as a tie', async () => {
+      // Same ms, different µs, and uuid order opposite to timestamp order: the older row
+      // (…123100) has the larger uuid, so a ms-precision tie-break would skip it.
+      const mk = (uuid: string, created_at: string) => ({ vcon: '0.4.0', uuid, created_at, parties: [] }) as VCon;
+      const rows = [
+        mk('00000000-0000-4000-8000-000000000001', '2026-01-01T00:00:00.123900+00:00'),
+        mk('00000000-0000-4000-8000-000000000009', '2026-01-01T00:00:00.123100+00:00'),
+      ];
+      vi.spyOn(queries, 'searchVCons').mockImplementation(async (f: any) =>
+        rows.filter(r => !f.endDate || r.created_at! <= f.endDate).slice(f.offset || 0, (f.offset || 0) + f.limit));
+
+      const page1 = (await resolveCoreResource(queries, 'vcon://v1/vcons/ids/1'))!.content as any;
+      expect(page1.vcons.map((v: any) => v.uuid)).toEqual([rows[0].uuid]);
+      const page2 = (await resolveCoreResource(
+        queries, `vcon://v1/vcons/ids/1/after/${encodeURIComponent(page1.next_cursor)}`))!.content as any;
+      expect(page2.vcons.map((v: any) => v.uuid)).toEqual([rows[1].uuid]);
+    });
+
+    it('should accept a legacy timestamp-only cursor and return strictly older rows', async () => {
+      const rows = [3, 2, 1, 0].map(i => ({
+        vcon: '0.4.0', uuid: `uuid-${i}`, created_at: new Date(Date.UTC(2026, 0, 1 + i)).toISOString(), parties: [],
+      }) as VCon);
+      vi.spyOn(queries, 'searchVCons').mockImplementation(async (f: any) =>
+        rows.filter(r => !f.endDate || r.created_at! <= f.endDate).slice(f.offset || 0, (f.offset || 0) + f.limit));
+
+      const cursor = rows[1].created_at!; // 2026-01-03
+      const result = await resolveCoreResource(queries, `vcon://v1/vcons/ids/10/after/${encodeURIComponent(cursor)}`);
+
+      expect((result!.content as any).vcons.map((v: any) => v.uuid)).toEqual(['uuid-1', 'uuid-0']);
     });
 
     it('should return null next_cursor when no more results', async () => {

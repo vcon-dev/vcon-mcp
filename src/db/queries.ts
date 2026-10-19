@@ -1041,6 +1041,8 @@ export class SupabaseVConQueries implements IVConQueries {
       if (filters.startDate) out = out.gte('created_at', filters.startDate);
       if (filters.endDate) out = out.lte('created_at', filters.endDate);
       out = out.order('created_at', { ascending: false });
+      // uuid tie-break: rows sharing a created_at need a stable order for cursor paging
+      out = out.order('uuid', { ascending: false });
       // ponytail: offset paging shifts by one row per insert landing mid-walk; keyset cursor on
       // created_at if a live corpus needs gap-free walks
       if (withRange) out = out.range(offset, offset + initialLimit - 1);
@@ -1070,7 +1072,8 @@ export class SupabaseVConQueries implements IVConQueries {
         }
         if (!error) {
           accumulated.sort((a, b) =>
-            (b.created_at || '').localeCompare(a.created_at || ''),
+            (b.created_at || '').localeCompare(a.created_at || '') ||
+            (b.uuid || '').localeCompare(a.uuid || ''),
           );
           data = accumulated.slice(offset, offset + initialLimit);
         }

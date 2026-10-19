@@ -8,6 +8,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
   ListResourcesRequestSchema,
+  ListResourceTemplatesRequestSchema,
   ReadResourceRequestSchema,
   ListPromptsRequestSchema,
   GetPromptRequestSchema,
@@ -33,7 +34,7 @@ import { allDatabaseTools } from '../tools/database-tools.js';
 import { allDatabaseAnalyticsTools } from '../tools/database-analytics.js';
 import { allDatabaseSizeTools } from '../tools/database-size-tools.js';
 import { allTagTools } from '../tools/tag-tools.js';
-import { getCoreResources, resolveCoreResource } from '../resources/index.js';
+import { getConcreteCoreResources, getCoreResourceTemplates, resolveCoreResource } from '../resources/index.js';
 import { allPrompts, generatePromptMessage } from '../prompts/index.js';
 import type { ServerContext } from './setup.js';
 
@@ -203,7 +204,7 @@ export function registerHandlers(context: ServerContext, options: { readonly?: b
       transport: transportType,
     });
 
-    const core = getCoreResources().map((r) => ({
+    const core = getConcreteCoreResources().map((r) => ({
       uri: r.uri,
       name: r.name,
       description: r.description,
@@ -220,6 +221,11 @@ export function registerHandlers(context: ServerContext, options: { readonly?: b
     });
 
     return { resources: [...core, ...pluginResources] };
+  });
+
+  // List resource templates (parameterised URIs)
+  server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => {
+    return { resourceTemplates: getCoreResourceTemplates() };
   });
 
   // Read resource

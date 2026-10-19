@@ -6,7 +6,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { allPrompts } from '../../src/prompts/index.js';
-import { getCoreResources } from '../../src/resources/index.js';
+import { getConcreteCoreResources } from '../../src/resources/index.js';
 import {
   checkStressEnvironment,
   createStressClient,
@@ -47,7 +47,7 @@ describe.skipIf(!runStress)('stress: MCP capabilities', () => {
 
   it('lists core resources', async () => {
     const { resources } = await ctx.client.listResources();
-    const expectedUris = new Set(getCoreResources().map((r) => r.uri));
+    const expectedUris = new Set(getConcreteCoreResources().map((r) => r.uri));
     const gotUris = new Set(resources.map((r) => r.uri));
     for (const uri of expectedUris) {
       expect(gotUris.has(uri)).toBe(true);
