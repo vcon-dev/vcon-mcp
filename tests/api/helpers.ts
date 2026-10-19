@@ -106,6 +106,7 @@ export function createMockVConService(mockQueries: ReturnType<typeof createMockQ
     }),
     delete: vi.fn().mockResolvedValue(true),
     search: vi.fn().mockResolvedValue([]),
+    searchPage: vi.fn().mockResolvedValue({ vcons: [], hasMore: false }),
   };
 }
 

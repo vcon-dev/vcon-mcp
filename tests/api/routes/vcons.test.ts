@@ -99,7 +99,7 @@ describe('vCon CRUD Routes', () => {
   describe('GET /vcons', () => {
     it('should return paginated results', async () => {
       const vcon = sampleVCon();
-      ctx.mocks.vconService.search.mockResolvedValueOnce([vcon]);
+      ctx.mocks.vconService.searchPage.mockResolvedValueOnce({ vcons: [vcon], hasMore: false });
 
       const res = await request(ctx.app.callback())
         .get(`${BASE}/vcons?limit=10`)
@@ -112,19 +112,19 @@ describe('vCon CRUD Routes', () => {
     });
 
     it('should accept filter query params', async () => {
-      ctx.mocks.vconService.search.mockResolvedValueOnce([]);
-
       await request(ctx.app.callback())
         .get(`${BASE}/vcons?subject=test&party_name=Alice&start_date=2024-01-01`)
         .expect(200);
 
-      expect(ctx.mocks.vconService.search).toHaveBeenCalledOnce();
+      expect(ctx.mocks.vconService.searchPage).toHaveBeenCalledOnce();
     });
 
-    it('should forward offset to the search query', async () => {
+    it('should forward the page size and offset to searchPage', async () => {
       const a = sampleVCon();
       const b = sampleVCon();
-      ctx.mocks.vconService.search.mockResolvedValueOnce([a]).mockResolvedValueOnce([b]);
+      ctx.mocks.vconService.searchPage
+        .mockResolvedValueOnce({ vcons: [a], hasMore: true })
+        .mockResolvedValueOnce({ vcons: [b], hasMore: false });
 
       const first = await request(ctx.app.callback())
         .get(`${BASE}/vcons?limit=1&offset=0&format=ids_only`)
@@ -133,20 +133,33 @@ describe('vCon CRUD Routes', () => {
         .get(`${BASE}/vcons?limit=1&offset=400&format=ids_only`)
         .expect(200);
 
-      // limit is the requested page plus one probe row used to compute has_more
-      expect(ctx.mocks.vconService.search).toHaveBeenNthCalledWith(
-        1, expect.objectContaining({ limit: 2, offset: 0 }), expect.anything(),
+      // the page size, not limit + 1: the probe row is the service's business
+      expect(ctx.mocks.vconService.searchPage).toHaveBeenNthCalledWith(
+        1, expect.objectContaining({ limit: 1, offset: 0 }), expect.anything(),
       );
-      expect(ctx.mocks.vconService.search).toHaveBeenNthCalledWith(
-        2, expect.objectContaining({ limit: 2, offset: 400 }), expect.anything(),
+      expect(ctx.mocks.vconService.searchPage).toHaveBeenNthCalledWith(
+        2, expect.objectContaining({ limit: 1, offset: 400 }), expect.anything(),
       );
       expect(first.body.data[0]).not.toBe(second.body.data[0]);
     });
 
-    it('should report has_more from a probe row rather than a full page', async () => {
-      // Exactly `limit` rows exist: the old `vcons.length === limit` check called this
-      // "there is more", costing the client an extra request for an empty page.
-      ctx.mocks.vconService.search.mockResolvedValueOnce([sampleVCon(), sampleVCon()]);
+    it('should take has_more from searchPage, not from the served row count', async () => {
+      // A filtering afterSearch plugin left one row of a page of two, but the DB had
+      // more: has_more must stay true even though fewer than `limit` rows are served.
+      ctx.mocks.vconService.searchPage.mockResolvedValueOnce({ vcons: [sampleVCon()], hasMore: true });
+
+      const res = await request(ctx.app.callback())
+        .get(`${BASE}/vcons?limit=2&format=ids_only`)
+        .expect(200);
+
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.pagination.has_more).toBe(true);
+    });
+
+    it('should report has_more false when searchPage says so', async () => {
+      ctx.mocks.vconService.searchPage.mockResolvedValueOnce({
+        vcons: [sampleVCon(), sampleVCon()], hasMore: false,
+      });
 
       const exact = await request(ctx.app.callback())
         .get(`${BASE}/vcons?limit=2&format=ids_only`)
@@ -154,21 +167,6 @@ describe('vCon CRUD Routes', () => {
 
       expect(exact.body.data).toHaveLength(2);
       expect(exact.body.pagination.has_more).toBe(false);
-    });
-
-    it('should report has_more and withhold the probe row when a next page exists', async () => {
-      // limit + 1 rows come back; the extra one proves a next page and must not be served
-      ctx.mocks.vconService.search.mockResolvedValueOnce([
-        sampleVCon(), sampleVCon(), sampleVCon(),
-      ]);
-
-      const res = await request(ctx.app.callback())
-        .get(`${BASE}/vcons?limit=2&format=ids_only`)
-        .expect(200);
-
-      expect(res.body.data).toHaveLength(2);
-      expect(res.body.pagination.limit).toBe(2);
-      expect(res.body.pagination.has_more).toBe(true);
     });
 
     it('should reject invalid limit', async () => {
@@ -179,7 +177,7 @@ describe('vCon CRUD Routes', () => {
 
     it('should support format=ids_only', async () => {
       const vcon = sampleVCon();
-      ctx.mocks.vconService.search.mockResolvedValueOnce([vcon]);
+      ctx.mocks.vconService.searchPage.mockResolvedValueOnce({ vcons: [vcon], hasMore: false });
 
       const res = await request(ctx.app.callback())
         .get(`${BASE}/vcons?format=ids_only`)
