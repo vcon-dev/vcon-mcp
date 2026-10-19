@@ -535,13 +535,8 @@ export const searchVConsSemanticTool = {
       response_format: {
         type: 'string',
         enum: ['full', 'metadata', 'ids_only'],
-        description: 'Response format: "full" (complete vCons), "metadata" (summary info), "ids_only" (just UUIDs)',
+        description: 'Response format: "metadata" (default; one row per matching hit with scores), "ids_only" (unique vCon UUIDs in rank order), "full" (complete vCons for the unique matches, first 20 only)',
         default: 'metadata'
-      },
-      include_count: {
-        type: 'boolean',
-        description: 'Include total count of matching records (may be expensive for large datasets)',
-        default: false
       }
     }
   }
@@ -593,13 +588,8 @@ export const searchVConsHybridTool = {
       response_format: {
         type: 'string',
         enum: ['full', 'metadata', 'ids_only'],
-        description: 'Response format: "full" (complete vCons), "metadata" (summary info), "ids_only" (just UUIDs)',
+        description: 'Response format: "metadata" (default; one row per matching hit with scores), "ids_only" (unique vCon UUIDs in rank order), "full" (complete vCons for the unique matches, first 20 only)',
         default: 'metadata'
-      },
-      include_count: {
-        type: 'boolean',
-        description: 'Include total count of matching records (may be expensive for large datasets)',
-        default: false
       }
     },
     required: ['query']
@@ -822,7 +812,7 @@ export const deleteVConTool = {
 export const updateVConTool = {
   name: 'update_vcon',
   category: 'write' as ToolCategory,
-  description: 'Update top-level vCon metadata (subject, extensions, must_support). For dialog, analysis, attachments use their specific tools.',
+  description: 'Update top-level vCon metadata (subject, extensions, critical; legacy must_support is accepted as an alias for critical). For dialog, analysis, attachments use their specific tools.',
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -837,7 +827,8 @@ export const updateVConTool = {
         properties: {
           subject: { type: 'string' },
           extensions: { type: 'array', items: { type: 'string' } },
-          must_support: { type: 'array', items: { type: 'string' } }
+          critical: { type: 'array', items: { type: 'string' }, description: 'Extensions that MUST be supported (vCon 0.4.0 name)' },
+          must_support: { type: 'array', items: { type: 'string' }, description: 'Deprecated alias for critical (pre-0.4.0 name). Ignored when critical is also given.' }
         }
       },
       return_updated: {

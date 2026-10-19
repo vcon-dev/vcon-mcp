@@ -206,6 +206,28 @@ export class SearchVConsContentHandler extends BaseToolHandler {
 }
 
 /**
+ * Shared response_format handling for hit-level search results (semantic, hybrid).
+ * - "metadata" (default): one row per hit, as built by `toRow`
+ * - "ids_only": unique vCon UUIDs in rank order
+ * - "full": complete vCons for the unique matches (first 20, for memory safety)
+ */
+async function formatHitResults<T extends { vcon_id: string }>(
+  hits: T[],
+  responseFormat: string,
+  toRow: (hit: T) => unknown,
+  context: ToolHandlerContext
+): Promise<unknown[]> {
+  if (responseFormat === 'ids_only') {
+    return [...new Set(hits.map(h => h.vcon_id))];
+  }
+  if (responseFormat === 'full') {
+    const ids = [...new Set(hits.map(h => h.vcon_id))].slice(0, 20);
+    return Promise.all(ids.map(id => context.queries.getVCon(id)));
+  }
+  return hits.map(toRow);
+}
+
+/**
  * Handler for search_vcons_semantic tool
  */
 export class SearchVConsSemanticHandler extends BaseToolHandler {
@@ -231,7 +253,7 @@ export class SearchVConsSemanticHandler extends BaseToolHandler {
     const results = await context.queries.semanticSearch({
       embedding,
       tags: args?.tags as Record<string, string> | undefined,
-      threshold: (args?.threshold as number | undefined) || 0.7,
+      threshold: (args?.threshold as number | undefined) ?? 0.7,
       limit: (args?.limit as number | undefined) || 50,
     });
 
@@ -239,15 +261,19 @@ export class SearchVConsSemanticHandler extends BaseToolHandler {
       [ATTR_SEARCH_TYPE]: 'semantic',
     }, 'vCon search count');
 
+    const responseFormat = (args?.response_format as string | undefined) || 'metadata';
+    const formatted = await formatHitResults(results, responseFormat, r => ({
+      vcon_id: r.vcon_id,
+      content_type: r.content_type,
+      content_reference: r.content_reference,
+      content_text: r.content_text,
+      similarity_score: r.similarity
+    }), context);
+
     return this.createSuccessResponse({
       count: results.length,
-      results: results.map(r => ({
-        vcon_id: r.vcon_id,
-        content_type: r.content_type,
-        content_reference: r.content_reference,
-        content_text: r.content_text,
-        similarity_score: r.similarity
-      }))
+      response_format: responseFormat,
+      results: formatted
     });
   }
 }
@@ -288,7 +314,7 @@ export class SearchVConsHybridHandler extends BaseToolHandler {
       keywordQuery: query,
       embedding: embedding,
       tags: args?.tags as Record<string, string> | undefined,
-      semanticWeight: (args?.semantic_weight as number | undefined) || 0.6,
+      semanticWeight: (args?.semantic_weight as number | undefined) ?? 0.6,
       limit: (args?.limit as number | undefined) || 50,
     });
 
@@ -296,14 +322,18 @@ export class SearchVConsHybridHandler extends BaseToolHandler {
       [ATTR_SEARCH_TYPE]: 'hybrid',
     }, 'vCon search count');
 
+    const responseFormat = (args?.response_format as string | undefined) || 'metadata';
+    const formatted = await formatHitResults(results, responseFormat, r => ({
+      vcon_id: r.vcon_id,
+      combined_score: r.combined_score,
+      semantic_score: r.semantic_score,
+      keyword_score: r.keyword_score
+    }), context);
+
     return this.createSuccessResponse({
       count: results.length,
-      results: results.map(r => ({
-        vcon_id: r.vcon_id,
-        combined_score: r.combined_score,
-        semantic_score: r.semantic_score,
-        keyword_score: r.keyword_score
-      }))
+      response_format: responseFormat,
+      results: formatted
     });
   }
 }

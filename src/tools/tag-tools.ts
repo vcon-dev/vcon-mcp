@@ -129,8 +129,7 @@ export const searchByTagsTool = {
       },
       return_full_vcons: {
         type: 'boolean',
-        description: 'If true, return full vCon objects. For large result sets, only first 20 full vCons are returned to prevent size limits. Default: false for result sets > 20, true for smaller sets.',
-        default: false
+        description: 'If true, return full vCon objects; if false, return only UUIDs. When omitted, full vCons are returned automatically for result sets of 20 or fewer and omitted for larger sets. At most max_full_vcons full vCons are returned.'
       },
       max_full_vcons: {
         type: 'number',

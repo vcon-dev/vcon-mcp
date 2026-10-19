@@ -5,6 +5,7 @@
  */
 
 import { randomUUID } from 'crypto';
+import { ZodError } from 'zod';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { RequestContext } from '../../hooks/plugin-interface.js';
 import type { ServerContext } from '../../server/setup.js';
@@ -137,6 +138,16 @@ export abstract class BaseToolHandler implements ToolHandler {
         if (error instanceof McpError) {
           attachErrorToSpan(span, error);
           throw error;
+        }
+
+        // Schema validation failures are client errors, not server faults
+        if (error instanceof ZodError) {
+          const message = `Invalid parameters: ${error.issues
+            .map(i => `${i.path.length ? i.path.join('.') : '(root)'}: ${i.message}`)
+            .join('; ')}`;
+          const mcpError = new McpError(ErrorCode.InvalidParams, message);
+          attachErrorToSpan(span, mcpError);
+          throw mcpError;
         }
 
         // Extract meaningful error message

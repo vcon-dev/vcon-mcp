@@ -50,7 +50,8 @@ export const getSmartSearchLimitsTool = {
         description: 'Estimated size of expected results',
         default: 'unknown'
       }
-    }
+    },
+    required: ['query_type']
   }
 };
 
