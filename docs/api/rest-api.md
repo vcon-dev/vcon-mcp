@@ -82,6 +82,8 @@ Authorization: Bearer your-api-key-here
 
 An `Authorization: Bearer` token is accepted whatever `API_KEY_HEADER` says. When you set `API_KEY_HEADER` to another name (for example `x-api-key`), the server also reads the key from that header.
 
+The curl examples below read the key from `$VCON_API_KEY`, for example `export VCON_API_KEY=<your key>`.
+
 ### Key Scopes
 
 | Key | Allowed methods |
