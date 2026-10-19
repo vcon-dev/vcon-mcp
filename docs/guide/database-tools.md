@@ -467,9 +467,9 @@ This will:
 
 ## Related Documentation
 
-- [Database Migrations](../supabase/migrations/) - Database schema
+- [Database Migrations](https://github.com/vcon-dev/vcon-mcp/tree/main/supabase/migrations) - Database schema
 - [Search Optimization Guide](../SEARCH_OPTIMIZATION_GUIDE.md) - Search performance
-- [INGEST_AND_EMBEDDINGS.md](./INGEST_AND_EMBEDDINGS.md) - Data ingestion
+- [INGEST_AND_EMBEDDINGS.md](../development/INGEST_AND_EMBEDDINGS.md) - Data ingestion
 
 ---
 

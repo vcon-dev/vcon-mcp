@@ -123,7 +123,7 @@ on write, so the `type = 'tags'` read paths and `vcon_tags_mv` see either spelli
 | Tool | Description |
 |------|-------------|
 | `create_vcon` | Create new vCon with parties |
-| `create_vcon_from_template` | Create vCon from a template (phone_call, chat, email, video, custom) |
+| `create_vcon_from_template` | Create vCon from a template (`phone_call`, `chat_conversation`, `email_thread`, `video_meeting`, `custom`) |
 | `get_vcon` | Retrieve vCon by UUID |
 | `update_vcon` | Update metadata (subject, extensions, critical) |
 | `delete_vcon` | Delete vCon and all related data |
@@ -159,6 +159,13 @@ Index-addressed edits. Update = PUT semantics (omitted fields cleared). Removal 
 | `vcon_capabilities` | Discover modes, includes, pagination, byte budgets, migration hints |
 | `vcon_taxonomy` | Portal taxonomy and preferred data-source guidance |
 | `describe_response_shape` | Published response schema + example for redesigned and legacy tools |
+
+### Schema Tools
+
+| Tool | Description |
+|------|-------------|
+| `get_schema` | vCon schema definition as `json_schema` or `typescript` |
+| `get_examples` | Example vCons (minimal, phone_call, chat, email, video, full_featured) as JSON or YAML |
 
 ### Search Tools
 
@@ -282,10 +289,14 @@ const results = await tools.search_vcons_hybrid({
 
 ```
 src/
+├── index.ts              # Entry point (loads env, picks transport)
+├── version.ts            # Version info from VCON_MCP_VERSION / GIT_COMMIT / BUILD_TIME
 ├── api/
 │   ├── rest-router.ts    # Koa app assembler (mounts sub-routers)
 │   ├── context.ts        # RestApiContext type (shared deps)
 │   ├── auth.ts           # API key auth middleware
+│   ├── oauth.ts          # OAuth 2.1 resource server: protected-resource metadata and JWT verification (off unless OAUTH_ISSUER is set)
+│   ├── oauth-consent.ts  # OAuth consent page for Supabase OAuth Server
 │   ├── response.ts       # JSON envelope helpers
 │   ├── validation.ts     # HTTP-friendly validation
 │   ├── middleware/        # Pagination, etc.
@@ -295,26 +306,47 @@ src/
 │       ├── search.ts     # Content/semantic/hybrid search
 │       ├── database.ts   # DB ops (shape, stats, health)
 │       ├── analytics.ts  # Growth, content, tag analytics
+│       ├── discovery.ts  # Attachment and analysis category discovery
 │       └── schema.ts     # Health, version, schema, examples
+├── config/
+│   ├── tenant-config.ts  # RLS tenant settings from env
+│   └── tools.ts          # Tool profiles and categories
 ├── server/
 │   ├── setup.ts          # MCP server initialization
-│   └── handlers.ts       # MCP request handlers
+│   └── handlers.ts       # MCP request handlers (tools, resources, resource templates, prompts)
+├── transport/            # stdio and Streamable HTTP transports, HTTP middleware
 ├── services/
 │   └── vcon-service.ts   # Shared business logic (MCP + REST)
 ├── tools/
 │   ├── vcon-crud.ts      # Core vCon tools (Zod schemas)
+│   ├── vcon-contract.ts  # vcon_fetch / vcon_search / vcon_capabilities / vcon_taxonomy
+│   ├── schema-tools.ts   # get_schema, get_examples
+│   ├── templates.ts      # create_vcon_from_template
 │   ├── tag-tools.ts      # Tag management
-│   ├── database-tools.ts # DB inspection
+│   ├── database-tools.ts # DB inspection (plus database-analytics.ts, database-size-tools.ts)
 │   └── handlers/         # MCP tool implementations
+├── resources/
+│   └── index.ts          # MCP resources and resource templates (vcon://v1/...)
 ├── db/
-│   ├── queries.ts        # Database queries (IVConQueries)
+│   ├── interfaces.ts     # IVConQueries and related interfaces
+│   ├── queries.ts        # Supabase implementation of IVConQueries
+│   ├── client.ts         # Supabase client
+│   ├── batch-writer.ts   # Coalesces concurrent createVCon calls into batched upserts per tenant
+│   ├── tenant-context.ts # Sets the RLS tenant session variable
+│   ├── tags-mv.ts        # vcon_tags_mv access
+│   ├── mongo-*.ts        # MongoDB backend (DB_TYPE=mongodb)
 │   └── database-inspector.ts
+├── jsonld/               # JSON-LD context, enrichment, integrity helpers
+├── observability/        # OpenTelemetry setup, logger, span attributes
 ├── types/
 │   └── vcon.ts           # TypeScript types (IETF compliant)
 ├── prompts/
 │   └── index.ts          # MCP prompts
 ├── utils/
-│   └── embeddings.ts     # Shared embedding generation
+│   ├── embeddings.ts     # Shared embedding generation
+│   ├── read-surfaces.ts  # Read-side helpers, including parseTagsBody()
+│   ├── body-serialization.ts # Body encoding on write, decoding on read
+│   └── lawful-basis.ts   # Lawful basis attachment detection
 └── hooks/
     └── plugin-manager.ts # Plugin system
 
@@ -328,8 +360,9 @@ supabase/
 
 The database uses Row Level Security (RLS) with `tenant_id`:
 
-- Set via `x-tenant-id` header or environment variable
-- All queries are automatically scoped to tenant
+- Enabled with `RLS_ENABLED=true`. The tenant is set once at server startup from the `CURRENT_TENANT_ID` environment variable (`setTenantContext()` in `src/db/tenant-context.ts` calls the `set_tenant_context` RPC). No request header is read, so one server process serves one tenant.
+- On write, the tenant is extracted from an attachment (`TENANT_ATTACHMENT_TYPE`, default `tenant`, matched on `purpose` or `type`; `TENANT_JSON_PATH`, default `id`)
+- With RLS enabled and no `CURRENT_TENANT_ID`, queries return only rows with a NULL tenant
 - See `src/config/tenant-config.ts`
 
 ---
@@ -339,7 +372,7 @@ The database uses Row Level Security (RLS) with `tenant_id`:
 ```bash
 npm run build     # TypeScript compilation
 npm run test      # Run tests
-npm run lint      # ESLint
+npm run lint      # Currently a no-op: no ESLint 9 config exists, so it does not check anything
 ```
 
 ---

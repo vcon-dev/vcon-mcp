@@ -31,15 +31,15 @@ Optional but commonly needed:
 ### A. Docker (recommended for customer environments)
 
 ```bash
-docker pull public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp:1.2.0
+docker pull public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp:<version>
 ```
 
-Pin to a semver tag (`1.2.0`) in customer environments — don't use
+Pin to a semver tag (`<version>`, for example `1.9.2`) in customer environments — don't use
 `latest` in production. Tag policy:
 
 - `main-<sha>` — every push to main
 - `latest` — main HEAD (dev / demo only)
-- `1.2.0`, `1.2`, `1` — published on git tag releases
+- `<version>` (for example `1.9.2`), `1.9`, `1` — published on git tag releases
 
 See [Docker deployment](../deployment/docker.md) for image internals
 (non-root user, dumb-init entrypoint, Supabase CLI bundled).
@@ -70,7 +70,7 @@ cd vcon-mcp && npm install && npm run build
    ```bash
    docker run --rm \
      -e SUPABASE_DB_URL='postgresql://...' \
-     public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp:1.2.0 \
+     public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp:<version> \
      migrate
    ```
 
@@ -88,7 +88,7 @@ cd vcon-mcp && npm install && npm run build
      -e MCP_HTTP_HOST=0.0.0.0 \
      -e API_KEYS='customer-key-1' \
      -e API_KEYS_READONLY='partner-readonly-key-1' \
-     public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp:1.2.0
+     public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp:<version>
    ```
 
 6. **Verify.** `curl http://localhost:3000/api/v1/health` returns `{"status":"ok"}`

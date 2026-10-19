@@ -4,7 +4,7 @@ Prompts are reusable query templates that help users effectively search and retr
 
 ## Overview
 
-The vCon MCP Server provides 9 prompt templates:
+The vCon MCP Server provides 10 prompt templates:
 
 1. **[find_by_exact_tags](#find_by_exact_tags)** - Exact tag matching
 2. **[find_by_semantic_search](#find_by_semantic_search)** - AI-powered meaning search
@@ -15,6 +15,7 @@ The vCon MCP Server provides 9 prompt templates:
 7. **[complex_search](#complex_search)** - Multi-criteria searches
 8. **[find_similar_conversations](#find_similar_conversations)** - Find similar vCons
 9. **[help_me_search](#help_me_search)** - Query strategy guidance
+10. **[daily_activity_report](#daily_activity_report)** - Aggregate-first report for one day
 
 ---
 
@@ -329,6 +330,29 @@ what_you_want: "frustrated customers who complained about billing"
 | Mixed criteria | `search_vcons_hybrid` |
 | Party information | `search_vcons` (party filters) |
 | Date ranges | Any tool + date filters |
+
+---
+
+### daily_activity_report
+
+Generate an activity report for one day. The prompt directs the model to use aggregate analytics
+(`get_monthly_growth_analytics`, `get_content_analytics`) and date-scoped searches for counts and
+themes, then to read `summary` format for a few notable vCons, rather than sampling full vCons.
+Category: `analytics`.
+
+**Arguments:**
+- `date` (optional): Date to report on, `YYYY-MM-DD`. If omitted the prompt text says "yesterday" and the model resolves it.
+- `focus_areas` (optional): Free-text focus, for example "subject coverage, notable conversations, participant activity"
+
+**Best For:**
+- Daily volume and content-profile reports
+- Completeness checks (vCons without dialog or analysis)
+
+**Example Usage:**
+```
+date: "2026-04-13"
+focus_areas: "participant activity"
+```
 
 ---
 

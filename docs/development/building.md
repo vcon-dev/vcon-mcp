@@ -1420,7 +1420,7 @@ npm list @modelcontextprotocol/sdk
 
 ### Learning Resources
 
-- **IETF vCon Spec:** `background_docs/draft-ietf-vcon-vcon-core-02.txt`
+- **IETF vCon Spec:** [draft-ietf-vcon-vcon-core](https://datatracker.ietf.org/doc/draft-ietf-vcon-vcon-core/)
 - **MCP Documentation:** https://modelcontextprotocol.io/
 - **Supabase Docs:** https://supabase.com/docs
 - **Implementation Guide:** `CLAUDE.md`

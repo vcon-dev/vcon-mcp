@@ -10,6 +10,7 @@ Resources use versioned URI schemes to access vCon data:
 - **Lookup** - Fetch specific vCons by UUID
 - **Discovery** - Get lightweight ID lists and live attachment or analysis categories
 - **Subresources** - Access specific vCon components (parties, dialog, analysis, attachments)
+- **Graph** - Read the corpus shape graph
 - **Derived** - Get filtered data (transcripts, summaries, tags, and generic category-backed reads)
 
 For complex searches and modifications, use [MCP Tools](./tools.md) instead.
@@ -26,6 +27,19 @@ vcon://v1/vcons/...
 ```
 
 This allows for future schema evolution without breaking existing clients.
+
+### Listing: concrete resources and templates
+
+Concrete URIs (no placeholders) are returned by `resources/list`: `vcon://v1/vcons/recent`,
+`vcon://v1/vcons/recent/ids`, `vcon://v1/vcons/ids`, the three `vcon://v1/discovery/...`
+resources and `vcon://v1/graph/shape`, plus any resources contributed by plugins.
+
+Parameterised URIs are returned by `resources/templates/list` as RFC 6570 `uriTemplate`
+entries, not by `resources/list`. They are `vcon://v1/vcons/{uuid}` and its subresource,
+filtered and derived forms, plus `vcon://v1/vcons/recent/{limit}`,
+`vcon://v1/vcons/recent/ids/{limit}`, `vcon://v1/vcons/ids/{limit}` and
+`vcon://v1/vcons/ids/{limit}/after/{cursor}`. Clients that only call `resources/list` will
+not see these.
 
 When a classification lives in attachments or analysis, prefer this flow:
 
@@ -111,7 +125,7 @@ Browse all vCon IDs with cursor-based pagination.
 **URI Patterns:**
 - `vcon://v1/vcons/ids` - Get first 100 IDs (default)
 - `vcon://v1/vcons/ids/500` - Get custom number (max 1000)
-- `vcon://v1/vcons/ids/100/after/{timestamp}` - Get next page
+- `vcon://v1/vcons/ids/100/after/{cursor}` - Get the next page, strictly older than the cursor
 
 **Response:**
 
@@ -120,7 +134,7 @@ Browse all vCon IDs with cursor-based pagination.
   "count": 100,
   "limit": 100,
   "has_more": true,
-  "next_cursor": "2025-10-14T09:30:00Z",
+  "next_cursor": "2025-10-14T09:30:00Z,123e4567-e89b-12d3-a456-426614174000",
   "vcons": [
     {
       "uuid": "123e4567-e89b-12d3-a456-426614174000",
@@ -130,6 +144,13 @@ Browse all vCon IDs with cursor-based pagination.
   ]
 }
 ```
+
+Results are ordered newest first (`created_at` descending, `uuid` descending as the tie-break).
+`next_cursor` is a compound cursor, `<created_at>,<uuid>`, built from the last row returned, and
+is `null` when `has_more` is false. Pass it back unchanged as `{cursor}` (URL-encode it); the next
+page holds only rows strictly older than that position, so rows sharing a `created_at` are neither
+repeated nor skipped. A bare `created_at` timestamp is still accepted as a cursor and means every row
+strictly older than that timestamp.
 
 **Pagination Example:**
 
@@ -149,6 +170,17 @@ if (page1.has_more) {
 - Full database exports
 - Bulk operations
 - Data migration
+
+---
+
+### vcon://v1/graph/shape
+
+Corpus-level shape graph built from vCon structure only: analysis types, attachment purposes,
+legacy attachment types that have no purpose, tag keys, and bounded co-occurrence edges
+(analysis type with attachment purpose). It carries no business ontology. It returns the same
+payload as the `vcon_graph_shape` tool and is the resource to read after `vcon_capabilities`
+when a client needs to learn what evidence exists in a corpus. See
+[Shape Graph and Plugins](./shape-graph-and-plugins.md).
 
 ---
 
@@ -650,18 +682,11 @@ const result = await client.readResource({
 console.log(result.contents[0].text);
 ```
 
-### cURL (via MCP HTTP Bridge)
+### HTTP transport
 
-```bash
-# Get recent vCons
-curl http://localhost:3000/resources/vcon%3A%2F%2Fv1%2Fvcons%2Frecent%2F10
-
-# Get specific vCon
-curl http://localhost:3000/resources/vcon%3A%2F%2Fv1%2Fvcons%2F123e4567-e89b-12d3-a456-426614174000
-
-# Get transcript
-curl http://localhost:3000/resources/vcon%3A%2F%2Fv1%2Fvcons%2F123e4567-e89b-12d3-a456-426614174000%2Ftranscript
-```
+Resources are an MCP feature and are not exposed as plain HTTP routes. With `MCP_TRANSPORT=http`,
+send `resources/list`, `resources/templates/list` and `resources/read` as MCP requests to the
+`/mcp` endpoint. For plain HTTP access to the same data, use the [REST API](./rest-api.md).
 
 ---
 
@@ -693,35 +718,21 @@ curl http://localhost:3000/resources/vcon%3A%2F%2Fv1%2Fvcons%2F123e4567-e89b-12d
 
 ## Error Handling
 
-Resources return errors in standard MCP format:
+Failures surface as standard MCP (JSON-RPC) errors. The server does not define its own error codes.
 
-```json
-{
-  "error": {
-    "code": "RESOURCE_NOT_FOUND",
-    "message": "vCon with UUID 123... not found"
-  }
-}
-```
-
-**Common Error Codes:**
-
-- `RESOURCE_NOT_FOUND` - Invalid URI or UUID doesn't exist
-- `INVALID_URI` - Malformed URI pattern
-- `DATABASE_ERROR` - Database connection or query failed
-- `PERMISSION_DENIED` - Insufficient permissions
+- A URI the server does not recognise (including a malformed one) fails with `InvalidParams`
+  and the message `Unknown or unsupported resource URI: <uri>`.
+- A well-formed vCon URI whose UUID does not exist fails with an error whose message is
+  `vCon not found: <uuid>`.
+- Database failures surface as the underlying error message.
 
 **Error Handling Example:**
 
 ```typescript
 try {
-  const vcon = await readResource("vcon://v1/vcons/invalid-uuid");
+  const vcon = await readResource("vcon://v1/vcons/123e4567-e89b-12d3-a456-426614174000");
 } catch (error) {
-  if (error.code === 'RESOURCE_NOT_FOUND') {
-    console.log('vCon not found');
-  } else {
-    console.error('Unexpected error:', error);
-  }
+  console.error('Resource read failed:', error.message);
 }
 ```
 
@@ -798,5 +809,5 @@ const tags = await readResource("vcon://v1/vcons/123.../tags");
 
 - See [Tools Reference](./tools.md) for complex operations
 - See [Prompts Reference](./prompts.md) for query templates
-- See [Examples](/examples/resources.md) for practical usage
+- See Examples for practical usage
 - See [Getting Started](/guide/getting-started.md) for setup

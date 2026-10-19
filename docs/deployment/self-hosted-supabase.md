@@ -721,7 +721,7 @@ curl -X POST http://localhost:3002/api/v1/vcons \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your-vcon-api-key" \
   -d '{
-    "vcon": "0.0.1",
+    "vcon": "0.4.0",
     "uuid": "unique-vcon-id",
     "created_at": "2024-01-15T10:30:00Z",
     "parties": [...],

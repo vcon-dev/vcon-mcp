@@ -100,7 +100,7 @@ interface Analysis {
 }
 ```
 
-**See [QUICK_REFERENCE.md](./QUICK_REFERENCE.md) for all 7 corrections.**
+**See [QUICK_REFERENCE.md](../reference/QUICK_REFERENCE.md) for all 7 corrections.**
 
 ## 🚀 Quick Setup (5 Minutes)
 
@@ -169,7 +169,7 @@ Start Here
 
 1. Read background material (1 hour)
    - `background_docs/vcon_quickstart_guide.md`
-   - `background_docs/draft-ietf-vcon-vcon-core-02.txt` (introduction)
+   - [draft-ietf-vcon-vcon-core](https://datatracker.ietf.org/doc/draft-ietf-vcon-vcon-core/) (introduction; the repo's `background_docs/` holds only the older -00 text)
 
 2. Understand corrections (30 min)
    - `docs/reference/QUICK_REFERENCE.md`
@@ -413,13 +413,13 @@ console.log(result.valid ? '✅ Valid' : '❌ Invalid');
 
 ### Documentation Questions
 
-- Check [README.md](./README.md) troubleshooting section
+- Check [README.md](./troubleshooting.md) troubleshooting section
 - Search for your error in the [Building Guide](../development/building.md)
-- Review relevant correction in [IMPLEMENTATION_CORRECTIONS.md](./IMPLEMENTATION_CORRECTIONS.md)
+- Review relevant correction in [IMPLEMENTATION_CORRECTIONS.md](../reference/IMPLEMENTATION_CORRECTIONS.md)
 
 ### Spec Questions
 
-- Consult `background_docs/draft-ietf-vcon-vcon-core-02.txt`
+- Consult [draft-ietf-vcon-vcon-core](https://datatracker.ietf.org/doc/draft-ietf-vcon-vcon-core/)
 - Cross-reference section numbers in correction docs
 - Cross-reference the [Implementation Corrections](../reference/IMPLEMENTATION_CORRECTIONS.md) for before/after examples
 
@@ -427,7 +427,7 @@ console.log(result.valid ? '✅ Valid' : '❌ Invalid');
 
 - Follow [CLAUDE.md](../../CLAUDE.md) step-by-step
 - Use code examples from the [Building Guide](../development/building.md)
-- Check [MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md) for specific fixes
+- Check [MIGRATION_GUIDE.md](../reference/MIGRATION_GUIDE.md) for specific fixes
 
 ## 🎯 Success Criteria
 

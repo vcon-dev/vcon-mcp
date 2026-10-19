@@ -25,7 +25,7 @@ interface VCon {
   
   // Extensions (Section 4.1.3)
   extensions?: string[];           // Extension identifiers
-  must_support?: string[];         // Required extension support
+  critical?: string[];             // Extensions that must be supported (renamed from must_support in 0.4.0; legacy alias accepted on import)
   
   // Components
   parties: Party[];                // Participants (at least 1 required)
@@ -36,7 +36,7 @@ interface VCon {
   // Advanced Features
   group?: Group[];                 // vCon grouping (Section 4.6)
   redacted?: Record<string, any>;  // Redaction tracking
-  appended?: Record<string, any>;  // Append-only modifications
+  amended?: Record<string, any>;   // Reference to the vCon this one amends (renamed from appended in 0.4.0; legacy alias accepted on import)
 }
 ```
 
@@ -126,13 +126,8 @@ interface Dialog {
   filename?: string;               // Original filename
   
   // Call Disposition (Section 4.3.9)
-  disposition?: 
-    | "no-answer"
-    | "congestion"
-    | "failed"
-    | "busy"
-    | "hung-up"
-    | "voicemail-no-message";
+  disposition?: string;            // Any string is accepted. Spec-suggested values:
+                                   // no-answer, congestion, failed, busy, hung-up, voicemail-no-message
   
   // Session Tracking (Section 4.3.10, 4.3.13, 4.3.14)
   session_id?: string;             // Session identifier
@@ -279,8 +274,9 @@ Additional files or data associated with a conversation (Section 4.4).
 
 ```typescript
 interface Attachment {
-  // Type & Timing
-  type?: string;                   // Attachment type
+  // Classification & Timing
+  purpose?: string;                // Canonical classification (Section 4.4.1)
+  type?: string;                   // Legacy compatibility field; prefer purpose for new writes
   start?: string;                  // ISO 8601 timestamp
   
   // References (Section 4.4.3-4.4.4)
@@ -376,7 +372,7 @@ interface CreateVConInput {
     analysis?: Analysis[];
     attachments?: Attachment[];
     extensions?: string[];
-    must_support?: string[];
+    critical?: string[];           // Legacy alias must_support is also accepted
   };
   metadata?: {
     basename?: string;
@@ -649,7 +645,7 @@ export const DIALOG_TYPES = ['recording', 'text', 'transfer', 'incomplete'] as c
 // Encoding Types
 export const ENCODING_TYPES = ['none', 'base64url', 'json'] as const;
 
-// Disposition Values
+// Suggested disposition values (illustrative; not exported, any string is accepted)
 export const DISPOSITIONS = [
   'no-answer',
   'congestion',

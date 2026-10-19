@@ -20,7 +20,7 @@ export const VCON_CONTEXT = {
             "attachments": "vcon:attachments",
             "group": "vcon:group",
             "redacted": "vcon:redacted",
-            "appended": "vcon:appended",
+            "amended": "vcon:amended",
 
             // Analysis Terms
             "type": "@type",

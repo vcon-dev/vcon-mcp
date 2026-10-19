@@ -71,14 +71,14 @@ await queries.addAnalysis(vconUuid, {
 
 ## Example Categories
 
-### [Basic Operations](./basic-operations.md)
+### Basic Operations
 - Creating vCons
 - Reading vCons
 - Updating vCons
 - Deleting vCons
 - Adding components (dialog, analysis, attachments)
 
-### [Search Examples](./search-examples.md)
+### Search Examples
 - Keyword search
 - Semantic search
 - Hybrid search
@@ -86,14 +86,14 @@ await queries.addAnalysis(vconUuid, {
 - Date range queries
 - Complex filters
 
-### [Plugin Examples](./plugin-examples.md)
+### Plugin Examples
 - Simple logging plugin
 - Access control plugin
 - Audit trail plugin
 - Custom tool plugin
 - Data transformation plugin
 
-### [Integration Examples](./integration-examples.md)
+### Integration Examples
 - Claude Desktop integration
 - REST API wrapper
 - Webhook integration
@@ -197,9 +197,9 @@ npx tsx examples/plugin-demo.ts
 
 ## Next Steps
 
-- Try the [Basic Operations](./basic-operations.md) examples
-- Explore [Search Examples](./search-examples.md)
-- Build your own [Plugin](./plugin-examples.md)
-- See [Integration Examples](./integration-examples.md)
+- Try the Basic Operations examples
+- Explore Search Examples
+- Build your own Plugin
+- See Integration Examples
 - Reuse the [System Instruction Assets](./system-instruction-assets.md)
 

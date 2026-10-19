@@ -23,14 +23,14 @@ This reference section provides authoritative technical documentation for:
 |----------|---------|------|----------|
 | [Quick Reference](./QUICK_REFERENCE.md) | Critical field corrections checklist | 5 min | All developers |
 | [Glossary](./glossary.md) | Terms and definitions | - | All users |
-| [CLI Reference](./cli-reference.md) | Command-line tool usage | 10 min | Developers |
+| CLI Reference | Command-line tool usage | 10 min | Developers |
 
 ### 📋 Specification References
 
 | Document | Purpose | Time | Audience |
 |----------|---------|------|----------|
 | [IETF vCon Core](./vcon-spec.md) | Complete vCon specification | 45 min | Implementers |
-| [MCP Protocol](./mcp-protocol.md) | Model Context Protocol details | 30 min | Integrators |
+| MCP Protocol | Model Context Protocol details | 30 min | Integrators |
 | [Agent database schema](./AGENT_DATABASE_SCHEMA.md) | Full PostgreSQL schema (matches migrations) | 25 min | DBAs, agents |
 | [Corrected schema (IETF)](./CORRECTED_SCHEMA.md) | IETF-oriented DDL narrative | 20 min | DBAs |
 | [Search tools](../guide/search.md) | MCP search tools and behavior | 15 min | Developers |
@@ -41,7 +41,7 @@ This reference section provides authoritative technical documentation for:
 |----------|---------|------|----------|
 | [Implementation Corrections](./IMPLEMENTATION_CORRECTIONS.md) | Known issues and fixes | 15 min | Developers |
 | [Migration Guide](./MIGRATION_GUIDE.md) | Upgrading existing implementations | 30 min | Migrators |
-| [Compliance Matrix](./compliance-matrix.md) | Regulatory requirements mapping | 20 min | Compliance teams |
+| Compliance Matrix | Regulatory requirements mapping | 20 min | Compliance teams |
 
 ### 📚 Feature References
 
@@ -67,7 +67,7 @@ This reference section provides authoritative technical documentation for:
 1. **Audit:** [Implementation Corrections](./IMPLEMENTATION_CORRECTIONS.md) - Identify issues
 2. **Plan:** [Migration Guide](./MIGRATION_GUIDE.md) - Follow migration steps
 3. **Verify:** [Quick Reference](./QUICK_REFERENCE.md) - Confirm compliance
-4. **Test:** [Testing Reference](./testing-reference.md) - Run compliance tests
+4. **Test:** Testing Reference - Run compliance tests
 
 ### 🔍 "I'm reviewing vCon code"
 
@@ -78,14 +78,14 @@ This reference section provides authoritative technical documentation for:
 
 ### 🛠️ "I'm integrating with MCP"
 
-1. **Protocol:** [MCP Protocol](./mcp-protocol.md) - Understanding MCP
+1. **Protocol:** MCP Protocol - Understanding MCP
 2. **Tools:** [../api/tools.md](../api/tools.md) - Available tools
 3. **Resources:** [../api/resources.md](../api/resources.md) - Resource URIs
 4. **Prompts:** [../api/prompts.md](../api/prompts.md) - Query templates
 
 ### 📊 "I need compliance documentation"
 
-1. **Overview:** [Compliance Matrix](./compliance-matrix.md) - All regulations
+1. **Overview:** Compliance Matrix - All regulations
 2. **GDPR:** GDPR-specific mappings
 3. **CCPA:** CCPA-specific mappings
 4. **HIPAA:** HIPAA-specific mappings
@@ -104,21 +104,21 @@ This reference section provides authoritative technical documentation for:
   - Encoding options
   - Extensions and must_support
 
-- **[vCon Data Types](./vcon-data-types.md)** - Type definitions and validation
+- **vCon Data Types** - Type definitions and validation
   - TypeScript interfaces
   - Zod schemas
   - Validation rules
   - Example objects
 
 #### MCP Protocol
-- **[MCP Protocol Reference](./mcp-protocol.md)** - Complete MCP documentation
+- **MCP Protocol Reference** - Complete MCP documentation
   - Server capabilities
   - Tool invocation
   - Resource access
   - Prompt templates
   - Error handling
 
-- **[MCP Integration Guide](./mcp-integration.md)** - How to integrate with MCP clients
+- **MCP Integration Guide** - How to integrate with MCP clients
   - Claude Desktop setup
   - Custom client development
   - Protocol compliance
@@ -141,30 +141,30 @@ This reference section provides authoritative technical documentation for:
 
 - **[Implementation Corrections](./IMPLEMENTATION_CORRECTIONS.md)** - Known issues and fixes
 - **[Migration Guide](./MIGRATION_GUIDE.md)** - Upgrading from older versions
-- **[Testing Reference](./testing-reference.md)** - Compliance and validation tests
-- **[Error Reference](./error-reference.md)** - Error codes and handling
+- **Testing Reference** - Compliance and validation tests
+- **Error Reference** - Error codes and handling
 
 ### 📋 Quick References
 
 - **[Quick Reference](./QUICK_REFERENCE.md)** - Critical corrections checklist
-- **[CLI Reference](./cli-reference.md)** - Command-line tools
+- **CLI Reference** - Command-line tools
 - **[Glossary](./glossary.md)** - Terms and definitions
-- **[FAQ](./faq.md)** - Frequently asked questions
+- **[FAQ](../guide/faq.md)** - Frequently asked questions
 
 ### ✅ Compliance & Standards
 
-- **[Compliance Matrix](./compliance-matrix.md)** - All regulatory frameworks
-- **[GDPR Compliance](./gdpr-compliance.md)** - GDPR-specific details
-- **[CCPA Compliance](./ccpa-compliance.md)** - CCPA-specific details
-- **[HIPAA Compliance](./hipaa-compliance.md)** - HIPAA-specific details
-- **[Security Standards](./security-standards.md)** - Security best practices
+- **Compliance Matrix** - All regulatory frameworks
+- **GDPR Compliance** - GDPR-specific details
+- **CCPA Compliance** - CCPA-specific details
+- **HIPAA Compliance** - HIPAA-specific details
+- **Security Standards** - Security best practices
 
 ### 🎨 Feature References
 
 - **[Open Source Features](./features.md)** - Core functionality
 - **[Enterprise Features](./enterprise-features.md)** - Proprietary features
 - **[Plugin Architecture](./plugin-architecture.md)** - Extension system
-- **[Roadmap](./roadmap.md)** - Future features and plans
+- **Roadmap** - Future features and plans
 
 ---
 
@@ -189,7 +189,7 @@ This implementation fixes 7 critical issues found in many vCon implementations:
 ### Primary Sources
 
 - **IETF vCon Core:** `draft-ietf-vcon-vcon-core-02`
-  - Location: `../background_docs/draft-ietf-vcon-vcon-core-02.txt`
+  - Location: https://datatracker.ietf.org/doc/draft-ietf-vcon-vcon-core/ (the repo's `background_docs/` holds only the -00 text)
   - Working Group: https://datatracker.ietf.org/wg/vcon/
 
 - **IETF vCon Privacy Primer:** `draft-ietf-vcon-privacy-primer-00`
@@ -286,31 +286,31 @@ See [Contributing Guide](../development/contributing.md) for details.
 [Quick Reference](./QUICK_REFERENCE.md) → [vCon Spec](./vcon-spec.md) → [Agent database schema](./AGENT_DATABASE_SCHEMA.md) → [API Docs](../api/)
 
 **DBAs:**
-[Agent database schema](./AGENT_DATABASE_SCHEMA.md) → [Search tools](../guide/search.md) → [Performance Tuning](./performance.md)
+[Agent database schema](./AGENT_DATABASE_SCHEMA.md) → [Search tools](../guide/search.md) → Performance Tuning
 
 **Integrators:**
-[MCP Protocol](./mcp-protocol.md) → [API Reference](../api/tools.md) → [Integration Guide](./mcp-integration.md)
+MCP Protocol → [API Reference](../api/tools.md) → Integration Guide
 
 **Compliance Teams:**
-[Compliance Matrix](./compliance-matrix.md) → [GDPR](./gdpr-compliance.md) → [CCPA](./ccpa-compliance.md)
+Compliance Matrix → GDPR → CCPA
 
 ### By Task
 
 **Setting up:**
-[Quick Start](../guide/getting-started.md) → [Agent database schema](./AGENT_DATABASE_SCHEMA.md) → [Testing](./testing-reference.md)
+[Quick Start](../guide/getting-started.md) → [Agent database schema](./AGENT_DATABASE_SCHEMA.md) → Testing
 
 **Migrating:**
-[Implementation Corrections](./IMPLEMENTATION_CORRECTIONS.md) → [Migration Guide](./MIGRATION_GUIDE.md) → [Testing](./testing-reference.md)
+[Implementation Corrections](./IMPLEMENTATION_CORRECTIONS.md) → [Migration Guide](./MIGRATION_GUIDE.md) → Testing
 
 **Extending:**
 [Plugin Architecture](./plugin-architecture.md) → [Custom Tools](../development/custom-tools.md) → [API Reference](../api/)
 
 **Troubleshooting:**
-[Error Reference](./error-reference.md) → [FAQ](./faq.md) → [GitHub Issues](https://github.com/vcon-dev/vcon-mcp/issues)
+Error Reference → [FAQ](../guide/faq.md) → [GitHub Issues](https://github.com/vcon-dev/vcon-mcp/issues)
 
 ---
 
-**Need help?** Check the [FAQ](./faq.md) or ask in [GitHub Discussions](https://github.com/vcon-dev/vcon-mcp/discussions).
+**Need help?** Check the [FAQ](../guide/faq.md) or ask in [GitHub Discussions](https://github.com/vcon-dev/vcon-mcp/discussions).
 
 **Found an issue?** Report it in [GitHub Issues](https://github.com/vcon-dev/vcon-mcp/issues) with the `documentation` label.
 

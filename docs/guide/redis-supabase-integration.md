@@ -410,7 +410,7 @@ storage = SupabaseStorage({
 # Save vCon (writes to both Supabase and Redis)
 vcon = {
     'uuid': 'abc-123',
-    'vcon': '0.3.0',
+    'vcon': '0.4.0',
     'parties': [...]
 }
 
@@ -465,7 +465,7 @@ Typical performance with Redis caching enabled:
 
 - [Redis Best Practices](https://redis.io/topics/best-practices)
 - [Supabase Performance Guide](https://supabase.com/docs/guides/performance)
-- [vCon MCP Server Documentation](../README.md)
+- [vCon MCP Server Documentation](../../README.md)
 - [Conserver Documentation](../../background_docs/conserver_config_guide.md)
 
 ## Support

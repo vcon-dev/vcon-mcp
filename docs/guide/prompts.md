@@ -216,6 +216,25 @@ Prompts are pre-built query templates that help you effectively search and retri
 
 ---
 
+### 10. Daily Activity Report
+
+**Prompt:** `daily_activity_report`
+
+**Use when:** You want a report of one day's conversations.
+
+**Arguments:**
+- `date` (optional): Date in `YYYY-MM-DD` format. If omitted, the prompt asks for yesterday.
+- `focus_areas` (optional): Free-text focus, for example "subject coverage, notable conversations"
+
+**What it does:**
+- Gets exact volume and content breakdowns from the analytics tools
+- Finds notable conversations with date-scoped keyword search
+- Reads `summary` format for the top hits instead of full vCons
+
+This prompt is in the `analytics` category, so `readonly` and `public` tool profiles do not list it.
+
+---
+
 ## How to Use Prompts
 
 ### In Claude Desktop or Compatible MCP Clients

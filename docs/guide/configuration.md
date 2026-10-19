@@ -534,8 +534,8 @@ redis-cli ping
 
 - [Redis-Supabase Integration Guide](redis-supabase-integration.md)
 - [Plugin Development Guide](../development/plugins.md)
-- [Performance Optimization](../development/performance.md)
-- [Security Best Practices](../development/security.md)
+- Performance Optimization
+- [Security Best Practices](../../SECURITY.md)
 
 ## Support
 
