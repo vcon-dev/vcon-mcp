@@ -6,6 +6,22 @@
 
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 
+/** Thrown when a vCon UUID does not match any row. REST routes map it to 404. */
+export class VConNotFoundError extends Error {
+  constructor(uuid: string) {
+    super(`vCon with UUID ${uuid} not found`);
+    this.name = 'VConNotFoundError';
+  }
+}
+
+/**
+ * Convert the PostgREST "no rows" error (PGRST116, from `.single()`) on a vcons
+ * lookup into a VConNotFoundError. Any other error is returned untouched.
+ */
+export function vconLookupError(error: { code?: string }, uuid: string): unknown {
+  return error?.code === 'PGRST116' ? new VConNotFoundError(uuid) : error;
+}
+
 /**
  * Extract meaningful error message from various error types
  */

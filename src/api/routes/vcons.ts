@@ -20,6 +20,8 @@ import {
   validateUUID,
 } from '../validation.js';
 import { VConValidationError } from '../../services/vcon-service.js';
+import { validateAnalysis, validateDialog, validateParty, ValidationResult } from '../../utils/validation.js';
+import { validateAttachment } from '../../tools/handlers/validation.js';
 import { logWithContext, recordCounter } from '../../observability/instrumentation.js';
 import { filterAnalysis, filterAttachments } from '../../utils/read-surfaces.js';
 
@@ -79,6 +81,18 @@ function formatSearchResults(vcons: VCon[], format: string): any[] {
     }));
   }
   return vcons;
+}
+
+/**
+ * Semantic validation failure on a child object (runs after the Zod shape
+ * parse, same checks the MCP handlers apply). Mapped to HTTP 400.
+ */
+class ChildValidationError extends Error {}
+
+function assertValid(label: string, validation: ValidationResult): void {
+  if (!validation.valid) {
+    throw new ChildValidationError(`${label} validation failed: ${validation.errors.join(', ')}`);
+  }
 }
 
 export function createVConRoutes(apiContext: RestApiContext): Router {
@@ -342,12 +356,16 @@ export function createVConRoutes(apiContext: RestApiContext): Router {
 
     try {
       const dialog = DialogSchema.parse(dialogData) as Dialog;
+      assertValid('Dialog', validateDialog(dialog));
       await apiContext.queries.addDialog(uuid, dialog);
       sendCreated(ctx, {
         message: `Added ${dialog.type} dialog to vCon ${uuid}`,
         dialog,
       });
     } catch (error: any) {
+      if (error instanceof ChildValidationError) {
+        return sendError(ctx, 400, error.message);
+      }
       if (error?.name === 'ZodError') {
         return sendError(ctx, 400, `Invalid dialog: ${error.errors?.map((e: any) => e.message).join('; ')}`);
       }
@@ -374,12 +392,16 @@ export function createVConRoutes(apiContext: RestApiContext): Router {
 
     try {
       const analysis = AnalysisSchema.parse(analysisData) as Analysis;
+      assertValid('Analysis', validateAnalysis(analysis));
       await apiContext.queries.addAnalysis(uuid, analysis);
       sendCreated(ctx, {
         message: `Added ${analysis.type} analysis from ${analysis.vendor} to vCon ${uuid}`,
         analysis,
       });
     } catch (error: any) {
+      if (error instanceof ChildValidationError) {
+        return sendError(ctx, 400, error.message);
+      }
       if (error?.name === 'ZodError') {
         return sendError(ctx, 400, `Invalid analysis: ${error.errors?.map((e: any) => e.message).join('; ')}`);
       }
@@ -403,12 +425,16 @@ export function createVConRoutes(apiContext: RestApiContext): Router {
 
     try {
       const attachment = AttachmentSchema.parse(attachmentData) as Attachment;
+      assertValid('Attachment', validateAttachment(attachment));
       await apiContext.queries.addAttachment(uuid, attachment);
       sendCreated(ctx, {
         message: `Added attachment to vCon ${uuid}`,
         attachment,
       });
     } catch (error: any) {
+      if (error instanceof ChildValidationError) {
+        return sendError(ctx, 400, error.message);
+      }
       if (error?.name === 'ZodError') {
         return sendError(ctx, 400, `Invalid attachment: ${error.errors?.map((e: any) => e.message).join('; ')}`);
       }
@@ -439,6 +465,10 @@ export function createVConRoutes(apiContext: RestApiContext): Router {
 
   /** Map an error from an index-addressed child op to an HTTP response. */
   const sendChildError = (ctx: Context, error: any, kind: string): void => {
+    if (error instanceof ChildValidationError) {
+      sendError(ctx, 400, error.message);
+      return;
+    }
     if (error?.name === 'ZodError') {
       sendError(ctx, 400, `Invalid ${kind}: ${error.errors?.map((e: any) => e.message).join('; ')}`);
       return;
@@ -456,6 +486,7 @@ export function createVConRoutes(apiContext: RestApiContext): Router {
     if (!loc) return;
     try {
       const dialog = DialogSchema.parse(ctx.request.body) as Dialog;
+      assertValid('Dialog', validateDialog(dialog));
       await apiContext.queries.updateDialog(loc.uuid, loc.index, dialog);
       sendSuccess(ctx, { message: `Replaced dialog ${loc.index} in vCon ${loc.uuid}`, dialog });
     } catch (error) {
@@ -484,6 +515,7 @@ export function createVConRoutes(apiContext: RestApiContext): Router {
     }
     try {
       const analysis = AnalysisSchema.parse(body) as Analysis;
+      assertValid('Analysis', validateAnalysis(analysis));
       await apiContext.queries.updateAnalysis(loc.uuid, loc.index, analysis);
       sendSuccess(ctx, { message: `Replaced analysis ${loc.index} in vCon ${loc.uuid}`, analysis });
     } catch (error) {
@@ -508,6 +540,7 @@ export function createVConRoutes(apiContext: RestApiContext): Router {
     if (!loc) return;
     try {
       const attachment = AttachmentSchema.parse(ctx.request.body) as Attachment;
+      assertValid('Attachment', validateAttachment(attachment));
       await apiContext.queries.updateAttachment(loc.uuid, loc.index, attachment);
       sendSuccess(ctx, { message: `Replaced attachment ${loc.index} in vCon ${loc.uuid}`, attachment });
     } catch (error) {
@@ -533,6 +566,7 @@ export function createVConRoutes(apiContext: RestApiContext): Router {
     if (!uuidCheck.valid) return sendError(ctx, 400, uuidCheck.errors[0]);
     try {
       const party = PartySchema.parse(ctx.request.body) as Party;
+      assertValid('Party', validateParty(party));
       const { index } = await apiContext.queries.addParty(uuid, party);
       sendCreated(ctx, { message: `Added party at index ${index} to vCon ${uuid}`, index, party });
     } catch (error) {
@@ -545,6 +579,7 @@ export function createVConRoutes(apiContext: RestApiContext): Router {
     if (!loc) return;
     try {
       const party = PartySchema.parse(ctx.request.body) as Party;
+      assertValid('Party', validateParty(party));
       await apiContext.queries.updateParty(loc.uuid, loc.index, party);
       sendSuccess(ctx, { message: `Replaced party ${loc.index} in vCon ${loc.uuid}`, party });
     } catch (error) {

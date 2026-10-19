@@ -14,6 +14,7 @@ import { PluginManager } from '../hooks/plugin-manager.js';
 import { ATTR_VCON_UUID } from '../observability/attributes.js';
 import { logWithContext, recordCounter } from '../observability/instrumentation.js';
 import { VCon } from '../types/vcon.js';
+import { VConNotFoundError } from '../utils/errors.js';
 import { validateVCon } from '../utils/validation.js';
 
 // ============================================================================
@@ -410,9 +411,6 @@ export class VConValidationError extends Error {
   }
 }
 
-export class VConNotFoundError extends Error {
-  constructor(uuid: string) {
-    super(`vCon with UUID ${uuid} not found`);
-    this.name = 'VConNotFoundError';
-  }
-}
+// VConNotFoundError lives in utils/errors so the db layer can throw it without
+// importing the service layer. Re-exported here for existing importers.
+export { VConNotFoundError };

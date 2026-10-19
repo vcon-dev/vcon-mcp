@@ -75,6 +75,27 @@ export function validateIntRange(
 }
 
 /**
+ * Validate a finite number within a range (e.g. threshold, semantic_weight).
+ * Absent values return the default; present-but-invalid values fail.
+ */
+export function validateNumberRange(
+  value: unknown,
+  fieldName: string,
+  min: number,
+  max: number,
+  defaultValue: number
+): { result: ValidationResult; value: number } {
+  if (value === undefined || value === null || value === '') {
+    return { result: ok(), value: defaultValue };
+  }
+  const num = typeof value === 'string' ? Number(value) : NaN;
+  if (!Number.isFinite(num) || num < min || num > max) {
+    return { result: fail(`${fieldName} must be a number between ${min} and ${max}`), value: defaultValue };
+  }
+  return { result: ok(), value: num };
+}
+
+/**
  * Validate a response format enum value
  */
 export function validateResponseFormat(

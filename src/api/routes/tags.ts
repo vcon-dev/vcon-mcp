@@ -101,7 +101,8 @@ export function createTagRoutes(apiContext: RestApiContext): Router {
   router.get('/tags', async (ctx: Context) => {
     const includeCounts = ctx.query.include_counts === 'true';
     const keyFilter = ctx.query.key_filter as string | undefined;
-    const { value: minCount } = validateIntRange(ctx.query.min_count, 'min_count', 1, 100000, 1);
+    const { result: minCountResult, value: minCount } = validateIntRange(ctx.query.min_count, 'min_count', 1, 100000, 1);
+    if (!minCountResult.valid) return sendError(ctx, 400, minCountResult.errors[0]);
 
     const result = await apiContext.queries.getUniqueTags({
       includeCounts,
@@ -120,7 +121,8 @@ export function createTagRoutes(apiContext: RestApiContext): Router {
       return sendError(ctx, 400, 'tags query parameter is required and must be a non-empty JSON object');
     }
 
-    const { value: limit } = validateIntRange(ctx.query.limit, 'limit', 1, 100, 50);
+    const { result: limitResult, value: limit } = validateIntRange(ctx.query.limit, 'limit', 1, 100, 50);
+    if (!limitResult.valid) return sendError(ctx, 400, limitResult.errors[0]);
 
     const uuids = await apiContext.queries.searchByTags(tags, limit);
     sendSuccess(ctx, { count: uuids.length, uuids });

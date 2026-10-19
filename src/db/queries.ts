@@ -23,6 +23,7 @@ import {
   type VconShapeGraphNode,
   type VconShapeGraphPayload,
 } from '../types/vcon-shape-graph.js';
+import { vconLookupError } from '../utils/errors.js';
 import { parseTagsBody } from '../utils/read-surfaces.js';
 import { ChildIndexError } from '../utils/vcon-children.js';
 import {
@@ -314,7 +315,7 @@ export class SupabaseVConQueries implements IVConQueries {
       .eq('uuid', vconUuid)
       .single();
 
-    if (vconError) throw vconError;
+    if (vconError) throw vconLookupError(vconError, vconUuid);
 
     // Use provided index or query for the next available one
     let nextIndex: number;
@@ -353,7 +354,7 @@ export class SupabaseVConQueries implements IVConQueries {
       .eq('uuid', vconUuid)
       .single();
 
-    if (vconError) throw vconError;
+    if (vconError) throw vconLookupError(vconError, vconUuid);
 
     // Use provided index or query for the next available one
     let nextIndex: number;
@@ -408,7 +409,7 @@ export class SupabaseVConQueries implements IVConQueries {
       .eq('uuid', vconUuid)
       .single();
 
-    if (vconError) throw vconError;
+    if (vconError) throw vconLookupError(vconError, vconUuid);
 
     // Use provided index or query for the next available one
     let nextIndex: number;
@@ -456,7 +457,7 @@ export class SupabaseVConQueries implements IVConQueries {
       .select('id')
       .eq('uuid', vconUuid)
       .single();
-    if (error) throw error;
+    if (error) throw vconLookupError(error, vconUuid);
     return data.id;
   }
 
@@ -1346,7 +1347,7 @@ export class SupabaseVConQueries implements IVConQueries {
       .eq('uuid', vconUuid)
       .single();
 
-    if (vconError) throw vconError;
+    if (vconError) throw vconLookupError(vconError, vconUuid);
 
     // Get tags attachment (tags may have encoding='json' or no encoding)
     const { data: attachments, error: attachmentError } = await this.supabase
@@ -2243,7 +2244,7 @@ export class SupabaseVConQueries implements IVConQueries {
       .eq('uuid', vconUuid)
       .single();
 
-    if (vconError) throw vconError;
+    if (vconError) throw vconLookupError(vconError, vconUuid);
 
     // Convert tags object to array of "key:value" strings
     const tagsArray = Object.entries(tags).map(([key, value]) => `${key}:${value}`);
