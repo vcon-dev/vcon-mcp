@@ -200,6 +200,14 @@ export const getContentAnalyticsTool = {
         description: 'ISO 8601 end date (exclusive) to scope analytics (e.g. "2026-04-14T00:00:00Z"). ' +
           'When set, all metrics are computed only for vCons created before this date.'
       },
+      date_field: {
+        type: 'string',
+        enum: ['created', 'conversation'],
+        description: 'Which timestamp start_date/end_date apply to. "created" (default): vcon created_at, when the vCon object was created. ' +
+          '"conversation": when the conversation happened: the earliest dialog start, else the earliest attachment start capped at created_at, else created_at. ' +
+          'Use "conversation" for imported historical conversations, whose created_at is the import time.',
+        default: 'created'
+      },
       include_dialog_analysis: {
         type: 'boolean',
         description: 'Include dialog type and content analysis (default: true)',

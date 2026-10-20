@@ -163,6 +163,7 @@ Unified metadata, keyword, semantic, and hybrid search with one stable response 
     subject?: string,
     start_date?: string,
     end_date?: string,
+    date_field?: "created" | "conversation",  // Which date start/end apply to; default "created"
     party_name?: string,
     party_email?: string,
     party_tel?: string,
@@ -183,11 +184,13 @@ Unified metadata, keyword, semantic, and hybrid search with one stable response 
 | Mode | Honours | Ignores |
 |------|---------|---------|
 | `metadata` | All `filters` fields, `tags` | `query`, `embedding` |
-| `keyword` | `query` (required), `tags`, `filters.start_date`, `filters.end_date` | Other `filters` fields |
+| `keyword` | `query` (required), `tags`, `filters.start_date`, `filters.end_date`, `filters.date_field` | Other `filters` fields |
 | `semantic` | `query` or `embedding`, `tags`, `threshold` | All `filters` fields, including dates |
 | `hybrid` | `query` (required), optional `embedding`, `tags`, `semantic_weight` | All `filters` fields, including dates |
 
 Tag filters go in the top-level `tags` parameter. A `tags` object placed inside `filters` is ignored.
+
+`filters.date_field` picks the timestamp the date window applies to. See [Date fields](#date-fields).
 
 In hybrid mode, if the query embedding cannot be generated the search falls back to keyword-only ranking.
 
@@ -308,7 +311,11 @@ Server-side rollup for rate-style questions: which groups have the highest share
 {
   group_by?: "dealer",                 // Only value supported; default "dealer"
   tags?: { [key: string]: string },    // Numerator filter; default {} (baseline-only ranking)
-  filters?: { start_date?: string, end_date?: string },  // Window on vcons.created_at
+  filters?: {
+    start_date?: string,
+    end_date?: string,
+    date_field?: "created" | "conversation"  // Window on created_at (default) or conversation_start
+  },
   having?: { min_count?: number },     // Floor on baseline_count per group; minimum and default 1
   limit?: number                       // Default 20, range 1-500 (clamped)
 }
@@ -774,8 +781,9 @@ Basic search with filtering by metadata (subject, parties, dates, tags).
   party_name?: string,    // Case-insensitive partial match
   party_email?: string,
   party_tel?: string,
-  start_date?: string,    // Created on or after
-  end_date?: string,      // Created on or before
+  start_date?: string,    // On or after (created_at unless date_field is "conversation")
+  end_date?: string,      // On or before
+  date_field?: "created" | "conversation",  // Default: "created". See Date fields below
   tags?: { [key: string]: string },
   limit?: number,         // Default: 10, max: 1000
   response_format?: "full" | "metadata" | "ids_only",  // Default: "metadata"
@@ -795,7 +803,7 @@ Basic search with filtering by metadata (subject, parties, dates, tags).
 }
 ```
 
-`metadata` rows are `{ uuid, subject, created_at, parties_count, dialog_count, analysis_count, attachments_count }`. `ids_only` returns UUID strings. Runs the `beforeSearch` and `afterSearch` plugin hooks.
+`metadata` rows are `{ uuid, subject, created_at, conversation_start, parties_count, dialog_count, analysis_count, attachments_count }`. `ids_only` returns UUID strings. Runs the `beforeSearch` and `afterSearch` plugin hooks.
 
 **Example:**
 
@@ -807,6 +815,33 @@ Basic search with filtering by metadata (subject, parties, dates, tags).
   "include_count": true
 }
 ```
+
+---
+
+#### Date fields
+
+Every tool that takes `start_date`/`end_date` also takes `date_field`:
+
+| Value | Column | Meaning |
+|-------|--------|---------|
+| `created` (default) | `vcons.created_at` | When the vCon object was created. The vCon core draft does not allow it to be backdated |
+| `conversation` | `vcons.conversation_start` | When the conversation happened. See the rule below |
+
+Use `conversation` for imported historical conversations, where `created_at` is the import time.
+
+`conversation_start` is, ignoring NULL starts and starts before `1990-01-01T00:00:00Z` (placeholders):
+
+1. the earliest `dialog[].start`, if any dialog has one
+2. otherwise the earliest `attachments[].start`, capped at `created_at`
+3. otherwise `created_at`
+
+Attachment starts are capped because some vCon libraries stamp every attachment's `start` with the
+write time, so an enrichment attachment added later would otherwise move the conversation past
+`created_at`. Dialog starts are not capped.
+`conversation_start` is maintained by database triggers (migration
+`20261019171238_add_conversation_start.sql`); without that migration, `date_field: "conversation"`
+fails with a database error while the default keeps working. The MongoDB backend rejects
+`conversation`. Search results that return `created_at` also return `conversation_start`.
 
 ---
 
@@ -822,6 +857,7 @@ Full-text keyword search across subject, dialog, analysis, and party content.
   tags?: { [key: string]: string },
   start_date?: string,
   end_date?: string,
+  date_field?: "created" | "conversation",  // Default: "created"
   limit?: number,         // Default: 50, max: 1000
   response_format?: "full" | "snippets" | "metadata" | "ids_only",  // Default: "snippets"
   include_count?: boolean // Default: false
@@ -1619,6 +1655,7 @@ Get content analytics including dialog types, analysis breakdown, and conversati
 {
   start_date?: string,                   // ISO 8601; only vCons created on or after this date
   end_date?: string,                     // ISO 8601, exclusive; only vCons created before this date
+  date_field?: "created" | "conversation", // Default "created"; "conversation" scopes by conversation_start
   include_dialog_analysis?: boolean,     // Include dialog analysis (default: true)
   include_analysis_breakdown?: boolean,  // Include analysis breakdown (default: true)
   include_party_patterns?: boolean,      // Include party patterns (default: true)

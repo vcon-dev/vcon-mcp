@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Migrations
+- `20261019171238_add_conversation_start.sql` adds `vcons.conversation_start`, the triggers
+  that keep it current, a backfill and an index. The rule ignores NULL starts and starts
+  before 1990-01-01 (placeholders such as 1970 epoch defaults): the earliest dialog `start`
+  if any dialog has one; otherwise the earliest attachment `start` capped at `created_at`
+  (`LEAST(min attachment start, created_at)`), because some libraries stamp attachment
+  `start` with the write time; otherwise `created_at`. `supabase/tests/conversation_start.sql`
+  checks the triggers and backfill against a migrated database. It replaces `search_vcons_keyword`, `search_vcons_by_tags_and_date`,
+  `search_vcons_by_tags_and_date_count`, `aggregate_vcons_by_dealer_stats`,
+  `count_vcons_for_dealer_filter` and `count_vcons_tags_and_dealer` with versions that take
+  an optional trailing `date_field` (default `'created'`); the old overloads are dropped.
+  Default calls send the same payload as before, so the server runs against an unmigrated
+  database until a caller asks for `date_field: "conversation"`. Created in `public` only;
+  per-group schemas need it applied there
+
+### Added
+- `date_field` (`created` default, `conversation`) on every date filter: `search_vcons`,
+  `search_vcons_content`, `vcon_search` `filters`, `vcon_aggregate` `filters`,
+  `get_content_analytics`, and REST `GET /vcons`, `GET /vcons/search/content`,
+  `GET /analytics/content`. `conversation` filters on when the conversation happened, which
+  is what a date range means for imported historical conversations whose `created_at` is
+  the import time. Invalid values return InvalidParams, `INVALID_ARGUMENT`, or REST 400.
+  The MongoDB backend rejects `conversation`
+- `conversation_start` in `search_vcons` and REST `GET /vcons` metadata rows and in the
+  `core` group of `vcon_fetch` / `vcon_search` items, computed from the loaded vCon with
+  the same rule
+- `vcon_capabilities` `search.date_fields` and `search.default_date_field`
+
 ### Security
 - Caller input placed into SQL run through the `exec_sql` RPC is now validated at the
   query builder. `exec_sql` only substitutes `:vcon_id` and `:limit`, so these values were

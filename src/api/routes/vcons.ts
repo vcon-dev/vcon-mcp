@@ -17,6 +17,7 @@ import { sendCreated, sendError, sendPaginated, sendSuccess } from '../response.
 import {
   normalizeDateString,
   parseJsonQueryParam,
+  validateDateField,
   validateResponseFormat,
   validateUUID,
 } from '../validation.js';
@@ -24,7 +25,7 @@ import { VConValidationError } from '../../services/vcon-service.js';
 import { validateAnalysis, validateDialog, validateParty, ValidationResult } from '../../utils/validation.js';
 import { validateAttachment } from '../../tools/handlers/validation.js';
 import { logWithContext, recordCounter } from '../../observability/instrumentation.js';
-import { filterAnalysis, filterAttachments } from '../../utils/read-surfaces.js';
+import { conversationStartOf, filterAnalysis, filterAttachments } from '../../utils/read-surfaces.js';
 
 /**
  * Format a vCon based on response_format parameter
@@ -75,6 +76,7 @@ function formatSearchResults(vcons: VCon[], format: string): any[] {
       uuid: v.uuid,
       subject: v.subject,
       created_at: v.created_at,
+      conversation_start: conversationStartOf(v),
       parties_count: v.parties?.length || 0,
       dialog_count: v.dialog?.length || 0,
       analysis_count: v.analysis?.length || 0,
@@ -178,6 +180,8 @@ export function createVConRoutes(apiContext: RestApiContext): Router {
 
     const { result: tagsResult, value: tags } = parseJsonQueryParam(ctx.query.tags, 'tags');
     if (!tagsResult.valid) return sendError(ctx, 400, tagsResult.errors[0]);
+    const { result: dateFieldResult, value: dateField } = validateDateField(ctx.query.date_field);
+    if (!dateFieldResult.valid) return sendError(ctx, 400, dateFieldResult.errors[0]);
 
     const filters = {
       subject: ctx.query.subject as string | undefined,
@@ -186,6 +190,7 @@ export function createVConRoutes(apiContext: RestApiContext): Router {
       partyTel: ctx.query.party_tel as string | undefined,
       startDate: normalizeDateString(ctx.query.start_date as string | undefined),
       endDate: normalizeDateString(ctx.query.end_date as string | undefined),
+      ...(dateField ? { dateField } : {}),
       tags,
       limit,
       offset,
@@ -208,6 +213,7 @@ export function createVConRoutes(apiContext: RestApiContext): Router {
           partyTel: filters.partyTel,
           startDate: filters.startDate,
           endDate: filters.endDate,
+          ...(dateField ? { dateField } : {}),
           tags: filters.tags,
         });
       } catch { /* count is best-effort */ }

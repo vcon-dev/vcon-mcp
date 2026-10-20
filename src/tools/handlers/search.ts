@@ -9,8 +9,9 @@ import { RequestContext } from '../../hooks/plugin-interface.js';
 import { VCon } from '../../types/vcon.js';
 import { EmbeddingError, generateEmbedding } from '../../utils/embeddings.js';
 import { BaseToolHandler, ToolHandlerContext, ToolResponse } from './base.js';
-import { normalizeDateString, requireNonEmptyString } from './validation.js';
+import { normalizeDateString, parseDateField, requireNonEmptyString } from './validation.js';
 import { extractErrorMessage } from '../../utils/errors.js';
+import { conversationStartOf } from '../../utils/read-surfaces.js';
 
 /**
  * Handler for search_vcons tool
@@ -23,6 +24,7 @@ export class SearchVConsHandler extends BaseToolHandler {
 
     const responseFormat = (args?.response_format as string | undefined) || 'metadata';
     const includeCount = (args?.include_count as boolean | undefined) || false;
+    const dateField = parseDateField(args?.date_field);
 
     let filters = {
       subject: args?.subject as string | undefined,
@@ -31,6 +33,7 @@ export class SearchVConsHandler extends BaseToolHandler {
       partyTel: args?.party_tel as string | undefined,
       startDate: normalizeDateString(args?.start_date as string | undefined),
       endDate: normalizeDateString(args?.end_date as string | undefined),
+      ...(dateField ? { dateField } : {}),
       tags: args?.tags as Record<string, string> | undefined,
       limit: (args?.limit as number | undefined) || 10,
     };
@@ -68,6 +71,7 @@ export class SearchVConsHandler extends BaseToolHandler {
         uuid: vcon.uuid,
         subject: vcon.subject,
         created_at: vcon.created_at,
+        conversation_start: conversationStartOf(vcon),
         parties_count: vcon.parties?.length || 0,
         dialog_count: vcon.dialog?.length || 0,
         analysis_count: vcon.analysis?.length || 0,
@@ -88,6 +92,7 @@ export class SearchVConsHandler extends BaseToolHandler {
           partyTel: filters.partyTel,
           startDate: filters.startDate,
           endDate: filters.endDate,
+          ...(filters.dateField ? { dateField: filters.dateField } : {}),
           tags: filters.tags,
         });
       } catch (countError: any) {
@@ -128,11 +133,13 @@ export class SearchVConsContentHandler extends BaseToolHandler {
 
     const responseFormat = (args?.response_format as string | undefined) || 'snippets';
     const includeCount = (args?.include_count as boolean | undefined) || false;
+    const dateField = parseDateField(args?.date_field);
 
     const results = await context.queries.keywordSearch({
       query,
       startDate: normalizeDateString(args?.start_date as string | undefined),
       endDate: normalizeDateString(args?.end_date as string | undefined),
+      ...(dateField ? { dateField } : {}),
       tags: args?.tags as Record<string, string> | undefined,
       limit: (args?.limit as number | undefined) || 50,
     });
@@ -177,6 +184,7 @@ export class SearchVConsContentHandler extends BaseToolHandler {
           query,
           startDate: normalizeDateString(args?.start_date as string | undefined),
           endDate: normalizeDateString(args?.end_date as string | undefined),
+          ...(dateField ? { dateField } : {}),
           tags: args?.tags as Record<string, string> | undefined,
         });
       } catch (countError: any) {

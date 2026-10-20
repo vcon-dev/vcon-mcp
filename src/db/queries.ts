@@ -39,7 +39,7 @@ import {
 
 const logger = createLogger('queries');
 
-import { DistinctValuesResult, IVConQueries } from './interfaces.js';
+import { DateField, DistinctValuesResult, IVConQueries } from './interfaces.js';
 import { extractErrorMessage } from '../utils/errors.js';
 
 /** table.column pairs getDistinctValues may interpolate into SQL. */
@@ -62,6 +62,23 @@ function nullifyUndefined<T extends Record<string, unknown>>(obj: T): T {
  * (PostgREST PGRST202: not in the schema cache; Postgres 42883: undefined_function).
  * Anything else is a real failure and must not trigger a fallback.
  */
+/**
+ * vcons column a start/end date range applies to. The default stays
+ * created_at so existing callers see no change.
+ */
+export function dateColumnFor(dateField?: DateField): 'created_at' | 'conversation_start' {
+  return dateField === 'conversation' ? 'conversation_start' : 'created_at';
+}
+
+/**
+ * Extra RPC argument for date_field. Sent only for `conversation`: a default
+ * call is the exact payload it was before, so it still resolves against a
+ * database (or per-group schema) that predates the conversation_start migration.
+ */
+export function dateFieldRpcArg(dateField?: DateField): { date_field?: 'conversation' } {
+  return dateField === 'conversation' ? { date_field: 'conversation' } : {};
+}
+
 function isMissingFunctionError(error: { code?: string } | null | undefined): boolean {
   return error?.code === 'PGRST202' || error?.code === '42883';
 }
@@ -146,6 +163,7 @@ export class SupabaseVConQueries implements IVConQueries {
     query: string;
     startDate?: string;
     endDate?: string;
+    dateField?: DateField;
     tags?: Record<string, string>;
     limit?: number;
   }): Promise<Array<{
@@ -171,6 +189,7 @@ export class SupabaseVConQueries implements IVConQueries {
         end_date: params.endDate ?? null,
         tag_filter: params.tags ?? {},
         max_results: params.limit ?? 50,
+        ...dateFieldRpcArg(params.dateField),
       });
 
       if (error) {
@@ -204,6 +223,7 @@ export class SupabaseVConQueries implements IVConQueries {
     query: string;
     startDate?: string;
     endDate?: string;
+    dateField?: DateField;
     tags?: Record<string, string>;
   }): Promise<number> {
     // Use a large limit to get as many results as possible (still capped at 1000 by Supabase)
@@ -973,7 +993,7 @@ export class SupabaseVConQueries implements IVConQueries {
   }
 
   /**
-   * Tag-first metadata search: ordered by vcon.created_at via search_vcons_by_tags_and_date,
+   * Tag-first metadata search: ordered by the date column (created_at by default) via search_vcons_by_tags_and_date,
    * then optional subject / party / dealer narrowing. Aligns pagination with searchVConsCount.
    */
   private async searchVConsTagOrdered(filters: {
@@ -983,6 +1003,7 @@ export class SupabaseVConQueries implements IVConQueries {
     partyTel?: string;
     startDate?: string;
     endDate?: string;
+    dateField?: DateField;
     tags: Record<string, string>;
     dealerId?: string;
     dealerName?: string;
@@ -1000,6 +1021,7 @@ export class SupabaseVConQueries implements IVConQueries {
       filters.startDate,
       filters.endDate,
       rpcMax,
+      filters.dateField,
     );
 
     if (filters.subject) {
@@ -1030,6 +1052,7 @@ export class SupabaseVConQueries implements IVConQueries {
     partyTel?: string;
     startDate?: string;
     endDate?: string;
+    dateField?: DateField;
     tags?: Record<string, string>;
     dealerId?: string;
     dealerName?: string;
@@ -1048,6 +1071,7 @@ export class SupabaseVConQueries implements IVConQueries {
           partyTel: filters.partyTel,
           startDate: filters.startDate,
           endDate: filters.endDate,
+          dateField: filters.dateField,
           tags: filters.tags,
           dealerId: filters.dealerId,
           dealerName: filters.dealerName,
@@ -1080,6 +1104,7 @@ export class SupabaseVConQueries implements IVConQueries {
     }
 
     const initialLimit = limit;
+    const dateColumn = dateColumnFor(filters.dateField);
 
     const applyFilters = <Q extends { ilike: any; gte: any; lte: any; order: any; range: any }>(
       q: Q,
@@ -1087,10 +1112,10 @@ export class SupabaseVConQueries implements IVConQueries {
     ): Q => {
       let out: any = q;
       if (filters.subject) out = out.ilike('subject', `%${filters.subject}%`);
-      if (filters.startDate) out = out.gte('created_at', filters.startDate);
-      if (filters.endDate) out = out.lte('created_at', filters.endDate);
-      out = out.order('created_at', { ascending: false });
-      // uuid tie-break: rows sharing a created_at need a stable order for cursor paging
+      if (filters.startDate) out = out.gte(dateColumn, filters.startDate);
+      if (filters.endDate) out = out.lte(dateColumn, filters.endDate);
+      out = out.order(dateColumn, { ascending: false });
+      // uuid tie-break: rows sharing a date need a stable order for cursor paging
       out = out.order('uuid', { ascending: false });
       // ponytail: offset paging shifts by one row per insert landing mid-walk; keyset cursor on
       // created_at if a live corpus needs gap-free walks
@@ -1098,7 +1123,7 @@ export class SupabaseVConQueries implements IVConQueries {
       return out;
     };
 
-    let data: Array<{ uuid: string; id: any; created_at?: string }> | null = null;
+    let data: Array<{ uuid: string; id: any; created_at?: string; conversation_start?: string }> | null = null;
     let error: any = null;
 
     try {
@@ -1108,11 +1133,11 @@ export class SupabaseVConQueries implements IVConQueries {
         // request-line limit nginx defaults to in front of PostgREST. Raise it only with
         // a proxy you control; a 414 here looks like an empty result set, not an error.
         const IN_BATCH = 100;
-        const accumulated: Array<{ uuid: string; id: any; created_at: string }> = [];
+        const accumulated: Array<{ uuid: string; id: any; created_at?: string; conversation_start?: string }> = [];
         for (let i = 0; i < uuidArray.length; i += IN_BATCH) {
           const chunk = uuidArray.slice(i, i + IN_BATCH);
           const chunkQuery = applyFilters(
-            this.supabase.from('vcons').select('uuid, id, created_at').in('uuid', chunk),
+            this.supabase.from('vcons').select(`uuid, id, ${dateColumn}`).in('uuid', chunk),
             false,
           );
           const res = await chunkQuery;
@@ -1121,7 +1146,7 @@ export class SupabaseVConQueries implements IVConQueries {
         }
         if (!error) {
           accumulated.sort((a, b) =>
-            (b.created_at || '').localeCompare(a.created_at || '') ||
+            (b[dateColumn] || '').localeCompare(a[dateColumn] || '') ||
             (b.uuid || '').localeCompare(a.uuid || ''),
           );
           data = accumulated.slice(offset, offset + initialLimit);
@@ -1171,6 +1196,7 @@ export class SupabaseVConQueries implements IVConQueries {
     partyTel?: string;
     startDate?: string;
     endDate?: string;
+    dateField?: DateField;
     tags?: Record<string, string>;
     dealerId?: string;
     dealerName?: string;
@@ -1186,10 +1212,13 @@ export class SupabaseVConQueries implements IVConQueries {
         p_subject_contains: filters.subject ?? null,
         vcon_created_after: filters.startDate ?? null,
         vcon_created_before: filters.endDate ?? null,
+        ...dateFieldRpcArg(filters.dateField),
       });
       if (error) throw error;
       return typeof data === 'number' ? data : Number(data ?? 0);
     }
+
+    const dateColumn = dateColumnFor(filters.dateField);
 
     // Build the same query as searchVCons but just get count
     let query = this.supabase
@@ -1201,11 +1230,11 @@ export class SupabaseVConQueries implements IVConQueries {
     }
 
     if (filters.startDate) {
-      query = query.gte('created_at', filters.startDate);
+      query = query.gte(dateColumn, filters.startDate);
     }
 
     if (filters.endDate) {
-      query = query.lte('created_at', filters.endDate);
+      query = query.lte(dateColumn, filters.endDate);
     }
 
     // If party filters, we need to count vCons that match party criteria
@@ -1246,17 +1275,17 @@ export class SupabaseVConQueries implements IVConQueries {
         vconQuery = vconQuery.ilike('subject', `%${filters.subject}%`);
       }
       if (filters.startDate) {
-        vconQuery = vconQuery.gte('created_at', filters.startDate);
+        vconQuery = vconQuery.gte(dateColumn, filters.startDate);
       }
       if (filters.endDate) {
-        vconQuery = vconQuery.lte('created_at', filters.endDate);
+        vconQuery = vconQuery.lte(dateColumn, filters.endDate);
       }
 
       const { count, error: countError } = await vconQuery;
       if (countError) throw countError;
 
       // If tag filters, get the date+tag-matching UUIDs from the RPC
-      // (which honors v.created_at) and count the intersection with the
+      // (which honors the selected date column) and count the intersection with the
       // party-filtered set. Subject filter falls back to JS filtering since
       // the RPC doesn't accept it.
       if (filters.tags && Object.keys(filters.tags).length > 0) {
@@ -1265,6 +1294,7 @@ export class SupabaseVConQueries implements IVConQueries {
           filters.startDate,
           filters.endDate,
           100000,
+          filters.dateField,
         );
         const tagAndDateSet = new Set(tagAndDateUuids);
         const dealerSet = (filters.dealerId || filters.dealerName)
@@ -1303,6 +1333,7 @@ export class SupabaseVConQueries implements IVConQueries {
           vcon_created_after: filters.startDate ?? null,
           vcon_created_before: filters.endDate ?? null,
           p_subject_contains: filters.subject ?? null,
+          ...dateFieldRpcArg(filters.dateField),
         });
         if (error) throw error;
         return typeof data === 'number' ? data : Number(data ?? 0);
@@ -1314,6 +1345,7 @@ export class SupabaseVConQueries implements IVConQueries {
           filters.startDate,
           filters.endDate,
           100000,
+          filters.dateField,
         );
         if (tagAndDateUuids.length === 0) return 0;
         const tagAndDateSet = new Set(tagAndDateUuids);
@@ -1337,6 +1369,7 @@ export class SupabaseVConQueries implements IVConQueries {
         filters.tags,
         filters.startDate,
         filters.endDate,
+        filters.dateField,
       );
     }
 
@@ -1345,12 +1378,13 @@ export class SupabaseVConQueries implements IVConQueries {
     // The PostgREST count path silently degrades to the corpus total on wider
     // windows (~7-day windows on a 250k-row table observed returning the
     // full corpus). The RPC handles tag_filter='{}'::jsonb as "no tag
-    // restriction" and uses a plain index-backed range scan on created_at.
+    // restriction" and uses a plain index-backed range scan on the date column.
     if ((filters.startDate || filters.endDate) && !filters.subject) {
       return await this.countByTagsAndDate(
         {},
         filters.startDate,
         filters.endDate,
+        filters.dateField,
       );
     }
 
@@ -1496,7 +1530,8 @@ export class SupabaseVConQueries implements IVConQueries {
   }
 
   /**
-   * Search vCons by tags AND vcon.created_at in a single SQL query.
+   * Search vCons by tags AND a vcon date range (created_at, or conversation_start
+   * when dateField is `conversation`) in a single SQL query.
    * Uses the search_vcons_by_tags_and_date RPC so the intersection happens
    * in Postgres rather than via JS over a PostgREST page-truncated set.
    */
@@ -1505,29 +1540,33 @@ export class SupabaseVConQueries implements IVConQueries {
     startDate: string | undefined,
     endDate: string | undefined,
     limit: number = 1000,
+    dateField?: DateField,
   ): Promise<string[]> {
     const { data, error } = await this.supabase.rpc('search_vcons_by_tags_and_date', {
       tag_filter: tags || {},
       vcon_created_after: startDate ?? null,
       vcon_created_before: endDate ?? null,
       max_results: limit,
+      ...dateFieldRpcArg(dateField),
     });
     if (error) throw error;
     return (data || []).map((r: any) => r.vcon_uuid as string);
   }
 
   /**
-   * Count of vCons matching tags AND vcon.created_at in a single SQL query.
+   * Count of vCons matching tags AND a vcon date range in a single SQL query.
    */
   async countByTagsAndDate(
     tags: Record<string, string>,
     startDate: string | undefined,
     endDate: string | undefined,
+    dateField?: DateField,
   ): Promise<number> {
     const { data, error } = await this.supabase.rpc('search_vcons_by_tags_and_date_count', {
       tag_filter: tags || {},
       vcon_created_after: startDate ?? null,
       vcon_created_before: endDate ?? null,
+      ...dateFieldRpcArg(dateField),
     });
     if (error) throw error;
     // RPC returns bigint as a number/string depending on driver
@@ -2213,6 +2252,7 @@ export class SupabaseVConQueries implements IVConQueries {
     tagFilter: Record<string, string>;
     startDate?: string;
     endDate?: string;
+    dateField?: DateField;
     minBaseline: number;
     limit: number;
   }): Promise<Array<{
@@ -2229,6 +2269,7 @@ export class SupabaseVConQueries implements IVConQueries {
       vcon_created_before: params.endDate ?? null,
       min_baseline: params.minBaseline,
       max_results: params.limit,
+      ...dateFieldRpcArg(params.dateField),
     });
     if (error) throw error;
     return (data || []).map((row: Record<string, unknown>) => ({

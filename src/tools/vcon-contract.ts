@@ -127,11 +127,20 @@ export const vconSearchTool = {
       },
       filters: {
         type: 'object',
-        description: 'Structured metadata filters for subject, dates, party fields, and (where a deployment stores one) the strolid_dealer attachment.',
+        description: 'Structured metadata filters for subject, dates, party fields, and (where a deployment stores one) the strolid_dealer attachment. ' +
+          'start_date/end_date apply in metadata and keyword modes.',
         properties: {
           subject: { type: 'string' },
           start_date: { type: 'string' },
           end_date: { type: 'string' },
+          date_field: {
+            type: 'string',
+            enum: ['created', 'conversation'],
+            description: 'Which timestamp start_date/end_date apply to. "created" (default): vcon created_at, when the vCon object was created. ' +
+              '"conversation": when the conversation happened: the earliest dialog start, else the earliest attachment start capped at created_at, else created_at. ' +
+              'Use "conversation" for imported historical conversations, whose created_at is the import time.',
+            default: 'created',
+          },
           party_name: { type: 'string' },
           party_email: { type: 'string' },
           party_tel: { type: 'string' },
@@ -211,10 +220,18 @@ export const vconAggregateTool = {
       },
       filters: {
         type: 'object',
-        description: 'Optional created_at window on vcons.created_at.',
+        description: 'Optional date window, on vcons.created_at unless date_field="conversation".',
         properties: {
           start_date: { type: 'string' },
           end_date: { type: 'string' },
+          date_field: {
+            type: 'string',
+            enum: ['created', 'conversation'],
+            description: 'Which timestamp start_date/end_date apply to. "created" (default): vcon created_at, when the vCon object was created. ' +
+              '"conversation": when the conversation happened: the earliest dialog start, else the earliest attachment start capped at created_at, else created_at. ' +
+              'Use "conversation" for imported historical conversations, whose created_at is the import time.',
+            default: 'created',
+          },
         },
       },
       having: {

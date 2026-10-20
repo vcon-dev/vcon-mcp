@@ -8,6 +8,18 @@
 import { Analysis, Attachment, Dialog, Party, VCon } from '../types/vcon.js';
 import type { VconShapeGraphPayload } from '../types/vcon-shape-graph.js';
 
+/**
+ * Which vCon timestamp start/end date filters apply to.
+ * - `created`: vcons.created_at, when the vCon object was created (default).
+ * - `conversation`: vcons.conversation_start, the earliest dialog start, else the
+ *   earliest attachment start capped at created_at, else created_at (starts before
+ *   1990 are ignored as placeholders). Use this for imported historical
+ *   conversations, whose created_at is the ingest time.
+ */
+export type DateField = 'created' | 'conversation';
+
+export const DATE_FIELDS: readonly DateField[] = ['created', 'conversation'];
+
 export interface SearchResult {
     vcon_id: string;
     score: number;
@@ -105,6 +117,8 @@ export interface IVConQueries {
         query: string;
         startDate?: string;
         endDate?: string;
+        /** Column the date range applies to. Omitted means `created`. */
+        dateField?: DateField;
         tags?: Record<string, string>;
         limit?: number;
     }): Promise<Array<{
@@ -122,6 +136,8 @@ export interface IVConQueries {
         query: string;
         startDate?: string;
         endDate?: string;
+        /** Column the date range applies to. Omitted means `created`. */
+        dateField?: DateField;
         tags?: Record<string, string>;
     }): Promise<number>;
 
@@ -167,6 +183,8 @@ export interface IVConQueries {
         partyTel?: string;
         startDate?: string;
         endDate?: string;
+        /** Column the date range applies to. Omitted means `created`. */
+        dateField?: DateField;
         tags?: Record<string, string>;
         /** Match strolid_dealer attachment id (string form, for example "1174"). */
         dealerId?: string;
@@ -187,6 +205,8 @@ export interface IVConQueries {
         partyTel?: string;
         startDate?: string;
         endDate?: string;
+        /** Column the date range applies to. Omitted means `created`. */
+        dateField?: DateField;
         tags?: Record<string, string>;
         dealerId?: string;
         dealerName?: string;
@@ -199,6 +219,8 @@ export interface IVConQueries {
         tagFilter: Record<string, string>;
         startDate?: string;
         endDate?: string;
+        /** Column the date range applies to. Omitted means `created`. */
+        dateField?: DateField;
         minBaseline: number;
         limit: number;
     }): Promise<Array<{

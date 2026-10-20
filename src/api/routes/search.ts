@@ -16,6 +16,7 @@ import { sendError, sendSuccess } from '../response.js';
 import {
   normalizeDateString,
   parseJsonQueryParam,
+  validateDateField,
   validateIntRange,
   validateNumberRange,
   validateNonEmptyString,
@@ -42,12 +43,16 @@ export function createSearchRoutes(apiContext: RestApiContext): Router {
     const { result: tagsResult, value: tags } = parseJsonQueryParam(ctx.query.tags, 'tags');
     if (!tagsResult.valid) return sendError(ctx, 400, tagsResult.errors[0]);
 
+    const { result: dateFieldResult, value: dateField } = validateDateField(ctx.query.date_field);
+    if (!dateFieldResult.valid) return sendError(ctx, 400, dateFieldResult.errors[0]);
+
     const includeCount = ctx.query.include_count === 'true';
 
     const results = await apiContext.queries.keywordSearch({
       query,
       startDate: normalizeDateString(ctx.query.start_date as string | undefined),
       endDate: normalizeDateString(ctx.query.end_date as string | undefined),
+      ...(dateField ? { dateField } : {}),
       tags,
       limit,
     });
@@ -88,6 +93,7 @@ export function createSearchRoutes(apiContext: RestApiContext): Router {
           query,
           startDate: normalizeDateString(ctx.query.start_date as string | undefined),
           endDate: normalizeDateString(ctx.query.end_date as string | undefined),
+          ...(dateField ? { dateField } : {}),
           tags,
         });
       } catch { /* best-effort */ }

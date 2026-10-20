@@ -3,6 +3,7 @@
  */
 
 import { BaseToolHandler, ToolHandlerContext, ToolResponse } from './base.js';
+import { parseDateField } from './validation.js';
 
 /**
  * Handler for get_database_analytics tool
@@ -101,6 +102,7 @@ export class GetContentAnalyticsHandler extends BaseToolHandler {
   readonly toolName = 'get_content_analytics';
 
   protected async execute(args: any, context: ToolHandlerContext): Promise<ToolResponse> {
+    const dateField = parseDateField(args?.date_field);
     const options = {
       includeDialogAnalysis: args?.include_dialog_analysis as boolean | undefined,
       includeAnalysisBreakdown: args?.include_analysis_breakdown as boolean | undefined,
@@ -109,6 +111,7 @@ export class GetContentAnalyticsHandler extends BaseToolHandler {
       includeTemporalContent: args?.include_temporal_content as boolean | undefined,
       startDate: args?.start_date as string | undefined,
       endDate: args?.end_date as string | undefined,
+      ...(dateField ? { dateField } : {}),
     };
 
     const analytics = await context.dbAnalytics.getContentAnalytics(options);

@@ -18,6 +18,7 @@ import {
   DatabaseHealthOptions
 } from './types.js';
 import { refreshTagsMvIfStale } from './tags-mv.js';
+import type { DateField } from './interfaces.js';
 import { toSqlInt, toSqlTimestamp } from './sql-guards.js';
 
 const MAX_MONTHS_BACK = 1200;
@@ -272,13 +273,22 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
       includeTemporalContent = false,
       startDate,
       endDate,
+      dateField,
     } = options;
 
-    const dateFilter = this.buildDateFilter(startDate, endDate);
+    const dateFilter = this.buildDateFilter(startDate, endDate, dateField);
 
     const analytics: any = {
       timestamp: new Date().toISOString(),
-      ...(startDate || endDate ? { date_range: { start_date: startDate || null, end_date: endDate || null } } : {}),
+      ...(startDate || endDate
+        ? {
+            date_range: {
+              start_date: startDate || null,
+              end_date: endDate || null,
+              ...(dateField ? { date_field: dateField } : {}),
+            },
+          }
+        : {}),
       summary: {},
       dialog_analysis: {},
       analysis_breakdown: {},
@@ -450,13 +460,15 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
     return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
   }
 
-  private buildDateFilter(startDate?: string, endDate?: string): { vconWhere: string } {
+  private buildDateFilter(startDate?: string, endDate?: string, dateField?: DateField): { vconWhere: string } {
     if (!startDate && !endDate) {
       return { vconWhere: '' };
     }
+    // Column name comes from a fixed whitelist, never from caller text.
+    const column = dateField === 'conversation' ? 'v.conversation_start' : 'v.created_at';
     const conditions: string[] = [];
-    if (startDate) conditions.push(`v.created_at >= '${toSqlTimestamp(startDate, 'startDate')}'`);
-    if (endDate) conditions.push(`v.created_at < '${toSqlTimestamp(endDate, 'endDate')}'`);
+    if (startDate) conditions.push(`${column} >= '${toSqlTimestamp(startDate, 'startDate')}'`);
+    if (endDate) conditions.push(`${column} < '${toSqlTimestamp(endDate, 'endDate')}'`);
     return { vconWhere: `WHERE ${conditions.join(' AND ')}` };
   }
 

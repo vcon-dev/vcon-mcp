@@ -21,9 +21,19 @@ import {
     type VconShapeGraphNode,
     type VconShapeGraphPayload,
 } from '../types/vcon-shape-graph.js';
-import { DistinctValuesResult, IVConQueries } from './interfaces.js';
+import { DateField, DistinctValuesResult, IVConQueries } from './interfaces.js';
 import { logWithContext, recordCounter, withSpan } from '../observability/instrumentation.js';
 import { ATTR_DB_OPERATION, ATTR_SEARCH_RESULTS_COUNT, ATTR_SEARCH_THRESHOLD, ATTR_SEARCH_TYPE, ATTR_VCON_UUID } from '../observability/attributes.js';
+
+/**
+ * The MongoDB backend has no conversation_start field to filter on. Fail loudly
+ * rather than silently filtering on created_at and answering a different question.
+ */
+function assertCreatedDateField(dateField?: DateField): void {
+    if (dateField === 'conversation') {
+        throw new Error('date_field "conversation" is not supported by the MongoDB backend; use "created" or omit it.');
+    }
+}
 
 export class MongoVConQueries implements IVConQueries {
     private db: Db;
@@ -254,6 +264,7 @@ export class MongoVConQueries implements IVConQueries {
         query: string;
         startDate?: string;
         endDate?: string;
+        dateField?: DateField;
         tags?: Record<string, string>;
         limit?: number;
     }): Promise<Array<{
@@ -263,6 +274,7 @@ export class MongoVConQueries implements IVConQueries {
         snippet: string | null;
         ref_index: number | null;
     }>> {
+        assertCreatedDateField(params.dateField);
         return withSpan('mongo.keywordSearch', async (span) => {
             span.setAttributes({
                 [ATTR_SEARCH_TYPE]: 'keyword',
@@ -308,8 +320,10 @@ export class MongoVConQueries implements IVConQueries {
         query: string;
         startDate?: string;
         endDate?: string;
+        dateField?: DateField;
         tags?: Record<string, string>;
     }): Promise<number> {
+        assertCreatedDateField(params.dateField);
         const collection = this.db.collection(this.VCONS_COLLECTION);
         const query: any = { $text: { $search: params.query } };
 
@@ -500,12 +514,14 @@ export class MongoVConQueries implements IVConQueries {
         partyTel?: string;
         startDate?: string;
         endDate?: string;
+        dateField?: DateField;
         tags?: Record<string, string>;
         dealerId?: string;
         dealerName?: string;
         limit?: number;
         offset?: number;
     }): Promise<VCon[]> {
+        assertCreatedDateField(filters.dateField);
         const collection = this.db.collection(this.VCONS_COLLECTION);
         const query: any = {};
 
@@ -550,10 +566,12 @@ export class MongoVConQueries implements IVConQueries {
         partyTel?: string;
         startDate?: string;
         endDate?: string;
+        dateField?: DateField;
         tags?: Record<string, string>;
         dealerId?: string;
         dealerName?: string;
     }): Promise<number> {
+        assertCreatedDateField(filters.dateField);
         const collection = this.db.collection(this.VCONS_COLLECTION);
         const query: Record<string, any> = {};
         if (filters.subject) query['subject'] = { $regex: filters.subject, $options: 'i' };
@@ -812,6 +830,7 @@ export class MongoVConQueries implements IVConQueries {
         tagFilter: Record<string, string>;
         startDate?: string;
         endDate?: string;
+        dateField?: DateField;
         minBaseline: number;
         limit: number;
     }): Promise<Array<{
