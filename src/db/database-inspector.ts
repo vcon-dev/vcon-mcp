@@ -5,6 +5,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 
 import { IDatabaseInspector, InspectorOptions, InspectorStatsOptions } from './types.js';
+import { toSqlIdentifier } from './sql-guards.js';
 
 /** Caller-supplied query is not allowed (a client error, not a server fault). */
 export class InvalidQueryError extends Error {
@@ -171,8 +172,12 @@ export class SupabaseDatabaseInspector implements IDatabaseInspector {
       includeQueryStats = true,
       includeIndexUsage = true,
       includeCacheStats = true,
-      tableName,
     } = options;
+    // tableName is caller input and is placed inside SQL literals below.
+    const tableName =
+      options.tableName === undefined || options.tableName === ''
+        ? undefined
+        : toSqlIdentifier(options.tableName, 'tableName');
 
     const stats: any = {
       timestamp: new Date().toISOString(),
