@@ -19,6 +19,11 @@ import {
 } from './types.js';
 import { refreshTagsMvIfStale } from './tags-mv.js';
 import type { DateField } from './interfaces.js';
+import { toSqlInt, toSqlTimestamp } from './sql-guards.js';
+
+const MAX_MONTHS_BACK = 1200;
+const MAX_TOP_N = 1000;
+const MAX_MIN_USAGE_COUNT = 1_000_000_000;
 
 /**
  * One row per vCon with its child counts and sizes. Joining dialog, analysis and attachments
@@ -462,8 +467,8 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
     // Column name comes from a fixed whitelist, never from caller text.
     const column = dateField === 'conversation' ? 'v.conversation_start' : 'v.created_at';
     const conditions: string[] = [];
-    if (startDate) conditions.push(`${column} >= '${startDate}'`);
-    if (endDate) conditions.push(`${column} < '${endDate}'`);
+    if (startDate) conditions.push(`${column} >= '${toSqlTimestamp(startDate, 'startDate')}'`);
+    if (endDate) conditions.push(`${column} < '${toSqlTimestamp(endDate, 'endDate')}'`);
     return { vconWhere: `WHERE ${conditions.join(' AND ')}` };
   }
 
@@ -476,6 +481,7 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
   // Implementation of specific analytics methods
 
   private async getGrowthTrends(monthsBack: number) {
+    monthsBack = toSqlInt(monthsBack, 'monthsBack', 1, MAX_MONTHS_BACK);
     const query = `
       WITH ${perVconRollup(`WHERE v.created_at >= NOW() - INTERVAL '${monthsBack} months'`)},
       monthly_stats AS (
@@ -519,6 +525,7 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
 
 
   private async getVConCreationTrends(monthsBack: number, granularity: string) {
+    monthsBack = toSqlInt(monthsBack, 'monthsBack', 1, MAX_MONTHS_BACK);
     const dateTrunc = granularity === 'daily' ? 'day' : granularity === 'weekly' ? 'week' : 'month';
 
     const query = `
@@ -542,6 +549,7 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
   }
 
   private async getSizeGrowthTrends(monthsBack: number, granularity: string) {
+    monthsBack = toSqlInt(monthsBack, 'monthsBack', 1, MAX_MONTHS_BACK);
     const dateTrunc = granularity === 'daily' ? 'day' : granularity === 'weekly' ? 'week' : 'month';
 
     const query = `
@@ -577,6 +585,7 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
   }
 
   private async getContentVolumeTrends(monthsBack: number, granularity: string) {
+    monthsBack = toSqlInt(monthsBack, 'monthsBack', 1, MAX_MONTHS_BACK);
     const dateTrunc = granularity === 'daily' ? 'day' : granularity === 'weekly' ? 'week' : 'month';
 
     const query = `
@@ -680,6 +689,7 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
   }
 
   private async getAttachmentTypeBreakdown(topNTypes: number) {
+    topNTypes = toSqlInt(topNTypes, 'topNTypes', 1, MAX_TOP_N);
     const query = `
       SELECT
         COALESCE(purpose, type) as type,
@@ -788,6 +798,8 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
   }
 
   private async getTagFrequencyAnalysis(topNKeys: number, minUsageCount: number) {
+    topNKeys = toSqlInt(topNKeys, 'topNKeys', 1, MAX_TOP_N);
+    minUsageCount = toSqlInt(minUsageCount, 'minUsageCount', 1, MAX_MIN_USAGE_COUNT);
     const query = `
       WITH tag_stats AS (
         SELECT
@@ -821,6 +833,7 @@ export class SupabaseDatabaseAnalytics implements IDatabaseAnalytics {
   }
 
   private async getTagValueDistribution(topNKeys: number) {
+    topNKeys = toSqlInt(topNKeys, 'topNKeys', 1, MAX_TOP_N);
     const query = `
       WITH top_keys AS (
         SELECT t.key

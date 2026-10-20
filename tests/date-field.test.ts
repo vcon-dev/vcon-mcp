@@ -244,14 +244,14 @@ describe('date_field: content analytics SQL', () => {
 
     await analytics.getContentAnalytics(opts);
     const defaultSql = supabase.rpc.mock.calls.map((c: any[]) => c[1]?.q).join('\n');
-    expect(defaultSql).toContain(`v.created_at >= '${START}'`);
+    expect(defaultSql).toContain(`v.created_at >= '${new Date(START).toISOString()}'`);
     expect(defaultSql).not.toContain('conversation_start');
 
     supabase.rpc.mockClear();
     const result = await analytics.getContentAnalytics({ ...opts, dateField: 'conversation' });
     const convSql = supabase.rpc.mock.calls.map((c: any[]) => c[1]?.q).join('\n');
-    expect(convSql).toContain(`v.conversation_start >= '${START}'`);
-    expect(convSql).toContain(`v.conversation_start < '${END}'`);
+    expect(convSql).toContain(`v.conversation_start >= '${new Date(START).toISOString()}'`);
+    expect(convSql).toContain(`v.conversation_start < '${new Date(END).toISOString()}'`);
     expect(result.date_range).toEqual({ start_date: START, end_date: END, date_field: 'conversation' });
   });
 });

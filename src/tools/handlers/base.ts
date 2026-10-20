@@ -22,6 +22,7 @@ import {
   type EnvelopeRate,
 } from '../../utils/responses.js';
 import { extractErrorMessage, createMcpError } from '../../utils/errors.js';
+import { SqlInputError } from '../../db/sql-guards.js';
 
 /**
  * Context passed to tool handlers - subset of ServerContext
@@ -138,6 +139,13 @@ export abstract class BaseToolHandler implements ToolHandler {
         if (error instanceof McpError) {
           attachErrorToSpan(span, error);
           throw error;
+        }
+
+        // Values rejected before being placed into SQL are client errors too
+        if (error instanceof SqlInputError) {
+          const mcpError = new McpError(ErrorCode.InvalidParams, `Invalid parameters: ${error.message}`);
+          attachErrorToSpan(span, mcpError);
+          throw mcpError;
         }
 
         // Schema validation failures are client errors, not server faults
