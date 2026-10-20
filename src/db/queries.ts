@@ -15,6 +15,7 @@ import { extractTenantFromVCon, getTenantConfig } from '../config/tenant-config.
 import { ATTR_CACHE_HIT, ATTR_DB_OPERATION, ATTR_SEARCH_RESULTS_COUNT, ATTR_SEARCH_THRESHOLD, ATTR_SEARCH_TYPE, ATTR_VCON_UUID } from '../observability/attributes.js';
 import { logWithContext, recordCounter, withSpan } from '../observability/instrumentation.js';
 import { refreshTagsMvIfStale } from './tags-mv.js';
+import { SqlInputError, toSqlInt } from './sql-guards.js';
 import { createLogger } from '../observability/logger.js';
 import { Analysis, Attachment, Dialog, Party, VCon } from '../types/vcon.js';
 import {
@@ -40,6 +41,10 @@ const logger = createLogger('queries');
 
 import { DistinctValuesResult, IVConQueries } from './interfaces.js';
 import { extractErrorMessage } from '../utils/errors.js';
+
+/** table.column pairs getDistinctValues may interpolate into SQL. */
+const DISTINCT_VALUE_SOURCES = new Set(['attachments.type', 'attachments.purpose', 'analysis.type']);
+const MAX_MIN_COUNT = 1_000_000_000;
 
 /**
  * Replace undefined values with null so a supabase-js UPDATE clears omitted
@@ -1691,8 +1696,12 @@ export class SupabaseVConQueries implements IVConQueries {
       minCount?: number;
     },
   ): Promise<DistinctValuesResult> {
+    // table and column are interpolated into SQL; only these pairs are allowed.
+    if (!DISTINCT_VALUE_SOURCES.has(`${table}.${column}`)) {
+      throw new SqlInputError(`Unsupported distinct-values source: ${table}.${column}`);
+    }
     const includeCounts = options?.includeCounts ?? false;
-    const minCount = options?.minCount ?? 1;
+    const minCount = toSqlInt(options?.minCount ?? 1, 'minCount', 1, MAX_MIN_COUNT);
 
     try {
       const havingClause = minCount > 1 ? `HAVING COUNT(*) >= ${minCount}` : '';
@@ -1819,7 +1828,7 @@ export class SupabaseVConQueries implements IVConQueries {
   }> {
     const includeCounts = options?.includeCounts ?? false;
     const keyFilter = options?.keyFilter?.toLowerCase();
-    const minCount = options?.minCount ?? 1;
+    const minCount = toSqlInt(options?.minCount ?? 1, 'minCount', 1, MAX_MIN_COUNT);
 
     await refreshTagsMvIfStale(this.supabase);
 

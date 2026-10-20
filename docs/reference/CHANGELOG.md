@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- Caller input placed into SQL run through the `exec_sql` RPC is now validated at the
+  query builder. `exec_sql` only substitutes `:vcon_id` and `:limit`, so these values were
+  previously interpolated as-is:
+  - `get_content_analytics` / `GET /analytics/content`: `start_date` and `end_date` are
+    parsed and emitted as canonical ISO 8601 timestamps
+  - `get_database_stats` / `GET /database/stats`: `table_name` must be a plain lowercase
+    identifier (`^[a-z_][a-z0-9_]*$`)
+  - `months_back`, `top_n_types`, `top_n_keys`, `min_usage_count` and the tag and
+    discovery `min_count` must be integers within bounds
+  - Rejected values return MCP `InvalidParams` and REST 400 instead of reaching the database
+
 ---
 
 ## [1.10.0] - 2026-10-19
