@@ -14,7 +14,7 @@ import Redis from 'ioredis';
 import { extractTenantFromVCon, getTenantConfig } from '../config/tenant-config.js';
 import { ATTR_CACHE_HIT, ATTR_DB_OPERATION, ATTR_SEARCH_RESULTS_COUNT, ATTR_SEARCH_THRESHOLD, ATTR_SEARCH_TYPE, ATTR_VCON_UUID } from '../observability/attributes.js';
 import { logWithContext, recordCounter, withSpan } from '../observability/instrumentation.js';
-import { refreshTagsMvIfStale } from './tags-mv.js';
+import { refreshTagsMvIfStale, markTagsMvDirty } from './tags-mv.js';
 import { SqlInputError, toSqlInt } from './sql-guards.js';
 import { createLogger } from '../observability/logger.js';
 import { Analysis, Attachment, Dialog, Party, VCon } from '../types/vcon.js';
@@ -24,7 +24,7 @@ import {
   type VconShapeGraphNode,
   type VconShapeGraphPayload,
 } from '../types/vcon-shape-graph.js';
-import { vconLookupError } from '../utils/errors.js';
+import { isMissingFunctionError, vconLookupError } from '../utils/errors.js';
 import { parseTagsBody } from '../utils/read-surfaces.js';
 import { ChildIndexError } from '../utils/vcon-children.js';
 import {
@@ -51,6 +51,10 @@ const MAX_MIN_COUNT = 1_000_000_000;
  * columns (PUT semantics) instead of leaving their previous values. undefined
  * keys are dropped from the request body by supabase-js and would not be touched.
  */
+function isTagsAttachment(a: { type?: string; purpose?: string }): boolean {
+  return a.type === 'tags' || a.purpose === 'tags';
+}
+
 function nullifyUndefined<T extends Record<string, unknown>>(obj: T): T {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(obj)) out[k] = v === undefined ? null : v;
@@ -77,10 +81,6 @@ export function dateColumnFor(dateField?: DateField): 'created_at' | 'conversati
  */
 export function dateFieldRpcArg(dateField?: DateField): { date_field?: 'conversation' } {
   return dateField === 'conversation' ? { date_field: 'conversation' } : {};
-}
-
-function isMissingFunctionError(error: { code?: string } | null | undefined): boolean {
-  return error?.code === 'PGRST202' || error?.code === '42883';
 }
 
 // The compaction-fallback warning is about the deployment, not the removal, so
@@ -354,7 +354,7 @@ export class SupabaseVConQueries implements IVConQueries {
     // Get vcon_id and created_at
     const { data: vcon, error: vconError } = await this.supabase
       .from('vcons')
-      .select('id, created_at')
+      .select('id, created_at, tenant_id')
       .eq('uuid', vconUuid)
       .single();
 
@@ -378,7 +378,7 @@ export class SupabaseVConQueries implements IVConQueries {
 
     const { error: analysisError } = await this.supabase
       .from('analysis')
-      .insert({ ...buildAnalysisRow(vcon.id, analysis, nextIndex), created_at: vcon.created_at });
+      .insert({ ...buildAnalysisRow(vcon.id, analysis, nextIndex, vcon.tenant_id ?? null), created_at: vcon.created_at });
 
     if (analysisError) throw analysisError;
   }
@@ -393,7 +393,7 @@ export class SupabaseVConQueries implements IVConQueries {
   async addDialog(vconUuid: string, dialog: Dialog, knownIndex?: number): Promise<void> {
     const { data: vcon, error: vconError } = await this.supabase
       .from('vcons')
-      .select('id')
+      .select('id, tenant_id')
       .eq('uuid', vconUuid)
       .single();
 
@@ -420,7 +420,7 @@ export class SupabaseVConQueries implements IVConQueries {
     // reads it, and a duplicate write could fail or drift independently.
     const { error: dialogError } = await this.supabase
       .from('dialog')
-      .insert(buildDialogRow(vcon.id, dialog, nextIndex));
+      .insert(buildDialogRow(vcon.id, dialog, nextIndex, vcon.tenant_id ?? null));
 
     if (dialogError) throw dialogError;
   }
@@ -435,7 +435,7 @@ export class SupabaseVConQueries implements IVConQueries {
   async addAttachment(vconUuid: string, attachment: Attachment, knownIndex?: number): Promise<void> {
     const { data: vcon, error: vconError } = await this.supabase
       .from('vcons')
-      .select('id, created_at')
+      .select('id, created_at, tenant_id')
       .eq('uuid', vconUuid)
       .single();
 
@@ -459,9 +459,11 @@ export class SupabaseVConQueries implements IVConQueries {
 
     const { error: attachmentError } = await this.supabase
       .from('attachments')
-      .insert({ ...buildAttachmentRow(vcon.id, attachment, nextIndex), created_at: vcon.created_at });
+      .insert({ ...buildAttachmentRow(vcon.id, attachment, nextIndex, vcon.tenant_id ?? null), created_at: vcon.created_at });
 
     if (attachmentError) throw attachmentError;
+    if (isTagsAttachment(attachment)) markTagsMvDirty(this.supabase);
+    await this.invalidateCachedVCon(vconUuid);
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -482,13 +484,22 @@ export class SupabaseVConQueries implements IVConQueries {
 
   /** Resolve the internal vcons.id (used as child vcon_id), mirroring addDialog/addAnalysis. */
   private async resolveVConId(vconUuid: string): Promise<string> {
+    return (await this.resolveVConRef(vconUuid)).id;
+  }
+
+  /**
+   * Resolve vcons.id plus the parent's tenant_id. Child writes stamp the
+   * parent's tenant explicitly (CON-1177) rather than relying on the insert
+   * trigger, and an UPDATE fires no insert trigger at all.
+   */
+  private async resolveVConRef(vconUuid: string): Promise<{ id: string; tenantId: string | null }> {
     const { data, error } = await this.supabase
       .from('vcons')
-      .select('id')
+      .select('id, tenant_id')
       .eq('uuid', vconUuid)
       .single();
     if (error) throw vconLookupError(error, vconUuid);
-    return data.id;
+    return { id: data.id, tenantId: data.tenant_id ?? null };
   }
 
   /**
@@ -566,7 +577,7 @@ export class SupabaseVConQueries implements IVConQueries {
    * Add a single party to a vCon, appended at the next index.
    */
   async addParty(vconUuid: string, party: Party, knownIndex?: number): Promise<{ index: number }> {
-    const vconId = await this.resolveVConId(vconUuid);
+    const { id: vconId, tenantId } = await this.resolveVConRef(vconUuid);
     let nextIndex: number;
     if (knownIndex !== undefined) {
       nextIndex = knownIndex;
@@ -580,7 +591,7 @@ export class SupabaseVConQueries implements IVConQueries {
       if (selErr) throw selErr;  // else a failed SELECT silently falls back to index 0 → UNIQUE collision
       nextIndex = existing && existing.length > 0 ? existing[0].party_index + 1 : 0;
     }
-    const { error } = await this.supabase.from('parties').insert(buildPartyRow(vconId, party, nextIndex));
+    const { error } = await this.supabase.from('parties').insert(buildPartyRow(vconId, party, nextIndex, tenantId));
     if (error) throw error;
     await this.invalidateCachedVCon(vconUuid);
     return { index: nextIndex };
@@ -590,8 +601,8 @@ export class SupabaseVConQueries implements IVConQueries {
    * Replace the party at `index` (PUT). Omitted fields are cleared.
    */
   async updateParty(vconUuid: string, index: number, party: Party): Promise<void> {
-    const vconId = await this.resolveVConId(vconUuid);
-    const { vcon_id: _v, party_index: _i, ...cols } = buildPartyRow(vconId, party, index);
+    const { id: vconId, tenantId } = await this.resolveVConRef(vconUuid);
+    const { vcon_id: _v, party_index: _i, ...cols } = buildPartyRow(vconId, party, index, tenantId);
     const { data, error } = await this.supabase
       .from('parties')
       .update(nullifyUndefined(cols))
@@ -631,8 +642,8 @@ export class SupabaseVConQueries implements IVConQueries {
    * rest of the dialog via `extra`; legacy party_history table rows are cleared.
    */
   async updateDialog(vconUuid: string, index: number, dialog: Dialog): Promise<void> {
-    const vconId = await this.resolveVConId(vconUuid);
-    const { vcon_id: _v, dialog_index: _i, ...cols } = buildDialogRow(vconId, dialog, index);
+    const { id: vconId, tenantId } = await this.resolveVConRef(vconUuid);
+    const { vcon_id: _v, dialog_index: _i, ...cols } = buildDialogRow(vconId, dialog, index, tenantId);
     const { data, error } = await this.supabase
       .from('dialog')
       .update(nullifyUndefined(cols))
@@ -692,8 +703,8 @@ export class SupabaseVConQueries implements IVConQueries {
    * Replace the analysis at `index` (PUT). Omitted fields are cleared.
    */
   async updateAnalysis(vconUuid: string, index: number, analysis: Analysis): Promise<void> {
-    const vconId = await this.resolveVConId(vconUuid);
-    const { vcon_id: _v, analysis_index: _i, ...cols } = buildAnalysisRow(vconId, analysis, index);
+    const { id: vconId, tenantId } = await this.resolveVConRef(vconUuid);
+    const { vcon_id: _v, analysis_index: _i, ...cols } = buildAnalysisRow(vconId, analysis, index, tenantId);
     const { data, error } = await this.supabase
       .from('analysis')
       .update(nullifyUndefined(cols))
@@ -718,8 +729,8 @@ export class SupabaseVConQueries implements IVConQueries {
    * Replace the attachment at `index` (PUT). Omitted fields are cleared.
    */
   async updateAttachment(vconUuid: string, index: number, attachment: Attachment): Promise<void> {
-    const vconId = await this.resolveVConId(vconUuid);
-    const { vcon_id: _v, attachment_index: _i, ...cols } = buildAttachmentRow(vconId, attachment, index);
+    const { id: vconId, tenantId } = await this.resolveVConRef(vconUuid);
+    const { vcon_id: _v, attachment_index: _i, ...cols } = buildAttachmentRow(vconId, attachment, index, tenantId);
     const { data, error } = await this.supabase
       .from('attachments')
       .update(nullifyUndefined(cols))
@@ -728,6 +739,7 @@ export class SupabaseVConQueries implements IVConQueries {
       .select('id');
     if (error) throw error;
     if (!data || data.length === 0) throw new ChildIndexError(`attachment index ${index} not found`);
+    markTagsMvDirty(this.supabase);
     await this.invalidateCachedVCon(vconUuid);
   }
 
@@ -737,6 +749,7 @@ export class SupabaseVConQueries implements IVConQueries {
   async removeAttachment(vconUuid: string, index: number): Promise<void> {
     const vconId = await this.resolveVConId(vconUuid);
     await this.compactChildTable('attachments', 'attachment_index', vconId, index);
+    markTagsMvDirty(this.supabase);
     await this.invalidateCachedVCon(vconUuid);
   }
 
@@ -1542,6 +1555,7 @@ export class SupabaseVConQueries implements IVConQueries {
     limit: number = 1000,
     dateField?: DateField,
   ): Promise<string[]> {
+    await refreshTagsMvIfStale(this.supabase);
     const { data, error } = await this.supabase.rpc('search_vcons_by_tags_and_date', {
       tag_filter: tags || {},
       vcon_created_after: startDate ?? null,
@@ -1577,6 +1591,7 @@ export class SupabaseVConQueries implements IVConQueries {
    * Search vCons by tags
    */
   async searchByTags(tags: Record<string, string>, limit: number = 50): Promise<string[]> {
+    await refreshTagsMvIfStale(this.supabase);
     // Use the database RPC to search by tags with timeout to prevent hanging
     const rpcPromise = this.supabase.rpc('search_vcons_by_tags', {
       tag_filter: tags,
@@ -2044,6 +2059,7 @@ export class SupabaseVConQueries implements IVConQueries {
   }
 
   async getVconShapeGraph(): Promise<VconShapeGraphPayload> {
+    await refreshTagsMvIfStale(this.supabase);
     const notes: string[] = [];
     const generated_at = new Date().toISOString();
     const nodes: VconShapeGraphNode[] = [];
@@ -2392,6 +2408,11 @@ export class SupabaseVConQueries implements IVConQueries {
       .from('vcons')
       .update({ updated_at: new Date().toISOString() })
       .eq('uuid', vconUuid);
+
+    // Drop the cached vCon so get_vcon returns the new tags, and flag the tags view so the
+    // next tag-view read refreshes it (see tags-mv.ts for the staleness policy).
+    markTagsMvDirty(this.supabase);
+    await this.invalidateCachedVCon(vconUuid);
   }
 }
 

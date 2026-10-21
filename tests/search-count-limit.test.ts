@@ -10,6 +10,12 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { randomUUID } from 'crypto';
 import { VConQueries } from '../src/db/queries.js';
 
+// Tag-view refresh is covered in tests/tags-cache-invalidation.test.ts; keep rpc call order here.
+vi.mock('../src/db/tags-mv.js', () => ({
+  refreshTagsMvIfStale: vi.fn(async () => {}),
+  markTagsMvDirty: vi.fn(),
+}));
+
 describe('Search Count Limit Validation', () => {
   let queries: VConQueries;
   let mockSupabase: any;
