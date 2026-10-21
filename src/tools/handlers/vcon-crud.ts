@@ -4,7 +4,7 @@
  * Uses VConService for unified lifecycle handling with hooks, validation, and metrics.
  */
 
-import { lawfulBasisWarnings } from '../../utils/lawful-basis.js';
+import { lawfulBasisWarnings, LAWFUL_BASIS_VALUES } from '../../utils/lawful-basis.js';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { BaseToolHandler, ToolHandlerContext, ToolResponse } from './base.js';
 import { VCon, Analysis, Dialog, Attachment, Party } from '../../types/vcon.js';
@@ -42,10 +42,14 @@ export class CreateVConHandler extends BaseToolHandler {
 
   protected async execute(args: any, context: ToolHandlerContext): Promise<ToolResponse> {
     const requestContext = this.createRequestContext(args);
+    const uuid = args?.uuid === undefined || args?.uuid === null
+      ? undefined
+      : requireUUID(args.uuid as string, 'uuid');
     
     try {
       const result = await context.vconService.create(
         {
+          ...(uuid ? { uuid } : {}),
           subject: args?.subject as string | undefined,
           parties: (args?.parties as any[]) || [],
           dialog: args?.dialog as Dialog[] | undefined,
@@ -91,8 +95,23 @@ export class CreateVConFromTemplateHandler extends BaseToolHandler {
       throw new McpError(ErrorCode.InvalidParams, 'template_name and parties are required');
     }
 
+    // Lawful basis is attached only when the caller supplies one. Never defaulted.
+    const lawfulBasis = args?.lawful_basis;
+    if (lawfulBasis !== undefined && lawfulBasis !== null) {
+      if (typeof lawfulBasis !== 'object' || Array.isArray(lawfulBasis)) {
+        throw new McpError(ErrorCode.InvalidParams, 'lawful_basis must be an object');
+      }
+      const basis = (lawfulBasis as Record<string, unknown>).lawful_basis;
+      if (!LAWFUL_BASIS_VALUES.includes(basis as (typeof LAWFUL_BASIS_VALUES)[number])) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `lawful_basis.lawful_basis must be one of: ${LAWFUL_BASIS_VALUES.join(', ')}`
+        );
+      }
+    }
+
     // Build vCon from template
-    const templateVCon = buildTemplateVCon(template, subject, parties);
+    const templateVCon = buildTemplateVCon(template, subject, parties, lawfulBasis ?? undefined);
     const requestContext = this.createRequestContext(args);
 
     try {

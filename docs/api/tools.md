@@ -137,15 +137,15 @@ Discover supported include groups, search modes, cursor semantics, byte-budget d
 
 ### vcon_taxonomy
 
-Return dataset-specific guidance, including the portal taxonomy and preferred data sources.
+Return dataset-specific guidance, including the portal taxonomy and preferred data sources. The guidance comes from configuration (`VCON_TAXONOMY_DATASET`, `VCON_DEALER_ATTACHMENT_TYPE`, `VCON_TAXONOMY_CONFIG`; see the [configuration guide](../guide/configuration.md#dataset-taxonomy-guidance)).
 
 **Input Parameters:** none.
 
-**Response:** `{ ok: true, item }` where `item` has `dataset`, `portal_values`, `common_tags`, `preferred_sources`, `query_recipes`, and `coverage`. The vocabulary is static text describing one deployment's tags. `coverage` is computed from live counts and falls back to `{ note: "coverage unavailable" }` when the counts fail.
+**Response:** `{ ok: true, item }` where `item` has `dataset`, `portal_values`, `common_tags`, `preferred_sources`, `query_recipes`, and `coverage`. With no configuration, `dataset` is `null`, `portal_values` is empty, and the remaining sections hold generic dealer and summary guidance. A deployment's configured vocabulary replaces them. `coverage` is computed from live counts and falls back to `{ note: "coverage unavailable" }` when the counts fail.
 
-**Important dataset hints surfaced by this tool:**
-- Use `tags.portal` values like `negative_experience`, `dnc_request`, and `bad_call_quality` before semantic search for "bad call" or upset-customer views
-- Prefer `attachment:strolid_dealer` over sparse `dealer_name` tags for dealer-aware interfaces
+**Example hints a configured deployment can surface:**
+- Use `tags.portal` classification values before semantic search for "bad call" or upset-customer views
+- Prefer the dealer attachment (`attachment:<VCON_DEALER_ATTACHMENT_TYPE>`) over sparse `dealer_name` tags for dealer-aware interfaces
 
 ### vcon_search
 
@@ -167,8 +167,8 @@ Unified metadata, keyword, semantic, and hybrid search with one stable response 
     party_name?: string,
     party_email?: string,
     party_tel?: string,
-    dealer_id?: string,      // Matches the strolid_dealer attachment id; use string form, e.g. "1174"
-    dealer_name?: string     // Case-insensitive substring of the strolid_dealer name
+    dealer_id?: string,      // Matches the dealer attachment id; use string form, e.g. "1174"
+    dealer_name?: string     // Case-insensitive substring of the dealer attachment name
   },
   include?: string[],        // Default: ["core", "summary"]
   limit?: number,            // Default: 25, range 1-100 (out-of-range values are clamped)
@@ -262,7 +262,7 @@ Single-record fetch with one stable response shape.
 | `parties` | `parties` |
 | `summary` | `summary`: the analysis entries of type `summary`, each with `type`, `vendor`, `product`, `schema`, `encoding`, `dialog`, and `body` when it is a non-empty string |
 | `tags` | `tags`: parsed tag key/value object |
-| `dealer` | `dealer`: parsed `strolid_dealer` attachment (`id` as string, `name`, `outboundPhoneNumber`, `team`) or `null` |
+| `dealer` | `dealer`: parsed dealer attachment (type from `VCON_DEALER_ATTACHMENT_TYPE`, default `dealer`; `id` as string, `name`, `outboundPhoneNumber`, `team`) or `null` |
 | `counts` | `counts`: `{ parties, dialog, analysis, attachments }` |
 | `dialog`, `analysis`, `attachments` | The full arrays |
 
@@ -303,7 +303,7 @@ Descriptors exist for `vcon_fetch`, `vcon_taxonomy`, `vcon_capabilities`, `vcon_
 
 ### vcon_aggregate
 
-Server-side rollup for rate-style questions: which groups have the highest share of vCons matching a tag filter. Groups vCons by an attachment-derived key (this release: the `strolid_dealer` attachment id, where a deployment stores one) and returns `filtered_count` (rows matching the supplied tags) and `baseline_count` (all rows in the group), so a client can divide for a rate in one round trip. Requires the Postgres RPC `aggregate_vcons_by_dealer_stats` from the latest migration.
+Server-side rollup for rate-style questions: which groups have the highest share of vCons matching a tag filter. Groups vCons by an attachment-derived key (this release: the dealer attachment id, where a deployment stores one; type from `VCON_DEALER_ATTACHMENT_TYPE`) and returns `filtered_count` (rows matching the supplied tags) and `baseline_count` (all rows in the group), so a client can divide for a rate in one round trip. Requires the Postgres RPC `aggregate_vcons_by_dealer_stats` from the latest migration.
 
 **Input Parameters:**
 
@@ -355,12 +355,13 @@ Legacy tools in this document return `{ success: true, ... }` on success and sig
 
 ### create_vcon
 
-Create a new vCon (Virtual Conversation) record. The server generates the `uuid` and `created_at` and sets `vcon` to `"0.4.0"`. The tool takes no `uuid` parameter.
+Create a new vCon (Virtual Conversation) record. The server generates `created_at` and sets `vcon` to `"0.4.0"`. The `uuid` is optional: when supplied (a valid UUID) it is used as the vCon identifier, so re-posting the same `uuid` replaces the stored vCon instead of creating a duplicate (idempotent create). Without it the server generates one. An invalid `uuid` is rejected with `InvalidParams`.
 
 **Input Parameters:**
 
 ```typescript
 {
+  uuid?: string,              // Optional UUID; makes the create idempotent (re-post replaces)
   subject?: string,           // Conversation subject
   parties: Party[],           // Required, at least one
   dialog?: Dialog[],          // Optional inline conversation content
@@ -532,9 +533,17 @@ Create a vCon from a predefined template.
 {
   template_name: "phone_call" | "chat_conversation" | "email_thread" | "video_meeting" | "custom",  // Required
   parties: Party[],   // Required, at least one
-  subject?: string
+  subject?: string,
+  lawful_basis?: {    // Optional; attached as a lawful_basis attachment only when supplied
+    lawful_basis: "consent" | "contract" | "legal_obligation" | "vital_interests" | "public_task" | "legitimate_interests",
+    expiration?: string | null,
+    purpose_grants?: object[],
+    proof_mechanisms?: object[]
+  }
 }
 ```
+
+The server never invents a lawful basis. When `lawful_basis` is supplied it is stored as an attachment with `purpose` and `type` `"lawful_basis"`, `mediatype` `application/json`, `encoding` `json`, and the object serialized as the string `body`. When omitted, no attachment is added and `warnings` reports the missing lawful basis. `create_vcon` already accepts inline `attachments`, so it needs no extra parameter.
 
 **What a template adds:** the template sets the vCon version to `0.4.0`, generates the `uuid` and `created_at`, and stores your `parties` and `subject`. `phone_call`, `chat_conversation`, and `video_meeting` add an empty `dialog` array. `email_thread` adds an empty `attachments` array. `custom` adds nothing. The templates do not add timestamps, durations, or threading data. An unrecognized `template_name` behaves like `custom`.
 

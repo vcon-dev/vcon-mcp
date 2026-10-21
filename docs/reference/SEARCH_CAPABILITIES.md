@@ -114,7 +114,7 @@ Parameters mirror the MCP tools, passed as query-string args (filters and embedd
 - Supabase caps RPC results at ~1000 rows; keyword count dedupes vcon_ids in JS.
 - Keyword search uses `plainto_tsquery`, so query operators are ignored.
 - `vcon_tags_mv` can lag writes; do not assume just-written tags are immediately searchable.
-- Dealer aggregation only works for vCons carrying a `strolid_dealer` attachment.
+- Dealer aggregation only works for vCons carrying a dealer attachment of the configured type (`VCON_DEALER_ATTACHMENT_TYPE`, default `dealer`).
 - `search_vcons_content` is slow on large corpora; cold full-text runs can exceed 30s (e2e timeout is set to 120s as steady state, not a flake).
 - Embedding dimension is 384 in production; some older migrations reference 1536. Use 384.
 

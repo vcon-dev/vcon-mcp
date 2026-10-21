@@ -338,10 +338,16 @@ export const createVConTool = {
   category: 'write' as ToolCategory,
   description: 'Create a new vCon compliant with IETF draft-ietf-vcon-vcon-core-02. ' +
     'A vCon (virtual conversation) captures conversation data including parties, dialog, analysis, and attachments. ' +
-    'Dialog, analysis, and attachments may be supplied inline at creation, or added later with the add_* tools.',
+    'Dialog, analysis, and attachments may be supplied inline at creation, or added later with the add_* tools. ' +
+    'An optional client-supplied uuid makes the create idempotent: re-posting the same uuid replaces the existing vCon instead of creating a duplicate.',
   inputSchema: {
     type: 'object' as const,
     properties: {
+      uuid: {
+        type: 'string',
+        format: 'uuid',
+        description: 'Optional vCon UUID. When supplied it is used as the vCon identifier, so a re-post with the same uuid replaces the stored vCon (idempotent). When omitted the server generates one.'
+      },
       subject: {
         type: 'string',
         description: 'Subject or title of the conversation'
@@ -397,7 +403,7 @@ export const getVConTool = {
     '- "full" (default): complete vCon with all parties, dialog, analysis bodies, and attachments\n' +
     '- "summary": metadata + parties + only analysis records of type "summary" (compact, fast — use this for browsing or summarizing)\n' +
     '- "metadata": only vCon metadata and parties, no dialog/analysis/attachments\n' +
-    'For Strolid/Crexendo vCons, "summary" is recommended — transcripts can be 80KB+.',
+    'For vCons with large transcripts, "summary" is recommended — transcripts can be 80KB+.',
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -498,7 +504,7 @@ export const searchVConsContentTool = {
   category: 'read' as ToolCategory,
   description: 'Full-text keyword search across vCon content including subject, dialog, analysis, and party info. ' +
     'Searches through conversation text, analysis bodies (transcripts, summaries), and participant details. Returns ranked results with snippets. ' +
-    'After getting vcon_ids from snippets, use get_vcon(uuid, response_format="summary") to read the full summary without loading large transcript bodies (Strolid transcripts can be 80KB+ each). ' +
+    'After getting vcon_ids from snippets, use get_vcon(uuid, response_format="summary") to read the full summary without loading large transcript bodies (transcripts can be 80KB+ each). ' +
     '⚠️ LARGE DATABASE WARNING: Use response_format="snippets" (default) to avoid memory issues.',
   inputSchema: {
     type: 'object' as const,

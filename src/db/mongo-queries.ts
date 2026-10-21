@@ -846,12 +846,12 @@ export class MongoVConQueries implements IVConQueries {
 
     async getTaxonomyCoverageSnapshot(): Promise<{
         vcons_total: number | null;
-        with_strolid_dealer_attachment_pct: number | null;
+        with_dealer_attachment_pct: number | null;
         with_dealer_name_tag_pct: number | null;
     }> {
         return {
             vcons_total: null,
-            with_strolid_dealer_attachment_pct: null,
+            with_dealer_attachment_pct: null,
             with_dealer_name_tag_pct: null,
         };
     }

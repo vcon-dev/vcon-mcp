@@ -186,9 +186,9 @@ export interface IVConQueries {
         /** Column the date range applies to. Omitted means `created`. */
         dateField?: DateField;
         tags?: Record<string, string>;
-        /** Match strolid_dealer attachment id (string form, for example "1174"). */
+        /** Match dealer attachment id (string form, for example "1174"). */
         dealerId?: string;
-        /** Case-insensitive substring match on strolid_dealer attachment name. */
+        /** Case-insensitive substring match on dealer attachment name. */
         dealerName?: string;
         limit?: number;
         /** Rows to skip before the page starts (metadata search pagination). */
@@ -213,7 +213,7 @@ export interface IVConQueries {
     }): Promise<number>;
 
     /**
-     * Roll up vCons with strolid_dealer attachments by dealer id (Postgres RPC).
+     * Roll up vCons with dealer attachments by dealer id (Postgres RPC).
      */
     aggregateVconsByDealerStats(params: {
         tagFilter: Record<string, string>;
@@ -237,7 +237,7 @@ export interface IVConQueries {
      */
     getTaxonomyCoverageSnapshot(): Promise<{
         vcons_total: number | null;
-        with_strolid_dealer_attachment_pct: number | null;
+        with_dealer_attachment_pct: number | null;
         with_dealer_name_tag_pct: number | null;
     }>;
 

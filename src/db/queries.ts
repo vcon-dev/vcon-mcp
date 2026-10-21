@@ -12,6 +12,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import Redis from 'ioredis';
 import { extractTenantFromVCon, getTenantConfig } from '../config/tenant-config.js';
+import { getTaxonomyConfig } from '../config/taxonomy-config.js';
 import { ATTR_CACHE_HIT, ATTR_DB_OPERATION, ATTR_SEARCH_RESULTS_COUNT, ATTR_SEARCH_THRESHOLD, ATTR_SEARCH_TYPE, ATTR_VCON_UUID } from '../observability/attributes.js';
 import { logWithContext, recordCounter, withSpan } from '../observability/instrumentation.js';
 import { refreshTagsMvIfStale, markTagsMvDirty } from './tags-mv.js';
@@ -990,6 +991,7 @@ export class SupabaseVConQueries implements IVConQueries {
     const { data, error } = await this.supabase.rpc('vcon_uuids_for_dealer_filter', {
       p_dealer_id: dealerId ?? null,
       p_name_ilike: dealerName ?? null,
+      p_attachment_type: getTaxonomyConfig().dealerAttachmentType,
     });
     if (error) throw error;
     return new Set((data || []).map((r: { vcon_uuid: string }) => r.vcon_uuid));
@@ -1226,6 +1228,7 @@ export class SupabaseVConQueries implements IVConQueries {
         vcon_created_after: filters.startDate ?? null,
         vcon_created_before: filters.endDate ?? null,
         ...dateFieldRpcArg(filters.dateField),
+        p_attachment_type: getTaxonomyConfig().dealerAttachmentType,
       });
       if (error) throw error;
       return typeof data === 'number' ? data : Number(data ?? 0);
@@ -1347,6 +1350,7 @@ export class SupabaseVConQueries implements IVConQueries {
           vcon_created_before: filters.endDate ?? null,
           p_subject_contains: filters.subject ?? null,
           ...dateFieldRpcArg(filters.dateField),
+          p_attachment_type: getTaxonomyConfig().dealerAttachmentType,
         });
         if (error) throw error;
         return typeof data === 'number' ? data : Number(data ?? 0);
@@ -2286,6 +2290,7 @@ export class SupabaseVConQueries implements IVConQueries {
       min_baseline: params.minBaseline,
       max_results: params.limit,
       ...dateFieldRpcArg(params.dateField),
+      p_attachment_type: getTaxonomyConfig().dealerAttachmentType,
     });
     if (error) throw error;
     return (data || []).map((row: Record<string, unknown>) => ({
@@ -2300,12 +2305,12 @@ export class SupabaseVConQueries implements IVConQueries {
 
   async getTaxonomyCoverageSnapshot(): Promise<{
     vcons_total: number | null;
-    with_strolid_dealer_attachment_pct: number | null;
+    with_dealer_attachment_pct: number | null;
     with_dealer_name_tag_pct: number | null;
   }> {
     const none = {
       vcons_total: null as number | null,
-      with_strolid_dealer_attachment_pct: null as number | null,
+      with_dealer_attachment_pct: null as number | null,
       with_dealer_name_tag_pct: null as number | null,
     };
     await refreshTagsMvIfStale(this.supabase);
@@ -2318,7 +2323,7 @@ export class SupabaseVConQueries implements IVConQueries {
       const { count: dealerRows, error: e2 } = await this.supabase
         .from('attachments')
         .select('vcon_id', { count: 'exact', head: true })
-        .eq('type', 'strolid_dealer');
+        .eq('type', getTaxonomyConfig().dealerAttachmentType);
       if (e2) return { ...none, vcons_total: totalV };
 
       const dealerPct = Math.min(
@@ -2337,7 +2342,7 @@ export class SupabaseVConQueries implements IVConQueries {
 
       return {
         vcons_total: totalV,
-        with_strolid_dealer_attachment_pct: dealerPct,
+        with_dealer_attachment_pct: dealerPct,
         with_dealer_name_tag_pct: dealerNamePct,
       };
     } catch {

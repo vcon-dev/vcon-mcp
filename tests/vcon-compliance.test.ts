@@ -334,14 +334,14 @@ describe('IETF vCon Spec Compliance', () => {
       expect(result.errors).toHaveLength(0);
     });
 
-    it('should accept sample Crexendo-style vcon with vcon "0.0.1"', () => {
+    it('should accept sample legacy-ingest vcon with vcon "0.0.1"', () => {
       const sampleVcon = {
         vcon: '0.0.1',
         uuid: '019c9896-7570-86d4-9dd8-dd37220d739c',
         created_at: '2026-02-26T06:15:23.248460+00:00',
         parties: [
           { id: '+19782250878_None_744', tel: '+19782250878', name: null, role: 'customer', mailto: null },
-          { id: 'scott.henshaw@strolid.com', tel: '+15593660701', name: 'Scott Henshaw', role: 'agent', mailto: 'scott.henshaw@strolid.com' },
+          { id: 'agent@example.com', tel: '+15555550100', name: 'Example Agent', role: 'agent', mailto: 'agent@example.com' },
         ],
         dialog: [{
           type: 'recording',
@@ -351,7 +351,7 @@ describe('IETF vCon Spec Compliance', () => {
           url: 'https://example.com/rec.wav',
           content_hash: 'abc',
         }],
-        attachments: [{ type: 'ingress_info', encoding: 'none', body: { source: 'crexendo' } }],
+        attachments: [{ type: 'ingress_info', encoding: 'none', body: { source: 'example-carrier' } }],
       } as unknown as VCon;
       const result = validateVCon(sampleVcon);
       expect(result.valid).toBe(true);

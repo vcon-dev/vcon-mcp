@@ -7,6 +7,7 @@ import { normalizeDateString } from './validation.js';
 import { DATE_FIELDS, DateField } from '../../db/interfaces.js';
 import { conversationStartOf } from '../../utils/read-surfaces.js';
 import { extractErrorMessage } from '../../utils/errors.js';
+import { getTaxonomyConfig } from '../../config/taxonomy-config.js';
 
 const VALID_FETCH_INCLUDES = [
   'core',
@@ -109,7 +110,8 @@ function normalizeDealerTeam(raw: unknown): Record<string, unknown> | null {
 }
 
 function extractDealer(attachments: Attachment[] | undefined) {
-  const dealerAttachment = (attachments || []).find((entry) => entry.type === 'strolid_dealer');
+  const dealerType = getTaxonomyConfig().dealerAttachmentType;
+  const dealerAttachment = (attachments || []).find((entry) => entry.type === dealerType);
   if (!dealerAttachment) return null;
 
   let raw = dealerAttachment.body;
@@ -317,16 +319,13 @@ const SHAPE_DESCRIPTORS: Record<string, ShapeDescriptor> = {
       ok: true,
       item: {
         portal_values: [
-          { value: 'negative_experience', description: 'Poor customer outcome or complaint.' },
-          { value: 'dnc_request', description: 'Customer asked not to be contacted again.' },
-          { value: 'bad_call_quality', description: 'Audio quality, latency, or connection issue.' }
+          { value: 'example_category', description: 'A deployment-configured classification value.' }
         ],
         common_tags: [
-          { key: 'portal', availability: 'preferred', description: 'Primary Strolid classification tag.' },
-          { key: 'dealer_name', availability: 'sparse', description: 'Legacy dealer label. Prefer strolid_dealer attachment.' }
+          { key: 'dealer_name', availability: 'sparse', description: 'Legacy dealer label. Prefer the dealer attachment.' }
         ],
         preferred_sources: [
-          { need: 'dealer info', source: 'attachment:strolid_dealer', fields: ['id', 'name', 'outboundPhoneNumber', 'team'] }
+          { need: 'dealer info', source: 'attachment:dealer', fields: ['id', 'name', 'outboundPhoneNumber', 'team'] }
         ]
       }
     },
@@ -836,6 +835,7 @@ export class VConCapabilitiesHandler extends BaseToolHandler {
   readonly toolName = 'vcon_capabilities';
 
   protected async execute(_args: any, _context: ToolHandlerContext): Promise<ToolResponse> {
+    const taxonomy = getTaxonomyConfig();
     return this.createOkItemResponse({
       tools: [
         'vcon_fetch',
@@ -880,8 +880,7 @@ export class VConCapabilitiesHandler extends BaseToolHandler {
         date_field_semantics:
           'filters.start_date/end_date apply to filters.date_field: "created" (vCon created_at, the default) or ' +
           '"conversation" (earliest dialog start, else earliest attachment start capped at created_at, else created_at). Use "conversation" for imported history.',
-        recommended_patterns: [
-          'Use tags.portal filters before semantic search for upset-customer and bad-call experiences.',
+        recommended_patterns: taxonomy.recommendedPatterns ?? [
           'Use include=["core","summary","dealer"] for browse views that need dealer context.',
         ],
       },
@@ -899,8 +898,8 @@ export class VConCapabilitiesHandler extends BaseToolHandler {
           ' matching vCons are reachable via cursor pagination; when the corpus exceeds that window, page.iterable_total duplicates that cap so clients know pagination cannot walk the full total.',
       },
       taxonomy_hints: {
-        preferred_bad_call_signals: ['negative_experience', 'dnc_request', 'bad_call_quality'],
-        preferred_dealer_source: 'attachment:strolid_dealer',
+        preferred_bad_call_signals: taxonomy.badCallSignals ?? [],
+        preferred_dealer_source: `attachment:${taxonomy.dealerAttachmentType}`,
       },
       migration: {
         get_vcon: 'vcon_fetch',
@@ -1194,16 +1193,21 @@ export class VConTaxonomyHandler extends BaseToolHandler {
   readonly toolName = 'vcon_taxonomy';
 
   protected async execute(_args: any, context: ToolHandlerContext): Promise<ToolResponse> {
+    // Deployment-specific guidance (dataset label, portal values, tag hints) comes from
+    // configuration; see src/config/taxonomy-config.ts. Defaults are neutral.
+    const taxonomy = getTaxonomyConfig();
+    const dealerType = taxonomy.dealerAttachmentType;
+
     let coverage: Record<string, unknown> = { note: 'coverage unavailable' };
     try {
       const snap = await context.queries.getTaxonomyCoverageSnapshot();
       if (snap.vcons_total != null) {
         coverage = {
           vcons_total: snap.vcons_total,
-          strolid_dealer_attachment: {
+          [`${dealerType}_attachment`]: {
             availability: 'preferred',
-            coverage_pct: snap.with_strolid_dealer_attachment_pct,
-            note: 'Percentage uses strolid_dealer attachment rows over total vCons (approximate if duplicates exist).',
+            coverage_pct: snap.with_dealer_attachment_pct,
+            note: `Percentage uses ${dealerType} attachment rows over total vCons (approximate if duplicates exist).`,
           },
           dealer_name_tag: {
             availability: 'sparse',
@@ -1217,40 +1221,19 @@ export class VConTaxonomyHandler extends BaseToolHandler {
     }
 
     return this.createOkItemResponse({
-      dataset: 'strolid',
-      portal_values: [
-        {
-          value: 'negative_experience',
-          description: 'Primary signal for a poor customer experience or complaint.',
-          recommended_use: 'Use this first for upset-customer views before semantic search.'
-        },
-        {
-          value: 'dnc_request',
-          description: 'Customer requested do-not-contact handling.',
-          recommended_use: 'Use for compliance and suppression workflows.'
-        },
-        {
-          value: 'bad_call_quality',
-          description: 'Call quality issue such as audio drop, latency, or poor connection.',
-          recommended_use: 'Use for telecom-quality investigations.'
-        },
-      ],
-      common_tags: [
-        {
-          key: 'portal',
-          availability: 'preferred',
-          description: 'Team-owned preclassification for common call categories.',
-        },
+      dataset: taxonomy.dataset,
+      portal_values: taxonomy.portalValues ?? [],
+      common_tags: taxonomy.commonTags ?? [
         {
           key: 'dealer_name',
           availability: 'sparse',
-          description: 'Legacy dealer tag. Prefer the strolid_dealer attachment instead.',
+          description: `Legacy dealer tag. Prefer the ${dealerType} attachment instead.`,
         },
       ],
-      preferred_sources: [
+      preferred_sources: taxonomy.preferredSources ?? [
         {
           need: 'dealer info',
-          source: 'attachment:strolid_dealer',
+          source: `attachment:${dealerType}`,
           fields: ['id', 'name', 'outboundPhoneNumber', 'team'],
         },
         {
@@ -1258,23 +1241,14 @@ export class VConTaxonomyHandler extends BaseToolHandler {
           source: 'analysis:type=summary',
           fields: ['body', 'vendor', 'product'],
         },
-        {
-          need: 'call went badly',
-          source: 'tag:portal',
-          fields: ['negative_experience', 'dnc_request', 'bad_call_quality'],
-        },
       ],
-      query_recipes: [
-        {
-          goal: 'Find upset customers',
-          recommendation: 'Filter on portal tags first, then fetch include=["core","summary","dealer"].',
-        },
+      query_recipes: taxonomy.queryRecipes ?? [
         {
           goal: 'Build dealer-aware list views',
           recommendation: 'Use the dealer attachment, not dealer_name tag coverage.',
         },
         {
-          goal: 'Top N dealers by portal tag rate',
+          goal: 'Top N dealers by tag rate',
           recommendation:
             'Call vcon_aggregate with group_by="dealer", the same tags filter as numerator, include_baseline true, and having.min_count for a sample floor.',
         },

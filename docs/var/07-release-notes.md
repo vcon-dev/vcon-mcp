@@ -18,7 +18,7 @@ canonical, developer-oriented changelog see
 **Highlights**
 
 - Predictable vCon contract tools (deterministic shape for AI-client use)
-- Strolid sync helper bundled for legacy vCon corpora ingestion
+- Sync helper bundled for legacy vCon corpora ingestion
 - REST API parity with the MCP tool surface
 - Embedded API-key authentication for both REST and MCP HTTP transports
 - Build provenance exposed via `X-Version`, `X-Git-Commit`, `X-Build-Time`

@@ -133,7 +133,7 @@ The tool displays progress and a summary of embedded, skipped, and error counts.
 The `embed-vcons` edge function accepts an optional `analysis_types` query parameter: a comma-separated list of analysis `type` values. Only analyses of those types are embedded:
 
 ```bash
-curl -X POST "$SUPABASE_URL/functions/v1/embed-vcons?mode=backfill&limit=100&analysis_types=summary,crexendo_summary" \
+curl -X POST "$SUPABASE_URL/functions/v1/embed-vcons?mode=backfill&limit=100&analysis_types=summary,call_summary" \
   -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" -H "Content-Type: application/json" -d '{}'
 ```
 
