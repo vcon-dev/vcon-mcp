@@ -57,7 +57,7 @@ describe('tool schema drift (CON-1240)', () => {
       searchByTags: vi.fn().mockResolvedValue([]),
       createVCon: vi.fn().mockResolvedValue({ uuid: UUID, id: '1' }),
     };
-    mockPluginManager = { executeHook: vi.fn().mockResolvedValue(undefined) };
+    mockPluginManager = { executeHook: vi.fn().mockResolvedValue(undefined), hasHook: vi.fn().mockReturnValue(false) };
     ctx = {
       queries: mockQueries,
       pluginManager: mockPluginManager,

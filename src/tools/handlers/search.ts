@@ -26,7 +26,7 @@ export class SearchVConsHandler extends BaseToolHandler {
     const includeCount = (args?.include_count as boolean | undefined) || false;
     const dateField = parseDateField(args?.date_field);
 
-    let filters = {
+    const filters = {
       subject: args?.subject as string | undefined,
       partyName: args?.party_name as string | undefined,
       partyEmail: args?.party_email as string | undefined,
@@ -38,13 +38,10 @@ export class SearchVConsHandler extends BaseToolHandler {
       limit: (args?.limit as number | undefined) || 10,
     };
 
-    // Hook: beforeSearch (can modify search criteria)
-    const modifiedFilters = await context.pluginManager.executeHook<typeof filters>('beforeSearch', filters, requestContext);
-    if (modifiedFilters) filters = modifiedFilters;
-
+    // beforeSearch/afterSearch hooks run inside the service.
     let results: VCon[];
     try {
-      results = await context.queries.searchVCons(filters);
+      results = await context.vconService.search(filters, { requestContext });
     } catch (dbError: any) {
       // Improve error messages for database connection issues
       if (dbError instanceof TypeError && dbError.message.includes('fetch failed')) {
@@ -57,10 +54,6 @@ export class SearchVConsHandler extends BaseToolHandler {
       }
       throw dbError;
     }
-
-    // Hook: afterSearch (can filter or modify results)
-    const filteredResults = await context.pluginManager.executeHook<VCon[]>('afterSearch', results, requestContext);
-    if (filteredResults) results = filteredResults;
 
     // Format response based on requested format
     let formattedResults;
@@ -85,6 +78,7 @@ export class SearchVConsHandler extends BaseToolHandler {
     let totalCount;
     if (includeCount) {
       try {
+        // Aggregate count only, no vCon content: no read hooks (afterSearch cannot adjust a number).
         totalCount = await context.queries.searchVConsCount({
           subject: filters.subject,
           partyName: filters.partyName,
@@ -135,14 +129,16 @@ export class SearchVConsContentHandler extends BaseToolHandler {
     const includeCount = (args?.include_count as boolean | undefined) || false;
     const dateField = parseDateField(args?.date_field);
 
-    const results = await context.queries.keywordSearch({
+    // beforeSearch/afterSearch hooks run inside the service.
+    const searchResult = await context.vconService.keywordSearch({
       query,
       startDate: normalizeDateString(args?.start_date as string | undefined),
       endDate: normalizeDateString(args?.end_date as string | undefined),
       ...(dateField ? { dateField } : {}),
       tags: args?.tags as Record<string, string> | undefined,
       limit: (args?.limit as number | undefined) || 50,
-    });
+    }, { requestContext: this.createRequestContext(args) });
+    const results = searchResult.hits;
 
     // Format response based on requested format
     let formattedResults;
@@ -170,16 +166,18 @@ export class SearchVConsContentHandler extends BaseToolHandler {
     } else {
       // Full format - get complete vCons
       const vconIds = [...new Set(results.map(r => r.vcon_id))];
-      const fullVCons = await Promise.all(
-        vconIds.slice(0, 20).map(id => context.queries.getVCon(id)) // Limit to 20 for memory safety
-      );
-      formattedResults = fullVCons;
+      // Limit to 20 for memory safety; hooked vCons come from the search result.
+      formattedResults = await context.vconService.vconsForHits(searchResult, vconIds.slice(0, 20), {
+        readHooks: true,
+        requestContext: this.createRequestContext(args),
+      });
     }
 
     // Get total count if requested
     let totalCount;
     if (includeCount) {
       try {
+        // Aggregate count only, no vCon content: no read hooks (afterSearch cannot adjust a number).
         totalCount = await context.queries.keywordSearchCount({
           query,
           startDate: normalizeDateString(args?.start_date as string | undefined),
@@ -221,35 +219,21 @@ export class SearchVConsContentHandler extends BaseToolHandler {
  * - "full": complete vCons for the unique matches (first 20, for memory safety)
  */
 async function formatHitResults<T extends { vcon_id: string }>(
-  hits: T[],
+  result: { hits: T[]; vcons?: Map<string, VCon> },
   responseFormat: string,
   toRow: (hit: T) => unknown,
   context: ToolHandlerContext,
-  requestContext?: RequestContext
+  requestContext: RequestContext
 ): Promise<unknown[]> {
+  const hits = result.hits;
   if (responseFormat === 'ids_only') {
     return [...new Set(hits.map(h => h.vcon_id))];
   }
   if (responseFormat === 'full') {
     const ids = [...new Set(hits.map(h => h.vcon_id))].slice(0, 20);
-    // Read through the service so beforeRead/afterRead hooks run. A vCon deleted
-    // (or otherwise unreadable) between the search and this fetch is skipped
-    // rather than failing the whole call.
-    const settled = await Promise.allSettled(
-      ids.map(id => context.vconService.get(id, { requestContext }))
-    );
-    const vcons: unknown[] = [];
-    settled.forEach((outcome, i) => {
-      if (outcome.status === 'fulfilled') {
-        vcons.push(outcome.value);
-      } else {
-        logWithContext('warn', 'Skipping vCon in full search results', {
-          vcon_uuid: ids[i],
-          reason: extractErrorMessage(outcome.reason),
-        });
-      }
-    });
-    return vcons;
+    // The search already ran afterSearch on these vCons; beforeRead/afterRead then run
+    // once on the same objects (CON-1240). Unreadable or blocked vCons are skipped.
+    return context.vconService.vconsForHits(result, ids, { readHooks: true, requestContext });
   }
   return hits.map(toRow);
 }
@@ -277,19 +261,20 @@ export class SearchVConsSemanticHandler extends BaseToolHandler {
       throw new McpError(ErrorCode.InvalidParams, 'Embedding must be 384 dimensions');
     }
 
-    const results = await context.queries.semanticSearch({
+    const searchResult = await context.vconService.semanticSearch({
       embedding,
       tags: args?.tags as Record<string, string> | undefined,
       threshold: (args?.threshold as number | undefined) ?? 0.7,
       limit: (args?.limit as number | undefined) || 50,
-    });
+    }, { requestContext: this.createRequestContext(args) });
+    const results = searchResult.hits;
 
     recordCounter('vcon.search.count', 1, {
       [ATTR_SEARCH_TYPE]: 'semantic',
     }, 'vCon search count');
 
     const responseFormat = (args?.response_format as string | undefined) || 'metadata';
-    const formatted = await formatHitResults(results, responseFormat, r => ({
+    const formatted = await formatHitResults(searchResult, responseFormat, r => ({
       vcon_id: r.vcon_id,
       content_type: r.content_type,
       content_reference: r.content_reference,
@@ -337,20 +322,21 @@ export class SearchVConsHybridHandler extends BaseToolHandler {
       }
     }
 
-    const results = await context.queries.hybridSearch({
+    const searchResult = await context.vconService.hybridSearch({
       keywordQuery: query,
       embedding: embedding,
       tags: args?.tags as Record<string, string> | undefined,
       semanticWeight: (args?.semantic_weight as number | undefined) ?? 0.6,
       limit: (args?.limit as number | undefined) || 50,
-    });
+    }, { requestContext: this.createRequestContext(args) });
+    const results = searchResult.hits;
 
     recordCounter('vcon.search.count', 1, {
       [ATTR_SEARCH_TYPE]: 'hybrid',
     }, 'vCon search count');
 
     const responseFormat = (args?.response_format as string | undefined) || 'metadata';
-    const formatted = await formatHitResults(results, responseFormat, r => ({
+    const formatted = await formatHitResults(searchResult, responseFormat, r => ({
       vcon_id: r.vcon_id,
       combined_score: r.combined_score,
       semantic_score: r.semantic_score,

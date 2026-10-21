@@ -57,7 +57,10 @@ export class GetTagsHandler extends BaseToolHandler {
     
     if (key) {
       // Get single tag
-      const value = await context.queries.getTag(vconUuid, key, defaultValue);
+      // beforeRead runs in the service (access check; a tag value is not a VCon, so no afterRead).
+      const value = await context.vconService.getTag(vconUuid, key, defaultValue, {
+        requestContext: this.createRequestContext(args),
+      });
       const exists = value !== defaultValue;
       return this.createSuccessResponse({
         key: key,
@@ -66,7 +69,9 @@ export class GetTagsHandler extends BaseToolHandler {
       });
     } else {
       // Get all tags
-      const tags = await context.queries.getTags(vconUuid);
+      const tags = await context.vconService.getTags(vconUuid, {
+        requestContext: this.createRequestContext(args),
+      });
       return this.createSuccessResponse({
         vcon_uuid: vconUuid,
         tags: tags,
@@ -145,7 +150,11 @@ export class SearchByTagsHandler extends BaseToolHandler {
       sanitizedTags[key] = String(value);
     }
 
-    const vconUuids = await context.queries.searchByTags(sanitizedTags, limit);
+    // beforeSearch/afterSearch hooks run inside the service; afterSearch can drop uuids.
+    const searchResult = await context.vconService.searchByTags(sanitizedTags, limit, {
+      requestContext: this.createRequestContext(args),
+    });
+    const vconUuids = searchResult.uuids;
 
     // Determine if we should return full vCons
     const shouldReturnFull = returnFullVCons ?? (vconUuids.length <= 20);
@@ -157,9 +166,11 @@ export class SearchByTagsHandler extends BaseToolHandler {
 
     let fullVCons: any[] = [];
     if (numFullVCons > 0) {
-      fullVCons = await Promise.all(
-        vconUuids.slice(0, numFullVCons).map(uuid => context.queries.getVCon(uuid))
-      );
+      // Full bodies get beforeRead/afterRead too, as the search_* tools' full format.
+      fullVCons = await context.vconService.vconsForHits(searchResult, vconUuids.slice(0, numFullVCons), {
+        readHooks: true,
+        requestContext: this.createRequestContext(args),
+      });
     }
 
     recordCounter('vcon.search.count', 1, {
@@ -197,6 +208,7 @@ export class GetUniqueTagsHandler extends BaseToolHandler {
     const keyFilter = args?.key_filter as string | undefined;
     const minCount = (args?.min_count as number | undefined) ?? 1;
 
+    // Aggregate surface (tag keys and counts across the corpus): per-vCon read hooks do not apply.
     const uniqueTagsResult = await context.queries.getUniqueTags({
       includeCounts,
       keyFilter,

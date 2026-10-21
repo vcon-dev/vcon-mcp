@@ -623,7 +623,7 @@ export default class AnalyticsPlugin implements VConPlugin {
 }
 ```
 
-**Note:** Currently, plugin resources are declared via `registerResources()` but the core server doesn't automatically handle reading them. You need to handle resource reads in your plugin or contribute a PR to add plugin resource resolution to the core.
+**Note:** Declare resources with `registerResources()` (and templates with `registerResourceTemplates()`), and serve reads with `readResource(uri, context)`. Core resources resolve first; the first plugin returning a non-undefined result owns the URI. See [plugins.md](./plugins.md#readresourceuri-context).
 
 ### Adding Prompts via Plugin
 

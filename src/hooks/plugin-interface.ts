@@ -4,7 +4,7 @@
  */
 
 import { VCon } from '../types/vcon.js';
-import { Tool, Resource } from '@modelcontextprotocol/sdk/types.js';
+import { Tool, Resource, ResourceTemplate } from '@modelcontextprotocol/sdk/types.js';
 
 export interface VConPlugin {
   /** Plugin name */
@@ -58,9 +58,26 @@ export interface VConPlugin {
   
   /** Register additional MCP resources */
   registerResources?(): Resource[];
+
+  /** Register additional MCP resource templates (parameterised URIs, RFC 6570) */
+  registerResourceTemplates?(): ResourceTemplate[];
+
+  /**
+   * Read a resource this plugin registered (via registerResources or
+   * registerResourceTemplates). Called after core resources fail to resolve the URI.
+   * Return undefined if the URI is not owned by this plugin.
+   */
+  readResource?(uri: string, context: RequestContext): Promise<PluginResourceContent | undefined>;
   
   /** Handle a tool call */
   handleToolCall?(toolName: string, args: any, context: RequestContext): Promise<any>;
+}
+
+/** Result of VConPlugin.readResource. Non-string content is JSON-serialized. */
+export interface PluginResourceContent {
+  /** Defaults to application/json */
+  mimeType?: string;
+  content: unknown;
 }
 
 export interface RequestContext {

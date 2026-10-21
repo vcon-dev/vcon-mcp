@@ -30,6 +30,8 @@ describe('resource templates', () => {
       pluginManager: {
         getAdditionalTools: vi.fn().mockResolvedValue([]),
         getAdditionalResources: vi.fn().mockResolvedValue([]),
+        getAdditionalResourceTemplates: vi.fn().mockResolvedValue([]),
+        readPluginResource: vi.fn().mockResolvedValue(undefined),
       },
       handlerRegistry: { get: vi.fn() },
     } as unknown as ServerContext;

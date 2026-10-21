@@ -63,6 +63,8 @@ describe('MCP Request Handlers', () => {
     mockPluginManager = {
       getAdditionalTools: vi.fn().mockResolvedValue([]),
       getAdditionalResources: vi.fn().mockResolvedValue([]),
+      getAdditionalResourceTemplates: vi.fn().mockResolvedValue([]),
+      readPluginResource: vi.fn().mockResolvedValue(undefined),
       handlePluginToolCall: vi.fn(),
       shutdown: vi.fn(),
     };
@@ -196,6 +198,39 @@ describe('MCP Request Handlers', () => {
 
     it('should register handler that throws error for unknown resource', () => {
       expect(() => registerHandlers(serverContext)).not.toThrow();
+    });
+
+    const readHandler = () => (server as any)._requestHandlers.get('resources/read');
+    const readReq = (uri: string) =>
+      readHandler()({ method: 'resources/read', params: { uri } }, {});
+
+    it('reads a plugin-provided resource listed by ListResources (#103)', async () => {
+      mockPluginManager.readPluginResource.mockResolvedValue({ content: { hits: 3 } });
+      registerHandlers(serverContext);
+
+      const res = await readReq('plugin://stats');
+      expect(mockPluginManager.readPluginResource).toHaveBeenCalledWith(
+        'plugin://stats',
+        expect.objectContaining({ purpose: 'mcp-resource-read' })
+      );
+      expect(res.contents[0].uri).toBe('plugin://stats');
+      expect(res.contents[0].mimeType).toBe('application/json');
+      expect(JSON.parse(res.contents[0].text)).toEqual({ hits: 3 });
+    });
+
+    it('still throws for an unknown URI no plugin owns', async () => {
+      registerHandlers(serverContext);
+      await expect(readReq('nope://missing')).rejects.toThrow(/Unknown or unsupported resource URI: nope:\/\/missing/);
+    });
+
+    it('lists plugin resource templates', async () => {
+      mockPluginManager.getAdditionalResourceTemplates.mockResolvedValue([
+        { uriTemplate: 'plugin://item/{id}', name: 'Plugin item' },
+      ]);
+      registerHandlers(serverContext);
+      const res = await (server as any)._requestHandlers.get('resources/templates/list')(
+        { method: 'resources/templates/list' }, {});
+      expect(res.resourceTemplates.map((t: any) => t.uriTemplate)).toContain('plugin://item/{id}');
     });
   });
 

@@ -48,14 +48,16 @@ export function createSearchRoutes(apiContext: RestApiContext): Router {
 
     const includeCount = ctx.query.include_count === 'true';
 
-    const results = await apiContext.queries.keywordSearch({
+    // beforeSearch/afterSearch hooks run inside the service.
+    const searchResult = await apiContext.vconService.keywordSearch({
       query,
       startDate: normalizeDateString(ctx.query.start_date as string | undefined),
       endDate: normalizeDateString(ctx.query.end_date as string | undefined),
       ...(dateField ? { dateField } : {}),
       tags,
       limit,
-    });
+    }, { requestContext: { purpose: 'rest-api-search' } });
+    const results = searchResult.hits;
 
     // Format results
     let formattedResults: any;
@@ -81,14 +83,16 @@ export function createSearchRoutes(apiContext: RestApiContext): Router {
     } else {
       // Full — load complete vCons
       const vconIds = [...new Set(results.map(r => r.vcon_id))];
-      formattedResults = await Promise.all(
-        vconIds.slice(0, 20).map(id => apiContext.queries.getVCon(id))
-      );
+      formattedResults = await apiContext.vconService.vconsForHits(searchResult, vconIds.slice(0, 20), {
+        readHooks: true,
+        requestContext: { purpose: 'rest-api-search' },
+      });
     }
 
     let totalCount: number | undefined;
     if (includeCount) {
       try {
+        // Aggregate count, no vCon content: no read hooks apply.
         totalCount = await apiContext.queries.keywordSearchCount({
           query,
           startDate: normalizeDateString(ctx.query.start_date as string | undefined),
@@ -146,12 +150,12 @@ export function createSearchRoutes(apiContext: RestApiContext): Router {
     const { result: tagsResult, value: tags } = parseJsonQueryParam(ctx.query.tags, 'tags');
     if (!tagsResult.valid) return sendError(ctx, 400, tagsResult.errors[0]);
 
-    const results = await apiContext.queries.semanticSearch({
+    const { hits: results } = await apiContext.vconService.semanticSearch({
       embedding,
       tags,
       threshold,
       limit,
-    });
+    }, { requestContext: { purpose: 'rest-api-search' } });
 
     recordCounter('vcon.search.count', 1, { [ATTR_SEARCH_TYPE]: 'semantic' }, 'vCon search count');
 
@@ -191,13 +195,13 @@ export function createSearchRoutes(apiContext: RestApiContext): Router {
       });
     }
 
-    const results = await apiContext.queries.hybridSearch({
+    const { hits: results } = await apiContext.vconService.hybridSearch({
       keywordQuery: query,
       embedding,
       tags,
       semanticWeight,
       limit,
-    });
+    }, { requestContext: { purpose: 'rest-api-search' } });
 
     recordCounter('vcon.search.count', 1, { [ATTR_SEARCH_TYPE]: 'hybrid' }, 'vCon search count');
 

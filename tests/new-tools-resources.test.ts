@@ -143,7 +143,7 @@ describe('Resources Endpoint Tests', () => {
     it('should enforce max limit of 100', async () => {
       vi.spyOn(queries, 'searchVCons').mockResolvedValue([]);
 
-      resolveCoreResource(queries, 'vcon://v1/vcons/recent/200');
+      await resolveCoreResource(queries, 'vcon://v1/vcons/recent/200');
 
       expect(queries.searchVCons).toHaveBeenCalledWith({ limit: 100 });
     });
@@ -285,7 +285,7 @@ describe('Resources Endpoint Tests', () => {
     it('should enforce max limit of 100 for recent IDs', async () => {
       vi.spyOn(queries, 'searchVCons').mockResolvedValue([]);
 
-      resolveCoreResource(queries, 'vcon://v1/vcons/recent/ids/200');
+      await resolveCoreResource(queries, 'vcon://v1/vcons/recent/ids/200');
 
       expect(queries.searchVCons).toHaveBeenCalledWith({ limit: 100 });
     });
@@ -335,7 +335,7 @@ describe('Resources Endpoint Tests', () => {
     it('should enforce max limit of 1000', async () => {
       vi.spyOn(queries, 'searchVCons').mockResolvedValue([]);
 
-      resolveCoreResource(queries, 'vcon://v1/vcons/ids/2000');
+      await resolveCoreResource(queries, 'vcon://v1/vcons/ids/2000');
 
       expect(queries.searchVCons).toHaveBeenCalledWith({ limit: 1001 }); // Fetch one extra
     });

@@ -24,10 +24,15 @@ export function createTagRoutes(apiContext: RestApiContext): Router {
     try {
       if (key) {
         const defaultValue = ctx.query.default ?? null;
-        const value = await apiContext.queries.getTag(uuid, key, defaultValue);
+        // beforeRead (access check) runs in the service; a tag value is not a VCon, so no afterRead.
+        const value = await apiContext.vconService.getTag(uuid, key, defaultValue, {
+          requestContext: { purpose: 'rest-api-tag-read' },
+        });
         sendSuccess(ctx, { key, value });
       } else {
-        const tags = await apiContext.queries.getTags(uuid);
+        const tags = await apiContext.vconService.getTags(uuid, {
+          requestContext: { purpose: 'rest-api-tag-read' },
+        });
         sendSuccess(ctx, { tags });
       }
     } catch (error) {
@@ -104,6 +109,7 @@ export function createTagRoutes(apiContext: RestApiContext): Router {
     const { result: minCountResult, value: minCount } = validateIntRange(ctx.query.min_count, 'min_count', 1, 100000, 1);
     if (!minCountResult.valid) return sendError(ctx, 400, minCountResult.errors[0]);
 
+    // Aggregate surface (tag keys and counts across the corpus): per-vCon read hooks do not apply.
     const result = await apiContext.queries.getUniqueTags({
       includeCounts,
       keyFilter,
@@ -124,7 +130,10 @@ export function createTagRoutes(apiContext: RestApiContext): Router {
     const { result: limitResult, value: limit } = validateIntRange(ctx.query.limit, 'limit', 1, 100, 50);
     if (!limitResult.valid) return sendError(ctx, 400, limitResult.errors[0]);
 
-    const uuids = await apiContext.queries.searchByTags(tags, limit);
+    // beforeSearch/afterSearch run in the service; afterSearch can drop uuids.
+    const { uuids } = await apiContext.vconService.searchByTags(tags, limit, {
+      requestContext: { purpose: 'rest-api-search' },
+    });
     sendSuccess(ctx, { count: uuids.length, uuids });
   });
 

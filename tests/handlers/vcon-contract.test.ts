@@ -16,6 +16,7 @@ import { DatabaseInspector } from '../../src/db/database-inspector.js';
 import { DatabaseAnalytics } from '../../src/db/database-analytics.js';
 import { DatabaseSizeAnalyzer } from '../../src/db/database-size-analyzer.js';
 import { VCon } from '../../src/types/vcon.js';
+import { VConService } from '../../src/services/vcon-service.js';
 
 vi.mock('../../src/observability/instrumentation.js', () => ({
   withSpan: vi.fn((name, fn) => fn({ setAttributes: vi.fn(), setStatus: vi.fn() })),
@@ -60,6 +61,7 @@ describe('Redesigned vCon contract handlers', () => {
             team: 'west',
           },
         },
+        { type: 'tags', purpose: 'tags', encoding: 'json', body: JSON.stringify(['portal:negative_experience']) },
       ],
     };
 
@@ -85,13 +87,17 @@ describe('Redesigned vCon contract handlers', () => {
 
     mockContext = {
       queries: mockQueries,
-      pluginManager: { executeHook: vi.fn() } as any,
+      pluginManager: { executeHook: vi.fn(), hasHook: vi.fn().mockReturnValue(false) } as any,
       dbInspector: {} as DatabaseInspector,
       dbAnalytics: {} as DatabaseAnalytics,
       dbSizeAnalyzer: {} as DatabaseSizeAnalyzer,
       supabase: {},
-      vconService: {} as any,
+      vconService: {} as any, // replaced below with a real service over the mocks
     };
+  });
+
+  beforeEach(() => {
+    mockContext.vconService = new VConService({ queries: mockQueries, pluginManager: mockContext.pluginManager });
   });
 
   it('vcon_fetch returns ok/item with default includes', async () => {

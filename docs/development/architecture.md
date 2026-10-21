@@ -220,6 +220,8 @@ export interface VConPlugin {
   // Registration
   registerTools?(): Tool[]
   registerResources?(): Resource[]
+  registerResourceTemplates?(): ResourceTemplate[]
+  readResource?(uri: string, context: RequestContext): Promise<PluginResourceContent | undefined>
   registerPrompts?(): Prompt[]
 }
 ```
