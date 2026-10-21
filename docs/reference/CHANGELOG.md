@@ -7,7 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [1.11.0] - 2026-10-20
+
 ### Migrations
+Apply with `supabase db push` (or your migration runner) before or after deploying; the
+code works either way until a caller sends `date_field: "conversation"`.
+
 - `20261019171238_add_conversation_start.sql` adds `vcons.conversation_start`, the triggers
   that keep it current, a backfill and an index. The rule ignores NULL starts and starts
   before 1990-01-01 (placeholders such as 1970 epoch defaults): the earliest dialog `start`
