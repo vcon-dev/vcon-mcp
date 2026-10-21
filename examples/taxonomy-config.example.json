@@ -1,0 +1,67 @@
+{
+  "portal_values": [
+    {
+      "value": "negative_experience",
+      "description": "Primary signal for a poor customer experience or complaint.",
+      "recommended_use": "Use this first for upset-customer views before semantic search."
+    },
+    {
+      "value": "dnc_request",
+      "description": "Customer requested do-not-contact handling.",
+      "recommended_use": "Use for compliance and suppression workflows."
+    },
+    {
+      "value": "bad_call_quality",
+      "description": "Call quality issue such as audio drop, latency, or poor connection.",
+      "recommended_use": "Use for telecom-quality investigations."
+    }
+  ],
+  "common_tags": [
+    {
+      "key": "portal",
+      "availability": "preferred",
+      "description": "Team-owned preclassification for common call categories."
+    },
+    {
+      "key": "dealer_name",
+      "availability": "sparse",
+      "description": "Legacy dealer tag. Prefer the dealer attachment instead."
+    }
+  ],
+  "preferred_sources": [
+    {
+      "need": "dealer info",
+      "source": "attachment:dealer",
+      "fields": ["id", "name", "outboundPhoneNumber", "team"]
+    },
+    {
+      "need": "summary text",
+      "source": "analysis:type=summary",
+      "fields": ["body", "vendor", "product"]
+    },
+    {
+      "need": "call went badly",
+      "source": "tag:portal",
+      "fields": ["negative_experience", "dnc_request", "bad_call_quality"]
+    }
+  ],
+  "query_recipes": [
+    {
+      "goal": "Find upset customers",
+      "recommendation": "Filter on portal tags first, then fetch include=[\"core\",\"summary\",\"dealer\"]."
+    },
+    {
+      "goal": "Build dealer-aware list views",
+      "recommendation": "Use the dealer attachment, not dealer_name tag coverage."
+    },
+    {
+      "goal": "Top N dealers by portal tag rate",
+      "recommendation": "Call vcon_aggregate with group_by=\"dealer\", the same tags filter as numerator, include_baseline true, and having.min_count for a sample floor."
+    }
+  ],
+  "bad_call_signals": ["negative_experience", "dnc_request", "bad_call_quality"],
+  "recommended_patterns": [
+    "Use tags.portal filters before semantic search for upset-customer and bad-call experiences.",
+    "Use include=[\"core\",\"summary\",\"dealer\"] for browse views that need dealer context."
+  ]
+}

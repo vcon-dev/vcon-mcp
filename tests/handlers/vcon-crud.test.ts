@@ -111,6 +111,41 @@ describe('vCon CRUD Handlers', () => {
   });
 
   describe('CreateVConHandler', () => {
+    it('passes a client-supplied uuid to the service and returns it (idempotent re-post)', async () => {
+      const handler = new CreateVConHandler();
+      const suppliedUuid = '6ba7b810-9dad-51d1-80b4-00c04fd430c8';
+      mockVConService.create.mockResolvedValue({
+        uuid: suppliedUuid,
+        id: '1',
+        vcon: { vcon: '0.4.0', uuid: suppliedUuid, created_at: new Date().toISOString(), parties: [{ name: 'A' }] },
+      });
+
+      const result = await handler.handle({ uuid: suppliedUuid, parties: [{ name: 'A' }] }, mockContext);
+
+      expect(mockVConService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ uuid: suppliedUuid }),
+        expect.anything()
+      );
+      expect(JSON.parse(result.content[0].text).uuid).toBe(suppliedUuid);
+    });
+
+    it('rejects an invalid uuid', async () => {
+      const handler = new CreateVConHandler();
+      await expect(handler.handle({ uuid: 'not-a-uuid', parties: [{ name: 'A' }] }, mockContext))
+        .rejects.toThrow(McpError);
+      expect(mockVConService.create).not.toHaveBeenCalled();
+    });
+
+    it('does not set a uuid when none is supplied', async () => {
+      const handler = new CreateVConHandler();
+      mockVConService.create.mockResolvedValue({
+        uuid: randomUUID(), id: '1',
+        vcon: { vcon: '0.4.0', uuid: randomUUID(), created_at: new Date().toISOString(), parties: [{ name: 'A' }] },
+      });
+      await handler.handle({ parties: [{ name: 'A' }] }, mockContext);
+      expect(mockVConService.create.mock.calls[0][0]).not.toHaveProperty('uuid');
+    });
+
     it('should create a vCon successfully', async () => {
       const handler = new CreateVConHandler();
       const testUuid = randomUUID();
@@ -292,6 +327,27 @@ describe('vCon CRUD Handlers', () => {
       const result = await handler.handle({ template_name: 'phone_call', parties: [{ name: 'A' }] }, mockContext);
       const response = JSON.parse(result.content[0].text);
       expect(response.warnings.join()).toContain('no lawful_basis attachment');
+    });
+
+    it('passes a supplied lawful_basis through to the template builder', async () => {
+      const { buildTemplateVCon } = await import('../../src/tools/templates.js');
+      const handler = new CreateVConFromTemplateHandler();
+      const uuid = randomUUID();
+      mockVConService.create.mockResolvedValue({
+        uuid, id: '1',
+        vcon: { vcon: '0.4.0', uuid, created_at: new Date().toISOString(), parties: [{ name: 'A' }] },
+      });
+      const basis = { lawful_basis: 'contract', expiration: null };
+      await handler.handle({ template_name: 'phone_call', parties: [{ name: 'A' }], lawful_basis: basis }, mockContext);
+      expect(buildTemplateVCon).toHaveBeenLastCalledWith('phone_call', undefined, [{ name: 'A' }], basis);
+    });
+
+    it('rejects a lawful_basis with an unknown basis value', async () => {
+      const handler = new CreateVConFromTemplateHandler();
+      await expect(handler.handle({
+        template_name: 'phone_call', parties: [{ name: 'A' }], lawful_basis: { lawful_basis: 'because' },
+      }, mockContext)).rejects.toThrow(McpError);
+      expect(mockVConService.create).not.toHaveBeenCalled();
     });
 
     it('should throw error if template_name is missing', async () => {

@@ -35,7 +35,7 @@ export const vconFetchTool = {
         type: 'array',
         description:
           'Explicit field groups to include. Default: ["core", "parties", "summary"]. ' +
-          'Use "tags" for parsed tag key/value pairs. "dealer" returns the parsed strolid_dealer attachment where a deployment stores one, and null otherwise.',
+          'Use "tags" for parsed tag key/value pairs. "dealer" returns the parsed dealer attachment (type set by VCON_DEALER_ATTACHMENT_TYPE) where a deployment stores one, and null otherwise.',
         items: {
           type: 'string',
           enum: [...fetchIncludeValues],
@@ -127,7 +127,7 @@ export const vconSearchTool = {
       },
       filters: {
         type: 'object',
-        description: 'Structured metadata filters for subject, dates, party fields, and (where a deployment stores one) the strolid_dealer attachment. ' +
+        description: 'Structured metadata filters for subject, dates, party fields, and (where a deployment stores one) the dealer attachment. ' +
           'start_date/end_date apply in metadata and keyword modes.',
         properties: {
           subject: { type: 'string' },
@@ -146,11 +146,11 @@ export const vconSearchTool = {
           party_tel: { type: 'string' },
           dealer_id: {
             type: 'string',
-            description: 'Match strolid_dealer attachment id (use string form, for example "1174").',
+            description: 'Match dealer attachment id (use string form, for example "1174").',
           },
           dealer_name: {
             type: 'string',
-            description: 'Case-insensitive substring match against strolid_dealer attachment name.',
+            description: 'Case-insensitive substring match against dealer attachment name.',
           },
         }
       },
@@ -202,7 +202,7 @@ export const vconAggregateTool = {
   category: 'read' as ToolCategory,
   description:
     'Server-side rollup for rate-style questions: which groups have the highest share of vCons matching a tag filter. ' +
-    'Groups vCons by an attachment-derived key (this release: the strolid_dealer attachment id, where a deployment stores one), returning filtered_count (rows matching tags) and baseline_count (all rows in the group) so clients can divide for a rate in one round trip. ' +
+    'Groups vCons by an attachment-derived key (this release: the dealer attachment id, where a deployment stores one), returning filtered_count (rows matching tags) and baseline_count (all rows in the group) so clients can divide for a rate in one round trip. ' +
     'Requires Postgres RPC aggregate_vcons_by_dealer_stats from the latest migration.',
   inputSchema: {
     type: 'object' as const,

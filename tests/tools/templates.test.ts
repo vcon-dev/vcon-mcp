@@ -5,6 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import { createFromTemplateTool, buildTemplateVCon } from '../../src/tools/templates.js';
 import { VCon } from '../../src/types/vcon.js';
+import { hasLawfulBasis, lawfulBasisWarnings, MISSING_LAWFUL_BASIS_WARNING } from '../../src/utils/lawful-basis.js';
 
 describe('Templates', () => {
   describe('createFromTemplateTool', () => {
@@ -35,6 +36,50 @@ describe('Templates', () => {
       expect(templateNameProp.enum).toContain('video_meeting');
       expect(templateNameProp.enum).toContain('custom');
     });
+  });
+
+  describe('lawful_basis input', () => {
+    it('is declared in the schema and optional', () => {
+      expect(createFromTemplateTool.inputSchema.properties).toHaveProperty('lawful_basis');
+      expect(createFromTemplateTool.inputSchema.required).not.toContain('lawful_basis');
+    });
+  });
+
+  describe('buildTemplateVCon lawful basis', () => {
+    const parties = [{ name: 'Alice' }];
+    const basis = {
+      lawful_basis: 'legitimate_interests',
+      expiration: null,
+      purpose_grants: [{ purpose: 'recording', granted: true }],
+      proof_mechanisms: [{ mechanism_type: 'external_system', description: 'test fixture' }],
+    };
+
+    it.each(['phone_call', 'chat_conversation', 'email_thread', 'video_meeting', 'custom'])(
+      'attaches a supplied basis on %s',
+      (template) => {
+        const vcon = buildTemplateVCon(template, 's', parties, basis);
+        const atts = (vcon.attachments ?? []) as any[];
+        expect(atts).toHaveLength(1);
+        expect(atts[0].purpose).toBe('lawful_basis');
+        expect(atts[0].type).toBe('lawful_basis');
+        expect(atts[0].encoding).toBe('json');
+        expect(atts[0].mediatype).toBe('application/json');
+        expect(typeof atts[0].body).toBe('string');
+        expect(JSON.parse(atts[0].body)).toEqual(basis);
+        expect(atts[0]).not.toHaveProperty('mimetype');
+        expect(hasLawfulBasis(vcon)).toBe(true);
+        expect(lawfulBasisWarnings(vcon)).toEqual([]);
+      }
+    );
+
+    it.each(['phone_call', 'email_thread', 'custom'])(
+      'adds no lawful_basis attachment when none is supplied (%s) and the warning fires',
+      (template) => {
+        const vcon = buildTemplateVCon(template, 's', parties);
+        expect(hasLawfulBasis(vcon)).toBe(false);
+        expect(lawfulBasisWarnings(vcon)).toContain(MISSING_LAWFUL_BASIS_WARNING);
+      }
+    );
   });
 
   describe('buildTemplateVCon', () => {

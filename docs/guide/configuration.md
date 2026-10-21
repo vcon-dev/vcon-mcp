@@ -128,6 +128,27 @@ CURRENT_TENANT_ID=1124
 
 See [RLS Multi-Tenant Guide](rls-multi-tenant.md) for complete setup instructions.
 
+#### Dataset Taxonomy Guidance
+
+`vcon_taxonomy` and `vcon_capabilities` return hints about how a dataset is classified: a dataset label, portal classification values, common tags, preferred sources, query recipes, and the attachment type that carries dealer data. By default these are neutral (no dataset label, no portal values, dealer attachment type `dealer`). A deployment with its own classification scheme supplies it through configuration.
+
+```bash
+# Dataset label reported by vcon_taxonomy (default: unset, reported as null)
+VCON_TAXONOMY_DATASET=my-dataset
+
+# Attachment type that holds dealer data (default: "dealer").
+# Used by vcon_fetch include=["dealer"], taxonomy coverage counts, and the
+# preferred_dealer_source hint. Set it to the type your stored data actually uses.
+VCON_DEALER_ATTACHMENT_TYPE=dealer
+
+# Optional JSON file with taxonomy guidance, read once at first use
+VCON_TAXONOMY_CONFIG=/etc/vcon-mcp/taxonomy.json
+```
+
+The JSON file is an object with any of these optional keys: `dataset`, `dealer_attachment_type`, `portal_values`, `common_tags`, `preferred_sources`, `query_recipes`, `bad_call_signals`, `recommended_patterns`. Array keys replace the built-in defaults verbatim. `VCON_TAXONOMY_DATASET` and `VCON_DEALER_ATTACHMENT_TYPE` take precedence over the file's `dataset` and `dealer_attachment_type`. See [`examples/taxonomy-config.example.json`](../../examples/taxonomy-config.example.json) for a call-center layout with portal tags.
+
+The server passes the same type to the dealer Postgres RPCs (`vcon_uuids_for_dealer_filter`, `count_vcons_for_dealer_filter`, `count_vcons_tags_and_dealer`, `aggregate_vcons_by_dealer_stats`) through their `p_attachment_type` parameter, added in migration `20261020140000_dealer_rpc_attachment_type.sql`. A missing or malformed `VCON_TAXONOMY_CONFIG` file logs one warning and the server uses the defaults.
+
 #### Multi-Group / Schema Isolation
 
 RLS scopes rows within one shared schema. To give each group (customer, dealer,

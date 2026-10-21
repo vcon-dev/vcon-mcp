@@ -1,4 +1,8 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtempSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { findDeniedTerms } from '../helpers/deployment-denylist.js';
 import {
   VConFetchHandler,
   VConCapabilitiesHandler,
@@ -47,7 +51,7 @@ describe('Redesigned vCon contract handlers', () => {
       ],
       attachments: [
         {
-          type: 'strolid_dealer',
+          type: 'dealer',
           encoding: 'none',
           body: {
             id: 'dealer-42',
@@ -175,15 +179,120 @@ describe('Redesigned vCon contract handlers', () => {
     expect(response.error.max_response_bytes).toBe(1024);
   });
 
-  it('vcon_taxonomy returns portal and dealer guidance', async () => {
+  it('vcon_taxonomy returns neutral dealer guidance with no deployment config', async () => {
     const handler = new VConTaxonomyHandler();
 
     const result = await handler.handle({}, mockContext);
     const response = JSON.parse(result.content[0].text);
 
     expect(response.ok).toBe(true);
-    expect(response.item.portal_values.some((value: any) => value.value === 'negative_experience')).toBe(true);
-    expect(response.item.preferred_sources.some((source: any) => source.source === 'attachment:strolid_dealer')).toBe(true);
+    expect(response.item.dataset).toBeNull();
+    expect(response.item.portal_values).toEqual([]);
+    expect(response.item.preferred_sources.some((source: any) => source.source === 'attachment:dealer')).toBe(true);
+  });
+
+  describe('deployment-specific taxonomy configuration', () => {
+    const ENV_KEYS = ['VCON_TAXONOMY_CONFIG', 'VCON_TAXONOMY_DATASET', 'VCON_DEALER_ATTACHMENT_TYPE'] as const;
+    let saved: Record<string, string | undefined>;
+
+    beforeEach(() => {
+      saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
+      ENV_KEYS.forEach((k) => delete process.env[k]);
+    });
+
+    afterEach(() => {
+      ENV_KEYS.forEach((k) => {
+        if (saved[k] === undefined) delete process.env[k];
+        else process.env[k] = saved[k];
+      });
+    });
+
+    async function callTool(handler: { handle: (a: any, c: ToolHandlerContext) => Promise<any> }, args: any = {}) {
+      const result = await handler.handle(args, mockContext);
+      return { text: result.content[0].text as string, response: JSON.parse(result.content[0].text) };
+    }
+
+    // Regression: the taxonomy used to hardcode one deployment's dataset label, portal
+    // values and dealer attachment type into every server's output.
+    it('default taxonomy, capabilities and response-shape output carry no deployment identifiers', async () => {
+      mockQueries.getTaxonomyCoverageSnapshot = vi.fn().mockResolvedValue({
+        vcons_total: 10,
+        with_dealer_attachment_pct: 50,
+        with_dealer_name_tag_pct: 10,
+      });
+
+      const taxonomy = await callTool(new VConTaxonomyHandler());
+      const capabilities = await callTool(new VConCapabilitiesHandler());
+      const shapes = await callTool(new DescribeResponseShapeHandler(), { tool_name: 'vcon_taxonomy' });
+
+      expect(taxonomy.response.item.dataset).toBeNull();
+      expect(taxonomy.response.item.portal_values).toEqual([]);
+      expect(taxonomy.response.item.coverage.dealer_attachment.coverage_pct).toBe(50);
+      expect(capabilities.response.item.taxonomy_hints.preferred_bad_call_signals).toEqual([]);
+      expect(capabilities.response.item.taxonomy_hints.preferred_dealer_source).toBe('attachment:dealer');
+      for (const { text } of [taxonomy, capabilities, shapes]) {
+        expect(findDeniedTerms(text)).toEqual([]);
+      }
+    });
+
+    it('restores deployment guidance from env and the JSON config file', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'vcon-taxonomy-'));
+      const file = join(dir, 'taxonomy.json');
+      const portalValues = [{ value: 'example_signal', description: 'Example.', recommended_use: 'Example use.' }];
+      const commonTags = [{ key: 'example_tag', availability: 'preferred', description: 'Example tag.' }];
+      const preferredSources = [{ need: 'dealer info', source: 'attachment:example_dealer', fields: ['id'] }];
+      const queryRecipes = [{ goal: 'Example goal', recommendation: 'Example recommendation.' }];
+      writeFileSync(file, JSON.stringify({
+        dataset: 'from-file',
+        portal_values: portalValues,
+        common_tags: commonTags,
+        preferred_sources: preferredSources,
+        query_recipes: queryRecipes,
+        bad_call_signals: ['example_signal'],
+        recommended_patterns: ['Example pattern.'],
+      }));
+      process.env.VCON_TAXONOMY_CONFIG = file;
+      process.env.VCON_TAXONOMY_DATASET = 'example-dataset';
+      process.env.VCON_DEALER_ATTACHMENT_TYPE = 'example_dealer';
+      mockQueries.getTaxonomyCoverageSnapshot = vi.fn().mockResolvedValue({
+        vcons_total: 10,
+        with_dealer_attachment_pct: 50,
+        with_dealer_name_tag_pct: 10,
+      });
+
+      const { response: taxonomy } = await callTool(new VConTaxonomyHandler());
+      expect(taxonomy.item.dataset).toBe('example-dataset');
+      expect(taxonomy.item.portal_values).toEqual(portalValues);
+      expect(taxonomy.item.common_tags).toEqual(commonTags);
+      expect(taxonomy.item.preferred_sources).toEqual(preferredSources);
+      expect(taxonomy.item.query_recipes).toEqual(queryRecipes);
+      expect(taxonomy.item.coverage.example_dealer_attachment.coverage_pct).toBe(50);
+      expect(taxonomy.item.coverage.example_dealer_attachment.note).toContain('example_dealer');
+
+      const { response: capabilities } = await callTool(new VConCapabilitiesHandler());
+      expect(capabilities.item.taxonomy_hints.preferred_bad_call_signals).toEqual(['example_signal']);
+      expect(capabilities.item.taxonomy_hints.preferred_dealer_source).toBe('attachment:example_dealer');
+      expect(capabilities.item.search.recommended_patterns).toEqual(['Example pattern.']);
+
+      delete process.env.VCON_TAXONOMY_DATASET;
+      const { response: fromFile } = await callTool(new VConTaxonomyHandler());
+      expect(fromFile.item.dataset).toBe('from-file');
+    });
+
+    it('vcon_fetch reads the dealer from the configured attachment type', async () => {
+      process.env.VCON_DEALER_ATTACHMENT_TYPE = 'example_dealer';
+      const vcon = await mockQueries.getVCon();
+      mockQueries.getVCon = vi.fn().mockResolvedValue({
+        ...vcon,
+        attachments: [{ ...vcon.attachments[0], type: 'example_dealer' }],
+      });
+
+      const result = await new VConFetchHandler().handle(
+        { id: '11111111-1111-1111-1111-111111111111', include: ['core', 'dealer'] },
+        mockContext,
+      );
+      expect(JSON.parse(result.content[0].text).item.dealer.name).toBe('Acme Motors');
+    });
   });
 
   it('vcon_capabilities returns supported modes and byte budgets', async () => {

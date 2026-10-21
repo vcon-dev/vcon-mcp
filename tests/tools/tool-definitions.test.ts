@@ -11,6 +11,9 @@ import { allDatabaseSizeTools } from '../../src/tools/database-size-tools.js';
 import { allTagTools } from '../../src/tools/tag-tools.js';
 import { getSchemaTool, getExamplesTool } from '../../src/tools/schema-tools.js';
 import { createFromTemplateTool } from '../../src/tools/templates.js';
+import { allTools } from '../../src/tools/vcon-crud.js';
+import { allContractTools } from '../../src/tools/vcon-contract.js';
+import { findDeniedTerms } from '../helpers/deployment-denylist.js';
 
 describe('Tool Definitions', () => {
   describe('Database Tools', () => {
@@ -165,5 +168,26 @@ describe('Tool Definitions', () => {
       });
     });
   });
-});
 
+  // Regression: public tool descriptions named specific organisations. Descriptions
+  // ship to every client and model, so they must stay generic.
+  describe('Public tool text', () => {
+    it('names no organisation in any tool name, description or input schema', () => {
+      const tools = [
+        ...allTools,
+        ...allContractTools,
+        createFromTemplateTool,
+        getSchemaTool,
+        getExamplesTool,
+        ...allDatabaseTools,
+        ...allDatabaseAnalyticsTools,
+        ...allDatabaseSizeTools,
+        ...allTagTools,
+      ];
+      expect(tools.length).toBeGreaterThan(40);
+      for (const tool of tools) {
+        expect({ tool: tool.name, hits: findDeniedTerms(JSON.stringify(tool)) }).toEqual({ tool: tool.name, hits: [] });
+      }
+    });
+  });
+});

@@ -5,7 +5,7 @@ Use this file at the start of an optimization thread. It summarizes decisions, b
 ## Purpose vs type (attachments)
 
 - **`attachment.purpose`** is the **canonical** spec-facing classification field for attachments.
-- **`attachment.type`** is **legacy / compatibility only** (e.g. older data, Strolid-style metadata). Do not treat it as equivalent to `purpose` for new designs.
+- **`attachment.type`** is **legacy / compatibility only** (e.g. older data, vendor-specific metadata). Do not treat it as equivalent to `purpose` for new designs.
 - **`analysis.type`** remains the correct classification field for analysis (unchanged).
 
 ### Read / discovery order (preferred)
