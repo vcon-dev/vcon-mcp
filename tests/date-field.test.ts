@@ -30,6 +30,12 @@ import { getContentAnalyticsTool } from '../src/tools/database-analytics.js';
 import { VCon } from '../src/types/vcon.js';
 import { createTestApp, type TestAppContext } from './api/helpers.js';
 
+// Tag-view refresh is covered in tests/tags-cache-invalidation.test.ts; keep rpc call order here.
+vi.mock('../src/db/tags-mv.js', () => ({
+  refreshTagsMvIfStale: vi.fn(async () => {}),
+  markTagsMvDirty: vi.fn(),
+}));
+
 vi.mock('../src/observability/instrumentation.js', () => ({
   withSpan: vi.fn((_name: string, fn: any) => fn({ setAttributes: vi.fn(), setStatus: vi.fn() })),
   recordCounter: vi.fn(),

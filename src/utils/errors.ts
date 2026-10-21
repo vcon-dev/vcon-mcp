@@ -23,6 +23,14 @@ export function vconLookupError(error: { code?: string }, uuid: string): unknown
 }
 
 /**
+ * True when an RPC failed because the function does not exist in the target
+ * schema (PostgREST PGRST202, Postgres 42883), i.e. its migration is not applied.
+ */
+export function isMissingFunctionError(error: { code?: string } | null | undefined): boolean {
+  return error?.code === 'PGRST202' || error?.code === '42883';
+}
+
+/**
  * Extract meaningful error message from various error types
  */
 export function extractErrorMessage(error: unknown): string {

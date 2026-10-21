@@ -1,9 +1,9 @@
 /**
  * Batched multi-tenant writer for vCon documents.
  *
- * Coalesces concurrent createVCon calls into a single multi-row upsert per
- * table to eliminate the ~12 sequential PostgREST round-trips that the
- * per-vcon writer was doing under load.
+ * Coalesces concurrent createVCon calls into a single save_vcon_batch RPC
+ * (one transaction for every table) to eliminate the ~12 sequential PostgREST
+ * round-trips that the per-vcon writer was doing under load.
  *
  * Buffer is keyed by tenant_id (RLS scope). Each tenant has at most one
  * flush in-flight; any save received during a flush forms the next batch.
@@ -80,9 +80,9 @@ export function vconCacheKey(uuid: string): string {
 }
 
 /**
- * Enqueue a vCon for batched insertion. Resolves when the batch containing
- * this vCon has been fully committed; rejects if any insert in that batch
- * fails.
+ * Enqueue a vCon for batched insertion. Resolves when this vCon and all its
+ * children have committed; rejects, with nothing of this vCon written, if any
+ * of its rows fails (see commitBatch).
  *
  * The supabase/redis pair is captured the first time this is called; later
  * calls must pass the same instance (we don't support hot-swapping clients).
@@ -146,22 +146,10 @@ async function _flush(key: TenantKey): Promise<void> {
 
   try {
     await commitBatch(pending, tenantId);
-    for (const p of pending) {
-      p.resolve({ uuid: p.vcon.uuid, id: p.vcon.uuid });
-    }
   } catch (err) {
-    recordCounter('db.query.errors', 1, {
-      operation: 'batchSaveVCon',
-      error_type: (err as { code?: string })?.code || 'unknown',
-    }, 'Database query errors');
-    logWithContext('error', 'batch-writer flush failed', {
-      batch_size: pending.length,
-      tenant_id: tenantId ?? '(null)',
-      error_message: extractErrorMessage(err),
-    });
-    for (const p of pending) {
-      p.reject(err);
-    }
+    // commitBatch settles every promise itself; this only guards against a
+    // bug leaving callers hanging. Settling an already-settled promise is a no-op.
+    for (const p of pending) p.reject(err);
   } finally {
     state.flushing = false;
     if (state.buffer.length > 0) {
@@ -170,79 +158,196 @@ async function _flush(key: TenantKey): Promise<void> {
   }
 }
 
-async function commitBatch(pending: Pending[], tenantId: string | null): Promise<void> {
-  const supabase = supabaseRef!;
+function flushFailed(batchSize: number, tenantId: string | null, err: unknown): void {
+  recordCounter('db.query.errors', 1, {
+    operation: 'batchSaveVCon',
+    error_type: (err as { code?: string })?.code || 'unknown',
+  }, 'Database query errors');
+  logWithContext('error', 'batch-writer flush failed', {
+    batch_size: batchSize,
+    tenant_id: tenantId ?? '(null)',
+    error_message: extractErrorMessage(err),
+  });
+}
 
-  const vconRows: ReturnType<typeof buildVconRow>[] = [];
-  const partyRows: ReturnType<typeof buildPartyRows> = [];
-  const dialogRows: ReturnType<typeof buildDialogRows> = [];
-  const analysisRows: ReturnType<typeof buildAnalysisRows> = [];
-  const attachmentRows: ReturnType<typeof buildAttachmentRows> = [];
+// The non-atomic-fallback warning is about the deployment, not the vCon, so
+// log it once per process instead of on every flush.
+let atomicFallbackWarned = false;
+
+/**
+ * Commit a batch and settle every caller's promise. Never throws.
+ *
+ * CON-957: each vCon is all-or-nothing. The whole batch goes to the
+ * save_vcon_batch RPC in one transaction. If that fails and the batch holds
+ * more than one vCon, each vCon is retried alone (the RPC is an idempotent
+ * upsert, so a retry after an ambiguous failure is safe): good vCons commit,
+ * and only the vCon that fails again rejects its caller.
+ */
+async function commitBatch(pending: Pending[], tenantId: string | null): Promise<void> {
+  let batchError: unknown;
+  try {
+    await saveVConsAtomic(pending, tenantId);
+  } catch (err) {
+    batchError = err;
+  }
+
+  if (batchError === undefined) {
+    recordBatchCommit(pending.length, tenantId);
+    await invalidateCache(pending);
+    for (const p of pending) p.resolve({ uuid: p.vcon.uuid, id: p.vcon.uuid });
+    return;
+  }
+
+  if (isSaveVConBatchMissing(batchError as { code?: string; message?: string })) {
+    await commitBatchLegacy(pending, tenantId, batchError as { message?: string });
+    return;
+  }
+
+  flushFailed(pending.length, tenantId, batchError);
+  if (pending.length === 1) {
+    pending[0].reject(batchError);
+    return;
+  }
+
+  for (const p of pending) {
+    try {
+      await saveVConsAtomic([p], tenantId);
+    } catch (err) {
+      flushFailed(1, tenantId, err);
+      p.reject(err);
+      continue;
+    }
+    recordBatchCommit(1, tenantId);
+    await invalidateCache([p]);
+    p.resolve({ uuid: p.vcon.uuid, id: p.vcon.uuid });
+  }
+}
+
+/**
+ * True only when save_vcon_batch itself is absent. PGRST202 is PostgREST's
+ * "function not found" for the RPC. A bare 42883 can also come from inside the
+ * function body (a trigger calling a missing function), and treating that as
+ * "RPC missing" would silently drop to the non-atomic path, so 42883 counts
+ * only when the message names save_vcon_batch.
+ */
+export function isSaveVConBatchMissing(error: { code?: string; message?: string } | null | undefined): boolean {
+  if (error?.code === 'PGRST202') return true;
+  return error?.code === '42883' && /save_vcon_batch/.test(error.message ?? '');
+}
+
+/** Write the vCons and all their children in one transaction (save_vcon_batch). */
+async function saveVConsAtomic(pending: Pending[], tenantId: string | null): Promise<void> {
+  const rows = buildBatchRows(pending, tenantId);
+  const { error } = (await supabaseRef!.rpc('save_vcon_batch', {
+    p_vcons: rows.vcons,
+    p_parties: rows.parties,
+    p_dialog: rows.dialog,
+    p_analysis: rows.analysis,
+    p_attachments: rows.attachments,
+  })) as { error: unknown };
+  if (error) throw error;
+}
+
+function buildBatchRows(pending: Pending[], tenantId: string | null) {
+  const vcons: ReturnType<typeof buildVconRow>[] = [];
+  const parties: ReturnType<typeof buildPartyRows> = [];
+  const dialog: ReturnType<typeof buildDialogRows> = [];
+  const analysis: ReturnType<typeof buildAnalysisRows> = [];
+  const attachments: ReturnType<typeof buildAttachmentRows> = [];
 
   for (const { vcon } of pending) {
-    vconRows.push(buildVconRow(vcon, tenantId));
-    partyRows.push(...buildPartyRows(vcon));
-    dialogRows.push(...buildDialogRows(vcon));
-    analysisRows.push(...buildAnalysisRows(vcon));
-    attachmentRows.push(...buildAttachmentRows(vcon));
+    vcons.push(buildVconRow(vcon, tenantId));
+    parties.push(...buildPartyRows(vcon, tenantId));
+    dialog.push(...buildDialogRows(vcon, tenantId));
+    analysis.push(...buildAnalysisRows(vcon, tenantId));
+    attachments.push(...buildAttachmentRows(vcon, tenantId));
   }
+  return { vcons, parties, dialog, analysis, attachments };
+}
+
+/**
+ * Fallback for databases without save_vcon_batch (migration
+ * 20261020130000_save_vcon_batch.sql not applied). Not atomic: a failed child
+ * write leaves the vcons row and the other children committed. The whole batch
+ * settles together, as it did before CON-957.
+ */
+async function commitBatchLegacy(
+  pending: Pending[],
+  tenantId: string | null,
+  reason: { message?: string }
+): Promise<void> {
+  if (!atomicFallbackWarned) {
+    atomicFallbackWarned = true;
+    logWithContext('warn', 'save_vcon_batch RPC missing; vCon create is not atomic. Apply migration 20261020130000_save_vcon_batch.sql (and create the function in each per-group schema)', {
+      reason: reason?.message,
+    });
+  }
+
+  try {
+    await writeTablesLegacy(pending, tenantId);
+  } catch (err) {
+    flushFailed(pending.length, tenantId, err);
+    for (const p of pending) p.reject(err);
+    return;
+  }
+  recordBatchCommit(pending.length, tenantId);
+  await invalidateCache(pending);
+  for (const p of pending) p.resolve({ uuid: p.vcon.uuid, id: p.vcon.uuid });
+}
+
+async function writeTablesLegacy(pending: Pending[], tenantId: string | null): Promise<void> {
+  const supabase = supabaseRef!;
+  const rows = buildBatchRows(pending, tenantId);
 
   // Parent first — each PostgREST call is its own transaction, so children
   // referencing vcon_id must wait for the vcons upsert to commit or we race
   // into FK violations.
   const vconRes = (await supabase
     .from('vcons')
-    .upsert(vconRows, { onConflict: 'id' })) as { error: unknown };
+    .upsert(rows.vcons, { onConflict: 'id' })) as { error: unknown };
   if (vconRes.error) throw vconRes.error;
 
-  const ops: Array<PromiseLike<{ error: unknown }>> = [];
-  if (partyRows.length > 0) {
-    ops.push(
-      supabase.from('parties').upsert(partyRows, { onConflict: 'vcon_id,party_index' }) as PromiseLike<{ error: unknown }>
+  const children: Array<[string, Row[], string]> = [
+    ['parties', rows.parties, 'vcon_id,party_index'],
+    ['dialog', rows.dialog, 'vcon_id,dialog_index'],
+    ['analysis', rows.analysis, 'vcon_id,analysis_index'],
+    ['attachments', rows.attachments, 'vcon_id,attachment_index'],
+  ];
+  const ops = children
+    .filter(([, r]) => r.length > 0)
+    .map(([table, r, onConflict]) =>
+      Promise.resolve(supabase.from(table).upsert(r, { onConflict }) as PromiseLike<{ error: unknown }>)
     );
-  }
-  if (dialogRows.length > 0) {
-    ops.push(
-      supabase.from('dialog').upsert(dialogRows, { onConflict: 'vcon_id,dialog_index' }) as PromiseLike<{ error: unknown }>
-    );
-  }
-  if (analysisRows.length > 0) {
-    ops.push(
-      supabase.from('analysis').upsert(analysisRows, { onConflict: 'vcon_id,analysis_index' }) as PromiseLike<{ error: unknown }>
-    );
-  }
-  if (attachmentRows.length > 0) {
-    ops.push(
-      supabase.from('attachments').upsert(attachmentRows, { onConflict: 'vcon_id,attachment_index' }) as PromiseLike<{ error: unknown }>
-    );
-  }
 
-  const results = await Promise.all(ops.map(op => Promise.resolve(op)));
+  const results = await Promise.all(ops);
   for (const r of results) {
     if (r.error) throw r.error;
   }
+}
 
+function recordBatchCommit(count: number, tenantId: string | null): void {
   recordCounter('db.batch.commit', 1, {
     operation: 'batchSaveVCon',
     tenant_id: tenantId ?? '(null)',
   }, 'Batched vCon commits');
-  recordCounter('db.batch.vcons', pending.length, {
+  recordCounter('db.batch.vcons', count, {
     operation: 'batchSaveVCon',
   }, 'vCons per batched commit');
+}
 
-  if (redisRef) {
-    const redis = redisRef;
-    await Promise.all(
-      pending.map(p =>
-        redis.del(vconCacheKey(p.vcon.uuid)).catch(e => {
-          logWithContext('warn', 'cache invalidation failed', {
-            vcon_uuid: p.vcon.uuid,
-            error_message: extractErrorMessage(e),
-          });
-        })
-      )
-    );
-  }
+async function invalidateCache(committed: Pending[]): Promise<void> {
+  if (!redisRef) return;
+  const redis = redisRef;
+  await Promise.all(
+    committed.map(p =>
+      redis.del(vconCacheKey(p.vcon.uuid)).catch(e => {
+        logWithContext('warn', 'cache invalidation failed', {
+          vcon_uuid: p.vcon.uuid,
+          error_message: extractErrorMessage(e),
+        });
+      })
+    )
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -369,11 +474,20 @@ export function buildVconRow(vcon: VCon, tenantId: string | null) {
 // duration->duration_seconds, dialog->dialog_indices, mediatype->mimetype) and
 // body serialization, so per-child update/insert paths in the query layer reuse
 // exactly the same shaping as batch creation.
+//
+// CON-1177: every child row carries its parent's tenant_id explicitly (the
+// value written to vcons.tenant_id, or the stored parent's on single-child
+// writes). The BEFORE INSERT trigger alone left ~35% of parties NULL: it copies
+// whatever vcons.tenant_id it can see at insert time, which was NULL when the
+// parent's tenant was set later in another transaction, or invisible under RLS.
+// Because the column is in every row, the upsert's ON CONFLICT DO UPDATE SET
+// list includes tenant_id too, so a re-post repairs a stale NULL.
 
-export function buildPartyRow(vconUuid: string, party: Party, index: number) {
+export function buildPartyRow(vconUuid: string, party: Party, index: number, tenantId: string | null) {
   return {
     vcon_id: vconUuid,
     party_index: index,
+    tenant_id: tenantId,
     tel: party.tel,
     sip: party.sip,
     stir: party.stir,
@@ -390,7 +504,7 @@ export function buildPartyRow(vconUuid: string, party: Party, index: number) {
   };
 }
 
-export function buildDialogRow(vconUuid: string, dialog: Dialog, index: number) {
+export function buildDialogRow(vconUuid: string, dialog: Dialog, index: number, tenantId: string | null) {
   let parties: unknown = null;
   if (dialog.parties !== undefined) {
     parties = Array.isArray(dialog.parties) ? dialog.parties : [dialog.parties];
@@ -398,6 +512,7 @@ export function buildDialogRow(vconUuid: string, dialog: Dialog, index: number) 
   return {
     vcon_id: vconUuid,
     dialog_index: index,
+    tenant_id: tenantId,
     type: dialog.type,
     start_time: dialog.start,
     duration_seconds: dialog.duration,
@@ -417,13 +532,14 @@ export function buildDialogRow(vconUuid: string, dialog: Dialog, index: number) 
   };
 }
 
-export function buildAnalysisRow(vconUuid: string, analysis: Analysis, index: number) {
+export function buildAnalysisRow(vconUuid: string, analysis: Analysis, index: number, tenantId: string | null) {
   // dialog_indices is always an array. A one-element array is recorded in the
   // shape hint so it does not read back as the bare int the legacy reader emits.
   const dialogShape: Shape = Array.isArray(analysis.dialog) && analysis.dialog.length === 1 ? { dialog: 'array' } : {};
   return {
     vcon_id: vconUuid,
     analysis_index: index,
+    tenant_id: tenantId,
     type: analysis.type,
     dialog_indices: Array.isArray(analysis.dialog)
       ? analysis.dialog
@@ -444,10 +560,11 @@ export function buildAnalysisRow(vconUuid: string, analysis: Analysis, index: nu
   };
 }
 
-export function buildAttachmentRow(vconUuid: string, attachment: Attachment, index: number) {
+export function buildAttachmentRow(vconUuid: string, attachment: Attachment, index: number, tenantId: string | null) {
   return {
     vcon_id: vconUuid,
     attachment_index: index,
+    tenant_id: tenantId,
     type: attachment.type,
     purpose: attachment.purpose,
     start_time: attachment.start,
@@ -548,20 +665,20 @@ export function assembleVCon(
   }, vconData.extra);
 }
 
-export function buildPartyRows(vcon: VCon) {
-  return (vcon.parties ?? []).map((party, index) => buildPartyRow(vcon.uuid, party, index));
+export function buildPartyRows(vcon: VCon, tenantId: string | null) {
+  return (vcon.parties ?? []).map((party, index) => buildPartyRow(vcon.uuid, party, index, tenantId));
 }
 
-export function buildDialogRows(vcon: VCon) {
-  return (vcon.dialog ?? []).map((dialog, index) => buildDialogRow(vcon.uuid, dialog, index));
+export function buildDialogRows(vcon: VCon, tenantId: string | null) {
+  return (vcon.dialog ?? []).map((dialog, index) => buildDialogRow(vcon.uuid, dialog, index, tenantId));
 }
 
-export function buildAnalysisRows(vcon: VCon) {
-  return (vcon.analysis ?? []).map((analysis, index) => buildAnalysisRow(vcon.uuid, analysis, index));
+export function buildAnalysisRows(vcon: VCon, tenantId: string | null) {
+  return (vcon.analysis ?? []).map((analysis, index) => buildAnalysisRow(vcon.uuid, analysis, index, tenantId));
 }
 
-export function buildAttachmentRows(vcon: VCon) {
-  return (vcon.attachments ?? []).map((attachment, index) => buildAttachmentRow(vcon.uuid, attachment, index));
+export function buildAttachmentRows(vcon: VCon, tenantId: string | null) {
+  return (vcon.attachments ?? []).map((attachment, index) => buildAttachmentRow(vcon.uuid, attachment, index, tenantId));
 }
 
 /**
@@ -572,6 +689,7 @@ export function _resetBatchWriterForTests(): void {
     if (s.timer) clearTimeout(s.timer);
   }
   tenantStates.clear();
+  atomicFallbackWarned = false;
   supabaseRef = null;
   redisRef = null;
 }

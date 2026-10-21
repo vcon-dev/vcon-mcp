@@ -3,7 +3,7 @@
  * Tests for vCon database operations with mocked Supabase client
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { randomUUID } from 'crypto';
 import { VConQueries } from '../src/db/queries.js';
 import { _resetBatchWriterForTests } from '../src/db/batch-writer.js';
@@ -81,8 +81,12 @@ describe('VConQueries', () => {
       const result = await queries.createVCon(testVCon);
 
       expect(result.uuid).toBe(testVCon.uuid);
-      expect(mockSupabase.from).toHaveBeenCalledWith('vcons');
-      expect(mockSupabase.upsert).toHaveBeenCalled();
+      // CON-957: one transactional RPC, not separate table upserts.
+      expect(mockSupabase.rpc).toHaveBeenCalledWith('save_vcon_batch', expect.objectContaining({
+        p_vcons: [expect.objectContaining({ id: testVCon.uuid })],
+        p_parties: [expect.objectContaining({ name: 'Alice' }), expect.objectContaining({ name: 'Bob' })],
+      }));
+      expect(mockSupabase.upsert).not.toHaveBeenCalled();
     });
 
     it('should create vCon with all components (dialog, analysis, attachments)', async () => {
@@ -122,7 +126,7 @@ describe('VConQueries', () => {
         parties: [{ name: 'Test' }]
       };
 
-      mockSupabase.upsert.mockReturnValue(Promise.resolve({
+      mockSupabase.rpc.mockReturnValue(Promise.resolve({
         data: null,
         error: new Error('Database error'),
       }));
@@ -698,6 +702,112 @@ describe('VConQueries', () => {
       await queries.addDialog(uuid, dialog);
 
       expect(mockSupabase.insert).toHaveBeenCalled();
+    });
+  });
+
+  // CON-1177: child rows must carry the parent's tenant_id. The insert
+  // trigger copied a NULL whenever it could not see the parent's tenant, and
+  // single-child add/update paths never set the column at all.
+  describe('child tenant_id (CON-1177)', () => {
+    const tenantVCon = (uuid = randomUUID()): VCon => ({
+      vcon: '0.4.0',
+      uuid,
+      created_at: new Date().toISOString(),
+      parties: [{ name: 'Alice' }, { name: 'Bob' }],
+      dialog: [{ type: 'text', body: 'hi', encoding: 'none' }],
+      analysis: [{ type: 'summary', vendor: 'V', body: 'ok', encoding: 'none' }],
+      attachments: [{ purpose: 'tenant', encoding: 'json', body: '{"id":"T-1"}' }],
+    });
+    const CHILD_KEYS = ['p_parties', 'p_dialog', 'p_analysis', 'p_attachments'];
+    let prevRls: string | undefined;
+
+    beforeEach(() => {
+      prevRls = process.env.RLS_ENABLED;
+    });
+    afterEach(() => {
+      if (prevRls === undefined) delete process.env.RLS_ENABLED;
+      else process.env.RLS_ENABLED = prevRls;
+    });
+
+    it('createVCon and a re-post stamp every child row with the parent tenant', async () => {
+      process.env.RLS_ENABLED = 'true';
+      const v = tenantVCon();
+
+      await queries.createVCon(v);
+      await queries.createVCon({ ...v, subject: 'again' });
+
+      const calls = mockSupabase.rpc.mock.calls.filter((c: any[]) => c[0] === 'save_vcon_batch');
+      expect(calls).toHaveLength(2);
+      for (const [, args] of calls) {
+        expect(args.p_vcons[0].tenant_id).toBe('T-1');
+        for (const k of CHILD_KEYS) {
+          expect(args[k].length).toBeGreaterThan(0);
+          for (const r of args[k]) expect(r).toHaveProperty('tenant_id', 'T-1');
+        }
+      }
+    });
+
+    it('with RLS disabled writes tenant_id null on parent and children, no crash', async () => {
+      process.env.RLS_ENABLED = 'false';
+      const v = tenantVCon();
+
+      await expect(queries.createVCon(v)).resolves.toMatchObject({ uuid: v.uuid });
+
+      const [, args] = mockSupabase.rpc.mock.calls.find((c: any[]) => c[0] === 'save_vcon_batch');
+      expect(args.p_vcons[0].tenant_id).toBeNull();
+      for (const k of CHILD_KEYS) {
+        for (const r of args[k]) expect(r).toHaveProperty('tenant_id', null);
+      }
+    });
+
+    it('addParty stamps the stored parent tenant on the inserted row', async () => {
+      mockSupabase.single.mockResolvedValueOnce({ data: { id: 'vcon-row', tenant_id: 'T-1' }, error: null });
+      mockSupabase.limit.mockResolvedValueOnce({ data: [{ party_index: 1 }], error: null });
+
+      await expect(queries.addParty(randomUUID(), { name: 'Carol' })).resolves.toEqual({ index: 2 });
+
+      expect(mockSupabase.select).toHaveBeenCalledWith(expect.stringContaining('tenant_id'));
+      expect(mockSupabase.insert).toHaveBeenCalledWith(expect.objectContaining({
+        vcon_id: 'vcon-row', party_index: 2, name: 'Carol', tenant_id: 'T-1',
+      }));
+    });
+
+    it('addParty on an untenanted parent writes tenant_id null', async () => {
+      mockSupabase.single.mockResolvedValueOnce({ data: { id: 'vcon-row', tenant_id: null }, error: null });
+      mockSupabase.limit.mockResolvedValueOnce({ data: [], error: null });
+
+      await queries.addParty(randomUUID(), { name: 'Carol' });
+
+      expect(mockSupabase.insert.mock.calls[0][0]).toHaveProperty('tenant_id', null);
+    });
+
+    it('updateParty sets tenant_id from the parent, repairing a stale NULL child', async () => {
+      mockSupabase.single.mockResolvedValueOnce({ data: { id: 'vcon-row', tenant_id: 'T-1' }, error: null });
+      // update(...).eq().eq().select('id') must resolve to the updated row.
+      mockSupabase.select.mockImplementation((cols: string) =>
+        cols === 'id'
+          ? { then: (resolve: any) => resolve({ data: [{ id: 'party-row' }], error: null }) }
+          : mockSupabase
+      );
+
+      await queries.updateParty(randomUUID(), 0, { name: 'Alice2' });
+
+      expect(mockSupabase.update).toHaveBeenCalledWith(expect.objectContaining({
+        name: 'Alice2', tenant_id: 'T-1',
+      }));
+    });
+
+    it('addDialog, addAnalysis and addAttachment stamp the parent tenant', async () => {
+      for (const add of [
+        () => queries.addDialog(randomUUID(), { type: 'text', body: 'x', encoding: 'none' }, 0),
+        () => queries.addAnalysis(randomUUID(), { type: 's', vendor: 'V', body: 'x', encoding: 'none' }, 0),
+        () => queries.addAttachment(randomUUID(), { purpose: 'doc', body: 'x', encoding: 'none' }, 0),
+      ]) {
+        mockSupabase.single.mockResolvedValueOnce({ data: { id: 'vcon-row', tenant_id: 'T-1' }, error: null });
+        mockSupabase.insert.mockClear();
+        await add();
+        expect(mockSupabase.insert.mock.calls[0][0]).toHaveProperty('tenant_id', 'T-1');
+      }
     });
   });
 

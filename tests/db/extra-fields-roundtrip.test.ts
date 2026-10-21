@@ -33,10 +33,10 @@ function dropNulls(v: any): any {
 function roundTrip(input: VCon): VCon {
   return assembleVCon(
     viaDb(buildVconRow(input, null)),
-    buildPartyRows(input).map(viaDb),
-    buildDialogRows(input).map(viaDb),
-    buildAnalysisRows(input).map(viaDb),
-    buildAttachmentRows(input).map(viaDb)
+    buildPartyRows(input, null).map(viaDb),
+    buildDialogRows(input, null).map(viaDb),
+    buildAnalysisRows(input, null).map(viaDb),
+    buildAttachmentRows(input, null).map(viaDb)
   );
 }
 
@@ -106,7 +106,7 @@ describe('store/read round trip (CON-1047)', () => {
   });
 
   it('leaves extra null when every key maps to a column', () => {
-    const row = buildPartyRows({ ...fixture, parties: [{ name: 'x' }] } as VCon)[0];
+    const row = buildPartyRows({ ...fixture, parties: [{ name: 'x' }] } as VCon, null)[0];
     expect(row.extra).toBeNull();
   });
 
@@ -121,7 +121,7 @@ describe('store/read round trip (CON-1047)', () => {
         { type: 'text', parties: [0], body: 'x', encoding: 'none', session_id: 'legacy-session' },
       ],
     } as unknown as VCon;
-    const rows = buildDialogRows(input);
+    const rows = buildDialogRows(input, null);
     expect(rows[0].session_id).toEqual(sid);
     expect(rows[0].extra).toBeNull();
     const out = roundTrip(input);
