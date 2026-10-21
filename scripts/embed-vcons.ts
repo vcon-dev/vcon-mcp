@@ -200,7 +200,7 @@ async function listMissingTextUnits(
     });
 
     if (subError) {
-      console.warn('Subject query error:', subError.message);
+      throw new Error(`Subject query failed: ${subError.message}`);
     } else if (subjects && Array.isArray(subjects)) {
       textUnits.push(...subjects);
     }
@@ -241,7 +241,7 @@ async function listMissingTextUnits(
       });
 
       if (dialogError) {
-        console.warn('Dialog query error:', dialogError.message);
+        throw new Error(`Dialog query failed: ${dialogError.message}`);
       } else if (dialogs && Array.isArray(dialogs)) {
         textUnits.push(...dialogs);
       }
@@ -282,7 +282,7 @@ async function listMissingTextUnits(
       });
 
       if (analysisError) {
-        console.warn('Analysis query error:', analysisError.message);
+        throw new Error(`Analysis query failed: ${analysisError.message}`);
       } else if (analyses && Array.isArray(analyses)) {
         textUnits.push(...analyses);
       }

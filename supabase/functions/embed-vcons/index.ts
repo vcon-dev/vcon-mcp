@@ -10,6 +10,7 @@ import {
   embedSupabase,
   getModelName,
 } from "../_shared/embeddings.ts";
+import { collectTextUnits, LookupError } from "./lookup.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -104,28 +105,15 @@ async function listMissingTextUnits(limit: number, vconId?: string, analysisType
     LIMIT :limit
   `;
 
-  const textUnits: TextUnit[] = [];
-
   // Run SQL via rpc or query
-  const { data: subjects, error: errSub } = await supabase.rpc("exec_sql", {
-    q: subjectSql,
+  const run = (q: string) => supabase.rpc("exec_sql", {
+    q,
     params: { vcon_id: vconId ?? null, limit }
   });
-  if (!errSub && Array.isArray(subjects)) textUnits.push(...subjects);
+  const results = [await run(subjectSql), await run(dialogSql), await run(analysisSql)];
 
-  const { data: dialogs, error: errDlg } = await supabase.rpc("exec_sql", {
-    q: dialogSql,
-    params: { vcon_id: vconId ?? null, limit }
-  });
-  if (!errDlg && Array.isArray(dialogs)) textUnits.push(...dialogs);
-
-  const { data: analyses, error: errAna } = await supabase.rpc("exec_sql", {
-    q: analysisSql,
-    params: { vcon_id: vconId ?? null, limit }
-  });
-  if (!errAna && Array.isArray(analyses)) textUnits.push(...analyses);
-
-  return textUnits.slice(0, limit);
+  // Throws LookupError if any query failed, so a DB outage is not mistaken for "nothing to embed"
+  return collectTextUnits<TextUnit>(results, limit);
 }
 
 // Estimate token count (roughly 1 token per 4 characters for English)
@@ -184,7 +172,18 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "HF_API_TOKEN missing" }), { status: 400 });
     }
 
-    const units = await listMissingTextUnits(limit, mode === "embed" ? vconId : undefined, analysisTypes);
+    let units: TextUnit[];
+    try {
+      units = await listMissingTextUnits(limit, mode === "embed" ? vconId : undefined, analysisTypes);
+    } catch (e) {
+      if (e instanceof LookupError) {
+        return new Response(JSON.stringify({ error: e.message, details: e.messages }), {
+          status: 503,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      throw e;
+    }
     if (units.length === 0) {
       return new Response(JSON.stringify({ embedded: 0, skipped: 0, errors: 0 }), {
         headers: { "Content-Type": "application/json" }

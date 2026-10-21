@@ -1,6 +1,6 @@
 name: Build and Push to ECR Public
 
-# On push to main: build and push image with tags `main-<7sha>` and `latest`.
+# On push to main: build and push image with tags `main-<7sha>`, `main` and `latest`.
 # On push of a `v*` git tag: additionally tag with semver `1.2.3`, `1.2`, `1`
 #   and auto-create a GitHub Release.
 # On pull_request: build only (no push).
@@ -72,6 +72,7 @@ jobs:
           images: ${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=main-${{ steps.version.outputs.short_sha }},enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
