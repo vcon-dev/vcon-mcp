@@ -29,6 +29,7 @@ import { vconSearchTool, vconAggregateTool } from '../src/tools/vcon-contract.js
 import { getContentAnalyticsTool } from '../src/tools/database-analytics.js';
 import { VCon } from '../src/types/vcon.js';
 import { createTestApp, type TestAppContext } from './api/helpers.js';
+import { VConService } from '../src/services/vcon-service.js';
 
 vi.mock('../src/observability/instrumentation.js', () => ({
   withSpan: vi.fn((_name: string, fn: any) => fn({ setAttributes: vi.fn(), setStatus: vi.fn() })),
@@ -303,10 +304,12 @@ describe('date_field: MCP handler threading', () => {
       getVCon: vi.fn().mockResolvedValue(vcon),
       getTags: vi.fn().mockResolvedValue({}),
     };
+    const pluginManager = { executeHook: vi.fn(), hasHook: vi.fn().mockReturnValue(false) };
     context = {
       queries,
-      pluginManager: { executeHook: vi.fn() },
+      pluginManager,
       dbAnalytics: { getContentAnalytics: vi.fn().mockResolvedValue({}) },
+      vconService: new VConService({ queries, pluginManager } as any),
     };
   });
 

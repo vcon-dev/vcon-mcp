@@ -1,5 +1,5 @@
-import { Resource, Tool } from '@modelcontextprotocol/sdk/types.js';
-import { RequestContext, VConPlugin } from './plugin-interface.js';
+import { Resource, ResourceTemplate, Tool } from '@modelcontextprotocol/sdk/types.js';
+import { PluginResourceContent, RequestContext, VConPlugin } from './plugin-interface.js';
 
 export class PluginManager {
   private plugins: VConPlugin[] = [];
@@ -36,6 +36,14 @@ export class PluginManager {
         .filter((p) => p.shutdown)
         .map((p) => p.shutdown!())
     );
+  }
+
+  /**
+   * True when at least one registered plugin implements `hookName`.
+   * Lets callers skip work (e.g. hydrating vCons) that only a hook needs.
+   */
+  hasHook(hookName: keyof VConPlugin): boolean {
+    return this.plugins.some((p) => typeof p[hookName] === 'function');
   }
 
   /**
@@ -89,6 +97,43 @@ export class PluginManager {
       }
     }
     return resources;
+  }
+
+  /**
+   * Get all additional resource templates from plugins
+   */
+  async getAdditionalResourceTemplates(): Promise<ResourceTemplate[]> {
+    const templates: ResourceTemplate[] = [];
+    for (const plugin of this.plugins) {
+      if (plugin.registerResourceTemplates) {
+        templates.push(...plugin.registerResourceTemplates());
+      }
+    }
+    return templates;
+  }
+
+  /**
+   * Read a plugin-provided resource. The first plugin returning a non-undefined
+   * result owns the URI; undefined means no plugin serves it.
+   */
+  async readPluginResource(
+    uri: string,
+    context: RequestContext
+  ): Promise<PluginResourceContent | undefined> {
+    for (const plugin of this.plugins) {
+      if (plugin.readResource) {
+        try {
+          const result = await plugin.readResource(uri, context);
+          if (result !== undefined) {
+            return result;
+          }
+        } catch (error) {
+          console.error(`❌ Plugin ${plugin.name} failed to read resource ${uri}:`, error);
+          throw error;
+        }
+      }
+    }
+    return undefined;
   }
 
   /**

@@ -225,7 +225,8 @@ export function registerHandlers(context: ServerContext, options: { readonly?: b
 
   // List resource templates (parameterised URIs)
   server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => {
-    return { resourceTemplates: getCoreResourceTemplates() };
+    const pluginTemplates = await pluginManager.getAdditionalResourceTemplates();
+    return { resourceTemplates: [...getCoreResourceTemplates(), ...pluginTemplates] };
   });
 
   // Read resource
@@ -241,7 +242,7 @@ export function registerHandlers(context: ServerContext, options: { readonly?: b
     });
 
     // Try core resources first
-    const core = await resolveCoreResource(queries, uri);
+    const core = await resolveCoreResource(queries, uri, context.vconService);
     if (core) {
       logWithContext('debug', 'MCP resource resolved', {
         request_id: requestId,
@@ -256,7 +257,20 @@ export function registerHandlers(context: ServerContext, options: { readonly?: b
       };
     }
 
-    // Try plugin resources: plugins provide raw Resource metadata only; actual read is not delegated here in core
+    // Then the plugin that owns the URI
+    const pluginResult = await pluginManager.readPluginResource(uri, {
+      purpose: 'mcp-resource-read',
+      timestamp: new Date(),
+    });
+    if (pluginResult) {
+      const mimeType = pluginResult.mimeType ?? 'application/json';
+      const text =
+        typeof pluginResult.content === 'string'
+          ? pluginResult.content
+          : JSON.stringify(pluginResult.content, null, 2);
+      return { contents: [{ uri, mimeType, text }] };
+    }
+
     logWithContext('warn', 'MCP resource not found', {
       request_id: requestId,
       transport: transportType,

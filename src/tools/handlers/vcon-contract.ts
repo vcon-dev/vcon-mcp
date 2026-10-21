@@ -5,7 +5,7 @@ import { VCON_SHAPE_GRAPH_JSON_SCHEMA } from '../../types/vcon-shape-graph.js';
 import { generateEmbedding } from '../../utils/embeddings.js';
 import { normalizeDateString } from './validation.js';
 import { DATE_FIELDS, DateField } from '../../db/interfaces.js';
-import { conversationStartOf } from '../../utils/read-surfaces.js';
+import { conversationStartOf, extractTags } from '../../utils/read-surfaces.js';
 import { extractErrorMessage } from '../../utils/errors.js';
 
 const VALID_FETCH_INCLUDES = [
@@ -198,17 +198,32 @@ async function buildItem(
     };
   }
   if (include.includes('tags')) {
-    try {
-      item.tags = await context.queries.getTags(vcon.uuid);
-    } catch {
-      item.tags = {};
-    }
+    // Derived from the hook-processed vCon (afterRead for vcon_fetch, search hooks for
+    // vcon_search), so a plugin that strips or redacts the tags attachment is honored.
+    item.tags = extractTags(vcon);
   }
 
   return {
     ...item,
     ...(extras || {}),
   };
+}
+
+/**
+ * Build one item per hit from a hooked hit search (hydrate: true). vcon_search runs
+ * the search hooks only, like search_vcons and its own metadata mode. Hits whose
+ * vCon is missing (deleted since the search) are skipped.
+ */
+async function hookedItems<H extends { vcon_id: string }>(
+  context: ToolHandlerContext,
+  searchResult: { hits: H[]; vcons?: Map<string, VCon> },
+  build: (hit: H, vcon: VCon) => Promise<Record<string, unknown>>,
+): Promise<Record<string, unknown>[]> {
+  const items = await Promise.all(searchResult.hits.map(async (hit) => {
+    const [vcon] = await context.vconService.vconsForHits(searchResult, [hit.vcon_id]);
+    return vcon ? build(hit, vcon) : undefined;
+  }));
+  return items.filter((item): item is Record<string, unknown> => item !== undefined);
 }
 
 function createTooLargeError(
@@ -763,7 +778,8 @@ export class VConFetchHandler extends BaseToolHandler {
 
     let vcon: VCon;
     try {
-      vcon = await context.queries.getVCon(id);
+      // beforeRead/afterRead hooks run inside the service, as for get_vcon.
+      vcon = await context.vconService.get(id, { requestContext: this.createRequestContext(args) });
     } catch (error) {
       const message = extractErrorMessage(error);
       if (message.toLowerCase().includes('not found')) {
@@ -965,6 +981,8 @@ export class VConSearchHandler extends BaseToolHandler {
     const threshold = (args?.threshold as number | undefined) ?? 0.7;
     const semanticWeight = (args?.semantic_weight as number | undefined) ?? 0.6;
     const fetchLimit = cursor.offset + limit + 1;
+    // Every mode reads through VConService so beforeSearch/afterSearch run, as for search_vcons.
+    const requestContext = this.createRequestContext(args);
 
     try {
       let items: Record<string, unknown>[] = [];
@@ -974,18 +992,25 @@ export class VConSearchHandler extends BaseToolHandler {
       if (mode === 'metadata') {
         // Fetch only this page. Asking for offset+limit rows and slicing hydrated every vCon
         // from row 0 on each call, which fell over around offset 900 (CON-993).
-        const results = await context.queries.searchVCons({
+        const { vcons: results, rawCount } = await context.vconService.searchWithRawCount({
           ...filters,
           limit,
           offset: cursor.offset,
-        });
-        const pageResults = results.slice(0, limit);
+        }, { requestContext });
+        // Page vCons also go through beforeRead/afterRead, so a read-only ACL/redactor is honored.
+        const pageResults = await context.vconService.vconsForHits(
+          { vcons: new Map(results.slice(0, limit).map((v) => [v.uuid.toLowerCase(), v])) },
+          results.slice(0, limit).map((v) => v.uuid),
+          { readHooks: true, requestContext },
+        );
+        // Aggregate count, no vCon content: no read hooks apply.
         total = await context.queries.searchVConsCount(filters);
         const effectiveUpper =
           tags && total !== undefined
             ? Math.min(total, TAG_SORTED_WINDOW)
             : total ?? 0;
-        hasNextPage = total !== undefined && effectiveUpper > cursor.offset + pageResults.length;
+        // Raw row count, so a filtering afterSearch hook cannot shift has_more (CON-1243).
+        hasNextPage = total !== undefined && effectiveUpper > cursor.offset + Math.min(rawCount, limit);
         items = await Promise.all(pageResults.map((vcon) => buildItem(context, vcon, include, {
           search: { mode: 'metadata' },
         })));
@@ -997,14 +1022,30 @@ export class VConSearchHandler extends BaseToolHandler {
           });
         }
 
-        const results = await context.queries.keywordSearch({
+        type KeywordRow = { vcon_id: string; doc_type: string; ref_index: number | null; rank: number; snippet: string | null };
+        const searchResult = await context.vconService.keywordSearch({
           query,
           startDate: filters.startDate,
           endDate: filters.endDate,
           ...(dateField ? { dateField } : {}),
           tags,
           limit: fetchLimit,
+        }, {
+          requestContext,
+          hydrate: true,
+          // Dedupe and slice the page before afterSearch, so only page vCons are hooked.
+          selectPage: (results: KeywordRow[]) => {
+            const deduped = new Map<string, KeywordRow>();
+            for (const result of results) {
+              const existing = deduped.get(result.vcon_id);
+              if (!existing || result.rank > existing.rank) {
+                deduped.set(result.vcon_id, result);
+              }
+            }
+            return Array.from(deduped.values()).slice(cursor.offset, cursor.offset + limit);
+          },
         });
+        // Aggregate count, no vCon content: no read hooks apply.
         total = await context.queries.keywordSearchCount({
           query,
           startDate: filters.startDate,
@@ -1013,18 +1054,8 @@ export class VConSearchHandler extends BaseToolHandler {
           tags,
         });
 
-        const deduped = new Map<string, { vcon_id: string; doc_type: string; ref_index: number | null; rank: number; snippet: string | null }>();
-        for (const result of results) {
-          const existing = deduped.get(result.vcon_id);
-          if (!existing || result.rank > existing.rank) {
-            deduped.set(result.vcon_id, result);
-          }
-        }
-        const distinctResults = Array.from(deduped.values());
-        const pageResults = distinctResults.slice(cursor.offset, cursor.offset + limit);
-        hasNextPage = total > cursor.offset + pageResults.length;
-        items = await Promise.all(pageResults.map(async (result) => {
-          const vcon = await context.queries.getVCon(result.vcon_id);
+        hasNextPage = total > cursor.offset + searchResult.selectedCount;
+        items = await hookedItems(context, searchResult, async (result, vcon) => {
           return buildItem(context, vcon, include, {
             search: {
               mode: 'keyword',
@@ -1034,7 +1065,7 @@ export class VConSearchHandler extends BaseToolHandler {
               snippet: result.snippet,
             }
           });
-        }));
+        });
       } else if (mode === 'semantic') {
         let embedding = args?.embedding as number[] | undefined;
         if (embedding && embedding.length !== 384) {
@@ -1053,16 +1084,18 @@ export class VConSearchHandler extends BaseToolHandler {
           });
         }
 
-        const results = await context.queries.semanticSearch({
+        const searchResult = await context.vconService.semanticSearch({
           embedding,
           tags,
           threshold,
           limit: fetchLimit,
+        }, {
+          requestContext,
+          hydrate: true,
+          selectPage: (results) => results.slice(cursor.offset, cursor.offset + limit),
         });
-        const pageResults = results.slice(cursor.offset, cursor.offset + limit);
-        hasNextPage = results.length > cursor.offset + limit;
-        items = await Promise.all(pageResults.map(async (result) => {
-          const vcon = await context.queries.getVCon(result.vcon_id);
+        hasNextPage = searchResult.rawCount > cursor.offset + limit;
+        items = await hookedItems(context, searchResult, async (result, vcon) => {
           return buildItem(context, vcon, include, {
             search: {
               mode: 'semantic',
@@ -1072,7 +1105,7 @@ export class VConSearchHandler extends BaseToolHandler {
               content_text: result.content_text,
             }
           });
-        }));
+        });
       } else {
         if (!query) {
           return this.createErrorEnvelopeResponse({
@@ -1096,17 +1129,19 @@ export class VConSearchHandler extends BaseToolHandler {
           }
         }
 
-        const results = await context.queries.hybridSearch({
+        const searchResult = await context.vconService.hybridSearch({
           keywordQuery: query,
           embedding,
           tags,
           semanticWeight,
           limit: fetchLimit,
+        }, {
+          requestContext,
+          hydrate: true,
+          selectPage: (results) => results.slice(cursor.offset, cursor.offset + limit),
         });
-        const pageResults = results.slice(cursor.offset, cursor.offset + limit);
-        hasNextPage = results.length > cursor.offset + limit;
-        items = await Promise.all(pageResults.map(async (result) => {
-          const vcon = await context.queries.getVCon(result.vcon_id);
+        hasNextPage = searchResult.rawCount > cursor.offset + limit;
+        items = await hookedItems(context, searchResult, async (result, vcon) => {
           return buildItem(context, vcon, include, {
             search: {
               mode: 'hybrid',
@@ -1115,7 +1150,7 @@ export class VConSearchHandler extends BaseToolHandler {
               keyword_score: result.keyword_score,
             }
           });
-        }));
+        });
       }
 
       const page: Record<string, unknown> = {

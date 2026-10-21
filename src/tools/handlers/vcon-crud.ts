@@ -206,6 +206,9 @@ export class UpdateVConHandler extends BaseToolHandler {
       let updated = await context.queries.getVCon(uuid);
       const modified = await context.pluginManager.executeHook<VCon>('afterUpdate', updated, requestContext);
       if (modified) updated = modified;
+      // The returned vCon is a read: run afterRead (e.g. redaction), as get_vcon does.
+      const redacted = await context.pluginManager.executeHook<VCon>('afterRead', updated, requestContext);
+      if (redacted) updated = redacted;
       return this.createSuccessResponse({ vcon: updated });
     } else {
       await context.pluginManager.executeHook('afterUpdate', await context.queries.getVCon(uuid), requestContext);

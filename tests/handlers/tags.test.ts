@@ -17,6 +17,7 @@ import {
 import { ToolHandlerContext } from '../../src/tools/handlers/base.js';
 import { VConQueries } from '../../src/db/queries.js';
 import { PluginManager } from '../../src/hooks/plugin-manager.js';
+import { VConService } from '../../src/services/vcon-service.js';
 import { DatabaseInspector } from '../../src/db/database-inspector.js';
 import { DatabaseAnalytics } from '../../src/db/database-analytics.js';
 import { DatabaseSizeAnalyzer } from '../../src/db/database-size-analyzer.js';
@@ -56,6 +57,7 @@ describe('Tag Handlers', () => {
 
     mockPluginManager = {
       executeHook: vi.fn(),
+      hasHook: vi.fn().mockReturnValue(false),
     };
 
     mockContext = {
@@ -65,6 +67,7 @@ describe('Tag Handlers', () => {
       dbAnalytics: {} as DatabaseAnalytics,
       dbSizeAnalyzer: {} as DatabaseSizeAnalyzer,
       supabase: {},
+      vconService: new VConService({ queries: mockQueries, pluginManager: mockPluginManager }),
     };
   });
 

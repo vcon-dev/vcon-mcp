@@ -20,6 +20,8 @@ vi.mock('../../src/hooks/plugin-manager.js', () => ({
     shutdown: vi.fn().mockResolvedValue(undefined),
     getAdditionalTools: vi.fn().mockResolvedValue([]),
     getAdditionalResources: vi.fn().mockResolvedValue([]),
+    getAdditionalResourceTemplates: vi.fn().mockResolvedValue([]),
+    readPluginResource: vi.fn().mockResolvedValue(undefined),
   })),
 }));
 

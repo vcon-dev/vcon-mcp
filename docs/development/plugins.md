@@ -211,6 +211,33 @@ registerResources(): Resource[] {
 }
 ```
 
+#### `registerResourceTemplates()`
+Register parameterised resources (RFC 6570 URI templates), listed by `resources/templates/list`.
+
+```typescript
+registerResourceTemplates(): ResourceTemplate[] {
+  return [{ uriTemplate: 'myplugin://items/{id}', name: 'Plugin item' }];
+}
+```
+
+#### `readResource(uri, context)`
+Serve reads for the resources and templates the plugin registered. The server tries core resources first, then each plugin in registration order; the first plugin to return a non-undefined result owns the URI. Return `undefined` for URIs the plugin does not own. Unowned URIs fail with `Unknown or unsupported resource URI`.
+
+```typescript
+async readResource(uri: string, context: RequestContext) {
+  if (uri === 'myplugin://stats') {
+    return { mimeType: 'application/json', content: { total: 42 } };
+  }
+  return undefined;
+}
+```
+
+`content` is sent as-is when it is a string and JSON-serialized otherwise; `mimeType` defaults to `application/json`.
+
+## Hook coverage
+
+Read hooks (`beforeRead`, `afterRead`) and search hooks (`beforeSearch`, `afterSearch`) run on every surface that returns a vCon or text cut from one, including search snippets. Aggregate surfaces do not run per-vCon hooks: unique-tag listings, counts, analytics, and search totals (`page.total`, `count`) reflect the whole corpus, not what a plugin hides.
+
 ## Request Context
 
 All hooks receive a `RequestContext` object with information about the request:

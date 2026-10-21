@@ -17,6 +17,8 @@
  */
 
 import { IVConQueries } from '../db/interfaces.js';
+import { PluginManager } from '../hooks/plugin-manager.js';
+import { VConService } from '../services/vcon-service.js';
 import type { VCon } from '../types/vcon.js';
 import {
   extractTags,
@@ -265,8 +267,23 @@ function isAtOrBeforeCursor(v: VCon, cursor: IdsCursor): boolean {
   return v.uuid.toLowerCase() >= cursor.uuid;
 }
 
-export async function resolveCoreResource(queries: IVConQueries, uri: string): Promise<{ mimeType: string; content: any } | undefined> {
+/**
+ * Resolve a core vcon:// resource. Every resource that returns vCon content reads
+ * through `vconService` so plugin read hooks run: entity resources run
+ * beforeRead/afterRead (as get_vcon), list resources beforeSearch/afterSearch
+ * (as search_vcons). The server always passes its service; without one a
+ * plugin-less service is used, which is identical to raw queries.
+ */
+export async function resolveCoreResource(
+  queries: IVConQueries,
+  uri: string,
+  vconService: VConService = new VConService({ queries, pluginManager: new PluginManager() }),
+): Promise<{ mimeType: string; content: any } | undefined> {
   const json = (data: any) => ({ mimeType: 'application/json', content: data });
+  const requestContext = { purpose: 'mcp-resource-read' };
+
+  // Discovery and shape-graph resources return corpus-wide aggregates (type names and
+  // counts), never a vCon, so read hooks (which take a uuid or VCon[]) do not apply.
 
   if (uri === 'vcon://v1/discovery/attachments/types') {
     const result = await queries.getUniqueAttachmentTypes({ includeCounts: true });
@@ -301,7 +318,7 @@ export async function resolveCoreResource(queries: IVConQueries, uri: string): P
   const matchRecent = uri.match(/^vcon:\/\/v1\/vcons\/recent(?:\/(\d+))?$/);
   if (matchRecent) {
     const limit = matchRecent[1] ? Math.min(parseInt(matchRecent[1], 10), 100) : 10;
-    const vcons = await queries.searchVCons({ limit });
+    const vcons = await vconService.search({ limit }, { requestContext });
     return json({ 
       count: vcons.length, 
       limit: limit,
@@ -313,7 +330,8 @@ export async function resolveCoreResource(queries: IVConQueries, uri: string): P
   const matchRecentIds = uri.match(/^vcon:\/\/v1\/vcons\/recent\/ids(?:\/(\d+))?$/);
   if (matchRecentIds) {
     const limit = matchRecentIds[1] ? Math.min(parseInt(matchRecentIds[1], 10), 100) : 10;
-    const vcons = await queries.searchVCons({ limit });
+    // Ids and subjects still reveal which vCons exist, so afterSearch filters them too.
+    const vcons = await vconService.search({ limit }, { requestContext });
     const ids = vcons.map(v => ({ 
       uuid: v.uuid, 
       created_at: v.created_at,
@@ -336,11 +354,17 @@ export async function resolveCoreResource(queries: IVConQueries, uri: string): P
     // rows strictly after the cursor in that order: an inclusive upper bound on created_at,
     // then drop the cursor-tied rows already served. Fetch one extra to detect more results.
     const fetchLimit = limit + 1;
+    // beforeSearch runs once on the base criteria; afterSearch runs on the final page
+    // only, after has_more and next_cursor are fixed from raw rows (CON-1243).
+    const baseCriteria = await vconService.applyBeforeSearch(
+      cursor ? { limit: fetchLimit, endDate: cursor.createdAt } : { limit: fetchLimit },
+      { requestContext },
+    );
     const kept: VCon[] = [];
     let offset = 0;
     for (;;) {
       const batch = await queries.searchVCons(
-        cursor ? { limit: fetchLimit, offset, endDate: cursor.createdAt } : { limit: fetchLimit },
+        cursor ? { ...baseCriteria, offset } : baseCriteria,
       );
       for (const v of batch) {
         if (cursor && isAtOrBeforeCursor(v, cursor)) continue;
@@ -352,7 +376,8 @@ export async function resolveCoreResource(queries: IVConQueries, uri: string): P
     }
 
     const hasMore = kept.length > limit;
-    const resultsToReturn = hasMore ? kept.slice(0, limit) : kept;
+    const rawPage = hasMore ? kept.slice(0, limit) : kept;
+    const resultsToReturn = await vconService.applyAfterSearch(rawPage, { requestContext });
 
     const ids = resultsToReturn.map(v => ({
       uuid: v.uuid,
@@ -360,8 +385,8 @@ export async function resolveCoreResource(queries: IVConQueries, uri: string): P
       subject: v.subject
     }));
 
-    // Compound cursor "<created_at>,<uuid>" of the last row served
-    const last = resultsToReturn[resultsToReturn.length - 1];
+    // Compound cursor "<created_at>,<uuid>" of the last raw row, so rows a hook hid are not re-served
+    const last = rawPage[rawPage.length - 1];
     const nextCursor = last ? `${last.created_at},${last.uuid}` : null;
 
     return json({ 
@@ -379,7 +404,8 @@ export async function resolveCoreResource(queries: IVConQueries, uri: string): P
   const uuid = matchUuid[1];
   const suffix = matchUuid[2] || '';
 
-  const vcon = await queries.getVCon(uuid);
+  // beforeRead/afterRead run here, as for get_vcon; every suffix below derives from this vCon.
+  const vcon = await vconService.get(uuid, { requestContext });
 
   // Full vCon
   if (suffix === '' || suffix === '/') {

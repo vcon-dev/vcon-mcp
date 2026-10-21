@@ -64,6 +64,38 @@ export interface GetVConOptions {
   requestContext?: Partial<RequestContext>;
 }
 
+export interface SearchHookOptions {
+  /** Custom request context for hooks (timestamp auto-populated if missing) */
+  requestContext?: Partial<RequestContext>;
+  /** Skip beforeSearch/afterSearch hooks */
+  skipHooks?: boolean;
+}
+
+export type KeywordHit = Awaited<ReturnType<IVConQueries['keywordSearch']>>[number];
+export type SemanticHit = Awaited<ReturnType<IVConQueries['semanticSearch']>>[number];
+export type HybridHit = Awaited<ReturnType<IVConQueries['hybridSearch']>>[number];
+
+export interface HitSearchOptions<H> extends SearchHookOptions {
+  /**
+   * Narrow the raw hits to the page the caller returns, BEFORE afterSearch runs.
+   * Keeps pagination decided on raw rows (CON-1243) and loads only page vCons.
+   */
+  selectPage?: (hits: H[]) => H[];
+  /** Load the selected hits' vCons into `vcons` even when no afterSearch hook needs them. */
+  hydrate?: boolean;
+}
+
+export interface HitSearchResult<H> {
+  /** Hits after selectPage and afterSearch filtering */
+  hits: H[];
+  /** Raw DB hit count, before selectPage and hooks */
+  rawCount: number;
+  /** Hit count after selectPage, before hooks */
+  selectedCount: number;
+  /** Hit vCons keyed by lowercase uuid (post-afterSearch); set when hooks ran or hydrate was asked */
+  vcons?: Map<string, VCon>;
+}
+
 export interface UpdateVConOptions {
   /** Skip beforeUpdate/afterUpdate hooks */
   skipHooks?: boolean;
@@ -347,34 +379,26 @@ export class VConService {
    */
   async search(
     filters: Parameters<IVConQueries['searchVCons']>[0],
-    options: { requestContext?: Partial<RequestContext>; skipHooks?: boolean } = {}
+    options: SearchHookOptions = {}
   ): Promise<VCon[]> {
+    return (await this.searchWithRawCount(filters, options)).vcons;
+  }
+
+  /**
+   * As search, plus `rawCount`: the DB row count before afterSearch, for callers
+   * that derive pagination from it (a filtering plugin must not shift has_more).
+   */
+  async searchWithRawCount(
+    filters: Parameters<IVConQueries['searchVCons']>[0],
+    options: SearchHookOptions = {}
+  ): Promise<{ vcons: VCon[]; rawCount: number }> {
     const requestContext = this.normalizeRequestContext(options.requestContext, 'search');
 
-    // Execute beforeSearch hook (can modify criteria)
-    let searchFilters = filters;
-    if (!options.skipHooks) {
-      const modifiedFilters = await this.context.pluginManager.executeHook<typeof filters>(
-        'beforeSearch', filters, requestContext
-      );
-      if (modifiedFilters) {
-        searchFilters = modifiedFilters;
-      }
-    }
-
+    // beforeSearch can modify criteria; afterSearch can filter or modify results.
+    const searchFilters = await this.runBeforeSearch(filters, requestContext, options.skipHooks);
     const results = await this.context.queries.searchVCons(searchFilters);
-
-    // Execute afterSearch hook (can filter results)
-    if (!options.skipHooks) {
-      const modifiedResults = await this.context.pluginManager.executeHook<VCon[]>(
-        'afterSearch', results, requestContext
-      );
-      if (modifiedResults) {
-        return modifiedResults;
-      }
-    }
-
-    return results;
+    const vcons = await this.runAfterSearch(results, requestContext, options.skipHooks);
+    return { vcons, rawCount: results.length };
   }
 
   /**
@@ -387,35 +411,284 @@ export class VConService {
    */
   async searchPage(
     filters: Parameters<IVConQueries['searchVCons']>[0] & { limit: number },
-    options: { requestContext?: Partial<RequestContext>; skipHooks?: boolean } = {}
+    options: SearchHookOptions = {}
   ): Promise<{ vcons: VCon[]; hasMore: boolean }> {
     const requestContext = this.normalizeRequestContext(options.requestContext, 'search');
 
-    let searchFilters = filters;
-    if (!options.skipHooks) {
-      const modifiedFilters = await this.context.pluginManager.executeHook<typeof filters>(
-        'beforeSearch', filters, requestContext
-      );
-      if (modifiedFilters) {
-        searchFilters = modifiedFilters;
-      }
-    }
+    const searchFilters = await this.runBeforeSearch(filters, requestContext, options.skipHooks);
 
     const pageSize = searchFilters.limit ?? filters.limit;
     const probed = await this.context.queries.searchVCons({ ...searchFilters, limit: pageSize + 1 });
     const hasMore = probed.length > pageSize;
     const page = hasMore ? probed.slice(0, pageSize) : probed;
 
-    if (!options.skipHooks) {
-      const modifiedResults = await this.context.pluginManager.executeHook<VCon[]>(
-        'afterSearch', page, requestContext
-      );
-      if (modifiedResults) {
-        return { vcons: modifiedResults, hasMore };
+    const vcons = await this.runAfterSearch(page, requestContext, options.skipHooks);
+    return { vcons, hasMore };
+  }
+
+  /**
+   * Run beforeSearch on criteria built by a caller that queries in a custom way
+   * (e.g. the cursor-walking id listing resource). Returns the criteria to use.
+   */
+  async applyBeforeSearch<T extends object>(criteria: T, options: SearchHookOptions = {}): Promise<T> {
+    const requestContext = this.normalizeRequestContext(options.requestContext, 'search');
+    return this.runBeforeSearch(criteria, requestContext, options.skipHooks);
+  }
+
+  /**
+   * Run afterSearch on a list of vCons a caller fetched itself (see applyBeforeSearch).
+   */
+  async applyAfterSearch(vcons: VCon[], options: SearchHookOptions = {}): Promise<VCon[]> {
+    const requestContext = this.normalizeRequestContext(options.requestContext, 'search');
+    return this.runAfterSearch(vcons, requestContext, options.skipHooks);
+  }
+
+  /**
+   * Keyword (full-text) search with beforeSearch/afterSearch hooks.
+   * Hits whose vCon afterSearch drops are removed; hits whose vCon it alters
+   * get `snippet: null` (see filterHits).
+   */
+  async keywordSearch(
+    params: Parameters<IVConQueries['keywordSearch']>[0],
+    options: HitSearchOptions<KeywordHit> = {}
+  ): Promise<HitSearchResult<KeywordHit>> {
+    const requestContext = this.normalizeRequestContext(options.requestContext, 'search');
+    const criteria = await this.runBeforeSearch(params, requestContext, options.skipHooks);
+    const raw = await this.context.queries.keywordSearch(criteria);
+    return this.finishHitSearch(raw, ['snippet'], options, requestContext);
+  }
+
+  /**
+   * Semantic (embedding) search with beforeSearch/afterSearch hooks.
+   * Hits whose vCon afterSearch alters get `content_text: null`.
+   */
+  async semanticSearch(
+    params: Parameters<IVConQueries['semanticSearch']>[0],
+    options: HitSearchOptions<SemanticHit> = {}
+  ): Promise<HitSearchResult<SemanticHit>> {
+    const requestContext = this.normalizeRequestContext(options.requestContext, 'search');
+    const criteria = await this.runBeforeSearch(params, requestContext, options.skipHooks);
+    const raw = await this.context.queries.semanticSearch(criteria);
+    return this.finishHitSearch(raw, ['content_text'], options, requestContext);
+  }
+
+  /**
+   * Hybrid (keyword + semantic) search with beforeSearch/afterSearch hooks.
+   * Hybrid hits carry only scores, so afterSearch can only drop them.
+   */
+  async hybridSearch(
+    params: Parameters<IVConQueries['hybridSearch']>[0],
+    options: HitSearchOptions<HybridHit> = {}
+  ): Promise<HitSearchResult<HybridHit>> {
+    const requestContext = this.normalizeRequestContext(options.requestContext, 'search');
+    const criteria = await this.runBeforeSearch(params, requestContext, options.skipHooks);
+    const raw = await this.context.queries.hybridSearch(criteria);
+    return this.finishHitSearch(raw, [], options, requestContext);
+  }
+
+  /**
+   * Tag search with beforeSearch/afterSearch hooks. Returns matching uuids
+   * (afterSearch can drop them) plus hydrated vCons when hooks loaded them.
+   */
+  async searchByTags(
+    tags: Record<string, string>,
+    limit?: number,
+    options: HitSearchOptions<{ vcon_id: string }> = {}
+  ): Promise<{ uuids: string[]; vcons?: Map<string, VCon>; rawCount: number }> {
+    const requestContext = this.normalizeRequestContext(options.requestContext, 'search');
+    const criteria = await this.runBeforeSearch({ tags, limit }, requestContext, options.skipHooks);
+    const uuids = await this.context.queries.searchByTags(criteria.tags, criteria.limit);
+    const result = await this.finishHitSearch(
+      uuids.map(vcon_id => ({ vcon_id })), [], options, requestContext
+    );
+    return { uuids: result.hits.map(h => h.vcon_id), vcons: result.vcons, rawCount: result.rawCount };
+  }
+
+  /**
+   * Full vCons for `ids` (in order) from a hit search result. When an
+   * afterSearch hook ran these are its outputs, and ids it dropped are skipped;
+   * with no afterSearch hook the rows are loaded raw, which is what the hook
+   * would have returned. With `readHooks`, each vCon then also goes through
+   * beforeRead/afterRead (the full-body contract of the search_* tools,
+   * CON-1240), applied to that same object so each hook runs once per vCon.
+   * A vCon that is unreadable (deleted since the search) or that beforeRead
+   * blocks is skipped rather than failing the whole call.
+   */
+  async vconsForHits(
+    result: { vcons?: Map<string, VCon> },
+    ids: string[],
+    options: GetVConOptions & { readHooks?: boolean } = {}
+  ): Promise<VCon[]> {
+    const map = result.vcons;
+    const base = map
+      ? ids.map(id => map.get(id.toLowerCase())).filter((v): v is VCon => v !== undefined)
+      : await this.loadMany(ids);
+    if (!options.readHooks || options.skipHooks) return base;
+
+    const requestContext = this.normalizeRequestContext(options.requestContext, 'read');
+    const settled = await Promise.allSettled(base.map(async (vcon) => {
+      // Hit filtering already ran the read hooks on this object: do not run them twice.
+      if (this.readHooked.has(vcon)) return vcon;
+      return this.applyReadHooks(vcon, requestContext);
+    }));
+    const out: VCon[] = [];
+    settled.forEach((outcome, i) => {
+      if (outcome.status === 'fulfilled') {
+        out.push(outcome.value);
+      } else {
+        logWithContext('warn', 'Skipping vCon blocked by a read hook in search results', {
+          vcon_uuid: base[i].uuid,
+          reason: outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason),
+        });
       }
+    });
+    return out;
+  }
+
+  /** vCons already run through beforeRead/afterRead by hit filtering (result objects). */
+  private readHooked = new WeakSet<VCon>();
+
+  /** beforeRead then afterRead on one vCon; beforeRead throwing blocks it. */
+  private async applyReadHooks(vcon: VCon, requestContext: RequestContext): Promise<VCon> {
+    await this.context.pluginManager.executeHook('beforeRead', vcon.uuid, requestContext);
+    const modified = await this.context.pluginManager.executeHook<VCon>('afterRead', vcon, requestContext);
+    const result = modified ?? vcon;
+    this.readHooked.add(result);
+    return result;
+  }
+
+  /**
+   * All tags of a vCon. Runs beforeRead (access check). afterRead cannot run:
+   * the result is a tag map from vcon_tags_mv, not a VCon.
+   */
+  async getTags(uuid: string, options: GetVConOptions = {}): Promise<Record<string, any>> {
+    const requestContext = this.normalizeRequestContext(options.requestContext, 'read');
+    if (!options.skipHooks) {
+      await this.context.pluginManager.executeHook('beforeRead', uuid, requestContext);
+    }
+    return this.context.queries.getTags(uuid);
+  }
+
+  /**
+   * One tag of a vCon. Runs beforeRead (access check), as getTags.
+   */
+  async getTag(uuid: string, key: string, defaultValue?: any, options: GetVConOptions = {}): Promise<any> {
+    const requestContext = this.normalizeRequestContext(options.requestContext, 'read');
+    if (!options.skipHooks) {
+      await this.context.pluginManager.executeHook('beforeRead', uuid, requestContext);
+    }
+    return this.context.queries.getTag(uuid, key, defaultValue);
+  }
+
+  // ========== Search hook helpers ==========
+
+  private async runBeforeSearch<T>(criteria: T, requestContext: RequestContext, skipHooks?: boolean): Promise<T> {
+    if (skipHooks) return criteria;
+    const modified = await this.context.pluginManager.executeHook<T>('beforeSearch', criteria, requestContext);
+    return modified ?? criteria;
+  }
+
+  private async runAfterSearch(results: VCon[], requestContext: RequestContext, skipHooks?: boolean): Promise<VCon[]> {
+    if (skipHooks) return results;
+    const modified = await this.context.pluginManager.executeHook<VCon[]>('afterSearch', results, requestContext);
+    return modified ?? results;
+  }
+
+  /** Unknown plugin manager shape (no hasHook): assume the hook exists, i.e. fail closed. */
+  private hasHook(name: 'afterSearch' | 'beforeRead' | 'afterRead'): boolean {
+    const pm = this.context.pluginManager as Partial<PluginManager>;
+    return typeof pm.hasHook === 'function' ? pm.hasHook(name) : true;
+  }
+
+  private async loadMany(ids: string[]): Promise<VCon[]> {
+    const settled = await Promise.allSettled(ids.map(id => this.context.queries.getVCon(id)));
+    const vcons: VCon[] = [];
+    settled.forEach((outcome, i) => {
+      if (outcome.status === 'fulfilled') {
+        if (outcome.value) vcons.push(outcome.value);
+      } else {
+        logWithContext('warn', 'Skipping unreadable vCon in search results', {
+          vcon_uuid: ids[i],
+          reason: outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason),
+        });
+      }
+    });
+    return vcons;
+  }
+
+  private async finishHitSearch<H extends { vcon_id: string }>(
+    raw: H[],
+    textFields: (keyof H)[],
+    options: HitSearchOptions<H>,
+    requestContext: RequestContext
+  ): Promise<HitSearchResult<H>> {
+    const selected = options.selectPage ? options.selectPage(raw) : raw;
+    const filtered = await this.filterHits(selected, textFields, options, requestContext);
+    return { ...filtered, rawCount: raw.length, selectedCount: selected.length };
+  }
+
+  /**
+   * Apply afterSearch to hit-level results (rows that point at a vCon rather
+   * than being one). The hit vCons are loaded and passed to afterSearch, the
+   * same hook search_vcons runs. A hit survives only if its vCon does. If the
+   * hook altered a vCon (e.g. redacted it), the hit's text fields, which were
+   * cut from the raw DB content, are nulled so they cannot leak what the hook
+   * removed. With no afterSearch hook (and no hydrate request) nothing is loaded.
+   */
+  private async filterHits<H extends { vcon_id: string }>(
+    hits: H[],
+    textFields: (keyof H)[],
+    options: HitSearchOptions<H>,
+    requestContext: RequestContext
+  ): Promise<{ hits: H[]; vcons?: Map<string, VCon> }> {
+    // Any hook that can hide or alter a vCon's content also guards the hit text cut from it:
+    // an ACL/redactor that implements only beforeRead/afterRead must not leak snippets.
+    const hasReadHook = this.hasHook('beforeRead') || this.hasHook('afterRead');
+    const runHook = !options.skipHooks && (this.hasHook('afterSearch') || hasReadHook);
+    if (!runHook && !options.hydrate) return { hits };
+
+    const ids = [...new Set(hits.map(h => h.vcon_id))];
+    const loaded = await this.loadMany(ids);
+    if (!runHook) {
+      return { hits, vcons: new Map(loaded.map(v => [v.uuid.toLowerCase(), v])) };
     }
 
-    return { vcons: page, hasMore };
+    // Snapshot before the hooks: plugins may mutate in place.
+    const before = new Map(loaded.map(v => [v.uuid.toLowerCase(), JSON.stringify(v)]));
+    let visible = await this.runAfterSearch(loaded, requestContext, false);
+    if (hasReadHook) {
+      // beforeRead blocks (fail closed: the vCon and its hits are dropped), afterRead redacts.
+      const settled = await Promise.allSettled(visible.map(v => this.applyReadHooks(v, requestContext)));
+      const read: VCon[] = [];
+      settled.forEach((outcome, i) => {
+        if (outcome.status === 'fulfilled') {
+          read.push(outcome.value);
+        } else {
+          logWithContext('warn', 'Dropping hit blocked by a read hook', {
+            vcon_uuid: visible[i].uuid,
+            reason: outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason),
+          });
+        }
+      });
+      visible = read;
+    }
+    const vcons = new Map(visible.map(v => [v.uuid.toLowerCase(), v]));
+
+    // Fail closed: a hit whose vCon could not be loaded, or that the hook dropped, is removed.
+    const kept: H[] = [];
+    for (const hit of hits) {
+      const key = hit.vcon_id.toLowerCase();
+      const vcon = vcons.get(key);
+      if (!vcon) continue;
+      if (textFields.length > 0 && JSON.stringify(vcon) !== before.get(key)) {
+        const masked = { ...hit };
+        for (const field of textFields) (masked as any)[field] = null;
+        kept.push(masked);
+      } else {
+        kept.push(hit);
+      }
+    }
+    return { hits: kept, vcons };
   }
 
   // ========== Private Helpers ==========

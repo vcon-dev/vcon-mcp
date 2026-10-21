@@ -11,6 +11,7 @@ import { vi } from 'vitest';
 import { createRestApi } from '../../src/api/rest-router.js';
 import type { RestApiContext } from '../../src/api/context.js';
 import type { VCon } from '../../src/types/vcon.js';
+import { VConService } from '../../src/services/vcon-service.js';
 
 // ── Sample Data ─────────────────────────────────────────────────────────────
 
@@ -82,11 +83,18 @@ export function createMockQueries() {
 export function createMockPluginManager() {
   return {
     executeHook: vi.fn().mockResolvedValue(undefined),
+    hasHook: vi.fn().mockReturnValue(false),
     shutdown: vi.fn(),
   };
 }
 
-export function createMockVConService(mockQueries: ReturnType<typeof createMockQueries>) {
+export function createMockVConService(
+  mockQueries: ReturnType<typeof createMockQueries>,
+  pluginManager: ReturnType<typeof createMockPluginManager> = createMockPluginManager(),
+) {
+  // Search and tag reads delegate to a real service over the mocked queries, so
+  // route tests still see the queries calls while hooks run as in production.
+  const real = new VConService({ queries: mockQueries as any, pluginManager: pluginManager as any });
   return {
     create: vi.fn().mockImplementation(async (data: any) => {
       const vcon = sampleVCon(data);
@@ -107,6 +115,13 @@ export function createMockVConService(mockQueries: ReturnType<typeof createMockQ
     delete: vi.fn().mockResolvedValue(true),
     search: vi.fn().mockResolvedValue([]),
     searchPage: vi.fn().mockResolvedValue({ vcons: [], hasMore: false }),
+    keywordSearch: vi.fn((...a: Parameters<VConService['keywordSearch']>) => real.keywordSearch(...a)),
+    semanticSearch: vi.fn((...a: Parameters<VConService['semanticSearch']>) => real.semanticSearch(...a)),
+    hybridSearch: vi.fn((...a: Parameters<VConService['hybridSearch']>) => real.hybridSearch(...a)),
+    searchByTags: vi.fn((...a: Parameters<VConService['searchByTags']>) => real.searchByTags(...a)),
+    vconsForHits: vi.fn((...a: Parameters<VConService['vconsForHits']>) => real.vconsForHits(...a)),
+    getTags: vi.fn((...a: Parameters<VConService['getTags']>) => real.getTags(...a)),
+    getTag: vi.fn((...a: Parameters<VConService['getTag']>) => real.getTag(...a)),
   };
 }
 
@@ -168,7 +183,7 @@ export interface TestAppContext {
 export function createTestApp(opts: { authRequired?: boolean } = {}): TestAppContext {
   const queries = createMockQueries();
   const pluginManager = createMockPluginManager();
-  const vconService = createMockVConService(queries);
+  const vconService = createMockVConService(queries, pluginManager);
   const dbInspector = createMockDbInspector();
   const dbAnalytics = createMockDbAnalytics();
   const dbSizeAnalyzer = createMockDbSizeAnalyzer();
