@@ -6,6 +6,8 @@ Deploy the vCon MCP Server using Docker for consistent, portable deployments.
 
 ### Pull from ECR Public
 
+The `:main` tag tracks the latest build from the main branch and moves on every merge. For production, pin a semver tag such as `:1.10.0` or a `main-<sha>` tag.
+
 ```bash
 # Pull the latest image
 docker pull public.ecr.aws/r4g1k2s3/vcon-dev/vcon-mcp:main

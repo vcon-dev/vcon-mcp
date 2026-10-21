@@ -416,6 +416,23 @@ describe('vCon CRUD Handlers', () => {
         updates: 'not-an-object',
       }, mockContext)).rejects.toThrow(McpError);
     });
+
+    it('should map legacy must_support to critical (issue #101)', async () => {
+      const handler = new UpdateVConHandler();
+      const uuid = randomUUID();
+
+      mockQueries.updateVCon.mockResolvedValue(undefined);
+      mockQueries.getVCon.mockResolvedValue({} as VCon);
+      mockPluginManager.executeHook.mockResolvedValue(undefined);
+
+      await handler.handle({
+        uuid,
+        updates: { must_support: ['x'] },
+        return_updated: false,
+      }, mockContext);
+
+      expect(mockQueries.updateVCon).toHaveBeenCalledWith(uuid, { critical: ['x'] });
+    });
   });
 
   describe('DeleteVConHandler', () => {
