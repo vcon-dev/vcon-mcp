@@ -4,7 +4,7 @@ Complete TypeScript type definitions for the vCon MCP Server.
 
 ## Overview
 
-The vCon MCP Server provides full type safety through TypeScript and Zod validation. All types comply with [IETF vCon Core](https://datatracker.ietf.org/doc/html/draft-ietf-vcon-vcon-core-02) specification.
+The vCon MCP Server provides full type safety through TypeScript and Zod validation. All types comply with [IETF vCon Core](https://datatracker.ietf.org/doc/html/draft-ietf-vcon-vcon-core-05) specification (syntax 0.5.0).
 
 ---
 
@@ -17,7 +17,7 @@ Main vCon object representing a complete virtual conversation.
 ```typescript
 interface VCon {
   // Core Metadata (Section 4.1)
-  vcon: string;                    // vCon version (e.g., "0.4.0")
+  vcon: string;                    // vCon version (e.g., "0.5.0")
   uuid: string;                    // vCon UUID (RFC 4122)
   created_at: string;              // ISO 8601 timestamp
   updated_at?: string;             // ISO 8601 timestamp
@@ -29,14 +29,18 @@ interface VCon {
   
   // Components
   parties: Party[];                // Participants (at least 1 required)
+  sessions?: Session[];            // Section 4.1.10; at least one when dialog or events is non-empty
   dialog?: Dialog[];               // Conversation segments
+  events?: Event[];                // Section 4.1.12
   analysis?: Analysis[];           // AI/ML analysis results
   attachments?: Attachment[];      // Additional files/data
   
   // Advanced Features
   group?: Group[];                 // vCon grouping (Section 4.6)
-  redacted?: Record<string, any>;  // Redaction tracking
-  amended?: Record<string, any>;   // Reference to the vCon this one amends (renamed from appended in 0.4.0; legacy alias accepted on import)
+  redacted_from?: RedactedFrom;    // Source of a redacted copy (was `redacted`; old name accepted as a deprecated alias)
+  amended_from?: AmendedFrom;      // Source of an amendment (was `amended` / `appended`; old names accepted as deprecated aliases)
+                                   // redacted_from and amended_from are mutually exclusive
+  redacted_strings?: RedactedString[]; // Section 4.1.16
 }
 ```
 
@@ -101,20 +105,20 @@ interface Party {
 
 ### Dialog
 
-Represents a segment of conversation content (Section 4.3).
+Represents a segment of conversation content (Section 4.5). Dialog has no `originator`, `party_history`, transfer fields, `recordings`, or `recording_set`; those moved to Session and Event.
 
 ```typescript
 interface Dialog {
   // Required
-  type: "recording" | "text" | "transfer" | "incomplete";
+  type: "recording" | "text" | "incomplete";  // Required unless the Dialog is the empty Object {}
+                                   // "audio" and "video" are accepted on read with a warning
   
   // Timing (Section 4.3.2-4.3.3)
   start?: string;                  // ISO 8601 timestamp
   duration?: number;               // Duration in seconds
   
   // Participants (Section 4.3.4-4.3.5)
-  parties?: number | number[];     // Party index or array of indexes
-  originator?: number;             // Party index of originator
+  parties?: (number | null)[] | number;  // Contributors only; null = unknown; nested list per channel
   
   // Content
   body?: string;                   // Dialog content
@@ -129,8 +133,7 @@ interface Dialog {
   disposition?: string;            // Any string is accepted. Spec-suggested values:
                                    // no-answer, congestion, failed, busy, hung-up, voicemail-no-message
   
-  // Session Tracking (Section 4.3.10, 4.3.13, 4.3.14)
-  session_id?: SessionId | SessionId[] | string;  // {local, remote} (0.4.0); string = legacy
+  // Tracking (session_id now lives on Session)
   application?: string;            // Application that created dialog
   message_id?: string;             // Message identifier
   
@@ -146,8 +149,7 @@ interface Dialog {
 {
   type: "text",
   start: "2025-10-14T10:30:00Z",
-  parties: [0, 1],
-  originator: 1,
+  parties: [1],
   body: "Hello, I need help with my account.",
   encoding: "none"
 }
@@ -157,7 +159,7 @@ interface Dialog {
   type: "recording",
   start: "2025-10-14T10:30:00Z",
   duration: 185.5,
-  parties: [0, 1],
+  parties: [0, 1],  // contributors
   mediatype: "audio/mpeg",
   filename: "call-recording.mp3",
   url: "https://storage.example.com/recordings/abc123.mp3",
@@ -171,11 +173,102 @@ interface Dialog {
   duration: 3600,
   parties: [0, 1, 2],
   mediatype: "video/mp4",
-  session_id: { local: "6a1f0c2e9b3d4e5f8a7b6c5d4e3f2a1b", remote: "00000000000000000000000000000000" },
   application: "Zoom",
   disposition: "hung-up"
 }
 ```
+
+A Dialog is listed by a Session through `Session.dialog`. The empty Dialog Object `{}` holds an index position (`remove_dialog` leaves one).
+
+---
+
+### Session
+
+A communication session between parties (new in 0.5.0).
+
+```typescript
+interface Session {
+  start?: string;                  // ISO 8601 timestamp
+  duration?: number;               // Seconds
+  parties?: number[];              // Receivers
+  originator?: number;             // Only when the first party is not the originator
+  session_id?: SessionId;          // Single { local, remote }
+  sessions?: SessionReference[];   // Relationships to other Sessions
+  dialog?: number[];               // Dialog indexes
+}
+
+interface SessionReference {
+  session: number;                 // Index into sessions
+  type: "child" | "peer" | "precursor" | "breakout";
+  description?: string;
+}
+
+interface SessionId {
+  local: string;
+  remote: string;
+}
+```
+
+**Session example:**
+
+```typescript
+{
+  start: "2025-10-14T10:30:00Z",
+  duration: 185.5,
+  parties: [1],
+  originator: 0,
+  session_id: { local: "6a1f0c2e9b3d4e5f8a7b6c5d4e3f2a1b", remote: "00000000000000000000000000000000" },
+  dialog: [0]
+}
+```
+
+---
+
+### Event
+
+A point-in-time occurrence (Section 4.3, new in 0.5.0). Events replace Dialog `party_history` and the `transfer` Dialog.
+
+```typescript
+interface Event {
+  type: EventType | string;        // Extension types are strings
+  time: string;                    // ISO 8601, required
+  sessions?: number | number[];    // Not used by channel-contributors
+  party?: number;                  // Not used by channel-contributors
+  dialog?: number | number[];      // channel-contributors only
+  channel?: number;                // channel-contributors only
+  contributors?: number | number[] | null; // channel-contributors only
+  button?: string;                 // keydown / keyup only
+  transferee?: number;             // Transfer types
+  transfer_target?: number;        // Transfer types
+  consultation?: number;           // Session index
+  target_session?: number;         // Session index
+}
+```
+
+| Event type | Parameters |
+|------------|-----------|
+| `join`, `drop`, `hold`, `unhold`, `mute`, `unmute` | `sessions`, `party` |
+| `keydown`, `keyup` | `sessions`, `party`, `button` |
+| `consultation-start`, `blind-transfer`, `consultative-transfer`, `transfer-abandoned` | `sessions`, `transferee`, `transfer_target`, plus `consultation` or `target_session` as the type requires |
+| `channel-contributors` | `dialog`, `channel`, `contributors`; no `sessions` or `party` |
+
+**Event example:**
+
+```typescript
+{ type: "mute", time: "2025-10-14T10:31:00Z", sessions: 0, party: 1 }
+```
+
+---
+
+### RedactedFrom, AmendedFrom, RedactedString
+
+```typescript
+interface RedactedFrom { uuid?: string; type?: string; url?: string; content_hash?: string | string[] }
+interface AmendedFrom  { uuid?: string; url?: string; content_hash?: string | string[] }
+interface RedactedString { ref: number; type?: string; orig?: string }  // ref 1..99999
+```
+
+`Redacted`, `Amended`, and `Appended` remain as deprecated type aliases.
 
 ---
 
@@ -191,6 +284,9 @@ interface Analysis {
   
   // References (Section 4.5.2)
   dialog?: number | number[];      // Dialog index(es) analyzed
+  sessions?: number | number[];    // Session index(es) analyzed
+  attachment?: number | number[];  // Attachment index(es) analyzed
+  analysis?: number | number[];    // Analysis index(es) analyzed
   
   // Product Info (Section 4.5.6-4.5.7)
   product?: string;                // Product/model name
@@ -280,8 +376,9 @@ interface Attachment {
   start?: string;                  // ISO 8601 timestamp
   
   // References (Section 4.4.3-4.4.4)
-  party?: number;                  // Associated party index
-  dialog?: number;                 // Associated dialog index
+  party: number;                   // Required: party that contributed the attachment
+  dialog?: number;                 // Single dialog index; use this or session
+  session?: number | number[];     // Session index or list; use this or dialog
   
   // Content
   body?: string;                   // Attachment content
@@ -302,7 +399,9 @@ interface Attachment {
 ```typescript
 // Tags attachment (for metadata)
 {
-  type: "tags",
+  purpose: "tags",
+  party: 0,
+  session: 0,
   encoding: "json",
   body: JSON.stringify([
     "department:sales",
@@ -313,8 +412,9 @@ interface Attachment {
 
 // PDF document
 {
-  type: "invoice",
+  purpose: "invoice",
   party: 0,
+  session: 0,
   mediatype: "application/pdf",
   filename: "invoice-12345.pdf",
   body: "base64-encoded-content",
@@ -323,7 +423,8 @@ interface Attachment {
 
 // Screenshot
 {
-  type: "screenshot",
+  purpose: "screenshot",
+  party: 0,
   dialog: 0,
   mediatype: "image/png",
   filename: "error-screenshot.png",
@@ -364,7 +465,7 @@ interface Group {
 ```typescript
 interface CreateVConInput {
   vcon_data: {
-    vcon?: string;                 // Default: "0.4.0"
+    vcon?: string;                 // Default: "0.5.0"
     uuid?: string;                 // Auto-generated if not provided
     subject?: string;
     parties: Party[];              // At least 1 required
@@ -637,10 +738,10 @@ function hasJsonAnalysis(analysis: Analysis): boolean {
 
 ```typescript
 // vCon Version
-export const VCON_VERSION = '0.4.0';
+export const VCON_VERSION = '0.5.0';
 
 // Dialog Types
-export const DIALOG_TYPES = ['recording', 'text', 'transfer', 'incomplete'] as const;
+export const DIALOG_TYPES = ['recording', 'text', 'incomplete'] as const;
 
 // Encoding Types
 export const ENCODING_TYPES = ['none', 'base64url', 'json'] as const;
@@ -676,5 +777,5 @@ export const ANALYSIS_TYPES = [
 - See [Tools Reference](./tools.md) for tool definitions
 - See [Database Schema](./schema.md) for database structure
 - See [Examples](/examples/) for usage examples
-- See [vCon Spec](https://datatracker.ietf.org/doc/html/draft-ietf-vcon-vcon-core-02) for full specification
+- See [vCon Spec](https://datatracker.ietf.org/doc/html/draft-ietf-vcon-vcon-core-05) for full specification
 

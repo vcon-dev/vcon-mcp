@@ -4,7 +4,7 @@ This document provides comprehensive instructions for coding agents working with
 
 ## Project Overview
 
-This is an MCP (Model Context Protocol) server for managing **vCon** (Virtual Conversation) data stored in Supabase. vCon is an IETF standard (draft-ietf-vcon-vcon-core-02, spec version 0.4.0) for representing conversation data.
+This is an MCP (Model Context Protocol) server for managing **vCon** (Virtual Conversation) data stored in Supabase. vCon is an IETF standard (draft-ietf-vcon-vcon-core-05, syntax version 0.5.0) for representing conversation data.
 
 **Key Technologies:**
 - TypeScript
@@ -37,7 +37,7 @@ interface AnalysisWrong {
 }
 ```
 
-### Field Name Corrections (spec -02 / v0.4.0)
+### Field Name Corrections (core-05 / v0.5.0)
 
 | Wrong | Correct | Notes |
 |-------|---------|-------|
@@ -45,9 +45,12 @@ interface AnalysisWrong {
 | `vendor?: string` | `vendor: string` | Required in Analysis |
 | `body: object` | `body: string` | JSON.stringify objects before storing |
 | `mimetype` | `mediatype` | dialog, analysis, attachments (since v0.0.2) |
-| `appended` | `amended` | vCon top-level (renamed in v0.4.0) |
+| `appended`, `amended` | `amended_from` | vCon top-level (`amended` renamed in 0.5.0; old names accepted as deprecated aliases on input) |
+| `redacted` | `redacted_from` | vCon top-level (renamed in 0.5.0; mutually exclusive with `amended_from`; `redacted_strings` is new) |
+| `dialog.originator`, `dialog.party_history`, transfer fields | `sessions[].originator`, `events[]` | Removed from Dialog in 0.5.0 |
+| `dialog.parties` | contributors only | A null slot means unknown; a nested list gives one entry per channel. Receivers live on `sessions[].parties` |
 | `must_support` | `critical` | vCon top-level (renamed in v0.4.0) |
-| `session_id: string` | `session_id: {local, remote}` | Dialog (changed in v0.4.0) |
+| `session_id: string` | `session_id: {local, remote}` | Now on the Session object (single, not a list) |
 
 **Import note:** Real-world vCon files (e.g. Strolid) may use v0.0.1 field names (`mimetype`, `appended`, `must_support`). The import script handles both old and new field names transparently.
 
@@ -59,7 +62,11 @@ interface AnalysisWrong {
 
 ### Dialog Types
 
-Must be one of: `'recording'`, `'text'`, `'transfer'`, `'incomplete'`
+Written types: `'recording'`, `'text'`, `'incomplete'`. `audio` and `video` are accepted on read with a warning. `transfer` is gone; use transfer Events. `type` is required unless the Dialog is the empty Object `{}`, which holds an index position (`remove_dialog` leaves `{}`).
+
+### Sessions and Events (new in 0.5.0)
+
+At least one Session is required when `dialog` or `events` is non-empty. Attachments need `party` plus `dialog` (single index) or `session` (index or list). `add_attachment` defaults the scope to the only Session when there is exactly one; a dialog index is never widened to a Session. Readers accept 0.4.0 and migrate on read (`migration_report` is returned next to the vCon); stored 0.4.0 rows are upgraded in place on the first structural write. `extensions` must list every extension used. Never use JWS `alg: "none"`.
 
 ---
 
@@ -71,20 +78,24 @@ Must be one of: `'recording'`, `'text'`, `'transfer'`, `'incomplete'`
 
 | Table | Description |
 |-------|-------------|
-| `vcons` | Main vCon container (uuid, subject, created_at, extensions, critical, amended) |
+| `vcons` | Main vCon container (uuid, subject, created_at, extensions, critical, amended_from, redacted_from, redacted_strings) |
 | `parties` | Participants (tel, sip, mailto, name, uuid, did) |
 | `dialog` | Conversation segments (type, start_time, duration, body, encoding) |
 | `analysis` | AI/ML results (type, vendor, schema, body, dialog_indices) |
 | `attachments` | Related files (type, party, dialog, body, encoding) |
 | `groups` | Aggregated vCons |
-| `party_history` | Join/drop/mute events |
+| `sessions` | Session objects (start, duration, parties, originator, session_id, references, dialog indexes) |
+| `events` | Event objects (join/drop/hold/mute, keydown/keyup, transfers, channel-contributors) |
+| `party_history` | Legacy; no longer written |
 | `vcon_embeddings` | Semantic search embeddings |
 
 ### Key Relationships
 
 ```
 vcons (1) ──┬── (*) parties
+            ├── (*) sessions
             ├── (*) dialog
+            ├── (*) events
             ├── (*) analysis
             ├── (*) attachments
             └── (*) groups
@@ -110,7 +121,7 @@ places — `parseTagsBody()` in `src/utils/read-surfaces.ts` for TS, and
 `vcon_tags_mv` for SQL. Route new tag readers through those; do not re-parse
 `attachments.body` inline.
 
-vCon 0.4.0 classifies attachments with `purpose`, not `type`, so `purpose: "tags"` is
+vCon 0.4.0 and later classify attachments with `purpose`, not `type`, so `purpose: "tags"` is
 equivalent. A DB trigger (`normalize_tags_attachment`) mirrors `tags` across both columns
 on write, so the `type = 'tags'` read paths and `vcon_tags_mv` see either spelling.
 
@@ -134,7 +145,7 @@ on write, so the `type = 'tags'` read paths and `vcon_tags_mv` see either spelli
 
 ### Sub-resource Update/Remove Tools
 
-Index-addressed edits. Update = PUT semantics (omitted fields cleared). Removal follows core-02 §4.1.8: party/dialog leave placeholders (no renumber); analysis/attachment hard-delete and renumber. See [`docs/api/tools.md`](docs/api/tools.md#sub-resource-updates--removal).
+Index-addressed edits. Update = PUT semantics (omitted fields cleared). Removal follows core-05: party/dialog leave placeholders (no renumber; a removed dialog leaves `{}`); analysis/attachment hard-delete and renumber. See [`docs/api/tools.md`](docs/api/tools.md#sub-resource-updates--removal).
 
 | Tool | Description |
 |------|-------------|
@@ -413,20 +424,22 @@ optionally plus a route-level one). No fix is done until that test exists.
 - [ ] `analysis.vendor` is required (no `?`)
 - [ ] `analysis.body` is string type (JSON.stringify objects)
 - [ ] No default values for `encoding` fields
-- [ ] Dialog `type` is one of: recording, text, transfer, incomplete
+- [ ] Dialog `type` is one of: recording, text, incomplete (unless the Dialog is `{}`)
+- [ ] At least one Session when dialog or events exist; no `originator`, `party_history` or transfer fields on Dialog
+- [ ] Attachments carry `party` plus `dialog` or `session`
 - [ ] Use `mediatype` NOT `mimetype` (dialog, analysis, attachments)
-- [ ] Use `amended` NOT `appended` (vCon top-level)
+- [ ] Use `amended_from` / `redacted_from` NOT `amended` / `appended` / `redacted` (vCon top-level)
 - [ ] Use `critical` NOT `must_support` (vCon top-level)
-- [ ] `session_id` is `{local: string, remote: string}` NOT a plain string
+- [ ] `session_id` is `{local: string, remote: string}` on the Session, NOT a plain string
 - [ ] Tags stored as attachment with `type: "tags"`, `encoding: "json"`
-- [ ] vcon version field is `"0.4.0"`
+- [ ] vcon version field is `"0.5.0"`; the core-05 migration is applied by the operator, not automatically
 - [ ] Bug fix? A unit test reproducing the bug exists and fails without the fix
 
 ---
 
 ## References
 
-- IETF vCon Spec: `background_docs/draft-ietf-vcon-vcon-core-00.txt` (v0.3.0 baseline in repo) — v0.4.0 spec available at IETF datatracker: https://datatracker.ietf.org/doc/draft-ietf-vcon-vcon-core/
+- IETF vCon Spec: `background_docs/draft-ietf-vcon-vcon-core-00.txt` (v0.3.0 baseline in repo) — current spec (draft-ietf-vcon-vcon-core-05, syntax 0.5.0) available at IETF datatracker: https://datatracker.ietf.org/doc/draft-ietf-vcon-vcon-core/
 - Schema Details: `docs/reference/CORRECTED_SCHEMA.md`
 - Implementation Notes: `docs/reference/IMPLEMENTATION_CORRECTIONS.md`
 - Python vCon Library: `background_docs/LLM_GUIDE.md`

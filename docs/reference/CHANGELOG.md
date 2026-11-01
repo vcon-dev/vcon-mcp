@@ -194,6 +194,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.0] - 2026-11-01
+
+Retargets the server to `draft-ietf-vcon-vcon-core-05` (syntax `"0.5.0"`). This is a breaking
+release: the Dialog Object lost its transfer, recording-set, party history and originator content,
+which moved to the new Session and Event Objects. Writers emit 0.5.0. Readers accept 0.4.0 and
+migrate it on read (and on create), using the semantics of the Python reference migration
+(vcon-lib 1.0.0, `migrate_0_4_0_to_0_5_0`).
+
+### Migrations
+`20261101120000_vcon_core_05_sessions_events.sql` is included and is **not applied by this
+release**. Apply it with `supabase db push` (or your migration runner) when you deploy 2.0.0, and in
+each per-group schema (it creates objects in the caller's `search_path`, like `save_vcon_batch`).
+Deploy the migration and the server together: the server reads and writes the renamed
+`redacted_from` / `amended_from` columns, and the old server reads `redacted` / `amended`.
+
+- adds `sessions` and `events` tables, indexed where `dialog` is indexed (vCon, start or time,
+  session id, tenant) plus GIN indexes on the array columns, with the tenant trigger, cascade and
+  RLS policy of the other child tables
+- renames `vcons.redacted` to `redacted_from` and `vcons.amended` to `amended_from`; adds
+  `vcons.redacted_strings`
+- adds `session_indices` to `attachments` and `analysis`
+- allows the empty Dialog Object `{}` (`dialog.type` may be NULL) and replaces the type check
+- replaces `save_vcon_batch` with a seven-argument form (`p_sessions`, `p_events`); the old
+  five-argument form is dropped. Against a database without the new form the server takes the logged
+  non-atomic fallback, which also needs the new tables
+- does not convert existing rows. A row whose `vcon_version` is not `0.5.0` is migrated when it is
+  read, and is written back as 0.5.0 (Sessions and Events included) the first time a structural
+  write touches it: `add_dialog`, `add_attachment`, tag writes, `update_dialog`, `remove_dialog`,
+  `update_attachment`
+
+### Added
+- `sessions[]` and `events[]` on the vCon, with the Session Object, Session_Reference, and the Event
+  Object including the per-type parameter table (party, key, transfer and channel-contributors
+  events). At least one Session is required when dialog or events are present
+- `redacted_from`, `amended_from` and `redacted_strings`; Dialog `redacted_segments`; Attachment
+  `session`; Analysis `sessions`, `attachment` and `analysis` references
+- `src/utils/vcon-migration.ts`: the ported 0.4.0 to 0.5.0 migration with its report (`inferred`,
+  `fallback`, `unresolved`, removed Dialogs kept verbatim, `resign_required` for signed input), and
+  `src/utils/vcon-validation.ts`: 0.5.0 document rules
+- `create_vcon` takes `sessions`, `events`, `redacted_from`, `amended_from`, `redacted_strings` and
+  `vcon`; a 0.4.0 vCon (or dialog with no `sessions` and no `vcon`) is migrated and the response
+  carries `migration_report`
+- `get_vcon` returns `migration_report` when the stored vCon was 0.4.0
+- `add_dialog` takes `session` and `new_session` and returns `index`, `session`, `session_created`
+- `create_vcon_from_template` takes `lawful_basis_party`
+- resources `vcon://v1/vcons/{uuid}/sessions` and `/events`; `metadata` omits both arrays
+- the bulk importer migrates 0.4.0 files and writes sessions and events
+
+### Changed (breaking)
+- Dialog types written are `recording`, `text` and `incomplete`; `audio` and `video` are read with a
+  warning. Dialog `parties` are the contributors; the receivers are the Session `parties`.
+  `party_history`, `originator`, the transfer parameters, `recordings` and `recording_set` are
+  rejected on write with a pointer to the Session or Event replacement
+- `redacted` and `amended` are `redacted_from` and `amended_from`; the old names, `appended` and
+  `must_support` stay as deprecated input aliases
+- attachments need `party` plus `dialog` or `session`. `add_attachment` uses the only Session when
+  the vCon has exactly one and fails otherwise; a dialog index is never widened to a Session.
+  `update_attachment` needs the scope. Tag attachments are written with `party: 0` and every Session
+  (an empty Session is added when there is none)
+- `extensions` must list every extension used: the server adds `lawful_basis`, `wtf_transcription`
+  and the names in `critical`
+- `remove_dialog` leaves the empty Dialog Object `{}`; Session, Event and attachment references to it
+  stay valid
+- a `lawful_basis` attachment is expected to be scoped with `party` plus `session`; the warnings say
+  when it is not. The server never creates a basis that the caller did not supply
+- `IVConQueries.addDialog` and `addAttachment` return `{ index, ... }` instead of `void`;
+  `addDialog` takes an options object
+- JWS `alg: "none"` is not permitted (the migration flags it; nothing in this server signs)
+
+### Known gaps
+- `remove_analysis` and `remove_attachment` still renumber without rewriting `analysis.attachment`
+  and `analysis.analysis` references to the moved elements
+- an old tags attachment with no `party` is not given one on read when the vCon has several Sessions;
+  the migration report says so
+
+---
+
 ## [1.11.0] - 2026-10-20
 
 ### Migrations

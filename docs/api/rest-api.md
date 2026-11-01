@@ -252,8 +252,8 @@ These three endpoints need no authentication.
 {
   "success": true,
   "format": "json_schema",
-  "spec_version": "0.4.0",
-  "ietf_draft": "draft-ietf-vcon-vcon-core-02",
+  "spec_version": "0.5.0",
+  "ietf_draft": "draft-ietf-vcon-vcon-core-05",
   "message": "Full JSON Schema is available in the vCon IETF specification",
   "reference": "https://datatracker.ietf.org/doc/draft-ietf-vcon-vcon-core/"
 }
@@ -282,11 +282,11 @@ Authorization: Bearer your-api-key
 
 **Request Body:**
 
-The request body should be the vCon object directly. `uuid` and `created_at` are generated when absent, and `vcon` defaults to `"0.4.0"`. The legacy names `must_support`, `appended`, and `mimetype` are mapped to `critical`, `amended`, and `mediatype`.
+The request body should be the vCon object directly. `uuid` and `created_at` are generated when absent, and `vcon` defaults to `"0.5.0"`. The legacy names `must_support`, `appended`, `amended`, `redacted`, and `mimetype` are mapped to `critical`, `amended_from`, `redacted_from`, and `mediatype`. A 0.4.0 body (dialog without `sessions`) is migrated and the response includes a `migration_report`. At least one Session is required when `dialog` or `events` is non-empty.
 
 ```json
 {
-  "vcon": "0.4.0",
+  "vcon": "0.5.0",
   "uuid": "optional-custom-uuid",
   "subject": "Customer Support Call",
   "parties": [
@@ -299,12 +299,20 @@ The request body should be the vCon object directly. `uuid` and `created_at` are
       "tel": "+1-555-1234"
     }
   ],
+  "sessions": [
+    {
+      "start": "2025-01-02T10:00:00Z",
+      "duration": 60,
+      "parties": [0],
+      "originator": 1,
+      "dialog": [0]
+    }
+  ],
   "dialog": [
     {
       "type": "text",
       "start": "2025-01-02T10:00:00Z",
-      "parties": [0, 1],
-      "originator": 1,
+      "parties": [1],
       "body": "Hello, I need help with my account.",
       "encoding": "none"
     }
@@ -350,7 +358,7 @@ curl -X POST http://localhost:3000/api/v1/vcons \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $VCON_API_KEY" \
   -d '{
-    "vcon": "0.4.0",
+    "vcon": "0.5.0",
     "subject": "Sales Call",
     "parties": [
       {"name": "Sales Rep", "mailto": "rep@company.com"},
@@ -383,12 +391,12 @@ Array of vCon objects:
 ```json
 [
   {
-    "vcon": "0.4.0",
+    "vcon": "0.5.0",
     "subject": "Call 1",
     "parties": [{"name": "Agent A", "mailto": "a@example.com"}]
   },
   {
-    "vcon": "0.4.0",
+    "vcon": "0.5.0",
     "subject": "Call 2",
     "parties": [{"name": "Agent B", "mailto": "b@example.com"}]
   }
@@ -475,8 +483,8 @@ curl -X POST http://localhost:3000/api/v1/vcons/batch \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $VCON_API_KEY" \
   -d '[
-    {"vcon": "0.4.0", "subject": "Call 1", "parties": [{"name": "A", "tel": "+1111"}]},
-    {"vcon": "0.4.0", "subject": "Call 2", "parties": [{"name": "B", "tel": "+2222"}]}
+    {"vcon": "0.5.0", "subject": "Call 1", "parties": [{"name": "A", "tel": "+1111"}]},
+    {"vcon": "0.5.0", "subject": "Call 2", "parties": [{"name": "B", "tel": "+2222"}]}
   ]'
 ```
 
@@ -508,7 +516,7 @@ Retrieve a vCon by UUID.
 {
   "success": true,
   "vcon": {
-    "vcon": "0.4.0",
+    "vcon": "0.5.0",
     "uuid": "123e4567-e89b-12d3-a456-426614174000",
     "created_at": "2025-01-02T10:00:00.000Z",
     "subject": "Customer Support Call",
@@ -697,7 +705,7 @@ Child objects are added with `POST` and addressed by zero-based `index` for repl
 | DELETE | `/vcons/:uuid/{parties,dialog,analysis,attachments}/:index` | none | `200`, `{ success, message }` |
 
 - `PATCH` replaces the element at `index` with PUT semantics: fields you omit are cleared.
-- `DELETE` follows IETF core-02 section 4.1.8. Removing a party or a dialog keeps the slot as a placeholder, so positional references do not shift. Removing an analysis or an attachment deletes it and renumbers the rest. Removing a `tags` attachment clears the vCon's tags.
+- `DELETE` follows IETF core-05. Removing a party keeps the slot as a placeholder, and removing a dialog leaves the empty Dialog Object `{}`, so positional references do not shift. Removing an analysis or an attachment deletes it and renumbers the rest. Removing a `tags` attachment clears the vCon's tags.
 - `DELETE /vcons/:uuid/parties/:index?anonymize=true` (or `anonymize=1`) writes `{ "name": "anonymous" }` into the slot instead of an empty party.
 - A failed shape or validation check returns `400`. A bad `index` (not a non-negative integer) returns `400`. An unknown vCon, or an `index` outside the array, returns `404`.
 
@@ -929,7 +937,7 @@ async function batchCreate(vcons) {
 
 // Example usage
 const result = await createVCon({
-  vcon: '0.4.0',
+  vcon: '0.5.0',
   subject: 'Support Call',
   parties: [
     { name: 'Agent', mailto: 'agent@company.com' },
@@ -970,7 +978,7 @@ def batch_create(vcons):
 
 # Example usage
 result = create_vcon({
-    'vcon': '0.4.0',
+    'vcon': '0.5.0',
     'subject': 'Support Call',
     'parties': [
         {'name': 'Agent', 'mailto': 'agent@company.com'},
@@ -991,7 +999,7 @@ curl http://localhost:3000/api/v1/health
 curl -X POST http://localhost:3000/api/v1/vcons \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your-key" \
-  -d '{"vcon":"0.4.0","subject":"Test","parties":[{"name":"Test","tel":"+1111"}]}'
+  -d '{"vcon":"0.5.0","subject":"Test","parties":[{"name":"Test","tel":"+1111"}]}'
 
 # Get vCon
 curl http://localhost:3000/api/v1/vcons/UUID-HERE \
@@ -1009,7 +1017,7 @@ curl -X DELETE http://localhost:3000/api/v1/vcons/UUID-HERE \
 curl -X POST http://localhost:3000/api/v1/vcons/batch \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your-key" \
-  -d '[{"vcon":"0.4.0","parties":[{"name":"A","tel":"+1"}]},{"vcon":"0.4.0","parties":[{"name":"B","tel":"+2"}]}]'
+  -d '[{"vcon":"0.5.0","parties":[{"name":"A","tel":"+1"}]},{"vcon":"0.5.0","parties":[{"name":"B","tel":"+2"}]}]'
 ```
 
 ---

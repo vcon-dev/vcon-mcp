@@ -4,7 +4,7 @@ API documentation for the vCon MCP Server.
 
 ## Overview
 
-The vCon MCP Server provides an API for managing virtual conversations through the Model Context Protocol (MCP) and an HTTP REST API. Both follow the [IETF vCon Core](https://datatracker.ietf.org/doc/html/draft-ietf-vcon-vcon-core-02) specification (syntax 0.4.0).
+The vCon MCP Server provides an API for managing virtual conversations through the Model Context Protocol (MCP) and an HTTP REST API. Both follow the [IETF vCon Core](https://datatracker.ietf.org/doc/html/draft-ietf-vcon-vcon-core-05) specification (syntax 0.5.0). Readers accept 0.4.0 and migrate it on read.
 
 For new MCP clients, start with the redesigned contract surface: `vcon_capabilities`, `vcon_taxonomy`, `vcon_search`, `vcon_fetch`, and `describe_response_shape`. The older tools remain available for backward compatibility and specialized workflows.
 
@@ -285,11 +285,13 @@ For tag-only lookups, pass `tags` to `vcon_search` or call `search_by_tags`.
 
 ### vCon Specification
 
-✅ **IETF vCon Core, draft -02 (syntax 0.4.0)**
+✅ **IETF vCon Core, draft -05 (syntax 0.5.0)**
 - All required fields supported
 - Optional extensions available
 - Group references implemented
-- Redaction and amendment supported (`redacted`, `amended`)
+- Sessions and events supported (`sessions[]`, `events[]`)
+- Redaction and amendment supported (`redacted_from`, `amended_from`, `redacted_strings`); the old names `redacted` and `amended` are accepted as deprecated aliases on input
+- vCon 0.4.0 input is migrated on read and on create; the response carries a `migration_report`
 
 ### MCP Protocol
 
@@ -409,7 +411,7 @@ The API follows semantic versioning:
 
 ### vCon Version
 
-Current: **0.4.0**
+Current: **0.5.0** (package 2.0.0). The sessions and events tables need the migration `20261101120000_vcon_core_05_sessions_events.sql`, which the operator applies; it is not applied automatically.
 
 Follows IETF vCon specification versions.
 
@@ -433,7 +435,7 @@ Follows IETF vCon specification versions.
 
 ### Resources
 
-- [IETF vCon Spec](https://datatracker.ietf.org/doc/html/draft-ietf-vcon-vcon-core-02)
+- [IETF vCon Spec](https://datatracker.ietf.org/doc/html/draft-ietf-vcon-vcon-core-05)
 - [Model Context Protocol](https://modelcontextprotocol.io/)
 - [Supabase Docs](https://supabase.com/docs)
 - [pgvector Docs](https://github.com/pgvector/pgvector)
