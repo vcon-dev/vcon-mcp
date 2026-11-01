@@ -136,7 +136,7 @@ describe('CRUD Schema Validation', () => {
 
   describe('DialogSchema', () => {
     it('should validate dialog types', () => {
-      const validTypes = ['recording', 'text', 'transfer', 'incomplete'];
+      const validTypes = ['recording', 'text', 'incomplete'];
       
       validTypes.forEach(type => {
         const dialog = {

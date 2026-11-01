@@ -101,7 +101,7 @@ describe('Schema Handlers', () => {
       }, mockContext);
 
       const response = JSON.parse(result.content[0].text);
-      expect(response.vcon).toBe('0.4.0');
+      expect(response.vcon).toBe('0.5.0');
       expect(response.parties).toBeDefined();
     });
 

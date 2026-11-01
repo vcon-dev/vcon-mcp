@@ -11,7 +11,8 @@ import type { Context } from 'koa';
 import { AnalysisSchema, DialogSchema, AttachmentSchema, PartySchema } from '../../tools/vcon-crud.js';
 import { Analysis, Attachment, Dialog, Party, VCon } from '../../types/vcon.js';
 import { RestApiContext } from '../context.js';
-import { ChildIndexError } from '../../utils/vcon-children.js';
+import { AttachmentScopeError, ChildIndexError } from '../../utils/vcon-children.js';
+import { reportSummary } from '../../utils/vcon-migration.js';
 import { parsePagination, PaginationState } from '../middleware/pagination.js';
 import { sendCreated, sendError, sendPaginated, sendSuccess } from '../response.js';
 import {
@@ -125,6 +126,7 @@ export function createVConRoutes(apiContext: RestApiContext): Router {
         message: 'vCon created successfully',
         duration_ms: duration,
         warnings: lawfulBasisWarnings(result.vcon),
+        ...(result.migration ? { migration_report: { summary: reportSummary(result.migration), ...result.migration } } : {}),
       });
     } catch (error) {
       if (error instanceof VConValidationError) {
@@ -365,13 +367,26 @@ export function createVConRoutes(apiContext: RestApiContext): Router {
     try {
       const dialog = DialogSchema.parse(dialogData) as Dialog;
       assertValid('Dialog', validateDialog(dialog));
-      await apiContext.queries.addDialog(uuid, dialog);
+      if (dialog.type === undefined) {
+        return sendError(ctx, 400, 'dialog.type is required');
+      }
+      // ?session=<index> names the Session that lists the new dialog (optional with 0 or 1 Sessions)
+      const sessionParam = getQueryStringValue(ctx.query.session as string | undefined);
+      let session: number | undefined;
+      if (sessionParam !== undefined) {
+        session = Number(sessionParam);
+        if (!Number.isInteger(session) || session < 0) return sendError(ctx, 400, 'session must be a non-negative integer');
+      }
+      const added = await apiContext.queries.addDialog(uuid, dialog, { session });
       sendCreated(ctx, {
-        message: `Added ${dialog.type} dialog to vCon ${uuid}`,
+        message: `Added ${dialog.type} dialog ${added.index} to vCon ${uuid}, listed by session ${added.session}`,
         dialog,
+        index: added.index,
+        session: added.session,
+        session_created: added.sessionCreated,
       });
     } catch (error: any) {
-      if (error instanceof ChildValidationError) {
+      if (error instanceof ChildValidationError || error instanceof ChildIndexError) {
         return sendError(ctx, 400, error.message);
       }
       if (error?.name === 'ZodError') {
@@ -434,13 +449,14 @@ export function createVConRoutes(apiContext: RestApiContext): Router {
     try {
       const attachment = AttachmentSchema.parse(attachmentData) as Attachment;
       assertValid('Attachment', validateAttachment(attachment));
-      await apiContext.queries.addAttachment(uuid, attachment);
+      const added = await apiContext.queries.addAttachment(uuid, attachment);
       sendCreated(ctx, {
-        message: `Added attachment to vCon ${uuid}`,
-        attachment,
+        message: `Added attachment ${added.index} to vCon ${uuid}`,
+        index: added.index,
+        attachment: added.attachment,
       });
     } catch (error: any) {
-      if (error instanceof ChildValidationError) {
+      if (error instanceof ChildValidationError || error instanceof AttachmentScopeError) {
         return sendError(ctx, 400, error.message);
       }
       if (error?.name === 'ZodError') {
@@ -455,7 +471,7 @@ export function createVConRoutes(apiContext: RestApiContext): Router {
 
   // ── Index-addressed child CRUD ───────────────────────────────────────────
   // PATCH = replace (PUT semantics). DELETE for dialog/parties leaves an
-  // index-preserving placeholder (core-02 §4.1.8); DELETE for analysis/
+  // index-preserving placeholder (core-05 §4.5.1: the empty Dialog Object {}); DELETE for analysis/
   // attachments hard-removes and compacts.
 
   /** Validate :uuid and :index; return the parsed index or null (after sending the error). */
@@ -507,7 +523,7 @@ export function createVConRoutes(apiContext: RestApiContext): Router {
     if (!loc) return;
     try {
       await apiContext.queries.removeDialog(loc.uuid, loc.index);
-      sendSuccess(ctx, { message: `Removed dialog ${loc.index} from vCon ${loc.uuid} (placeholder kept; index preserved)` });
+      sendSuccess(ctx, { message: `Removed dialog ${loc.index} from vCon ${loc.uuid} (replaced by the empty Dialog Object {}; index preserved)` });
     } catch (error) {
       sendChildError(ctx, error, 'dialog');
     }
@@ -548,7 +564,7 @@ export function createVConRoutes(apiContext: RestApiContext): Router {
     if (!loc) return;
     try {
       const attachment = AttachmentSchema.parse(ctx.request.body) as Attachment;
-      assertValid('Attachment', validateAttachment(attachment));
+      assertValid('Attachment', validateAttachment(attachment, { requireScope: true }));
       await apiContext.queries.updateAttachment(loc.uuid, loc.index, attachment);
       sendSuccess(ctx, { message: `Replaced attachment ${loc.index} in vCon ${loc.uuid}`, attachment });
     } catch (error) {

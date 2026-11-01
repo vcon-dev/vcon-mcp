@@ -126,8 +126,20 @@ describe('insertVCon vcons row (CON-793)', () => {
     // makes the whole vCon come back childless.
     expect(row.id).toBe(VCON_UUID);
     expect(row.uuid).toBe(VCON_UUID);
-    // Without this the column default ("0.3.0") misreports a 0.4.0 corpus.
-    expect(row.vcon_version).toBe('0.4.0');
+    // A 0.4.0 file is migrated before it is stored, so the row says what it holds.
+    expect(row.vcon_version).toBe('0.5.0');
+  });
+
+  it('migrates a 0.4.0 file: the row carries redacted_from / amended_from and a Session row is written', async () => {
+    const { db, inserts } = makeDbSpy();
+
+    await insertVCon(db, { ...RAW_VCON, redacted: { type: 'de-identified', uuid: VCON_UUID } });
+
+    expect(inserts.vcons[0].redacted_from).toEqual({ type: 'de-identified', uuid: VCON_UUID });
+    expect(inserts.vcons[0]).not.toHaveProperty('redacted');
+    expect(inserts.sessions).toHaveLength(1);
+    expect(inserts.sessions[0]).toMatchObject({ session_index: 0, dialog_indices: [0], vcon_id: VCON_UUID });
+    expect(inserts.dialog[0]).not.toHaveProperty('originator');
   });
 });
 

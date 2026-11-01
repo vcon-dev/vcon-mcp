@@ -9,7 +9,9 @@ import {
   buildAnalysisRows,
   buildAttachmentRows,
   buildDialogRows,
+  buildEventRows,
   buildPartyRows,
+  buildSessionRows,
   buildVconRow,
   SHAPE_KEY,
 } from '../../src/db/batch-writer.js';
@@ -36,12 +38,14 @@ function roundTrip(input: VCon): VCon {
     buildPartyRows(input, null).map(viaDb),
     buildDialogRows(input, null).map(viaDb),
     buildAnalysisRows(input, null).map(viaDb),
-    buildAttachmentRows(input, null).map(viaDb)
+    buildAttachmentRows(input, null).map(viaDb),
+    buildSessionRows(input, null).map(viaDb),
+    buildEventRows(input, null).map(viaDb)
   );
 }
 
 const fixture = {
-  vcon: '0.4.0',
+  vcon: '0.5.0',
   uuid: '018f0000-0000-7000-8000-000000000001',
   created_at: '2026-01-01T00:00:00.000Z',
   updated_at: '2026-01-01T00:05:00.000Z',
@@ -51,12 +55,23 @@ const fixture = {
     { tel: '+15550000001', name: 'Agent', id: 'party-1', role: 'agent', meta: { team: 'blue' } },
     { mailto: 'customer@example.com' },
   ],
+  sessions: [
+    { start: '2026-01-01T00:00:00.000Z', duration: 30, parties: [0, 1], dialog: [0, 1, 2], x_flag: true },
+    { sessions: [{ session: 0, type: 'child', description: 'nested' }] },
+    {},
+  ],
+  events: [
+    { type: 'join', time: '2026-01-01T00:00:00.000Z', sessions: 0, party: 0 },
+    { type: 'drop', time: '2026-01-01T00:00:30.000Z', sessions: [0, 1], party: 1, x_note: 'ext' },
+    { type: 'blind-transfer', time: '2026-01-01T00:00:10.000Z', sessions: 0, party: 0, transferee: 1, transfer_target: 0, target_session: 2 },
+    { type: 'channel-contributors', time: '2026-01-01T00:00:05.000Z', dialog: 0, channel: 1, contributors: [0] },
+  ],
   dialog: [
     {
       type: 'recording',
       start: '2026-01-01T00:00:00.000Z',
       duration: 30,
-      parties: [0, 1],
+      parties: [[0], [1]],
       mediatype: 'audio/x-wav',
       url: 'https://example.com/a.wav',
       content_hash: 'sha512-abc',
@@ -64,18 +79,21 @@ const fixture = {
       alg: 'SHA-512',
       signature: 'sig-value',
     },
-    { type: 'text', parties: [0], body: { text: 'hi' }, encoding: 'none' },
+    { type: 'text', parties: [0, null], body: { text: 'hi' }, encoding: 'none' },
+    {},
     { type: 'text', parties: [1], body: 'plain words', encoding: 'none' },
   ],
   analysis: [
     { type: 'summary', vendor: 'v', dialog: [0], body: 'false', encoding: 'none', vendor_schema: 'schema-1' },
-    { type: 'sentiment', vendor: 'v', dialog: 1, body: { score: 0.9 }, encoding: 'json' },
+    { type: 'sentiment', vendor: 'v', dialog: 1, sessions: [0], body: { score: 0.9 }, encoding: 'json' },
     { type: 'transcript', vendor: 'v', dialog: [0, 1], body: '{"a":1}', encoding: 'json' },
     { type: 'keywords', vendor: 'v', body: ['x', 'y'] },
   ],
   attachments: [
-    { id: 'att-1', purpose: 'tags', body: ['k:v'], encoding: 'json' },
+    { id: 'att-1', purpose: 'tags', party: 0, session: [0, 1], body: ['k:v'], encoding: 'json' },
     { purpose: 'note', start: '2026-01-01T00:01:00.000Z', party: 0, dialog: 0, body: '42', encoding: 'none' },
+    { purpose: 'scoped', start: '2026-01-01T00:01:00.000Z', party: 1, session: 0, body: 'x', encoding: 'none' },
+    { purpose: 'scoped-array', start: '2026-01-01T00:01:00.000Z', party: 1, session: [2], body: 'x', encoding: 'none' },
   ],
 } as unknown as VCon;
 

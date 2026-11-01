@@ -10,7 +10,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { VConQueries } from '../src/db/queries.js';
 import { _resetBatchWriterForTests, assembleVCon } from '../src/db/batch-writer.js';
-import { ChildIndexError } from '../src/utils/vcon-children.js';
+import { AttachmentScopeError, ChildIndexError } from '../src/utils/vcon-children.js';
 
 type Call = { op: string; args: any[] };
 
@@ -109,36 +109,63 @@ describe('Supabase child CRUD', () => {
     expect(p.purpose).toBe('doc');
   });
 
-  it('updateDialog carries party_history in extra and only clears the legacy table', async () => {
+  it('updateDialog carries extension keys in extra and only clears the legacy table', async () => {
     const { supabase, calls } = makeMock();
     const q = new VConQueries(supabase);
-    const history = [{ party: 0, time: '2026-01-01T00:00:00Z', event: 'join' as const }];
-    await q.updateDialog(UUID, 0, { type: 'text', body: 'hi', parties: [0, 1], party_history: history });
+    await q.updateDialog(UUID, 0, { type: 'text', body: 'hi', parties: [0], x_ext: { a: 1 } } as any);
     const p = payloadsOf(calls, 'update')[0];
-    expect(p.extra).toEqual({ party_history: history });
+    expect(p.extra).toEqual({ x_ext: { a: 1 } });
     // legacy party_history rows are deleted, never re-inserted (CON-1243)
     expect(tablesTouched(calls)).toContain('party_history');
     expect(payloadsOf(calls, 'insert')).toHaveLength(0);
+    // 0.5.0: the dialog row has no originator column write
+    expect(p).not.toHaveProperty('originator');
   });
 
-  it('addDialog writes party_history once, in dialog.extra, and it round-trips through assembleVCon', async () => {
+  it('addDialog writes the dialog and, when the vCon has no Session, a Session that lists it', async () => {
     const { supabase, calls } = makeMock({ data: [], error: null });
     const q = new VConQueries(supabase);
-    const history = [
-      { party: 0, time: '2026-01-01T00:00:00Z', event: 'join' as const },
-      { party: 1, time: '2026-01-01T00:01:00Z', event: 'drop' as const },
-    ];
-    await q.addDialog(UUID, { type: 'text', body: 'hi', encoding: 'none', parties: [0, 1], party_history: history });
+    const res = await q.addDialog(UUID, { type: 'text', body: 'hi', encoding: 'none', parties: [0], start: '2026-01-01T00:00:00Z' });
 
+    expect(res).toEqual({ index: 0, session: 0, sessionCreated: true });
     expect(tablesTouched(calls)).not.toContain('party_history');
     const inserts = payloadsOf(calls, 'insert');
-    expect(inserts).toHaveLength(1);
-    const row = inserts[0];
-    expect(row.extra).toEqual({ party_history: history });
+    expect(inserts).toHaveLength(2);
+    expect(inserts[0]).toMatchObject({ dialog_index: 0, type: 'text', parties: [0] });
+    expect(inserts[1]).toMatchObject({ session_index: 0, dialog_indices: [0], start_time: '2026-01-01T00:00:00Z' });
+    // no parties are invented for the Session
+    expect(inserts[1].parties).toBeNull();
+  });
 
-    // getVCon assembles from the dialog row alone (it never selects party_history)
-    const vcon = assembleVCon({ uuid: UUID }, [], [row], [], []);
-    expect(vcon.dialog?.[0].party_history).toEqual(history);
+  it('addDialog appends to the only Session, and refuses to guess among several', async () => {
+    const one = makeMock({ data: [{ session_index: 0, dialog_indices: [0, 1] }], error: null });
+    const res = await new VConQueries(one.supabase).addDialog(UUID, { type: 'text', body: 'x', encoding: 'none' }, { knownIndex: 2 });
+    expect(res).toEqual({ index: 2, session: 0, sessionCreated: false });
+    expect(payloadsOf(one.calls, 'update')[0]).toEqual({ dialog_indices: [0, 1, 2] });
+
+    const two = makeMock({ data: [{ session_index: 0 }, { session_index: 1 }], error: null });
+    await expect(new VConQueries(two.supabase).addDialog(UUID, { type: 'text', body: 'x', encoding: 'none' }))
+      .rejects.toBeInstanceOf(ChildIndexError);
+    // nothing was written
+    expect(payloadsOf(two.calls, 'insert')).toHaveLength(0);
+  });
+
+  it('addAttachment scopes to the only Session, keeps an explicit dialog, and rejects an unscoped one among several', async () => {
+    const one = makeMock({ data: [], count: 1, error: null });
+    const added = await new VConQueries(one.supabase).addAttachment(UUID, { purpose: 'note', party: 0, body: 'x', encoding: 'none' });
+    expect(added.attachment.session).toBe(0);
+    expect(payloadsOf(one.calls, 'insert')[0]).toMatchObject({ party: 0, session_indices: [0] });
+
+    // a dialog index is never widened to a Session
+    const scoped = makeMock({ data: [], count: 1, error: null });
+    const kept = await new VConQueries(scoped.supabase).addAttachment(UUID, { purpose: 'note', party: 0, dialog: 2, body: 'x', encoding: 'none' });
+    expect(kept.attachment.session).toBeUndefined();
+    expect(payloadsOf(scoped.calls, 'insert')[0].session_indices).toBeNull();
+
+    const two = makeMock({ data: [], count: 2, error: null });
+    await expect(new VConQueries(two.supabase).addAttachment(UUID, { purpose: 'note', party: 0, body: 'x', encoding: 'none' }))
+      .rejects.toBeInstanceOf(AttachmentScopeError);
+    expect(payloadsOf(two.calls, 'insert')).toHaveLength(0);
   });
 
   // CON-1242: dialog.session_id is JSONB, so the SessionId object goes in as-is
@@ -162,12 +189,12 @@ describe('Supabase child CRUD', () => {
     expect(row.session_id).toEqual(session_id);
   });
 
-  it('removeDialog keeps type, nulls content, and clears party_history', async () => {
+  it('removeDialog writes the empty Dialog Object {} (type cleared too) and clears party_history', async () => {
     const { supabase, calls } = makeMock();
     const q = new VConQueries(supabase);
     await q.removeDialog(UUID, 0);
     const p = payloadsOf(calls, 'update')[0];
-    expect(p.type).toBe('recording');   // from maybeSingle existing row
+    expect(p.type).toBeNull();          // 0.5.0: the empty Dialog Object has no type
     expect(p.body).toBeNull();
     expect(p.parties).toBeNull();
     expect(tablesTouched(calls)).toContain('party_history');

@@ -17,27 +17,27 @@ const EXAMPLE_TYPES = ['minimal', 'phone_call', 'chat', 'email', 'video', 'full_
 function buildExampleVCon(type: string): any {
   const examples: Record<string, any> = {
     minimal: {
-      vcon: '0.4.0', uuid: randomUUID(), created_at: new Date().toISOString(),
+      vcon: '0.5.0', uuid: randomUUID(), created_at: new Date().toISOString(),
       parties: [{ name: 'Agent' }],
     },
     phone_call: {
-      vcon: '0.4.0', uuid: randomUUID(), created_at: new Date().toISOString(),
+      vcon: '0.5.0', uuid: randomUUID(), created_at: new Date().toISOString(),
       subject: 'Phone Call', parties: [{ name: 'Caller' }, { name: 'Agent' }], dialog: [],
     },
     chat: {
-      vcon: '0.4.0', uuid: randomUUID(), created_at: new Date().toISOString(),
+      vcon: '0.5.0', uuid: randomUUID(), created_at: new Date().toISOString(),
       subject: 'Chat', parties: [{ name: 'User' }, { name: 'Support' }], dialog: [],
     },
     email: {
-      vcon: '0.4.0', uuid: randomUUID(), created_at: new Date().toISOString(),
+      vcon: '0.5.0', uuid: randomUUID(), created_at: new Date().toISOString(),
       subject: 'Email Thread', parties: [{ mailto: 'a@example.com' }, { mailto: 'b@example.com' }], attachments: [],
     },
     video: {
-      vcon: '0.4.0', uuid: randomUUID(), created_at: new Date().toISOString(),
+      vcon: '0.5.0', uuid: randomUUID(), created_at: new Date().toISOString(),
       subject: 'Video Meeting', parties: [{ name: 'Host' }], dialog: [],
     },
     full_featured: {
-      vcon: '0.4.0', uuid: randomUUID(), created_at: new Date().toISOString(),
+      vcon: '0.5.0', uuid: randomUUID(), created_at: new Date().toISOString(),
       subject: 'Full Example', parties: [{ name: 'Alice' }, { name: 'Bob' }],
       dialog: [], analysis: [], attachments: [],
     },
@@ -115,8 +115,8 @@ export function createSchemaRoutes(apiContext: RestApiContext): Router {
       // Return the IETF vCon spec info
       sendSuccess(ctx, {
         format: 'json_schema',
-        spec_version: '0.4.0',
-        ietf_draft: 'draft-ietf-vcon-vcon-core-02',
+        spec_version: '0.5.0',
+        ietf_draft: 'draft-ietf-vcon-vcon-core-05',
         message: 'Full JSON Schema is available in the vCon IETF specification',
         reference: 'https://datatracker.ietf.org/doc/draft-ietf-vcon-vcon-core/',
       });

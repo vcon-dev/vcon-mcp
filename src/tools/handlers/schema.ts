@@ -12,9 +12,14 @@ import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { BaseToolHandler, ToolHandlerContext, ToolResponse } from './base.js';
 import {
   PartySchema,
+  SessionSchema,
   DialogSchema,
+  EventSchema,
   AnalysisSchema,
   AttachmentSchema,
+  RedactedFromSchema,
+  AmendedFromSchema,
+  RedactedStringSchema,
 } from '../vcon-crud.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -28,35 +33,30 @@ const exampleHash = (label: string): string =>
   `sha512-${createHash('sha512').update(`vcon-mcp example: ${label}`).digest('base64url')}`;
 
 const VConJsonSchema = z.object({
-  vcon: z.string().default('0.4.0').describe('Spec version (current: 0.4.0)'),
+  vcon: z.string().default('0.5.0').describe('Spec version (current: 0.5.0; 0.4.0 is migrated on read and on create)'),
   uuid: z.string().uuid().describe('Unique identifier for the vCon'),
   created_at: z.string().describe('ISO 8601 datetime when the vCon was created'),
   updated_at: z.string().optional(),
   subject: z.string().optional(),
   parties: z.array(PartySchema).min(1),
+  sessions: z.array(SessionSchema).optional()
+    .describe('Sessions scope the dialog and events. At least one is required when dialog or events are present'),
   dialog: z.array(DialogSchema).optional(),
+  events: z.array(EventSchema).optional(),
   analysis: z.array(AnalysisSchema).optional(),
   attachments: z.array(AttachmentSchema).optional(),
-  extensions: z.array(z.string()).optional(),
+  extensions: z.array(z.string()).optional()
+    .describe('MUST list every vCon extension used'),
   critical: z.array(z.string())
     .optional()
     .describe('Extensions that MUST be supported (renamed from must_support in 0.4.0)'),
-  amended: z
-    .object({
-      uuid: z.string().optional(),
-      url: z.string().optional(),
-      content_hash: z.union([z.string(), z.array(z.string())]).optional(),
-    })
+  amended_from: AmendedFromSchema
     .optional()
-    .describe('Amended reference (renamed from appended in 0.4.0)'),
-  redacted: z
-    .object({
-      uuid: z.string().optional(),
-      type: z.string().optional(),
-      url: z.string().optional(),
-      content_hash: z.union([z.string(), z.array(z.string())]).optional(),
-    })
-    .optional(),
+    .describe('The prior vCon version this one amends (renamed from amended in 0.5.0). Mutually exclusive with redacted_from'),
+  redacted_from: RedactedFromSchema
+    .optional()
+    .describe('The less redacted vCon this one was made from (renamed from redacted in 0.5.0)'),
+  redacted_strings: z.array(RedactedStringSchema).optional(),
   group: z
     .array(
       z.object({
@@ -131,19 +131,22 @@ export class GetExamplesHandler extends BaseToolHandler {
 
     const examples: Record<string, any> = {
       minimal: {
-        vcon: '0.4.0',
+        vcon: '0.5.0',
         uuid: mkUuid(),
         created_at: now,
         parties: [{ name: 'Agent' }],
       },
       phone_call: {
-        vcon: '0.4.0',
+        vcon: '0.5.0',
         uuid: mkUuid(),
         created_at: now,
         subject: 'Customer support call',
         parties: [
           { name: 'Jane Customer', tel: '+15551234567' },
           { name: 'Bob Agent', mailto: 'bob@example.com' },
+        ],
+        sessions: [
+          { start: now, duration: 327.5, parties: [0, 1], dialog: [0] },
         ],
         dialog: [
           {
@@ -155,8 +158,11 @@ export class GetExamplesHandler extends BaseToolHandler {
             filename: 'call-recording.mp3',
             url: 'https://storage.example.com/recordings/call-recording.mp3',
             content_hash: exampleHash('call-recording'),
-            originator: 0,
           },
+        ],
+        events: [
+          { type: 'join', time: now, sessions: 0, party: 0 },
+          { type: 'join', time: now, sessions: 0, party: 1 },
         ],
         analysis: [
           {
@@ -194,19 +200,26 @@ export class GetExamplesHandler extends BaseToolHandler {
         attachments: [
           {
             purpose: 'tags',
+            start: now,
+            party: 0,
+            session: 0,
+            mediatype: 'application/json',
             encoding: 'json',
             body: '["department:support","priority:normal","disposition:resolved"]',
           },
         ],
       },
       chat: {
-        vcon: '0.4.0',
+        vcon: '0.5.0',
         uuid: mkUuid(),
         created_at: now,
         subject: 'Sales chat',
         parties: [
           { name: 'User', mailto: 'user@example.com' },
           { name: 'Support Bot' },
+        ],
+        sessions: [
+          { start: now, parties: [0, 1], dialog: [0, 1] },
         ],
         dialog: [
           {
@@ -228,13 +241,16 @@ export class GetExamplesHandler extends BaseToolHandler {
         ],
       },
       email: {
-        vcon: '0.4.0',
+        vcon: '0.5.0',
         uuid: mkUuid(),
         created_at: now,
         subject: 'Contract review',
         parties: [
           { name: 'Alice', mailto: 'alice@example.com' },
           { name: 'Bob', mailto: 'bob@example.com' },
+        ],
+        sessions: [
+          { start: now, parties: [0, 1], dialog: [0] },
         ],
         dialog: [
           {
@@ -250,6 +266,7 @@ export class GetExamplesHandler extends BaseToolHandler {
         attachments: [
           {
             purpose: 'contract',
+            start: now,
             party: 0,
             dialog: 0,
             mediatype: 'application/pdf',
@@ -260,7 +277,7 @@ export class GetExamplesHandler extends BaseToolHandler {
         ],
       },
       video: {
-        vcon: '0.4.0',
+        vcon: '0.5.0',
         uuid: mkUuid(),
         created_at: now,
         subject: 'Quarterly review',
@@ -268,6 +285,9 @@ export class GetExamplesHandler extends BaseToolHandler {
           { name: 'Host', mailto: 'host@example.com' },
           { name: 'Attendee 1' },
           { name: 'Attendee 2' },
+        ],
+        sessions: [
+          { start: now, duration: 1820, parties: [0, 1, 2], dialog: [0] },
         ],
         dialog: [
           {
@@ -294,7 +314,7 @@ export class GetExamplesHandler extends BaseToolHandler {
         ],
       },
       full_featured: {
-        vcon: '0.4.0',
+        vcon: '0.5.0',
         uuid: mkUuid(),
         created_at: now,
         subject: 'Full-featured example',
@@ -302,6 +322,9 @@ export class GetExamplesHandler extends BaseToolHandler {
         parties: [
           { name: 'Alice', tel: '+15551112222', mailto: 'alice@example.com' },
           { name: 'Bob', tel: '+15553334444', mailto: 'bob@example.com' },
+        ],
+        sessions: [
+          { start: now, duration: 240, parties: [0, 1], dialog: [0, 1] },
         ],
         dialog: [
           {
@@ -342,12 +365,18 @@ export class GetExamplesHandler extends BaseToolHandler {
         attachments: [
           {
             purpose: 'tags',
+            start: now,
+            party: 0,
+            session: 0,
+            mediatype: 'application/json',
             encoding: 'json',
             body: '["department:sales","priority:high","sentiment:positive"]',
           },
           {
             purpose: 'followup',
+            start: now,
             party: 0,
+            session: 0,
             mediatype: 'application/pdf',
             filename: 'followup.pdf',
             url: 'https://storage.example.com/followup.pdf',
@@ -358,7 +387,7 @@ export class GetExamplesHandler extends BaseToolHandler {
             purpose: 'lawful_basis',
             start: now,
             party: 0,
-            dialog: 0,
+            session: 0,
             mediatype: 'application/json',
             encoding: 'json',
             body: {

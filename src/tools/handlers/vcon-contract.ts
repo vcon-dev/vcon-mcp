@@ -59,7 +59,7 @@ function normalizeIncludes(value: unknown): FetchInclude[] | { invalid: string[]
 function pickCore(vcon: VCon) {
   return {
     id: vcon.uuid,
-    vcon_version: vcon.vcon ?? '0.4.0',
+    vcon_version: vcon.vcon ?? '0.5.0',
     created_at: vcon.created_at,
     conversation_start: conversationStartOf(vcon),
     updated_at: vcon.updated_at,
@@ -283,7 +283,7 @@ const SHAPE_DESCRIPTORS: Record<string, ShapeDescriptor> = {
       ok: true,
       item: {
         id: '11111111-1111-1111-1111-111111111111',
-        vcon_version: '0.4.0',
+        vcon_version: '0.5.0',
         created_at: '2026-05-11T14:00:00Z',
         conversation_start: '2026-05-11T13:52:10Z',
         subject: 'Upset customer call',

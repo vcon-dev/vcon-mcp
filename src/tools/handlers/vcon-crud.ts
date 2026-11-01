@@ -8,10 +8,11 @@ import { lawfulBasisWarnings, LAWFUL_BASIS_VALUES } from '../../utils/lawful-bas
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { BaseToolHandler, ToolHandlerContext, ToolResponse } from './base.js';
 import { VCon, Analysis, Dialog, Attachment, Party } from '../../types/vcon.js';
-import { AnalysisSchema, DialogSchema, AttachmentSchema, PartySchema } from '../vcon-crud.js';
+import { AnalysisSchema, DialogSchema, AttachmentSchema, PartySchema, SessionSchema } from '../vcon-crud.js';
+import { getMigrationReport, reportSummary } from '../../utils/vcon-migration.js';
 import { buildTemplateVCon } from '../templates.js';
 import { VConValidationError } from '../../services/vcon-service.js';
-import { ChildIndexError } from '../../utils/vcon-children.js';
+import { AttachmentScopeError, ChildIndexError } from '../../utils/vcon-children.js';
 import {
   requireUUID,
   requireValidAnalysis,
@@ -27,7 +28,7 @@ async function execChild<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (error) {
-    if (error instanceof ChildIndexError) {
+    if (error instanceof ChildIndexError || error instanceof AttachmentScopeError) {
       throw new McpError(ErrorCode.InvalidParams, error.message);
     }
     throw error;
@@ -50,15 +51,24 @@ export class CreateVConHandler extends BaseToolHandler {
       const result = await context.vconService.create(
         {
           ...(uuid ? { uuid } : {}),
+          ...(args?.vcon !== undefined ? { vcon: args.vcon as string } : {}),
           subject: args?.subject as string | undefined,
           parties: (args?.parties as any[]) || [],
+          sessions: args?.sessions as VCon['sessions'],
           dialog: args?.dialog as Dialog[] | undefined,
+          events: args?.events as VCon['events'],
           analysis: args?.analysis as Analysis[] | undefined,
           attachments: args?.attachments as Attachment[] | undefined,
           extensions: args?.extensions as string[] | undefined,
           // 'must_support' is the pre-0.4.0 name; map it to critical when critical is absent.
           critical: (args?.critical ?? args?.must_support) as string[] | undefined,
-        },
+          redacted_from: args?.redacted_from as VCon['redacted_from'],
+          amended_from: args?.amended_from as VCon['amended_from'],
+          redacted_strings: args?.redacted_strings as VCon['redacted_strings'],
+          // 0.4.0 names, accepted as deprecated read aliases and mapped by the service.
+          ...(args?.redacted !== undefined ? { redacted: args.redacted } : {}),
+          ...(args?.amended !== undefined ? { amended: args.amended } : {}),
+        } as Partial<VCon>,
         {
           requestContext,
           source: 'mcp-tool',
@@ -70,6 +80,7 @@ export class CreateVConHandler extends BaseToolHandler {
         message: `Created vCon with UUID: ${result.uuid}`,
         vcon: result.vcon,
         warnings: lawfulBasisWarnings(result.vcon),
+        ...(result.migration ? { migration_report: { summary: reportSummary(result.migration), ...result.migration } } : {}),
       });
     } catch (error) {
       if (error instanceof VConValidationError) {
@@ -111,7 +122,7 @@ export class CreateVConFromTemplateHandler extends BaseToolHandler {
     }
 
     // Build vCon from template
-    const templateVCon = buildTemplateVCon(template, subject, parties, lawfulBasis ?? undefined);
+    const templateVCon = buildTemplateVCon(template, subject, parties, lawfulBasis ?? undefined, args?.lawful_basis_party as number | undefined);
     const requestContext = this.createRequestContext(args);
 
     try {
@@ -146,9 +157,15 @@ export class GetVConHandler extends BaseToolHandler {
     const requestContext = this.createRequestContext(args);
 
     const vcon = await context.vconService.get(uuid, { requestContext });
+    const migration = getMigrationReport(vcon);
+    // A vCon stored as 0.4.0 is returned migrated; say what the migration inferred.
+    const migrationNote = migration
+      ? { migration_report: { summary: reportSummary(migration), ...migration } }
+      : {};
 
     if (responseFormat === 'metadata') {
       return this.createSuccessResponse({
+        ...migrationNote,
         vcon: {
           vcon: vcon.vcon,
           uuid: vcon.uuid,
@@ -165,6 +182,7 @@ export class GetVConHandler extends BaseToolHandler {
     if (responseFormat === 'summary') {
       const summaryAnalysis = (vcon.analysis || []).filter((a: any) => a.type === 'summary');
       return this.createSuccessResponse({
+        ...migrationNote,
         vcon: {
           vcon: vcon.vcon,
           uuid: vcon.uuid,
@@ -174,13 +192,14 @@ export class GetVConHandler extends BaseToolHandler {
           extensions: vcon.extensions,
           critical: vcon.critical,
           parties: vcon.parties,
+          sessions: vcon.sessions,
           analysis: summaryAnalysis,
         }
       });
     }
 
     // 'full' — return everything
-    return this.createSuccessResponse({ vcon });
+    return this.createSuccessResponse({ ...migrationNote, vcon });
   }
 }
 
@@ -307,12 +326,32 @@ export class AddDialogHandler extends BaseToolHandler {
     // Parse and validate
     const dialog = DialogSchema.parse(dialogData) as Dialog;
     requireValidDialog(dialog);
+    if (dialog.type === undefined) {
+      throw new McpError(ErrorCode.InvalidParams, 'dialog.type is required (use update_dialog with {} to blank a position)');
+    }
 
-    await context.queries.addDialog(vconUuid, dialog);
-    
+    let session: number | undefined;
+    if (args?.session !== undefined && args?.session !== null) {
+      session = requireNonNegativeInteger(args.session, 'session');
+    }
+    let newSession: Omit<NonNullable<VCon['sessions']>[number], 'dialog'> | undefined;
+    if (args?.new_session !== undefined && args?.new_session !== null) {
+      const { dialog: _ignored, sessions: _refs, ...rest } = SessionSchema.parse(args.new_session) as any;
+      newSession = rest;
+    }
+
+    const added = await execChild(() => context.queries.addDialog(vconUuid, dialog, { session, newSession }));
+
     return this.createSuccessResponse({
-      message: `Added ${dialog.type} dialog to vCon ${vconUuid}`,
-      dialog: dialog
+      message: `Added ${dialog.type} dialog ${added.index} to vCon ${vconUuid}, listed by session ${added.session}` +
+        (added.sessionCreated ? ' (session created)' : ''),
+      dialog: dialog,
+      index: added.index,
+      session: added.session,
+      session_created: added.sessionCreated,
+      ...(added.sessionCreated && !newSession?.parties
+        ? { warnings: ['the new Session has no parties (receivers); set them when they are known'] }
+        : {}),
     });
   }
 }
@@ -331,11 +370,16 @@ export class AddAttachmentHandler extends BaseToolHandler {
     const attachment = AttachmentSchema.parse(attachmentData) as Attachment;
     requireValidAttachment(attachment);
 
-    await context.queries.addAttachment(vconUuid, attachment);
+    const added = await execChild(() => context.queries.addAttachment(vconUuid, attachment));
 
     return this.createSuccessResponse({
-      message: `Added attachment to vCon ${vconUuid}`,
-      attachment: attachment
+      message: `Added attachment ${added.index} to vCon ${vconUuid}`,
+      index: added.index,
+      attachment: added.attachment,
+      ...(added.attachment !== attachment ? { scope_defaulted: 'session' } : {}),
+      ...(added.attachment.purpose === 'lawful_basis' || (added.attachment as any).type === 'lawful_basis'
+        ? { warnings: lawfulBasisWarnings({ attachments: [added.attachment] }) }
+        : {}),
     });
   }
 }
@@ -379,7 +423,7 @@ export class RemoveDialogHandler extends BaseToolHandler {
     await execChild(() => context.queries.removeDialog(vconUuid, index));
 
     return this.createSuccessResponse({
-      message: `Removed dialog ${index} from vCon ${vconUuid} (content-stripped placeholder kept; index preserved)`,
+      message: `Removed dialog ${index} from vCon ${vconUuid} (replaced by the empty Dialog Object {}; index preserved)`,
     });
   }
 }
@@ -438,7 +482,7 @@ export class UpdateAttachmentHandler extends BaseToolHandler {
     const vconUuid = requireUUID(args?.vcon_uuid as string, 'vcon_uuid');
     const index = requireNonNegativeInteger(args?.index, 'index');
     const attachment = AttachmentSchema.parse(requireParam(args?.attachment, 'attachment')) as Attachment;
-    requireValidAttachment(attachment);
+    requireValidAttachment(attachment, { requireScope: true });
 
     await execChild(() => context.queries.updateAttachment(vconUuid, index, attachment));
 

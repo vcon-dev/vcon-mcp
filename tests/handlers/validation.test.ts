@@ -113,6 +113,8 @@ describe('Validation Utilities', () => {
   describe('requireValidAttachment', () => {
     it('should not throw for valid attachment with body and encoding', () => {
       const attachment: Attachment = {
+        party: 0,
+        session: 0,
         body: 'test',
         encoding: 'none',
       };
@@ -121,6 +123,8 @@ describe('Validation Utilities', () => {
 
     it('should not throw for valid attachment with url and content_hash', () => {
       const attachment: Attachment = {
+        party: 0,
+        dialog: 0,
         url: 'https://example.com/file',
         content_hash: 'hash123',
       };

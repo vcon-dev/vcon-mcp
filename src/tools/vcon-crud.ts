@@ -5,10 +5,14 @@
  * - analysis.schema (NOT schema_version)
  * - analysis.vendor (REQUIRED)
  * - analysis.body/dialog.body/attachment.body: string, or any JSON value when
- *   encoding is "json" (draft-ietf-vcon-vcon-core-04 Section 2.3)
+ *   encoding is "json" (draft-ietf-vcon-vcon-core-05 Section 2.3)
+ *
+ * vCon core-05 (syntax "0.5.0"): Session and Event Objects, Dialog contributors only,
+ * redacted_from / amended_from, Attachment party plus dialog or session.
  */
 
 import { z } from 'zod';
+import { LEGACY_DIALOG_PARAMS, validateEvent } from '../utils/vcon-validation.js';
 
 // ============================================================================
 // Zod Schemas with Corrections
@@ -51,7 +55,7 @@ function refineJsonBody(val: { body?: unknown; encoding?: string }, ctx: z.Refin
 }
 
 /**
- * Dialog session_id (draft-ietf-vcon-vcon-core-02 Section 4.3.10, syntax 0.4.0):
+ * Dialog session_id (draft-ietf-vcon-vcon-core-05 Section 4.5.10):
  * a SessionId object {local, remote}, or an array of them.
  *
  * Legacy decision (CON-1242): a plain string, the pre-0.4.0 form, is still
@@ -71,7 +75,7 @@ const SessionIdSchema = z.union([
   z.array(SessionIdObjectSchema),
   z.string(),
 ]).optional().describe(
-  'SessionId object {local, remote} or an array of them (vCon 0.4.0). ' +
+  'SessionId object {local, remote} or an array of them. ' +
   'A plain string is accepted as the legacy pre-0.4.0 form and stored verbatim.'
 );
 
@@ -86,6 +90,12 @@ export const AnalysisSchema = z.object({
   type: z.string().describe('Analysis type (e.g., summary, transcript, sentiment)'),
   dialog: z.union([z.number(), z.array(z.number())]).optional()
     .describe('Dialog index or array of indexes this analysis applies to'),
+  sessions: z.union([z.number(), z.array(z.number())]).optional()
+    .describe('Session index or array of indexes this analysis applies to (0.5.0)'),
+  attachment: z.union([z.number(), z.array(z.number())]).optional()
+    .describe('Attachment index or array of indexes the analysis was derived from'),
+  analysis: z.union([z.number(), z.array(z.number())]).optional()
+    .describe('Analysis index or array of indexes the analysis was derived from (0.5.0); never itself'),
   mediatype: z.string().optional(),
   filename: z.string().optional(),
   vendor: z.string().describe('REQUIRED: Vendor who produced this analysis'),  // ✅ REQUIRED
@@ -99,20 +109,24 @@ export const AnalysisSchema = z.object({
   .superRefine(refineJsonBody);
 
 /**
- * Dialog Schema
- * ✅ Includes new fields: session_id, application, message_id
+ * Dialog Schema (core-05 Section 4.5)
+ *
+ * Written types are recording, text and incomplete. `parties` are the CONTRIBUTORS only
+ * (receivers are the Session `parties`); a null slot is an unknown contributor. An empty
+ * Dialog Object `{}` holds an index position, so `type` is required unless the Dialog is
+ * empty. party_history, originator, the transfer parameters, recordings and recording_set
+ * were removed in 0.5.0 and are rejected with a pointer to the Session/Event replacement.
  */
+const ContributorSchema = z.union([z.number(), z.null()]);
 export const DialogSchema = z.object({
-  type: z.enum(['recording', 'text', 'transfer', 'incomplete'])
-    .describe('Type of dialog'),
+  type: z.enum(['recording', 'text', 'incomplete']).optional()
+    .describe('Type of dialog; required unless the Dialog is empty ({})'),
   start: z.string().optional().describe('ISO 8601 datetime when dialog started'),
   duration: z.number().optional().describe('Duration in seconds'),
   parties: z.union([
     z.number(),
-    z.array(z.number()),
-    z.array(z.union([z.number(), z.array(z.number())]))
-  ]).optional().describe('Party indexes involved'),
-  originator: z.number().optional(),
+    z.array(z.union([ContributorSchema, z.array(ContributorSchema)])),
+  ]).optional().describe('Contributor party indexes; a nested list per channel, null for an unknown contributor'),
   mediatype: z.string().optional(),
   filename: z.string().optional(),
   body: BodySchema,
@@ -123,21 +137,94 @@ export const DialogSchema = z.object({
   session_id: SessionIdSchema,
   application: z.string().optional().describe('Application that created this dialog'),  // ✅ New field
   message_id: z.string().optional().describe('Message identifier'),  // ✅ New field
-  // party_history must be in the schema or update_dialog would strip it and always clear existing history.
-  party_history: z.array(z.object({
-    party: z.number(),
-    time: z.string(),
-    event: z.enum(['join', 'drop', 'hold', 'unhold', 'mute', 'unmute']),
-  })).optional().describe('Party join/drop/hold/mute events'),
-  // Transfer-specific (type='transfer')
-  transferee: z.number().optional(),
-  transferor: z.number().optional(),
-  transfer_target: z.union([z.number(), z.array(z.number())]).optional(),
-  original: z.union([z.number(), z.array(z.number())]).optional(),
-  consultation: z.union([z.number(), z.array(z.number())]).optional(),
-  target_dialog: z.union([z.number(), z.array(z.number())]).optional(),
+  redacted_segments: z.array(z.record(z.unknown())).optional().describe('Redacted segments of this dialog (Section 4.8.2)'),
 }).passthrough() // extension keys are stored in `extra` (CON-1047)
-  .superRefine(refineJsonBody);
+  .superRefine((val, ctx) => {
+    refineJsonBody(val, ctx);
+    const keys = Object.keys(val);
+    if (keys.length > 0 && val.type === undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['type'], message: 'type is required unless the Dialog Object is empty ({})' });
+    }
+    for (const legacy of LEGACY_DIALOG_PARAMS) {
+      if (legacy in val) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [legacy],
+          message: `'${legacy}' was removed from the Dialog Object in vCon 0.5.0: ` +
+            (legacy === 'party_history' ? 'use an Event (join, drop, hold, unhold, mute, unmute) in the vCon events array'
+              : legacy === 'originator' ? 'use the Session originator'
+              : ['recordings', 'recording_set'].includes(legacy) ? 'group recordings with a Session'
+              : 'use a transfer Event (consultation-start, blind-transfer, consultative-transfer, transfer-abandoned)'),
+        });
+      }
+    }
+  });
+
+/** Session_Reference Object (Section 4.2.8) */
+export const SessionReferenceSchema = z.object({
+  session: z.number().int().min(0).describe('Index into the sessions array'),
+  type: z.string().describe('child, peer, precursor, breakout, or an extension value'),
+  description: z.string().optional(),
+}).passthrough();
+
+/** Session Object (Section 4.2). An empty Session is permitted. */
+export const SessionSchema = z.object({
+  start: z.string().optional().describe('ISO 8601 datetime; SHOULD be present'),
+  duration: z.number().min(0).optional().describe('Seconds; absent means no end'),
+  parties: z.array(z.number().int().min(0)).optional()
+    .describe('Receivers (party indexes). The first is the implied originator'),
+  originator: z.number().int().min(0).optional()
+    .describe('Only when the first party in parties is NOT the originator'),
+  // A separate object (not the shared SessionIdObjectSchema) so the JSON Schema inlines it
+  session_id: z.object({ local: z.string(), remote: z.string() }).passthrough().optional(),
+  sessions: z.array(SessionReferenceSchema).optional().describe('Relationships to other Sessions'),
+  dialog: z.array(z.number().int().min(0)).optional().describe('Indexes of the Dialogs in this Session'),
+}).passthrough();
+
+/**
+ * Event Object (Section 4.3). Parameter applicability by type is enforced
+ * (table 4.3.1.5): required, optional, should-not and must-not per event type.
+ */
+export const EventSchema = z.object({
+  type: z.string().describe('join, drop, hold, unhold, mute, unmute, keydown, keyup, consultation-start, blind-transfer, consultative-transfer, transfer-abandoned, channel-contributors, or an extension value'),
+  time: z.string().describe('ISO 8601 datetime (REQUIRED)'),
+  sessions: z.union([z.number().int().min(0), z.array(z.number().int().min(0))]).optional(),
+  party: z.number().int().min(0).optional(),
+  dialog: z.union([z.number().int().min(0), z.array(z.number().int().min(0))]).optional(),
+  channel: z.number().int().min(0).optional(),
+  contributors: z.union([z.number().int().min(0), z.array(z.number().int().min(0)), z.null()]).optional(),
+  button: z.string().optional(),
+  transferee: z.number().int().min(0).optional(),
+  transfer_target: z.number().int().min(0).optional(),
+  consultation: z.number().int().min(0).optional(),
+  target_session: z.number().int().min(0).optional(),
+}).passthrough()
+  .superRefine((val, ctx) => {
+    const { errors } = validateEvent(val);
+    for (const message of errors) ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+  });
+
+/** Redacted_from Object (Section 4.1.8) */
+export const RedactedFromSchema = z.object({
+  uuid: z.string().optional(),
+  type: z.string().optional(),
+  url: z.string().optional(),
+  content_hash: z.union([z.string(), z.array(z.string())]).optional(),
+}).passthrough();
+
+/** Amended_from Object (Section 4.1.9) */
+export const AmendedFromSchema = z.object({
+  uuid: z.string().optional(),
+  url: z.string().optional(),
+  content_hash: z.union([z.string(), z.array(z.string())]).optional(),
+}).passthrough();
+
+/** Redacted_string Object (Section 4.8) */
+export const RedactedStringSchema = z.object({
+  ref: z.number().int().min(1).max(99999),
+  type: z.string().optional(),
+  orig: z.string().optional(),
+}).passthrough();
 
 /**
  * Party Schema
@@ -152,7 +239,7 @@ export const PartySchema = z.object({
   did: z.string().optional(),
   uuid: z.string().uuid().optional().describe('Unique identifier for this party'),  // ✅ Added
   validation: z.string().optional(),
-  // Full core-02 Party object: these are persisted by the DB layer, so the schema
+  // Full Party object: these are persisted by the DB layer, so the schema
   // must include them or .parse() would strip them before they reach the query.
   jcard: z.record(z.unknown()).optional().describe('jCard object (RFC 7095)'),
   gmlpos: z.string().optional().describe('GML position'),
@@ -161,15 +248,16 @@ export const PartySchema = z.object({
 }).passthrough(); // extension keys are stored in `extra` (CON-1047)
 
 /**
- * Attachment Schema
- * ✅ Includes dialog reference
+ * Attachment Schema (core-05 Section 4.6)
  */
 export const AttachmentSchema = z.object({
   purpose: z.string().optional().describe('Canonical spec field for attachment classification'),
   type: z.string().optional().describe('Legacy compatibility field; prefer purpose for new data'),
   start: z.string().optional(),
-  party: z.number().optional(),
-  dialog: z.number().optional().describe('Dialog index this attachment relates to'),  // ✅ Added
+  party: z.number().optional().describe('Party index that contributed the attachment (REQUIRED in 0.5.0)'),
+  dialog: z.number().optional().describe('Dialog index this attachment relates to'),
+  session: z.union([z.number(), z.array(z.number())]).optional()
+    .describe('Session index or indexes this attachment relates to (0.5.0). At least one of dialog or session is required'),
   mediatype: z.string().optional(),
   filename: z.string().optional(),
   body: BodySchema,
@@ -222,7 +310,7 @@ const BODY_PROP = {
     '(object, array, number, string, boolean, or null) is accepted as-is.',
 } as const;
 
-// session_id: SessionId object or array (0.4.0), or a legacy string (see SessionIdSchema).
+// session_id: SessionId object or array, or a legacy string (see SessionIdSchema).
 const SESSION_ID_OBJECT = {
   type: 'object',
   properties: {
@@ -237,23 +325,80 @@ const SESSION_ID_PROP = {
     { type: 'array', items: SESSION_ID_OBJECT },
     { type: 'string' },
   ],
-  description: 'SessionId object {local, remote} or an array of them (vCon 0.4.0). ' +
+  description: 'SessionId object {local, remote} or an array of them. ' +
     'A plain string is accepted as the legacy pre-0.4.0 form and stored verbatim.',
 } as const;
 
-const PARTY_HISTORY_PROP = {
-  type: 'array',
-  description: 'Party join/drop/hold/mute events',
-  items: {
-    type: 'object',
-    properties: {
-      party: { type: 'integer', minimum: 0 },
-      time: { type: 'string', description: 'ISO 8601 datetime' },
-      event: { type: 'string', enum: ['join', 'drop', 'hold', 'unhold', 'mute', 'unmute'] },
+const EVENT_TYPES = [
+  'join', 'drop', 'hold', 'unhold', 'mute', 'unmute',
+  'keydown', 'keyup',
+  'consultation-start', 'blind-transfer', 'consultative-transfer', 'transfer-abandoned',
+  'channel-contributors',
+];
+
+const sessionProperties = {
+  start: { type: 'string', description: 'Session start (ISO 8601 datetime). SHOULD be present' },
+  duration: { type: 'number', minimum: 0, description: 'Duration in seconds. Absent means the session has no end' },
+  parties: {
+    type: 'array',
+    items: PARTY_INDEX,
+    description: 'Receivers (party indexes). The first is the implied originator. Contributors are in each Dialog parties',
+  },
+  originator: { ...PARTY_INDEX, description: 'Originator party index; only when the first party in parties is NOT the originator' },
+  session_id: SESSION_ID_OBJECT,
+  sessions: {
+    type: 'array',
+    description: 'Relationships to other Sessions',
+    items: {
+      type: 'object',
+      properties: {
+        session: { type: 'integer', minimum: 0, description: 'Index into the sessions array' },
+        type: { type: 'string', description: 'child, peer, precursor, breakout, or an extension value' },
+        description: { type: 'string' },
+      },
+      required: ['session', 'type'],
     },
-    required: ['party', 'time', 'event'],
+  },
+  dialog: { type: 'array', items: { type: 'integer', minimum: 0 }, description: 'Indexes of the Dialogs in this Session' },
+} as const;
+
+const eventProperties = {
+  type: { type: 'string', enum: EVENT_TYPES, description: 'Event type; extension values are accepted when the extension is listed' },
+  time: { type: 'string', description: 'ISO 8601 datetime (REQUIRED)' },
+  sessions: { ...INDEX_OR_LIST, description: 'Session index(es) the event applies to. A single index for transfer types; not used by channel-contributors' },
+  party: { ...PARTY_INDEX, description: 'Party the event is about; the Transferor for transfer types; not used by channel-contributors' },
+  dialog: { ...INDEX_OR_LIST, description: 'channel-contributors only (SHOULD NOT be present on other core types)' },
+  channel: { type: 'integer', minimum: 0, description: 'channel-contributors only' },
+  contributors: { oneOf: [{ type: 'integer', minimum: 0 }, { type: 'array', items: { type: 'integer', minimum: 0 } }, { type: 'null' }], description: 'channel-contributors only; null means no contributor' },
+  button: { type: 'string', description: 'keydown and keyup only' },
+  transferee: { ...PARTY_INDEX, description: 'Transfer types only' },
+  transfer_target: { ...PARTY_INDEX, description: 'Transfer types; optional on transfer-abandoned' },
+  consultation: { type: 'integer', minimum: 0, description: 'Session index; consultation-start and consultative-transfer (optional on transfer-abandoned)' },
+  target_session: { type: 'integer', minimum: 0, description: 'Session index; blind-transfer and consultative-transfer' },
+} as const;
+
+const REDACTED_FROM_PROP = {
+  type: 'object',
+  description: 'Reference to the less redacted vCon this one was made from (was redacted). Mutually exclusive with amended_from',
+  properties: {
+    uuid: { type: 'string' },
+    type: { type: 'string' },
+    url: { type: 'string' },
+    content_hash: { oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] },
   },
 } as const;
+
+const AMENDED_FROM_PROP = {
+  type: 'object',
+  description: 'Reference to the prior vCon version this one amends (was amended). Mutually exclusive with redacted_from',
+  properties: {
+    uuid: { type: 'string' },
+    url: { type: 'string' },
+    content_hash: { oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] },
+  },
+} as const;
+
+const CONTRIBUTOR_ITEM = { oneOf: [{ type: 'integer', minimum: 0 }, { type: 'null' }] } as const;
 
 const partyProperties = {
   name: { type: 'string', description: 'Display name of the party' },
@@ -271,17 +416,16 @@ const partyProperties = {
 } as const;
 
 const dialogProperties = {
-  type: { type: 'string', enum: ['recording', 'text', 'transfer', 'incomplete'], description: 'Type of dialog' },
+  type: { type: 'string', enum: ['recording', 'text', 'incomplete'], description: 'Type of dialog. Required unless the Dialog is empty ({})' },
   start: { type: 'string', description: 'Start time (ISO 8601 datetime)' },
   duration: { type: 'number', description: 'Duration in seconds' },
   parties: {
     oneOf: [
       { type: 'integer', minimum: 0 },
-      { type: 'array', items: { oneOf: [{ type: 'integer', minimum: 0 }, { type: 'array', items: { type: 'integer', minimum: 0 } }] } },
+      { type: 'array', items: { oneOf: [CONTRIBUTOR_ITEM, { type: 'array', items: CONTRIBUTOR_ITEM }] } },
     ],
-    description: 'Party index, list of indexes, or nested groupings',
+    description: 'Contributors only: party index, list of indexes, or one list per channel; null is an unknown contributor. Receivers are the Session parties',
   },
-  originator: { ...PARTY_INDEX, description: 'Originating party index' },
   body: BODY_PROP,
   encoding: { type: 'string', enum: ['base64url', 'json', 'none'] },
   mediatype: { type: 'string', description: 'MIME type of the content' },
@@ -292,19 +436,15 @@ const dialogProperties = {
   session_id: SESSION_ID_PROP,
   application: { type: 'string' },
   message_id: { type: 'string' },
-  party_history: PARTY_HISTORY_PROP,
-  // Transfer-specific (type='transfer')
-  transferee: PARTY_INDEX,
-  transferor: PARTY_INDEX,
-  transfer_target: INDEX_OR_LIST,
-  original: INDEX_OR_LIST,
-  consultation: INDEX_OR_LIST,
-  target_dialog: INDEX_OR_LIST,
+  redacted_segments: { type: 'array', items: { type: 'object' }, description: 'Redacted segments of this dialog' },
 } as const;
 
 const analysisProperties = {
   type: { type: 'string', description: 'Type of analysis (e.g., summary, transcript, sentiment)' },
   dialog: { ...INDEX_OR_LIST, description: 'Dialog index(es) this analysis applies to' },
+  sessions: { ...INDEX_OR_LIST, description: 'Session index(es) this analysis applies to (0.5.0)' },
+  attachment: { ...INDEX_OR_LIST, description: 'Attachment index(es) the analysis was derived from' },
+  analysis: { ...INDEX_OR_LIST, description: 'Analysis index(es) the analysis was derived from (0.5.0); never itself' },
   vendor: { type: 'string', description: 'REQUIRED: Vendor who produced this analysis' },
   product: { type: 'string' },
   schema: { type: 'string', description: 'Schema identifier for this analysis format' },
@@ -319,8 +459,9 @@ const analysisProperties = {
 const attachmentProperties = {
   purpose: { type: 'string', description: 'Canonical spec field for attachment classification' },
   type: { type: 'string', description: 'Legacy compatibility field; prefer purpose' },
-  party: { ...PARTY_INDEX, description: 'Party index this attachment relates to' },
-  dialog: { ...PARTY_INDEX, description: 'Dialog index this attachment relates to' },
+  party: { ...PARTY_INDEX, description: 'Party index that contributed the attachment (REQUIRED)' },
+  dialog: { ...PARTY_INDEX, description: 'Dialog index this attachment relates to. At least one of dialog or session is required' },
+  session: { ...INDEX_OR_LIST, description: 'Session index(es) this attachment relates to. Defaults to the only Session when the vCon has exactly one and neither dialog nor session is given' },
   start: { type: 'string' },
   mediatype: { type: 'string' },
   filename: { type: 'string' },
@@ -336,8 +477,11 @@ const attachmentProperties = {
 export const createVConTool = {
   name: 'create_vcon',
   category: 'write' as ToolCategory,
-  description: 'Create a new vCon compliant with IETF draft-ietf-vcon-vcon-core-02. ' +
-    'A vCon (virtual conversation) captures conversation data including parties, dialog, analysis, and attachments. ' +
+  description: 'Create a new vCon compliant with IETF draft-ietf-vcon-vcon-core-05 (syntax "0.5.0"). ' +
+    'A vCon (virtual conversation) captures conversation data including parties, sessions, dialog, events, analysis, and attachments. ' +
+    'At least one Session is required when dialog or events are supplied; a Session lists the receivers (parties) and the Dialogs (dialog indexes) it covers, ' +
+    'while each Dialog parties lists only the contributors. Attachments need party plus dialog or session. ' +
+    'A 0.4.0 vCon (vcon "0.4.0", or dialog with no sessions and no vcon) is migrated to 0.5.0 and the migration report is returned. ' +
     'Dialog, analysis, and attachments may be supplied inline at creation, or added later with the add_* tools. ' +
     'An optional client-supplied uuid makes the create idempotent: re-posting the same uuid replaces the existing vCon instead of creating a duplicate.',
   inputSchema: {
@@ -358,10 +502,20 @@ export const createVConTool = {
         items: { type: 'object', properties: partyProperties },
         minItems: 1
       },
+      sessions: {
+        type: 'array',
+        description: 'Sessions: the scope of dialog and events. Required when dialog or events are present.',
+        items: { type: 'object', properties: sessionProperties }
+      },
       dialog: {
         type: 'array',
-        description: 'Optional conversation segments to create inline.',
-        items: { type: 'object', properties: dialogProperties, required: ['type'] }
+        description: 'Optional conversation segments to create inline. An empty object {} holds an index position.',
+        items: { type: 'object', properties: dialogProperties }
+      },
+      events: {
+        type: 'array',
+        description: 'Optional point-in-time events (party, key, transfer, channel-contributors); replace party_history and transfer dialogs.',
+        items: { type: 'object', properties: eventProperties, required: ['type', 'time'] }
       },
       analysis: {
         type: 'array',
@@ -375,14 +529,22 @@ export const createVConTool = {
       },
       extensions: {
         type: 'array',
-        description: 'Array of extension identifiers used in this vCon',
+        description: 'Extension names used in this vCon (core-05 requires every extension used to be listed; lawful_basis and wtf_transcription are added automatically)',
         items: { type: 'string' }
       },
       critical: {
         type: 'array',
-        description: 'Extensions that MUST be supported to process this vCon (spec v0.4.0; was must_support).',
+        description: 'Extensions that MUST be supported to process this vCon (was must_support).',
         items: { type: 'string' }
       },
+      redacted_from: REDACTED_FROM_PROP,
+      amended_from: AMENDED_FROM_PROP,
+      redacted_strings: {
+        type: 'array',
+        description: 'Substrings replaced by __REDACTED_REF_<ref> markers',
+        items: { type: 'object', properties: { ref: { type: 'integer', minimum: 1, maximum: 99999 }, type: { type: 'string' }, orig: { type: 'string' } }, required: ['ref'] }
+      },
+      vcon: { type: 'string', enum: ['0.4.0', '0.5.0'], description: 'Syntax version of the input. Output is always 0.5.0. 0.4.0 input is migrated' },
       must_support: {
         type: 'array',
         description: 'Deprecated alias for critical (pre-0.4.0 name); mapped to critical if critical is absent.',
@@ -399,10 +561,10 @@ export const createVConTool = {
 export const getVConTool = {
   name: 'get_vcon',
   category: 'read' as ToolCategory,
-  description: 'Retrieve a vCon by its UUID. Use response_format to control how much data is returned:\n' +
-    '- "full" (default): complete vCon with all parties, dialog, analysis bodies, and attachments\n' +
-    '- "summary": metadata + parties + only analysis records of type "summary" (compact, fast — use this for browsing or summarizing)\n' +
-    '- "metadata": only vCon metadata and parties, no dialog/analysis/attachments\n' +
+  description: 'Retrieve a vCon by its UUID. The result is always syntax 0.5.0: a vCon stored as 0.4.0 is migrated on read, and migration_report summarises what was inferred. Use response_format to control how much data is returned:\n' +
+    '- "full" (default): complete vCon with all parties, sessions, dialog, events, analysis bodies, and attachments\n' +
+    '- "summary": metadata + parties + sessions + only analysis records of type "summary" (compact, fast — use this for browsing or summarizing)\n' +
+    '- "metadata": only vCon metadata and parties, no sessions/dialog/events/analysis/attachments\n' +
     'For vCons with large transcripts, "summary" is recommended — transcripts can be 80KB+.',
   inputSchema: {
     type: 'object' as const,
@@ -696,6 +858,27 @@ export const addAnalysisTool = {
             ],
             description: 'Dialog index(es) this analysis applies to'
           },
+          sessions: {
+            oneOf: [
+              { type: 'number' },
+              { type: 'array', items: { type: 'number' } }
+            ],
+            description: 'Session index(es) this analysis applies to (0.5.0)'
+          },
+          attachment: {
+            oneOf: [
+              { type: 'number' },
+              { type: 'array', items: { type: 'number' } }
+            ],
+            description: 'Attachment index(es) the analysis was derived from'
+          },
+          analysis: {
+            oneOf: [
+              { type: 'number' },
+              { type: 'array', items: { type: 'number' } }
+            ],
+            description: 'Analysis index(es) the analysis was derived from (0.5.0)'
+          },
           vendor: {
             type: 'string',
             description: 'REQUIRED: Vendor who produced this analysis (e.g., OpenAI, Google, IBM)'
@@ -736,7 +919,10 @@ export const addAnalysisTool = {
 export const addDialogTool = {
   name: 'add_dialog',
   category: 'write' as ToolCategory,
-  description: 'Add a dialog (conversation segment) to an existing vCon. Dialog can be a recording, text, transfer, or incomplete.',
+  description: 'Add a dialog (conversation segment) to an existing vCon. Dialog type is recording, text or incomplete; parties are the contributors only. ' +
+    'The new dialog is listed by a Session: pass session (an existing Session index), or omit it when the vCon has exactly one Session. ' +
+    'When the vCon has no Session one is created (from new_session, else from the dialog start and duration). With two or more Sessions, session is required. ' +
+    'A vCon stored as 0.4.0 is upgraded to 0.5.0 first. Returns the dialog index and the Session that lists it.',
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -747,50 +933,24 @@ export const addDialogTool = {
       },
       dialog: {
         type: 'object',
-        properties: {
-          type: {
-            type: 'string',
-            enum: ['recording', 'text', 'transfer', 'incomplete'],
-            description: 'Type of dialog'
-          },
-          start: {
-            type: 'string',
-            description: 'Start time (ISO 8601 datetime)'
-          },
-          duration: {
-            type: 'number',
-            description: 'Duration in seconds'
-          },
-          parties: {
-            oneOf: [
-              { type: 'number' },
-              { type: 'array', items: { type: 'number' } }
-            ],
-            description: 'Party indexes involved in this dialog'
-          },
-          body: {
-            ...BODY_PROP,
-            description: 'Dialog content (text, transcript, or recording). A string, unless encoding is "json", in which case any JSON value.'
-          },
-          encoding: {
-            type: 'string',
-            enum: ['base64url', 'json', 'none']
-          },
-          mediatype: {
-            type: 'string',
-            description: 'MIME type of the content'
-          },
-          session_id: SESSION_ID_PROP,
-          application: {
-            type: 'string',
-            description: 'Application that created this dialog'
-          },
-          message_id: {
-            type: 'string',
-            description: 'Message identifier'
-          }
-        },
+        properties: dialogProperties,
         required: ['type']
+      },
+      session: {
+        type: 'integer',
+        minimum: 0,
+        description: 'Index of the existing Session that lists this dialog. Optional when the vCon has zero or one Session'
+      },
+      new_session: {
+        type: 'object',
+        description: 'Session to create for this dialog when the vCon has none (dialog is set for you). Ignored when session is given or a Session exists',
+        properties: {
+          start: sessionProperties.start,
+          duration: sessionProperties.duration,
+          parties: sessionProperties.parties,
+          originator: sessionProperties.originator,
+          session_id: sessionProperties.session_id,
+        }
       }
     },
     required: ['vcon_uuid', 'dialog']
@@ -803,7 +963,8 @@ export const addDialogTool = {
 export const addAttachmentTool = {
   name: 'add_attachment',
   category: 'write' as ToolCategory,
-  description: 'Add an attachment to an existing vCon. Attachments can be files, documents, or other data related to the conversation.',
+  description: 'Add an attachment to an existing vCon. Attachments need party (who contributed it) plus dialog or session. ' +
+    'With neither dialog nor session given, the only Session is used when the vCon has exactly one; otherwise pass the scope. A dialog index is never widened to a Session.',
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -825,12 +986,17 @@ export const addAttachmentTool = {
           },
           party: {
             type: 'number',
-            description: 'Party index this attachment relates to'
+            description: 'Party index that contributed the attachment (REQUIRED)'
           },
           dialog: {
             type: 'number',
             description: 'Dialog index this attachment relates to'
           },
+          session: {
+            ...INDEX_OR_LIST,
+            description: 'Session index(es) this attachment relates to'
+          },
+          start: { type: 'string' },
           mediatype: { type: 'string' },
           filename: { type: 'string' },
           body: {
@@ -841,8 +1007,10 @@ export const addAttachmentTool = {
             type: 'string',
             enum: ['base64url', 'json', 'none']
           },
-          url: { type: 'string' }
-        }
+          url: { type: 'string' },
+          content_hash: { oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] }
+        },
+        required: ['party']
       }
     },
     required: ['vcon_uuid', 'attachment']
@@ -891,7 +1059,7 @@ export const updateVConTool = {
         properties: {
           subject: { type: 'string' },
           extensions: { type: 'array', items: { type: 'string' } },
-          critical: { type: 'array', items: { type: 'string' }, description: 'Extensions that MUST be supported (vCon 0.4.0 name)' },
+          critical: { type: 'array', items: { type: 'string' }, description: 'Extensions that MUST be supported' },
           must_support: { type: 'array', items: { type: 'string' }, description: 'Deprecated alias for critical (pre-0.4.0 name). Ignored when critical is also given.' }
         }
       },
@@ -910,13 +1078,13 @@ export const updateVConTool = {
 export const updateDialogTool = {
   name: 'update_dialog',
   category: 'write' as ToolCategory,
-  description: 'Replace the dialog at the given index (PUT semantics: omitted fields are cleared). Index is the dialog\'s position in the vCon\'s dialog array.',
+  description: 'Replace the dialog at the given index (PUT semantics: omitted fields are cleared). Index is the dialog\'s position in the vCon\'s dialog array. Session membership is unchanged. Send {} to blank the position.',
   inputSchema: {
     type: 'object' as const,
     properties: {
       vcon_uuid: UUID_PROP,
       index: INDEX_PROP,
-      dialog: { type: 'object', properties: dialogProperties, required: ['type'] },
+      dialog: { type: 'object', properties: dialogProperties },
     },
     required: ['vcon_uuid', 'index', 'dialog'],
   },
@@ -925,7 +1093,7 @@ export const updateDialogTool = {
 export const removeDialogTool = {
   name: 'remove_dialog',
   category: 'write' as ToolCategory,
-  description: 'Remove the dialog at the given index. Per IETF core-02 §4.1.8 the slot is preserved as a content-stripped placeholder (keeps "type") so positional references in analysis/attachments do not shift.',
+  description: 'Remove the dialog at the given index. Per IETF core-05 Section 4.5.1 the slot becomes the empty Dialog Object {} so the indexes in Sessions, Events, analysis and attachments do not shift.',
   inputSchema: {
     type: 'object' as const,
     properties: { vcon_uuid: UUID_PROP, index: INDEX_PROP },
@@ -1017,7 +1185,7 @@ export const updatePartyTool = {
 export const removePartyTool = {
   name: 'remove_party',
   category: 'write' as ToolCategory,
-  description: 'Remove the party at the given index. Per IETF core-02 §4.1.8 the slot is preserved as an empty placeholder Party Object so positional references (dialog.parties, attachment.party, etc.) do not shift. Set anonymize=true to write {name:"anonymous"} instead of an empty object.',
+  description: 'Remove the party at the given index. Per IETF core-05 the slot is preserved as an empty placeholder Party Object so positional references (dialog.parties, session.parties, event.party, attachment.party, etc.) do not shift. Set anonymize=true to write {name:"anonymous"} instead of an empty object.',
   inputSchema: {
     type: 'object' as const,
     properties: {

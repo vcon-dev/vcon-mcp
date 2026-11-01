@@ -11,6 +11,8 @@ import {
   buildDialogRows,
   buildAnalysisRows,
   buildAttachmentRows,
+  buildSessionRows,
+  buildEventRows,
   BATCH_SIZE,
   BATCH_MAX_AGE_MS,
   _resetBatchWriterForTests,
@@ -21,15 +23,17 @@ import { VCon } from '../../src/types/vcon.js';
 
 function makeVcon(overrides: Partial<VCon> = {}): VCon {
   return {
-    vcon: '0.4.0',
+    vcon: '0.5.0',
     uuid: randomUUID(),
     created_at: new Date('2025-01-01T00:00:00Z').toISOString(),
     parties: [{ name: 'A' }, { name: 'B' }],
+    sessions: [{ start: '2025-01-01T00:00:00Z', parties: [0, 1], dialog: [0] }],
     dialog: [{
       type: 'text',
       body: 'hi',
       encoding: 'none',
     }],
+    events: [{ type: 'join', time: '2025-01-01T00:00:00Z', sessions: 0, party: 0 }],
     analysis: [{
       type: 'summary',
       vendor: 'X',
@@ -38,6 +42,8 @@ function makeVcon(overrides: Partial<VCon> = {}): VCon {
     }],
     attachments: [{
       type: 'doc',
+      party: 0,
+      session: 0,
       body: 'd',
       encoding: 'none',
     }],
@@ -51,6 +57,8 @@ type RpcArgs = {
   p_dialog: any[];
   p_analysis: any[];
   p_attachments: any[];
+  p_sessions: any[];
+  p_events: any[];
 };
 
 /**
@@ -140,6 +148,8 @@ describe('batch-writer', () => {
       expect(args.p_dialog).toHaveLength(2);
       expect(args.p_analysis).toHaveLength(2);
       expect(args.p_attachments).toHaveLength(2);
+      expect(args.p_sessions).toHaveLength(2);
+      expect(args.p_events).toHaveLength(2);
     });
   });
 
@@ -195,6 +205,8 @@ describe('batch-writer', () => {
         p_dialog: buildDialogRows(v, 'tenant-1'),
         p_analysis: buildAnalysisRows(v, 'tenant-1'),
         p_attachments: buildAttachmentRows(v, 'tenant-1'),
+        p_sessions: buildSessionRows(v, 'tenant-1'),
+        p_events: buildEventRows(v, 'tenant-1'),
       });
     });
 
@@ -303,7 +315,7 @@ describe('batch-writer', () => {
   // vcons.tenant_id it could see, and re-posts never touched tenant_id because
   // it was not a column in the upsert (so not in ON CONFLICT ... SET).
   describe('child tenant_id (CON-1177)', () => {
-    const CHILD_KEYS = ['p_parties', 'p_dialog', 'p_analysis', 'p_attachments'] as const;
+    const CHILD_KEYS = ['p_parties', 'p_dialog', 'p_analysis', 'p_attachments', 'p_sessions', 'p_events'] as const;
 
     function childRows(args: RpcArgs) {
       return CHILD_KEYS.flatMap(k => args[k]);

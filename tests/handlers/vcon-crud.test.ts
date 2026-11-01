@@ -206,7 +206,7 @@ describe('vCon CRUD Handlers', () => {
       mockVConService.create.mockResolvedValue({
         uuid: testUuid,
         id: '1',
-        vcon: { vcon: '0.4.0', uuid: testUuid, created_at: new Date().toISOString(), parties: [{ name: 'A' }] },
+        vcon: { vcon: '0.5.0', uuid: testUuid, created_at: new Date().toISOString(), parties: [{ name: 'A' }] },
       });
       const result = await handler.handle({ parties: [{ name: 'A' }] }, mockContext);
       const response = JSON.parse(result.content[0].text);
@@ -221,7 +221,7 @@ describe('vCon CRUD Handlers', () => {
         purpose: 'lawful_basis',
         start: '2025-01-02T12:15:30Z',
         party: 0,
-        dialog: 0,
+        session: 0,
         mediatype: 'application/json',
         encoding: 'json',
         body: {
@@ -234,7 +234,7 @@ describe('vCon CRUD Handlers', () => {
       mockVConService.create.mockImplementation(async (data: any) => ({
         uuid: testUuid,
         id: '1',
-        vcon: { vcon: '0.4.0', uuid: testUuid, created_at: new Date().toISOString(), ...data },
+        vcon: { vcon: '0.5.0', uuid: testUuid, created_at: new Date().toISOString(), ...data },
       }));
       const result = await handler.handle({ parties: [{ name: 'A' }], attachments: [attachment] }, mockContext);
       expect(mockVConService.create).toHaveBeenCalledWith(
@@ -339,7 +339,7 @@ describe('vCon CRUD Handlers', () => {
       });
       const basis = { lawful_basis: 'contract', expiration: null };
       await handler.handle({ template_name: 'phone_call', parties: [{ name: 'A' }], lawful_basis: basis }, mockContext);
-      expect(buildTemplateVCon).toHaveBeenLastCalledWith('phone_call', undefined, [{ name: 'A' }], basis);
+      expect(buildTemplateVCon).toHaveBeenLastCalledWith('phone_call', undefined, [{ name: 'A' }], basis, undefined);
     });
 
     it('rejects a lawful_basis with an unknown basis value', async () => {
@@ -633,7 +633,7 @@ describe('vCon CRUD Handlers', () => {
         encoding: 'none',
       };
 
-      mockQueries.addDialog.mockResolvedValue(undefined);
+      mockQueries.addDialog.mockResolvedValue({ index: 0, session: 0, sessionCreated: false });
 
       const result = await handler.handle({
         vcon_uuid: uuid,
@@ -642,7 +642,7 @@ describe('vCon CRUD Handlers', () => {
 
       expect(mockQueries.addDialog).toHaveBeenCalledWith(uuid, expect.objectContaining({
         type: 'text',
-      }));
+      }), expect.anything());
 
       const response = JSON.parse(result.content[0].text);
       expect(response.success).toBe(true);
@@ -662,14 +662,14 @@ describe('vCon CRUD Handlers', () => {
       const uuid = randomUUID();
       const dialog = { type: 'text', body: { transcript: 'hi' }, encoding: 'json' };
 
-      mockQueries.addDialog.mockResolvedValue(undefined);
+      mockQueries.addDialog.mockResolvedValue({ index: 0, session: 0, sessionCreated: false });
 
       await handler.handle({ vcon_uuid: uuid, dialog }, mockContext);
 
       expect(mockQueries.addDialog).toHaveBeenCalledWith(uuid, expect.objectContaining({
         body: { transcript: 'hi' },
         encoding: 'json',
-      }));
+      }), expect.anything());
     });
 
     // CON-1242: adapters emit the 0.4.0 SessionId object; add_dialog rejected it.
@@ -677,21 +677,21 @@ describe('vCon CRUD Handlers', () => {
       const handler = new AddDialogHandler();
       const uuid = randomUUID();
       const session_id = { local: 'aaaa1111', remote: 'bbbb2222' };
-      mockQueries.addDialog.mockResolvedValue(undefined);
+      mockQueries.addDialog.mockResolvedValue({ index: 0, session: 0, sessionCreated: false });
 
       await handler.handle({ vcon_uuid: uuid, dialog: { type: 'recording', session_id } }, mockContext);
 
-      expect(mockQueries.addDialog).toHaveBeenCalledWith(uuid, expect.objectContaining({ session_id }));
+      expect(mockQueries.addDialog).toHaveBeenCalledWith(uuid, expect.objectContaining({ session_id }), expect.anything());
     });
 
     it('still accepts a legacy string session_id', async () => {
       const handler = new AddDialogHandler();
       const uuid = randomUUID();
-      mockQueries.addDialog.mockResolvedValue(undefined);
+      mockQueries.addDialog.mockResolvedValue({ index: 0, session: 0, sessionCreated: false });
 
       await handler.handle({ vcon_uuid: uuid, dialog: { type: 'text', session_id: 'sess-1' } }, mockContext);
 
-      expect(mockQueries.addDialog).toHaveBeenCalledWith(uuid, expect.objectContaining({ session_id: 'sess-1' }));
+      expect(mockQueries.addDialog).toHaveBeenCalledWith(uuid, expect.objectContaining({ session_id: 'sess-1' }), expect.anything());
     });
 
     it('rejects a non-string body when encoding is base64url', async () => {
@@ -708,11 +708,13 @@ describe('vCon CRUD Handlers', () => {
       const handler = new AddAttachmentHandler();
       const uuid = randomUUID();
       const attachment: Attachment = {
+        party: 0,
+        session: 0,
         body: 'attachment content',
         encoding: 'none',
       };
 
-      mockQueries.addAttachment.mockResolvedValue(undefined);
+      mockQueries.addAttachment.mockImplementation(async (_u: string, a: any) => ({ index: 0, attachment: a }));
 
       const result = await handler.handle({
         vcon_uuid: uuid,
@@ -739,9 +741,9 @@ describe('vCon CRUD Handlers', () => {
     it('accepts an array body when encoding is json', async () => {
       const handler = new AddAttachmentHandler();
       const uuid = randomUUID();
-      const attachment = { purpose: 'tags', body: ['priority:high', 'dept:sales'], encoding: 'json' };
+      const attachment = { purpose: 'tags', party: 0, session: 0, body: ['priority:high', 'dept:sales'], encoding: 'json' };
 
-      mockQueries.addAttachment.mockResolvedValue(undefined);
+      mockQueries.addAttachment.mockImplementation(async (_u: string, a: any) => ({ index: 0, attachment: a }));
 
       const result = await handler.handle({ vcon_uuid: uuid, attachment }, mockContext);
 
@@ -810,14 +812,20 @@ describe('vCon CRUD Handlers', () => {
       expect(mockQueries.updateDialog).toHaveBeenCalledWith(uuid, 0, expect.objectContaining({ session_id }));
     });
 
-    it('preserves party_history (DialogSchema must not strip it)', async () => {
+    it('rejects party_history: it was removed from the Dialog Object in 0.5.0 (use an Event)', async () => {
       const uuid = randomUUID();
       const party_history = [{ party: 0, time: '2026-01-01T00:00:00Z', event: 'join' }];
-      await new UpdateDialogHandler().handle(
+      await expect(new UpdateDialogHandler().handle(
         { vcon_uuid: uuid, index: 0, dialog: { type: 'text', body: 'hi', party_history } },
         mockContext
-      );
-      expect(mockQueries.updateDialog).toHaveBeenCalledWith(uuid, 0, expect.objectContaining({ party_history }));
+      )).rejects.toThrow(/removed from the Dialog Object in vCon 0\.5\.0/);
+      expect(mockQueries.updateDialog).not.toHaveBeenCalled();
+    });
+
+    it('accepts the empty Dialog Object {} as an index placeholder', async () => {
+      const uuid = randomUUID();
+      await new UpdateDialogHandler().handle({ vcon_uuid: uuid, index: 2, dialog: {} }, mockContext);
+      expect(mockQueries.updateDialog).toHaveBeenCalledWith(uuid, 2, {});
     });
   });
 
@@ -864,7 +872,7 @@ describe('vCon CRUD Handlers', () => {
     it('replaces the attachment at the index', async () => {
       const uuid = randomUUID();
       await new UpdateAttachmentHandler().handle(
-        { vcon_uuid: uuid, index: 0, attachment: { purpose: 'doc', body: 'x', encoding: 'none' } },
+        { vcon_uuid: uuid, index: 0, attachment: { purpose: 'doc', party: 0, session: 0, body: 'x', encoding: 'none' } },
         mockContext
       );
       expect(mockQueries.updateAttachment).toHaveBeenCalledWith(uuid, 0, expect.objectContaining({ purpose: 'doc' }));

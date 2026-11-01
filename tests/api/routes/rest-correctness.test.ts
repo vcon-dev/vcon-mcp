@@ -94,7 +94,7 @@ describe('REST correctness (CON-1239)', () => {
     it('still accepts a valid attachment', async () => {
       await request(ctx.app.callback())
         .post(`${BASE}/vcons/${uuid}/attachments`)
-        .send({ type: 'note', body: 'hello', encoding: 'none' })
+        .send({ type: 'note', party: 0, session: 0, body: 'hello', encoding: 'none' })
         .expect(201);
     });
   });

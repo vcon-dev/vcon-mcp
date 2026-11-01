@@ -71,9 +71,11 @@ export function requireValidDialog(dialog: any): void {
 
 /**
  * Validate Attachment object
- * Per spec Section 4.4, attachments must have either (body + encoding) or (url + content_hash)
+ * Per spec Section 4.6, attachments must have either (body + encoding) or (url + content_hash)
+ * and a `party`. `requireScope` also demands dialog or session; add_attachment leaves it off
+ * because the query layer defaults the scope when the vCon has exactly one Session.
  */
-export function validateAttachment(attachment: Attachment): ValidationResult {
+export function validateAttachment(attachment: Attachment, options: { requireScope?: boolean } = {}): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -95,6 +97,13 @@ export function validateAttachment(attachment: Attachment): ValidationResult {
     );
   }
 
+  if (attachment.party === undefined) {
+    errors.push('Attachment is missing required field: party (Section 4.6.3)');
+  }
+  if (options.requireScope && attachment.dialog === undefined && attachment.session === undefined) {
+    errors.push('Attachment must have at least one of dialog or session (Sections 4.6.4, 4.6.5)');
+  }
+
   return {
     valid: errors.length === 0,
     errors,
@@ -105,8 +114,8 @@ export function validateAttachment(attachment: Attachment): ValidationResult {
 /**
  * Validate Attachment and throw McpError if invalid
  */
-export function requireValidAttachment(attachment: any): void {
-  const validation = validateAttachment(attachment);
+export function requireValidAttachment(attachment: any, options: { requireScope?: boolean } = {}): void {
+  const validation = validateAttachment(attachment, options);
   if (!validation.valid) {
     throw new McpError(
       ErrorCode.InvalidParams,

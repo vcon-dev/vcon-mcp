@@ -17,7 +17,7 @@ import { VConService } from '../../src/services/vcon-service.js';
 
 export function sampleVCon(overrides?: Partial<VCon>): VCon {
   return {
-    vcon: '0.4.0',
+    vcon: '0.5.0',
     uuid: randomUUID(),
     created_at: new Date().toISOString(),
     subject: 'Test Conversation',
@@ -39,9 +39,9 @@ export function createMockQueries() {
     initialize: vi.fn(),
     createVCon: vi.fn(),
     getVCon: vi.fn(),
-    addDialog: vi.fn(),
+    addDialog: vi.fn().mockResolvedValue({ index: 0, session: 0, sessionCreated: false }),
     addAnalysis: vi.fn(),
-    addAttachment: vi.fn(),
+    addAttachment: vi.fn().mockImplementation(async (_uuid: string, attachment: any) => ({ index: 0, attachment })),
     deleteVCon: vi.fn(),
     updateVCon: vi.fn(),
     // Index-addressed child CRUD

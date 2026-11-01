@@ -5,7 +5,7 @@
  * (Supabase/PostgreSQL and MongoDB)
  */
 
-import { Analysis, Attachment, Dialog, Party, VCon } from '../types/vcon.js';
+import { Analysis, Attachment, Dialog, Party, Session, VCon } from '../types/vcon.js';
 import type { VconShapeGraphPayload } from '../types/vcon-shape-graph.js';
 
 /**
@@ -42,6 +42,30 @@ export interface DistinctValuesResult {
     totalVCons: number;
 }
 
+/** Where add_dialog puts the new Dialog (0.5.0: every Dialog SHOULD be in a Session). */
+export interface AddDialogOptions {
+    /** Existing Session index to add the Dialog to. */
+    session?: number;
+    /** Session to create for the Dialog when the vCon has none (its `dialog` is set by the writer). */
+    newSession?: Omit<Session, 'dialog'>;
+    /** Skip the SELECT MAX round-trip when the caller already knows the index. */
+    knownIndex?: number;
+}
+
+export interface AddDialogResult {
+    index: number;
+    /** Index of the Session that now lists the Dialog. */
+    session: number;
+    /** True when the Session was created for this Dialog. */
+    sessionCreated: boolean;
+}
+
+export interface AddAttachmentResult {
+    index: number;
+    /** The attachment as stored, with its scope (dialog or session) applied. */
+    attachment: Attachment;
+}
+
 export interface IVConQueries {
     /**
      * Initialize the database connection and schema (e.g. indexes)
@@ -61,7 +85,7 @@ export interface IVConQueries {
     /**
      * Add dialog to a vCon
      */
-    addDialog(vconUuid: string, dialog: Dialog): Promise<void>;
+    addDialog(vconUuid: string, dialog: Dialog, options?: AddDialogOptions): Promise<AddDialogResult>;
 
     /**
      * Add analysis to a vCon
@@ -77,7 +101,7 @@ export interface IVConQueries {
     /**
      * Add attachment to a vCon
      */
-    addAttachment(vconUuid: string, attachment: Attachment): Promise<void>;
+    addAttachment(vconUuid: string, attachment: Attachment): Promise<AddAttachmentResult>;
 
     // ── Index-addressed child CRUD ──────────────────────────────────────────
     // update = REPLACE (PUT). Removal of parties/dialog leaves an
@@ -93,10 +117,10 @@ export interface IVConQueries {
     /** Remove the party at `index` via empty/anonymized placeholder (no renumber). */
     removeParty(vconUuid: string, index: number, options?: { anonymize?: boolean }): Promise<void>;
 
-    /** Replace the dialog at `index` (omitted fields cleared; party_history rewritten). */
+    /** Replace the dialog at `index` (omitted fields cleared). */
     updateDialog(vconUuid: string, index: number, dialog: Dialog): Promise<void>;
 
-    /** Remove the dialog at `index` via content-stripped placeholder keeping `type` (no renumber). */
+    /** Remove the dialog at `index` by replacing it with the empty Dialog Object {} (no renumber). */
     removeDialog(vconUuid: string, index: number): Promise<void>;
 
     /** Replace the analysis at `index` (omitted fields cleared). */

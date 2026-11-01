@@ -36,6 +36,7 @@ describe('Integration Tests', () => {
             uuid: randomUUID()
           }
         ],
+        sessions: [{ dialog: [0] }],
         dialog: [
           {
             type: 'text',
@@ -200,6 +201,7 @@ describe('Integration Tests', () => {
             mailto: 'alice@example.com'
           }
         ],
+        sessions: [{ dialog: [0] }],
         dialog: [
           {
             type: 'recording',
@@ -253,6 +255,7 @@ describe('Integration Tests', () => {
             did: 'did:example:123'
           }
         ],
+        sessions: [{ dialog: [0] }],
         dialog: [
           {
             type: 'text',  // ✅ Correction #6
@@ -373,6 +376,7 @@ describe('Integration Tests', () => {
         created_at: new Date().toISOString(),
         subject: 'Integration Test Call',
         parties: [{ name: 'Test User', uuid: randomUUID() }],
+        sessions: [{ dialog: [0] }],
         dialog: [{
           type: 'text',
           body: 'Test message',

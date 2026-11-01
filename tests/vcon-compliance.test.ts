@@ -181,8 +181,8 @@ describe('IETF vCon Spec Compliance', () => {
   // ==========================================================================
   describe('Correction #6: Dialog Type Constraints', () => {
     it('should only allow valid dialog types', () => {
-      const validTypes: Array<'recording' | 'text' | 'transfer' | 'incomplete'> = [
-        'recording', 'text', 'transfer', 'incomplete'
+      const validTypes: Array<'recording' | 'text' | 'incomplete'> = [
+        'recording', 'text', 'incomplete'
       ];
 
       validTypes.forEach(type => {
@@ -197,18 +197,18 @@ describe('IETF vCon Spec Compliance', () => {
           dialog.disposition = 'no-answer';
         }
 
-        // Transfer dialogs require transfer fields
-        if (type === 'transfer') {
-          dialog.transferee = 0;
-          dialog.transferor = 0;
-          dialog.transfer_target = 0;
+        // An incomplete dialog has no content (Section 4.5)
+        if (type === 'incomplete') {
+          delete dialog.body;
+          delete dialog.encoding;
         }
 
         const vcon: VCon = {
-          vcon: '0.3.0',
+          vcon: '0.5.0',
           uuid: randomUUID(),
           created_at: new Date().toISOString(),
           parties: [{ name: 'Test' }],
+          sessions: [{ dialog: [0] }],
           dialog: [dialog]
         };
 
@@ -343,6 +343,7 @@ describe('IETF vCon Spec Compliance', () => {
           { id: '+19782250878_None_744', tel: '+19782250878', name: null, role: 'customer', mailto: null },
           { id: 'agent@example.com', tel: '+15555550100', name: 'Example Agent', role: 'agent', mailto: 'agent@example.com' },
         ],
+        sessions: [{ start: '2026-02-26T06:13:12.811092+00:00', parties: [0, 1], dialog: [0] }],
         dialog: [{
           type: 'recording',
           start: '2026-02-26T06:13:12.811092+00:00',
@@ -351,7 +352,7 @@ describe('IETF vCon Spec Compliance', () => {
           url: 'https://example.com/rec.wav',
           content_hash: 'abc',
         }],
-        attachments: [{ type: 'ingress_info', encoding: 'none', body: { source: 'example-carrier' } }],
+        attachments: [{ type: 'ingress_info', party: 0, session: 0, encoding: 'none', body: { source: 'example-carrier' } }],
       } as unknown as VCon;
       const result = validateVCon(sampleVcon);
       expect(result.valid).toBe(true);
@@ -370,7 +371,7 @@ describe('IETF vCon Spec Compliance', () => {
         created_at: new Date().toISOString(),
         subject: 'Test Conversation',
         extensions: ['https://example.com/ext'],
-        must_support: ['https://example.com/ext'],
+        critical: ['https://example.com/ext'],
         parties: [
           {
             name: 'Alice',
@@ -383,6 +384,7 @@ describe('IETF vCon Spec Compliance', () => {
             uuid: randomUUID()
           }
         ],
+        sessions: [{ parties: [0, 1], dialog: [0] }],
         dialog: [
           {
             type: 'text',

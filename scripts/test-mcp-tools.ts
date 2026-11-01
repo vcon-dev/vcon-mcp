@@ -105,8 +105,7 @@ async function runTests() {
     const dialog = {
       type: 'text' as const,
       start: new Date().toISOString(),
-      parties: [0, 1],
-      originator: 1,
+      parties: [1],
       body: 'This is a test dialog message from the MCP server validation.',
       encoding: 'none' as const
     };
@@ -143,6 +142,7 @@ async function runTests() {
     
     const attachment = {
       type: 'text/plain',
+      party: 0,
       body: 'This is a test attachment from the MCP server validation.',
       encoding: 'none' as const
     };
