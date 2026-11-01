@@ -91,17 +91,79 @@ const clone = <T>(v: T): T => (v === undefined ? v : JSON.parse(JSON.stringify(v
 /** Key present with a value. An undefined value counts as absent (JSON never carries one). */
 const has = (o: Obj, k: string) => Object.prototype.hasOwnProperty.call(o, k) && o[k] !== undefined;
 
-/** Milliseconds since epoch, or null. A datetime with no zone is read as UTC. */
-function parseDt(value: unknown): number | null {
+const DATE_RE =
+  /^(\d{4})-(\d{2})-(\d{2})(?:[Tt ](\d{2}):(\d{2})(?::(\d{2})(\.\d+)?)?\s*(Z|z|[+-]\d{2}(?::?\d{2})?)?)?$/;
+const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+/**
+ * Epoch seconds (microsecond precision, as Python's datetime.timestamp() gives)
+ * of an ISO 8601 / RFC 3339 date-time, or null. A date-time with no zone is
+ * read as UTC. Out-of-range fields (February 30, hour 24, offset of 24 hours)
+ * are rejected, not rolled over, and free-form strings such as "Jan 1 2022"
+ * (which Date.parse would read in the server's local zone) are not dates.
+ */
+export function parseDt(value: unknown): number | null {
   if (typeof value !== 'string') return null;
-  let s = value.trim();
-  if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(s)) s = `${s.replace(' ', 'T')}Z`;
-  const t = Date.parse(s);
-  return Number.isNaN(t) ? null : t;
+  const m = DATE_RE.exec(value.trim());
+  if (!m) return null;
+  const [, ys, mos, ds, hs = '00', mis = '00', ss = '00', frac = '', tz = 'Z'] = m;
+  const [y, mo, d, h, mi, sec] = [ys, mos, ds, hs, mis, ss].map(Number);
+  const leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+  if (y < 1 || mo < 1 || mo > 12 || d < 1) return null;
+  if (d > (mo === 2 && leap ? 29 : DAYS_IN_MONTH[mo - 1]) || h > 23 || mi > 59 || sec > 59) return null;
+  let offsetMinutes = 0;
+  const t = tz.toUpperCase();
+  if (t !== 'Z') {
+    const digits = t.slice(1).replace(':', '');
+    const oh = Number(digits.slice(0, 2));
+    const om = Number(digits.slice(2) || '0');
+    if (oh > 23 || om > 59) return null;
+    offsetMinutes = (t[0] === '-' ? -1 : 1) * (oh * 60 + om);
+  }
+  const date = new Date(Date.UTC(2000, mo - 1, d, h, mi, sec));
+  date.setUTCFullYear(y);
+  const micros = frac ? Number(frac.slice(1, 7).padEnd(6, '0')) : 0;
+  return (date.getTime() * 1000 + micros - offsetMinutes * 60_000_000) / 1e6;
 }
 
-function num(seconds: number): number {
-  return Math.round(seconds * 1e6) / 1e6;
+/**
+ * Round seconds to six decimals as the reference's round(x, 6) does: on the
+ * exact binary value, ties to even (Math.round(x * 1e6) / 1e6 disagrees on
+ * values such as 0.0078125).
+ */
+export function num(seconds: number): number {
+  if (!Number.isFinite(seconds)) return seconds;
+  const sign = seconds < 0 ? -1 : 1;
+  const [ip, fp] = Math.abs(seconds).toFixed(100).split('.');
+  const keep = fp.slice(0, 6);
+  const rest = fp.slice(6);
+  const up = rest[0] > '5' || (rest[0] === '5' && (/[1-9]/.test(rest.slice(1)) || Number(keep[5]) % 2 === 1));
+  const digits = (BigInt(ip + keep) + (up ? BigInt(1) : BigInt(0))).toString().padStart(7, '0');
+  const value = Number(`${digits.slice(0, -6)}.${digits.slice(-6)}`);
+  return value === 0 ? 0 : sign * value;
+}
+
+function roundHalfEven(x: number): number {
+  const r = Math.round(x);
+  return Math.abs(x % 1) === 0.5 && r % 2 !== 0 ? r - 1 : r;
+}
+
+/**
+ * What Python's datetime.fromtimestamp(t, tz=timezone.utc).isoformat() gives
+ * for epoch seconds t, so a derived Event time matches the reference exactly.
+ */
+export function isoFromSeconds(t: number): string {
+  let whole = Math.trunc(t);
+  let us = roundHalfEven((t - whole) * 1e6);
+  if (us >= 1e6) {
+    whole += 1;
+    us -= 1e6;
+  } else if (us < 0) {
+    whole -= 1;
+    us += 1e6;
+  }
+  const base = new Date(whole * 1000).toISOString().slice(0, 19);
+  return base + (us ? '.' + String(us).padStart(6, '0') : '') + '+00:00';
 }
 
 /** Flat list of int party indices of a 0.4.0 Dialog `parties` value. */
@@ -244,13 +306,13 @@ class Context {
       const dur = this.dialogs[i].duration;
       if (isNum(dur)) {
         anyDuration = true;
-        ends.push(t / 1000 + dur);
+        ends.push(t + dur);
       } else {
-        ends.push(t / 1000);
+        ends.push(t);
       }
     }
     if (!anyDuration) return { start: startStr, duration: null };
-    return { start: startStr, duration: num(Math.max(...ends) - first.t / 1000) };
+    return { start: startStr, duration: num(Math.max(...ends) - first.t) };
   }
 
   /** Build a Session for a group of kept Dialogs from derived values. */
@@ -464,7 +526,7 @@ function t4Transfers(ctx: Context): void {
           const cs = parseDt(ctx.dialogStart(consRef));
           const dur = cd && typeof cd === 'object' ? cd.duration : null;
           if (cs !== null && isNum(dur)) {
-            cands.push([new Date(cs + dur * 1000).toISOString(), `end of consultation dialog[${consRef}] (start + duration)`]);
+            cands.push([isoFromSeconds(cs + dur), `end of consultation dialog[${consRef}] (start + duration)`]);
           }
           cands.push([ctx.dialogStart(consRef), `start of consultation dialog[${consRef}]`]);
         }
@@ -917,7 +979,7 @@ export function migrate040To050(input: unknown, opts: { strict?: boolean } = {})
 
   const version = data.vcon;
   const signed = has(data, 'payload') && has(data, 'signatures');
-  if (version !== undefined && version !== SOURCE_VERSION && !signed) {
+  if (version !== undefined && version !== null && version !== SOURCE_VERSION && !signed) {
     throw new MigrationError(`cannot migrate: input vcon is ${JSON.stringify(version)}, expected ${JSON.stringify(SOURCE_VERSION)}`);
   }
   for (const step of MIGRATION_STEPS) {
@@ -925,10 +987,10 @@ export function migrate040To050(input: unknown, opts: { strict?: boolean } = {})
     step.func(ctx);
     if (step.id === 'T13') {
       const v = ctx.out.vcon;
-      if (v !== undefined && v !== SOURCE_VERSION) {
+      if (v !== undefined && v !== null && v !== SOURCE_VERSION) {
         throw new MigrationError(`cannot migrate: input vcon is ${JSON.stringify(v)}, expected ${JSON.stringify(SOURCE_VERSION)}`);
       }
-      if (v === undefined) {
+      if (v === undefined || v === null) {
         const markers = V050_ONLY_KEYS.filter((k) => has(ctx.out, k)).sort();
         if (markers.length > 0) {
           throw new MigrationError(`cannot migrate: input has no 'vcon' parameter but has 0.5.0-only parameter(s) ${JSON.stringify(markers)}; it is already 0.5.0 (vcon is optional there)`);

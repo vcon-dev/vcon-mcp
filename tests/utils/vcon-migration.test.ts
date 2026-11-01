@@ -532,3 +532,53 @@ describe('migrateOnRead', () => {
     expect(seen).toBeInstanceOf(MigrationError);
   });
 });
+
+/**
+ * Regressions found by diffing this port against the Python reference on the
+ * reference test inputs plus adversarial ones.
+ */
+describe('parity with the reference implementation', () => {
+  it('derives Session duration with microsecond precision', () => {
+    const { vcon } = migrate040To050(v04({
+      dialog: [rec({ start: '2022-01-01T00:00:00.123456Z', duration: 10 }), rec({ start: '2022-01-01T00:00:00.5Z', duration: 10 })],
+    }));
+    expect(vcon.sessions[0].duration).toBe(10.376544);
+  });
+
+  it('picks the earliest start when two starts differ by less than a millisecond', () => {
+    const { vcon } = migrate040To050(v04({
+      dialog: [rec({ start: '2022-01-01T00:00:00.0009Z', duration: 1 }), rec({ start: '2022-01-01T00:00:00.0001Z', duration: undefined })],
+    }));
+    expect(vcon.sessions[0].start).toBe('2022-01-01T00:00:00.0001Z');
+    expect(vcon.sessions[0].duration).toBe(1.0008);
+  });
+
+  it('rounds durations half to even, as round(x, 6) does', () => {
+    const { vcon } = migrate040To050(v04({ dialog: [rec({ start: '2022-01-01T00:00:00Z', duration: 0.0078125 })] }));
+    expect(vcon.sessions[0].duration).toBe(0.007812);
+  });
+
+  it('formats a derived consultation-end Event time like the reference', () => {
+    const transfer = { type: 'transfer', transferee: 0, transferor: 1, transfer_target: 2, original: 0, consultation: 1 };
+    const time = (start: string, duration: number) => migrate040To050(v04({
+      dialog: [rec(), rec({ start, duration, parties: [1, 2] }), transfer],
+    })).vcon.events.find((e: any) => e.type === 'consultative-transfer').time;
+    expect(time('2022-01-01T00:01:00Z', 30.5)).toBe('2022-01-01T00:01:30.500000+00:00');
+    expect(time('2022-01-01T00:01:00Z', 60)).toBe('2022-01-01T00:02:00+00:00');
+    expect(time('2022-01-01T00:01:00.123456+00:00', 0.0000015)).toBe('2022-01-01T00:01:00.123457+00:00');
+  });
+
+  it.each(['2022-02-30T00:00:00Z', '2022-01-01T24:00:00Z', '2022-01-01T00:00:00+24:00', 'Jan 1 2022 10:00'])(
+    'does not treat %s as a start (no roll-over, no local-zone parse)',
+    (start) => {
+      const { vcon } = migrate040To050(v04({ dialog: [rec({ start })] }));
+      expect(vcon.sessions[0].start).toBeUndefined();
+    },
+  );
+
+  it('treats vcon: null as an absent version, as the reference does', () => {
+    const { vcon } = migrate040To050(v04({ vcon: null, dialog: [rec()] }));
+    expect(vcon.vcon).toBe('0.5.0');
+    expect(() => migrate040To050(v04({ vcon: null, sessions: [] }))).toThrow(MigrationError);
+  });
+});
