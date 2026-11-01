@@ -16,7 +16,9 @@ const VALID_FETCH_INCLUDES = [
   'tags',
   'dealer',
   'counts',
+  'sessions',
   'dialog',
+  'events',
   'analysis',
   'attachments',
 ] as const;
@@ -187,14 +189,18 @@ async function buildItem(
 
   if (include.includes('parties')) item.parties = vcon.parties || [];
   if (include.includes('summary')) item.summary = pickSummaryAnalysis(vcon.analysis);
+  if (include.includes('sessions')) item.sessions = vcon.sessions || [];
   if (include.includes('dialog')) item.dialog = vcon.dialog || [];
+  if (include.includes('events')) item.events = vcon.events || [];
   if (include.includes('analysis')) item.analysis = vcon.analysis || [];
   if (include.includes('attachments')) item.attachments = vcon.attachments || [];
   if (include.includes('dealer')) item.dealer = extractDealer(vcon.attachments);
   if (include.includes('counts')) {
     item.counts = {
       parties: vcon.parties?.length || 0,
+      sessions: vcon.sessions?.length || 0,
       dialog: vcon.dialog?.length || 0,
+      events: vcon.events?.length || 0,
       analysis: vcon.analysis?.length || 0,
       attachments: vcon.attachments?.length || 0,
     };
@@ -383,7 +389,7 @@ const SHAPE_DESCRIPTORS: Record<string, ShapeDescriptor> = {
         },
         fetch: {
           default_include: ['core', 'parties', 'summary'],
-          supported_include: ['core', 'parties', 'summary', 'tags', 'dealer', 'counts', 'dialog', 'analysis', 'attachments'],
+          supported_include: ['core', 'parties', 'summary', 'tags', 'dealer', 'counts', 'sessions', 'dialog', 'events', 'analysis', 'attachments'],
         },
         search: {
           modes: ['metadata', 'keyword', 'semantic', 'hybrid'],

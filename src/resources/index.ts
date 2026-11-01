@@ -69,7 +69,7 @@ export function getCoreResources(): ResourceDescriptor[] {
     { 
       uri: 'vcon://v1/vcons/{uuid}/metadata', 
       name: 'Get vCon metadata', 
-      description: 'Retrieve only metadata fields (excludes parties, dialog, analysis, attachments arrays). Use when you only need basic vCon info without conversation content.',
+      description: 'Retrieve only metadata fields (excludes parties, sessions, dialog, events, analysis, attachments arrays). Use when you only need basic vCon info without conversation content.',
       mimeType: 'application/json' 
     },
     { 
@@ -79,9 +79,21 @@ export function getCoreResources(): ResourceDescriptor[] {
       mimeType: 'application/json' 
     },
     { 
+      uri: 'vcon://v1/vcons/{uuid}/sessions', 
+      name: 'Get vCon sessions', 
+      description: 'Retrieve only the sessions array from a vCon (vCon 0.5.0). A Session lists the receivers (parties) and the dialog indexes it covers, and can reference other Sessions as child, peer, precursor or breakout.',
+      mimeType: 'application/json' 
+    },
+    { 
       uri: 'vcon://v1/vcons/{uuid}/dialog', 
       name: 'Get vCon dialog', 
       description: 'Retrieve only the dialog array from a vCon. Returns all conversation exchanges and recordings.',
+      mimeType: 'application/json' 
+    },
+    { 
+      uri: 'vcon://v1/vcons/{uuid}/events', 
+      name: 'Get vCon events', 
+      description: 'Retrieve only the events array from a vCon (vCon 0.5.0): party events (join, drop, hold, mute), key events, transfer events and channel-contributors events. Events are not in chronological order; sort by time.',
       mimeType: 'application/json' 
     },
     { 
@@ -422,8 +434,16 @@ export async function resolveCoreResource(
     return json({ parties: vcon.parties || [] });
   }
 
+  if (suffix === '/sessions') {
+    return json({ sessions: vcon.sessions || [] });
+  }
+
   if (suffix === '/dialog') {
     return json({ dialog: vcon.dialog || [] });
+  }
+
+  if (suffix === '/events') {
+    return json({ events: vcon.events || [] });
   }
 
   if (suffix === '/analysis') {

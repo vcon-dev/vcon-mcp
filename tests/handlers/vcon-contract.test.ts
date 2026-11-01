@@ -117,6 +117,27 @@ describe('Redesigned vCon contract handlers', () => {
     expect(response.meta.include).toEqual(['core', 'parties', 'summary']);
   });
 
+  it('vcon_fetch can return sessions and events, and counts them', async () => {
+    mockQueries.getVCon.mockResolvedValueOnce({
+      vcon: '0.5.0',
+      uuid: '11111111-1111-1111-1111-111111111111',
+      created_at: '2026-05-11T14:00:00Z',
+      parties: [{ name: 'Customer' }, { name: 'Agent' }],
+      sessions: [{ start: '2026-05-11T14:00:00Z', parties: [0, 1], dialog: [0] }],
+      dialog: [{ type: 'text', parties: [0], body: 'hi', encoding: 'none' }],
+      events: [{ type: 'join', time: '2026-05-11T14:00:00Z', sessions: 0, party: 0 }],
+    });
+    const result = await new VConFetchHandler().handle(
+      { id: '11111111-1111-1111-1111-111111111111', include: ['core', 'sessions', 'events', 'counts'] },
+      mockContext,
+    );
+    const response = JSON.parse(result.content[0].text);
+    expect(response.item.sessions).toHaveLength(1);
+    expect(response.item.events).toHaveLength(1);
+    expect(response.item.counts).toMatchObject({ sessions: 1, dialog: 1, events: 1 });
+    expect(response.item.vcon_version).toBe('0.5.0');
+  });
+
   it('vcon_fetch can return dealer and tags without full attachments', async () => {
     const handler = new VConFetchHandler();
 

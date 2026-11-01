@@ -49,7 +49,7 @@ describe('Resources Endpoint Tests', () => {
     it('should return all expected core resources', () => {
       const resources = getCoreResources();
 
-      expect(resources).toHaveLength(19);
+      expect(resources).toHaveLength(21);
       expect(resources.map(r => r.uri)).toEqual([
         'vcon://v1/vcons/recent',
         'vcon://v1/vcons/recent/ids',
@@ -57,7 +57,9 @@ describe('Resources Endpoint Tests', () => {
         'vcon://v1/vcons/{uuid}',
         'vcon://v1/vcons/{uuid}/metadata',
         'vcon://v1/vcons/{uuid}/parties',
+        'vcon://v1/vcons/{uuid}/sessions',
         'vcon://v1/vcons/{uuid}/dialog',
+        'vcon://v1/vcons/{uuid}/events',
         'vcon://v1/vcons/{uuid}/analysis',
         'vcon://v1/vcons/{uuid}/attachments',
         'vcon://v1/discovery/attachments/types',
@@ -638,6 +640,24 @@ describe('Resources Endpoint Tests', () => {
         { type: 'document', purpose: 'dealer_info', filename: 'test.pdf' }
       ]
     };
+
+    it('should return sessions and events subresources, and keep them out of metadata', async () => {
+      const v5: VCon = {
+        ...mockVCon,
+        vcon: '0.5.0',
+        sessions: [{ start: '2024-01-01T10:00:00Z', parties: [0, 1], dialog: [0] }],
+        events: [{ type: 'join', time: '2024-01-01T10:00:00Z', sessions: 0, party: 0 }],
+      };
+      vi.spyOn(queries, 'getVCon').mockResolvedValue(v5);
+
+      const sessions = await resolveCoreResource(queries, `vcon://v1/vcons/${testUuid}/sessions`);
+      expect(sessions?.content).toEqual({ sessions: v5.sessions });
+      const events = await resolveCoreResource(queries, `vcon://v1/vcons/${testUuid}/events`);
+      expect(events?.content).toEqual({ events: v5.events });
+      const meta = (await resolveCoreResource(queries, `vcon://v1/vcons/${testUuid}/metadata`))!.content;
+      expect(meta).not.toHaveProperty('sessions');
+      expect(meta).not.toHaveProperty('events');
+    });
 
     it('should return parties subresource', async () => {
       vi.spyOn(queries, 'getVCon').mockResolvedValue(mockVCon);
