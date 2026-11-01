@@ -887,8 +887,21 @@ export function buildPartyRows(vcon: VCon, tenantId: string | null) {
   return (vcon.parties ?? []).map((party, index) => buildPartyRow(vcon.uuid, party, index, tenantId));
 }
 
+/**
+ * Absent columns as explicit nulls. save_vcon_batch updates only the columns named by some
+ * row in the batch, so a column every row omits keeps its old value on conflict. When a
+ * stored 0.4.0 vCon is rewritten, a transfer or recording-set Dialog becomes {} and, if no
+ * other Dialog has a type, its row would keep type 'transfer' and come back as a 0.4.0
+ * transfer Dialog inside a 0.5.0 vCon.
+ */
+function withNulls<T extends Row>(row: T): T {
+  const out: Row = {};
+  for (const [k, v] of Object.entries(row)) out[k] = v === undefined ? null : v;
+  return out as T;
+}
+
 export function buildDialogRows(vcon: VCon, tenantId: string | null) {
-  return (vcon.dialog ?? []).map((dialog, index) => buildDialogRow(vcon.uuid, dialog, index, tenantId));
+  return (vcon.dialog ?? []).map((dialog, index) => withNulls(buildDialogRow(vcon.uuid, dialog, index, tenantId)));
 }
 
 export function buildAnalysisRows(vcon: VCon, tenantId: string | null) {
@@ -900,11 +913,11 @@ export function buildAttachmentRows(vcon: VCon, tenantId: string | null) {
 }
 
 export function buildSessionRows(vcon: VCon, tenantId: string | null) {
-  return (vcon.sessions ?? []).map((session, index) => buildSessionRow(vcon.uuid, session, index, tenantId));
+  return (vcon.sessions ?? []).map((session, index) => withNulls(buildSessionRow(vcon.uuid, session, index, tenantId)));
 }
 
 export function buildEventRows(vcon: VCon, tenantId: string | null) {
-  return (vcon.events ?? []).map((event, index) => buildEventRow(vcon.uuid, event, index, tenantId));
+  return (vcon.events ?? []).map((event, index) => withNulls(buildEventRow(vcon.uuid, event, index, tenantId)));
 }
 
 /**

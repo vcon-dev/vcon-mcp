@@ -7,6 +7,7 @@
 
 import { Analysis, Attachment, Dialog, Party, Session, VCon } from '../types/vcon.js';
 import type { VconShapeGraphPayload } from '../types/vcon-shape-graph.js';
+import type { MigrationReport } from '../utils/vcon-migration.js';
 
 /**
  * Which vCon timestamp start/end date filters apply to.
@@ -66,6 +67,9 @@ export interface AddAttachmentResult {
     attachment: Attachment;
 }
 
+/** Why a migration report is stored: a stored 0.4.0 vCon rewritten as 0.5.0, or one posted as 0.4.0. */
+export type MigrationReportTrigger = 'upgrade-on-write' | 'create';
+
 export interface IVConQueries {
     /**
      * Initialize the database connection and schema (e.g. indexes)
@@ -122,6 +126,13 @@ export interface IVConQueries {
 
     /** Remove the dialog at `index` by replacing it with the empty Dialog Object {} (no renumber). */
     removeDialog(vconUuid: string, index: number): Promise<void>;
+
+    /**
+     * Append the report of a 0.4.0 -> 0.5.0 migration that is being written to storage. The
+     * reference migration requires the report to be kept with each record migrated in
+     * production: it is the only copy of the values the migration dropped.
+     */
+    saveMigrationReport?(vconUuid: string, report: MigrationReport, trigger: MigrationReportTrigger): Promise<void>;
 
     /** Replace the analysis at `index` (omitted fields cleared). */
     updateAnalysis(vconUuid: string, index: number, analysis: Analysis): Promise<void>;

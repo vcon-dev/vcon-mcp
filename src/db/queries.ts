@@ -21,7 +21,7 @@ import { refreshTagsMvIfStale, markTagsMvDirty } from './tags-mv.js';
 import { SqlInputError, toSqlInt } from './sql-guards.js';
 import { createLogger } from '../observability/logger.js';
 import { Analysis, Attachment, Dialog, Party, Session, VCon, VCON_VERSION } from '../types/vcon.js';
-import { migrateOnRead } from '../utils/vcon-migration.js';
+import { MigrationReport, getMigrationReport, migrateOnRead } from '../utils/vcon-migration.js';
 import {
   VCON_SHAPE_GRAPH_SCHEMA_VERSION,
   type VconShapeGraphEdge,
@@ -530,9 +530,36 @@ export class SupabaseVConQueries implements IVConQueries {
     if (migrated.vcon !== VCON_VERSION) {
       throw new Error(`vCon ${vconUuid} is stored as an older version and could not be migrated to ${VCON_VERSION}; fix it before changing it`);
     }
+    // The write-back replaces the 0.4.0 rows; the report is the only copy of what the
+    // migration dropped (removed Dialogs, unmapped values). Store it first, and do not
+    // rewrite the vCon when it cannot be stored.
+    const report = getMigrationReport(migrated);
+    if (!report) {
+      throw new Error(`vCon ${vconUuid}: no migration report for the 0.4.0 -> ${VCON_VERSION} upgrade; not rewriting it`);
+    }
+    await this.saveMigrationReport(vconUuid, report, 'upgrade-on-write');
     logWithContext('info', 'Upgrading stored 0.4.0 vCon to 0.5.0 before a structural write', { vcon_uuid: vconUuid });
     await batchSaveVCon(migrated, tenantId, this.supabase, this.redis);
     await this.invalidateCachedVCon(vconUuid);
+  }
+
+  /**
+   * Append a migration report to vcon_migration_reports (migration 20261101120000). The
+   * table is append-only; tenant_id follows the parent vCon (insert trigger).
+   */
+  async saveMigrationReport(
+    vconUuid: string,
+    report: MigrationReport,
+    trigger: 'upgrade-on-write' | 'create'
+  ): Promise<void> {
+    const { error } = await this.supabase.from('vcon_migration_reports').insert({
+      vcon_id: vconUuid,
+      source_version: report.source_version,
+      target_version: report.target_version,
+      trigger,
+      report,
+    });
+    if (error) throw error;
   }
 
   /** vcon_version is NOT NULL in the schema; a missing value means there is nothing to upgrade. */

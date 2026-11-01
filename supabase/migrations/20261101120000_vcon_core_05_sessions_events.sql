@@ -29,6 +29,23 @@
 -- search_path (public). Apply it again in each per-group schema.
 --
 -- Idempotent: every statement guards on existing state.
+--
+-- Data: nothing is dropped. The two renames keep their data; dialog.originator and the
+-- party_history table stay (legacy rows still read them). A stored 0.4.0 vCon is rewritten
+-- as 0.5.0 only by a structural write (upgrade on write) or a re-post, and the migration
+-- report of that rewrite (every dropped value, removed Dialogs verbatim) is first appended to
+-- vcon_migration_reports (section 8), so the rewrite never loses the 0.4.0 content.
+--
+-- Rollback (manual, no down migration). Only before any 0.5.0 data has been written:
+--   ALTER TABLE vcons RENAME COLUMN redacted_from TO redacted;
+--   ALTER TABLE vcons RENAME COLUMN amended_from TO amended;
+--   ALTER TABLE vcons DROP COLUMN redacted_strings;
+--   then restore sync_vcon_deprecated_fields() and get_vcon_amended() from
+--   20251120150100_field_renames.sql, the dialog_type_check of the initial schema and
+--   type NOT NULL, the five-argument save_vcon_batch from 20261020130000_save_vcon_batch.sql,
+--   and cascade_tenant_id_update() from 20251122175919_create_tenant_triggers.sql;
+--   DROP TABLE events, sessions, vcon_migration_reports; drop the session_indices columns.
+-- After 0.5.0 writes, rolling back loses Sessions and Events; restore from a backup instead.
 
 SET client_min_messages TO WARNING;
 
@@ -55,6 +72,46 @@ END $$;
 -- A view that selected the old columns (vcons_legacy) keeps working: Postgres tracks the
 -- renamed column by attribute number and the view keeps its old output names.
 
+-- The draft-01 transition trigger and helper read the renamed column by name. Left as they
+-- were, every INSERT and UPDATE on vcons fails after the rename ("record new has no field
+-- amended"). They are redefined on amended_from; behaviour is otherwise unchanged.
+CREATE OR REPLACE FUNCTION sync_vcon_deprecated_fields()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.critical IS NOT NULL THEN
+    NEW.must_support := NEW.critical;
+  ELSIF NEW.must_support IS NOT NULL AND NEW.critical IS NULL THEN
+    NEW.critical := NEW.must_support;
+  END IF;
+
+  IF NEW.amended_from IS NOT NULL AND NEW.amended_from != '{}'::jsonb THEN
+    NEW.appended := NEW.amended_from;
+  ELSIF NEW.appended IS NOT NULL AND NEW.appended != '{}'::jsonb
+        AND (NEW.amended_from IS NULL OR NEW.amended_from = '{}'::jsonb) THEN
+    NEW.amended_from := NEW.appended;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION get_vcon_amended(vcon_id UUID)
+RETURNS JSONB AS $$
+DECLARE
+  result JSONB;
+BEGIN
+  SELECT COALESCE(
+    NULLIF(amended_from, '{}'::jsonb),
+    NULLIF(appended, '{}'::jsonb),
+    '{}'::jsonb
+  ) INTO result
+  FROM vcons
+  WHERE id = vcon_id;
+
+  RETURN result;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
 ALTER TABLE vcons ADD COLUMN IF NOT EXISTS redacted_from JSONB DEFAULT '{}';
 ALTER TABLE vcons ADD COLUMN IF NOT EXISTS amended_from JSONB DEFAULT '{}';
 ALTER TABLE vcons ADD COLUMN IF NOT EXISTS redacted_strings JSONB;
@@ -71,10 +128,12 @@ COMMENT ON COLUMN vcons.redacted_strings IS 'Section 4.1.16 Redacted_string Obje
 ALTER TABLE dialog ALTER COLUMN type DROP NOT NULL;
 
 -- 0.5.0 writes recording, text and incomplete. 'audio' and 'video' are read-only values older
--- versions of this server stored; 'transfer' rows are 0.4.0 data awaiting migration on read.
+-- versions of this server stored; 'transfer' and 'recording-set' rows are 0.4.0 data awaiting
+-- migration on read (a database whose original check was relaxed may hold either; without
+-- them here the ADD CONSTRAINT fails on such a database).
 ALTER TABLE dialog DROP CONSTRAINT IF EXISTS dialog_type_check;
 ALTER TABLE dialog ADD CONSTRAINT dialog_type_check
-  CHECK (type IS NULL OR type IN ('recording', 'text', 'incomplete', 'audio', 'video', 'transfer'));
+  CHECK (type IS NULL OR type IN ('recording', 'text', 'incomplete', 'audio', 'video', 'transfer', 'recording-set'));
 
 COMMENT ON COLUMN dialog.originator IS 'DEPRECATED, 0.4.0 rows only. Moved to sessions.originator in 0.5.0; no longer written.';
 COMMENT ON COLUMN dialog.parties IS 'Contributors only (0.5.0). Receivers are sessions.parties. A null slot or a per-channel nested list is kept in dialog.extra (parties) and this column is NULL.';
@@ -98,7 +157,7 @@ CREATE INDEX IF NOT EXISTS idx_analysis_session_indices    ON analysis    USING 
 
 CREATE TABLE IF NOT EXISTS sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    vcon_id UUID NOT NULL REFERENCES vcons(id) ON DELETE CASCADE,
+    vcon_id UUID NOT NULL REFERENCES vcons(uuid) ON DELETE CASCADE, -- uuid, as every child table (20260527230000)
     session_index INTEGER NOT NULL,           -- Index in the vCon sessions array
     tenant_id TEXT,
 
@@ -135,7 +194,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_tenant_id      ON sessions(tenant_id);
 
 CREATE TABLE IF NOT EXISTS events (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    vcon_id UUID NOT NULL REFERENCES vcons(id) ON DELETE CASCADE,
+    vcon_id UUID NOT NULL REFERENCES vcons(uuid) ON DELETE CASCADE, -- uuid, as every child table (20260527230000)
     event_index INTEGER NOT NULL,             -- Index in the vCon events array (not chronological)
     tenant_id TEXT,
 
@@ -175,12 +234,13 @@ CREATE INDEX IF NOT EXISTS idx_events_tenant_id       ON events(tenant_id);
 -- ============================================================================
 
 -- BEFORE INSERT: keep the parent's tenant when it is visible, else the explicit value
--- (20261020150000_child_tenant_id_keep_explicit.sql).
+-- (20261020150000_child_tenant_id_keep_explicit.sql). Matched on vcons.uuid, the column the
+-- foreign key references.
 CREATE OR REPLACE FUNCTION set_sessions_tenant_id()
 RETURNS TRIGGER AS $$
 BEGIN
   NEW.tenant_id := COALESCE(
-    (SELECT tenant_id FROM vcons WHERE vcons.id = NEW.vcon_id),
+    (SELECT tenant_id FROM vcons WHERE vcons.uuid = NEW.vcon_id),
     NEW.tenant_id
   );
   RETURN NEW;
@@ -191,7 +251,7 @@ CREATE OR REPLACE FUNCTION set_events_tenant_id()
 RETURNS TRIGGER AS $$
 BEGIN
   NEW.tenant_id := COALESCE(
-    (SELECT tenant_id FROM vcons WHERE vcons.id = NEW.vcon_id),
+    (SELECT tenant_id FROM vcons WHERE vcons.uuid = NEW.vcon_id),
     NEW.tenant_id
   );
   RETURN NEW;
@@ -219,8 +279,9 @@ BEGIN
     UPDATE attachments SET tenant_id = NEW.tenant_id WHERE vcon_id = NEW.id;
     UPDATE analysis SET tenant_id = NEW.tenant_id WHERE vcon_id = NEW.id;
     UPDATE groups SET tenant_id = NEW.tenant_id WHERE vcon_id = NEW.id;
-    UPDATE sessions SET tenant_id = NEW.tenant_id WHERE vcon_id = NEW.id;
-    UPDATE events SET tenant_id = NEW.tenant_id WHERE vcon_id = NEW.id;
+    UPDATE sessions SET tenant_id = NEW.tenant_id WHERE vcon_id = NEW.uuid;  -- FK is vcons(uuid)
+    UPDATE events SET tenant_id = NEW.tenant_id WHERE vcon_id = NEW.uuid;
+    UPDATE vcon_migration_reports SET tenant_id = NEW.tenant_id WHERE vcon_id = NEW.uuid;
     UPDATE party_history
     SET tenant_id = NEW.tenant_id
     FROM dialog
@@ -315,3 +376,53 @@ $$;
 
 GRANT EXECUTE ON FUNCTION save_vcon_batch(JSONB, JSONB, JSONB, JSONB, JSONB, JSONB, JSONB)
   TO authenticated, service_role;
+
+-- ============================================================================
+-- 8. vcon_migration_reports: the report of every 0.4.0 -> 0.5.0 rewrite
+-- ============================================================================
+-- The reference migration requires the report to be stored with each record migrated in
+-- production: it holds every value the migration dropped and each removed Dialog verbatim,
+-- so it is the only copy of that content once the 0.4.0 rows are rewritten. Append-only:
+-- the server inserts one row before it rewrites a stored 0.4.0 vCon (upgrade on write) and
+-- one after it stores a vCon that was posted as 0.4.0. A migration on read that writes
+-- nothing back stores nothing (the 0.4.0 rows are still there).
+
+CREATE TABLE IF NOT EXISTS vcon_migration_reports (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    vcon_id UUID NOT NULL REFERENCES vcons(uuid) ON DELETE CASCADE,
+    tenant_id TEXT,
+    source_version TEXT,
+    target_version TEXT NOT NULL,
+    trigger TEXT NOT NULL,                    -- 'upgrade-on-write' or 'create'
+    report JSONB NOT NULL,                    -- MigrationReport, as the reference to_dict() shape
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE vcon_migration_reports IS 'Append-only reports of 0.4.0 -> 0.5.0 migrations written back to storage. Holds every dropped value and each removed Dialog verbatim.';
+
+CREATE INDEX IF NOT EXISTS idx_vcon_migration_reports_vcon      ON vcon_migration_reports(vcon_id);
+CREATE INDEX IF NOT EXISTS idx_vcon_migration_reports_tenant_id ON vcon_migration_reports(tenant_id);
+
+CREATE OR REPLACE FUNCTION set_vcon_migration_reports_tenant_id()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.tenant_id := COALESCE(
+    (SELECT tenant_id FROM vcons WHERE vcons.uuid = NEW.vcon_id),
+    NEW.tenant_id
+  );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_set_vcon_migration_reports_tenant_id ON vcon_migration_reports;
+CREATE TRIGGER trg_set_vcon_migration_reports_tenant_id
+  BEFORE INSERT ON vcon_migration_reports
+  FOR EACH ROW EXECUTE FUNCTION set_vcon_migration_reports_tenant_id();
+
+ALTER TABLE vcon_migration_reports ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "vcon_migration_reports_tenant_isolation" ON vcon_migration_reports;
+CREATE POLICY "vcon_migration_reports_tenant_isolation" ON vcon_migration_reports
+  FOR ALL TO authenticated
+  USING (tenant_id IS NULL OR tenant_id = get_current_tenant_id())
+  WITH CHECK (tenant_id IS NULL OR tenant_id = get_current_tenant_id());

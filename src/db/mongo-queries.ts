@@ -4,7 +4,7 @@
 
 import { Db, ObjectId } from 'mongodb';
 import { Analysis, Attachment, Dialog, Party, VCon } from '../types/vcon.js';
-import { getMigrationReport, migrateOnRead } from '../utils/vcon-migration.js';
+import { MigrationReport, getMigrationReport, migrateOnRead } from '../utils/vcon-migration.js';
 import {
     appendAttachmentWithScope,
     appendDialogWithSession,
@@ -41,6 +41,7 @@ function assertCreatedDateField(dateField?: DateField): void {
 export class MongoVConQueries implements IVConQueries {
     private db: Db;
     private readonly VCONS_COLLECTION = 'vcons';
+    private readonly MIGRATION_REPORTS_COLLECTION = 'vcon_migration_reports';
 
     constructor(db: Db) {
         this.db = db;
@@ -185,10 +186,26 @@ export class MongoVConQueries implements IVConQueries {
         const { _id, ...rest } = doc;
         const stored = rest as unknown as VCon;
         const migrated = migrateOnRead(stored);
-        if (migrated !== stored && getMigrationReport(migrated)) {
+        const report = migrated !== stored ? getMigrationReport(migrated) : undefined;
+        if (report) {
+            // The report is the only copy of what the migration dropped; keep it before the
+            // 0.4.0 document is replaced.
+            await this.saveMigrationReport(uuid, report, 'upgrade-on-write');
             await collection.replaceOne({ uuid }, migrated as any);
         }
         return migrated;
+    }
+
+    /** Append a migration report to the vcon_migration_reports collection (append-only). */
+    async saveMigrationReport(vconUuid: string, report: MigrationReport, trigger: 'upgrade-on-write' | 'create'): Promise<void> {
+        await this.db.collection(this.MIGRATION_REPORTS_COLLECTION).insertOne({
+            vcon_uuid: vconUuid,
+            source_version: report.source_version,
+            target_version: report.target_version,
+            trigger,
+            report,
+            created_at: new Date().toISOString(),
+        } as any);
     }
 
     private async setArray(uuid: string, key: 'parties' | 'dialog' | 'analysis' | 'attachments' | 'sessions' | 'events', value: unknown): Promise<void> {

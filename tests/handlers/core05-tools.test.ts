@@ -48,6 +48,7 @@ describe('core-05 tools', () => {
   beforeEach(() => {
     queries = {
       createVCon: vi.fn(async (v: any) => ({ uuid: v.uuid, id: v.uuid })),
+      saveMigrationReport: vi.fn(async () => undefined),
       getVCon: vi.fn(),
       addDialog: vi.fn(async () => ({ index: 1, session: 0, sessionCreated: false })),
       addAttachment: vi.fn(async (_u: string, a: any) => ({ index: 0, attachment: a })),
@@ -107,6 +108,23 @@ describe('core-05 tools', () => {
       const r = body(result);
       expect(r.migration_report.source_version).toBe('0.4.0');
       expect(r.migration_report.summary).toMatch(/inferred/);
+      // The report is stored with the record (the reference requires it for a production migration).
+      expect(queries.saveMigrationReport).toHaveBeenCalledWith(stored.uuid, expect.objectContaining({ source_version: '0.4.0' }), 'create');
+    });
+
+    it('does not store a migration report for a vCon posted as 0.5.0', async () => {
+      await new CreateVConHandler().handle({ parties: [{ name: 'A' }] }, ctx);
+      expect(queries.saveMigrationReport).not.toHaveBeenCalled();
+    });
+
+    it('still creates the vCon when the report cannot be stored', async () => {
+      queries.saveMigrationReport.mockRejectedValueOnce(new Error('no table'));
+      const result = await new CreateVConHandler().handle({
+        vcon: '0.4.0', parties: [{ name: 'A' }, { name: 'B' }],
+        dialog: [{ type: 'recording', start: T, parties: [0, 1], url: 'https://e.com/a.wav', content_hash: 'h' }],
+      }, ctx);
+      expect(queries.createVCon).toHaveBeenCalledTimes(1);
+      expect(body(result).migration_report.source_version).toBe('0.4.0');
     });
 
     it('treats dialog with no sessions and no vcon as the 0.4.0 shape and migrates it', async () => {

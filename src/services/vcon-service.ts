@@ -185,6 +185,19 @@ export class VConService {
 
     // Step 4: Persist to database
     const result = await this.context.queries.createVCon(vcon);
+    if (migration && this.context.queries.saveMigrationReport) {
+      // Posted as 0.4.0: keep the report with the record (the reference requires it for a
+      // production migration). The vCon is already stored, so a failure is logged, not thrown;
+      // the caller still gets the report in the result.
+      try {
+        await this.context.queries.saveMigrationReport(result.uuid, migration, 'create');
+      } catch (err) {
+        logWithContext('error', 'Could not store the migration report of a vCon posted as 0.4.0', {
+          vcon_uuid: result.uuid,
+          error_message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
 
     // Step 5: Execute afterCreate hook
     if (!options.skipHooks) {
