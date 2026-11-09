@@ -1,8 +1,8 @@
 -- Close the read paths that step around row-level security for anon.
 --
 -- The tenant policies on the vCon tables admit `authenticated` only, so a
--- direct anon read of those tables returns no rows. These paths did return
--- rows to anon, and one of them to any caller:
+-- direct anon read of those tables returns no rows. These paths step around
+-- those policies:
 --
 --   * vcons_legacy and vcon_field_usage are views. A view runs with its
 --     owner's privileges unless told otherwise, so RLS was checked against the
@@ -112,6 +112,9 @@ DO $$
 BEGIN
   IF to_regclass('public.vcon_tags_mv') IS NOT NULL THEN
     REVOKE ALL ON public.vcon_tags_mv FROM PUBLIC, anon;
+    -- Explicit, so authenticated and service_role do not depend on the PUBLIC
+    -- grant or on schema default privileges that a given database may lack.
+    GRANT SELECT ON public.vcon_tags_mv TO authenticated, service_role;
   END IF;
 END $$;
 
