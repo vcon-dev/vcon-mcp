@@ -72,10 +72,12 @@ schemas or projects.
      `type <schema>.vector does not exist`.
    - **Role grants.** The dump is taken with `--no-privileges`, so the generated
      SQL ends with `GRANT USAGE` on the schema plus table/sequence/function
-     grants (and matching `ALTER DEFAULT PRIVILEGES`) for `anon`,
-     `authenticated`, and `service_role` — the same access `public` gets out of
-     the box. Without these PostgREST returns
-     `permission denied for schema <schema>`.
+     grants (and matching `ALTER DEFAULT PRIVILEGES`) for `authenticated` and
+     `service_role`. Without these PostgREST returns
+     `permission denied for schema <schema>`. `anon` gets nothing, not even
+     `USAGE`, and `exec_sql`, `explain_query`, the tenant-context and
+     health-metric functions are left to `service_role`, matching what
+     `public` allows after `20261109163739_revoke_anon_read_paths.sql`.
 2. **Expose the schema to PostgREST** or `supabase-js` can't reach it:
    - Cloud: Dashboard → API → Exposed schemas → add `sales`.
    - Local: add it to `[api] schemas` in `supabase/config.toml`, then restart.
@@ -186,8 +188,8 @@ an *organizational* boundary, not a hard one. For a real boundary:
 
 Until per-schema roles are in place, treat schema isolation as logical separation
 with a shared trust domain. Note that `bootstrap-schema.sh` grants the shared API
-roles (`anon`, `authenticated`, `service_role`) on the new schema so it behaves
-like `public`; a hard boundary still requires the per-group roles above.
+roles (`authenticated`, `service_role`, not `anon`) on the new schema; a hard
+boundary still requires the per-group roles above.
 
 ## On-demand lifecycle (future)
 

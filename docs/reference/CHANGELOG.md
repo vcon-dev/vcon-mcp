@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Migrations
+- `20261109163739_revoke_anon_read_paths.sql` closes the paths that let the `anon` role read
+  vCon rows past row-level security. Idempotent; apply with `supabase db push`.
+  - `anon` can no longer read the `vcons_legacy` and `vcon_field_usage` views or the
+    `vcon_tags_mv` materialized view, and `PUBLIC` loses `vcon_tags_mv`. `authenticated` keeps
+    `vcon_tags_mv` because the tag search RPCs read it
+  - `anon`, `authenticated` and `PUBLIC` can no longer execute `exec_sql`, `explain_query`,
+    `set_tenant_context`, `clear_tenant_context`, `get_connection_metrics`, `get_index_health`,
+    `get_performance_metrics` or `get_storage_efficiency`. `service_role` keeps them
+  - `vcons_legacy` and `vcon_field_usage` run with the caller's privileges (`security_invoker`,
+    PostgreSQL 15 or later), so an `authenticated` caller sees only the rows its tenant policy
+    allows. On older servers the views are left unchanged
+  - `anon` loses every table and function in `public`, and tables and functions that `postgres`
+    creates there later grant it nothing. Functions that belong to an extension installed in
+    `public` are left alone. Where `authenticated` or `service_role` could execute a function
+    only through the default `PUBLIC` grant, the migration grants it to them explicitly
+  - PostgreSQL grants `EXECUTE` on every new function to `PUBLIC`, and a per-schema default
+    cannot remove that. A migration that adds a function should end with
+    `REVOKE EXECUTE ON FUNCTION ... FROM PUBLIC, anon`; `supabase/tests/anon_lockdown.sql`
+    fails if one is missed
+  - Applies to `public` only. Per-group schemas made earlier with `scripts/bootstrap-schema.sh`
+    keep their old grants until the same revokes are applied in that schema
+
+### Security
+- Deployments that run the server with `SUPABASE_ANON_KEY` instead of
+  `SUPABASE_SERVICE_ROLE_KEY` lose the `exec_sql` and `explain_query` routes: analytics, tag and
+  schema discovery, database inspection, query plans and health metrics. Tables already returned
+  no rows to `anon`, so switch to the service role key
+- The table and function revokes cover the whole `public` schema. If `public` also holds
+  another application's objects that rely on `anon`, review them before applying. Other database
+  roles that called `public` functions only through the default `PUBLIC` grant need an explicit
+  `GRANT EXECUTE`
+- `scripts/bootstrap-schema.sh` no longer grants anything to `anon` in a new schema (it granted
+  `ALL` on tables, sequences and functions, plus matching default privileges), revokes the
+  default `PUBLIC` execute grant there, and leaves the `SECURITY DEFINER` helpers to
+  `service_role`
+
+### Added
+- `scripts/test-anon-lockdown.sh` applies the migration chain to a throwaway Postgres behind a
+  real PostgREST and checks that `anon` is refused on each closed path, before and after the
+  migration and on a re-run, that `service_role` and `authenticated` see what they saw before,
+  and that a schema cloned by `bootstrap-schema.sh` gives `anon` nothing. Needs PostgreSQL 15+
+  server binaries; downloads PostgREST once
+- `supabase/tests/anon_lockdown.sql` runs the same grants as catalog and `SET ROLE` checks
+  against any migrated database
+
 ---
 
 ## [1.11.0] - 2026-10-20
