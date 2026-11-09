@@ -39,9 +39,9 @@
 # pg_dump/psql inside the `supabase_db_<project>` container that publishes the DB
 # port. Override container detection with --db-container.
 #
-# The generated SQL ends with GRANTs for anon/authenticated/service_role (the dump
-# is taken with --no-privileges, so without them PostgREST gets "permission denied
-# for schema <schema>").
+# The generated SQL ends with GRANTs for authenticated/service_role (the dump is
+# taken with --no-privileges, so without them PostgREST gets "permission denied
+# for schema <schema>"). anon gets no privilege in the new schema.
 #
 # After applying, remember to ADD <schema> to PostgREST exposed schemas
 # (Dashboard → API → Exposed schemas, or [api] schemas in supabase/config.toml)
@@ -210,15 +210,39 @@ echo "Rewriting public -> $SCHEMA ..." >&2
   cat <<GRANTS
 
 -- The dump above is taken with --no-privileges, so grant the Supabase API
--- roles explicitly (mirrors what public gets out of the box). Without these,
--- PostgREST returns "permission denied for schema $SCHEMA".
-GRANT USAGE ON SCHEMA "$SCHEMA" TO anon, authenticated, service_role;
-GRANT ALL ON ALL TABLES IN SCHEMA "$SCHEMA" TO anon, authenticated, service_role;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA "$SCHEMA" TO anon, authenticated, service_role;
-GRANT ALL ON ALL FUNCTIONS IN SCHEMA "$SCHEMA" TO anon, authenticated, service_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA "$SCHEMA" GRANT ALL ON TABLES TO anon, authenticated, service_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA "$SCHEMA" GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA "$SCHEMA" GRANT ALL ON FUNCTIONS TO anon, authenticated, service_role;
+-- roles explicitly. Without these, PostgREST returns "permission denied for
+-- schema $SCHEMA". anon gets nothing, not even USAGE: the server uses the
+-- service role key, and anon here would reach the SECURITY DEFINER functions
+-- (exec_sql runs any query as its owner), the views and vcon_tags_mv that
+-- public closes to it (migration 20261109163739_revoke_anon_read_paths.sql).
+GRANT USAGE ON SCHEMA "$SCHEMA" TO authenticated, service_role;
+GRANT ALL ON ALL TABLES IN SCHEMA "$SCHEMA" TO authenticated, service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA "$SCHEMA" TO authenticated, service_role;
+GRANT ALL ON ALL FUNCTIONS IN SCHEMA "$SCHEMA" TO authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA "$SCHEMA" GRANT ALL ON TABLES TO authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA "$SCHEMA" GRANT ALL ON SEQUENCES TO authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA "$SCHEMA" GRANT ALL ON FUNCTIONS TO authenticated, service_role;
+
+-- Every new function carries EXECUTE for PUBLIC; the explicit grants above
+-- replace it. As in public, the SECURITY DEFINER helpers are for service_role
+-- only.
+REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA "$SCHEMA" FROM PUBLIC;
+DO \$\$
+DECLARE
+  fn text;
+BEGIN
+  FOREACH fn IN ARRAY ARRAY[
+    'exec_sql(text, jsonb)', 'exec_sql(jsonb, text)', 'explain_query(text, boolean)',
+    'set_tenant_context(text)', 'clear_tenant_context()', 'get_connection_metrics()',
+    'get_index_health()', 'get_performance_metrics()', 'get_storage_efficiency()',
+    'refresh_vcon_tags_mv_if_stale()'
+  ] LOOP
+    IF to_regprocedure('"$SCHEMA".' || fn) IS NOT NULL THEN
+      EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM authenticated', to_regprocedure('"$SCHEMA".' || fn));
+    END IF;
+  END LOOP;
+END
+\$\$;
 GRANTS
 } > "$OUT_FILE"
 
