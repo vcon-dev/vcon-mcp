@@ -651,6 +651,27 @@ async function main(): Promise<number> {
 
     // ------------------------------------------------------------ delete_vcon
     rep.section('delete_vcon');
+    // A tenant updates nothing, its own vCon included. The conversation_start
+    // refresh that a delete fires runs as its owner, so deletes still work.
+    const mine = freshId('aaaaaaaa');
+    stack.sql(`INSERT INTO vcons (id, uuid, vcon_version, subject, tenant_id) VALUES ('${mine}', '${mine}', '0.4.0', 'zebra mine', '${TENANT_A}');
+      INSERT INTO dialog (id, vcon_id, dialog_index, type, start_time, tenant_id) VALUES ('${freshId('aaaaaaaa')}', '${mine}', 0, 'text', '2026-11-01T00:00:00Z', '${TENANT_A}');
+      INSERT INTO attachments (id, vcon_id, attachment_index, purpose, start_time, tenant_id) VALUES ('${freshId('aaaaaaaa')}', '${mine}', 0, 'note', '2026-11-01T00:00:00Z', '${TENANT_A}');`);
+    const mineBefore = rowState('vcons', 'uuid', mine);
+    for (const [col, val] of [['updated_at', '2026-11-02T00:00:00Z'], ['conversation_start', '2020-01-01T00:00:00Z'], ['subject', 'zqwrite'],
+      ['created_at', '2020-01-01T00:00:00Z'], ['tenant_id', TENANT_A], ['uuid', freshId('aaaaaaaa')]] as const) {
+      r = await api(stack, 'PATCH', `/vcons?uuid=eq.${mine}`, { token: T.A, body: { [col]: val }, prefer: 'return=minimal' });
+      rep.check(`${MODE}-update-own-${col}`, `A updates ${col} of its own vCon: ${BASELINE ? 'allowed' : 'refused'}`,
+        BASELINE ? r.status < 300 || col === 'uuid' : r.status === 403 && rowState('vcons', 'uuid', mine) === mineBefore, brief(r));
+      if (BASELINE) stack.sql(`UPDATE vcons SET subject = 'zebra mine' WHERE uuid = '${mine}'`);
+    }
+    r = await api(stack, 'DELETE', `/dialog?vcon_id=eq.${mine}`, { token: T.A, prefer: 'return=minimal' });
+    expectValue('lane-delete-own-child', `A deletes its own dialog row (${brief(r)}); vCon / dialog / attachment rows left`,
+      stack.sql(`SELECT (SELECT count(*) FROM vcons WHERE uuid='${mine}') || '/' || (SELECT count(*) FROM dialog WHERE vcon_id='${mine}') || '/' || (SELECT count(*) FROM attachments WHERE vcon_id='${mine}')`).trim(),
+      ['1/0/1', '1/0/1']);
+    r = await api(stack, 'DELETE', `/vcons?uuid=eq.${mine}`, { token: T.A, prefer: 'return=minimal' });
+    expectValue('lane-delete-own-cascade-attachment', `A deletes that vCon (${brief(r)}); vCon / attachment rows left`,
+      stack.sql(`SELECT (SELECT count(*) FROM vcons WHERE uuid='${mine}') || '/' || (SELECT count(*) FROM attachments WHERE vcon_id='${mine}')`).trim(), ['0/0', '0/0']);
     const a2 = FIXTURES.A2;
     r = await api(stack, 'DELETE', `/vcons?uuid=eq.${B.uuid}`, { token: T.A, prefer: 'return=representation' });
     rep.check(`${MODE}-lane-delete-b`, "delete_vcon(B's uuid) matches nothing, B still there", r.status < 300 && isEmptyBody(r) && tenantOf('vcons', 'uuid', B.uuid) === TENANT_B, brief(r));
