@@ -207,6 +207,74 @@ CREATE POLICY "vcons_tenant_isolation" ON vcons
   );
 ```
 
+## Writer Mode (`TENANT_MODE=writer`)
+
+`TENANT_MODE` is unset by default, and the server behaves as described above. Set
+`TENANT_MODE=writer` on the one process that receives conserver writes and runs operator tools.
+That process:
+
+- needs `SUPABASE_SERVICE_ROLE_KEY` and the Supabase backend, and refuses to start without them
+- reads the tenant attachment on every vCon it stores, whatever `RLS_ENABLED` says
+- stores a vCon whose stamp is missing, malformed or conflicting under the reserved tenant
+  `_quarantine`, and logs a warning with the reason. No vCon is dropped because of its stamp
+- refreshes `vcon_tags_mv` at start and every `TAGS_MV_REFRESH_INTERVAL_MS` (default 60000),
+  since tenant tokens cannot refresh it and nothing else does without pg_cron
+
+```bash
+TENANT_MODE=writer
+SUPABASE_SERVICE_ROLE_KEY=...
+# TAGS_MV_REFRESH_INTERVAL_MS=60000
+```
+
+An unknown `TENANT_MODE` value stops startup.
+
+### The stamp
+
+```json
+{"purpose": "tenant", "start": "2026-11-06T18:00:00Z", "party": 0, "dialog": 0,
+ "mediatype": "application/json", "encoding": "json", "body": {"id": "t-0123456789abcdef"}}
+```
+
+A tenant id is `t-` and 16 lowercase hex digits. The writer also reads the legacy `type: "tenant"`
+field and a JSON-string body (`"body": "{\"id\": \"t-0123456789abcdef\"}"`).
+
+A stamp is malformed when the body is missing or empty, is `base64url`, is not JSON, or is not a
+JSON object, or when the id is missing, not a string, not `t-` and 16 lowercase hex digits (no
+trimming, no case folding), or is `_quarantine`. Two tenant attachments naming different ids
+conflict; the same id twice does not. One malformed attachment beside a good one sends the vCon to
+`_quarantine`.
+
+### Re-posts keep the stored tenant
+
+`save_vcon_batch` keeps a vCon's stored tenant when the same uuid is posted again, whatever tenant
+the new post carries, and its children follow the stored value. A vCon stored with a NULL tenant
+takes the new one. This applies to every deployment from migration
+`20261112120000_keep_stored_tenant.sql`, whatever `TENANT_MODE` says. A direct `UPDATE` of
+`vcons.tenant_id` still works and moves the children with it.
+
+### Reading and releasing quarantine
+
+With the service key:
+
+```sql
+SELECT uuid, created_at, subject FROM vcons WHERE tenant_id = '_quarantine' ORDER BY created_at;
+```
+
+Only `release_vcon_from_quarantine()` moves a vCon out. It needs a reason, evidence as a non-empty
+JSON object (for example what showed the number was in that tenant's inventory at the time of the
+call) and who did it. It writes them to the append-only table `tenant_quarantine_releases` in the
+same transaction, and the vCon's children move with it. `service_role` only.
+
+```sql
+SELECT release_vcon_from_quarantine(
+  '<vcon uuid>',
+  't-0123456789abcdef',
+  'number was in this tenant''s inventory at call time',
+  '{"inventory_ref": "<snapshot id>", "checked_at": "2026-11-12T00:00:00Z"}',
+  '<staff identity>'
+);
+```
+
 ## Adding Tenant to Existing vCons
 
 If you have vCons without tenant attachments, you can:
@@ -217,18 +285,25 @@ Add a tenant attachment to existing vCons:
 
 ```typescript
 await addAttachment(vconUuid, {
-  type: 'tenant',
+  purpose: 'tenant',
   body: JSON.stringify({ id: 1124 }),
   encoding: 'json'
 });
 ```
 
-Then update tenant_id:
+Then fill `tenant_id` from the attachments, in batches, until the call returns 0. It reads
+`purpose` or `type`, skips a body that is not JSON, and never changes a tenant that is already set:
+
 ```sql
-UPDATE vcons
-SET tenant_id = extract_tenant_from_attachments(id, 'tenant', 'id')
-WHERE tenant_id IS NULL;
+SELECT backfill_vcon_tenant_ids(1000, false);
 ```
+
+With `false`, any non-empty id is taken and a vCon whose stamp cannot be read stays NULL. With
+`true`, the writer rule applies: only a `t-` id is taken and every other NULL vCon goes to
+`_quarantine`. `vcon_tenant_stamp(vcon_id, strict)` shows what either would choose for one vCon.
+Child rows that disagree with their vCon are repaired with
+`backfill_tenant_id_batch('<table>', 1000)` (or `scripts/backfill-tenant-ids.ts`), one table at a
+time.
 
 ### Option 2: Manual Update
 

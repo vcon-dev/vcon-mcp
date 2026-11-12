@@ -12,6 +12,8 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import Redis from 'ioredis';
 import { extractTenantFromVCon, getTenantConfig } from '../config/tenant-config.js';
+import { getTenantMode } from '../config/tenant-mode.js';
+import { resolveWriterTenant } from '../config/tenant-stamp.js';
 import { getTaxonomyConfig } from '../config/taxonomy-config.js';
 import { ATTR_CACHE_HIT, ATTR_DB_OPERATION, ATTR_SEARCH_RESULTS_COUNT, ATTR_SEARCH_THRESHOLD, ATTR_SEARCH_TYPE, ATTR_VCON_UUID } from '../observability/attributes.js';
 import { logWithContext, recordCounter, withSpan } from '../observability/instrumentation.js';
@@ -146,7 +148,23 @@ export class SupabaseVConQueries implements IVConQueries {
 
       const tenantConfig = getTenantConfig();
       let tenantId: string | null = null;
-      if (tenantConfig.enabled) {
+      if (getTenantMode() === 'writer') {
+        // Writer rule: extraction always runs, whatever RLS_ENABLED says, and a
+        // missing, malformed or conflicting stamp stores under _quarantine.
+        const stamp = resolveWriterTenant(vcon, tenantConfig);
+        tenantId = stamp.tenantId;
+        span.setAttributes({ 'tenant_id': tenantId, 'tenant_stamp': stamp.status });
+        if (stamp.status !== 'ok') {
+          recordCounter('vcon.tenant.quarantined', 1, {
+            reason: stamp.status,
+          }, 'vCons stored under _quarantine');
+          logWithContext('warn', 'vCon stored under _quarantine', {
+            vcon_uuid: vcon.uuid,
+            reason: stamp.status,
+            detail: stamp.detail,
+          });
+        }
+      } else if (tenantConfig.enabled) {
         tenantId = extractTenantFromVCon(vcon, tenantConfig);
         if (tenantId) {
           span.setAttributes({ 'tenant_id': tenantId });

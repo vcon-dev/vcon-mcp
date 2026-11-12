@@ -128,6 +128,24 @@ CURRENT_TENANT_ID=1124
 
 See [RLS Multi-Tenant Guide](rls-multi-tenant.md) for complete setup instructions.
 
+#### Tenant Mode
+
+```bash
+# off (default, unset): the behaviour above
+# writer: service key; reads every vCon's tenant stamp whatever RLS_ENABLED says;
+#         a missing, malformed or conflicting stamp stores under _quarantine;
+#         refreshes vcon_tags_mv on a timer
+# lane: reserved for the per-request tenant lane
+TENANT_MODE=writer
+
+# Writer only: how often vcon_tags_mv is checked and refreshed, in ms (default 60000, minimum 1000)
+TAGS_MV_REFRESH_INTERVAL_MS=60000
+```
+
+An unknown `TENANT_MODE` stops startup. A writer without `SUPABASE_SERVICE_ROLE_KEY`, or with
+`DB_TYPE=mongodb`, stops startup. See
+[Writer Mode](rls-multi-tenant.md#writer-mode-tenant-mode-writer).
+
 #### Dataset Taxonomy Guidance
 
 `vcon_taxonomy` and `vcon_capabilities` return hints about how a dataset is classified: a dataset label, portal classification values, common tags, preferred sources, query recipes, and the attachment type that carries dealer data. By default these are neutral (no dataset label, no portal values, dealer attachment type `dealer`). A deployment with its own classification scheme supplies it through configuration.
