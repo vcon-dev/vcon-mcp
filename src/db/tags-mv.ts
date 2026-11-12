@@ -24,6 +24,17 @@ interface RefreshState {
 
 const states = new WeakMap<object, RefreshState>();
 
+/** Clients that never refresh the view: another process owns the refresh. */
+const refreshedElsewhere = new WeakSet<object>();
+
+/**
+ * Never refresh vcon_tags_mv through this client. For a TENANT_MODE=lane client, whose tenant token may
+ * not refresh the view; the writer refreshes it on a timer.
+ */
+export function skipTagsMvRefresh(supabase: SupabaseClient): void {
+  refreshedElsewhere.add(supabase);
+}
+
 function stateFor(supabase: SupabaseClient): RefreshState {
   let s = states.get(supabase);
   if (!s) {
@@ -53,6 +64,7 @@ export function refreshTagsMvNow(supabase: SupabaseClient): Promise<void> {
  * view is current; a failure (older schema without the RPC) is logged and the read goes on.
  */
 export async function refreshTagsMvIfStale(supabase: SupabaseClient): Promise<void> {
+  if (refreshedElsewhere.has(supabase)) return;
   const s = stateFor(supabase);
   if (s.inflight) return s.inflight;
   if (!s.dirty && Date.now() - s.lastCheck < TAGS_MV_MIN_REFRESH_INTERVAL_MS) return;

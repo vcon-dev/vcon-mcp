@@ -40,7 +40,7 @@ const logger = createLogger('server-setup');
  * package root is ../../; the same holds in the published package and under
  * vite-node (src/server) during tests.
  */
-function getPackageVersion(): string {
+export function getPackageVersion(): string {
   try {
     const pkgPath = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'package.json');
     return JSON.parse(readFileSync(pkgPath, 'utf8')).version || '0.0.0';
