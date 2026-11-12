@@ -71,7 +71,13 @@ the bearer.
 
 `delete_vcon` reports "not found" when the delete removed no row. Under row-level security another
 tenant's uuid matches nothing and PostgREST answers without an error, so a zero-row delete must not read
-as success.
+as success. A store error is never reported as "not found": it comes back as a tool error.
+
+When the store answers any call of a request with HTTP 401 (an expired token, a bad signature, a token
+PostgREST will not accept), the tool call fails with
+`Unauthorized: the store refused this request's token (HTTP 401)`. The text is fixed: it holds neither
+the token nor what the store sent. The HTTP response itself is still 200, since the refusal comes from the
+store after the lane accepted the request. Callers should match "unauthorized" or "401" in the error.
 
 The tag view `vcon_tags_mv` is never refreshed through a lane. A tenant token may not refresh it. The
 process that holds the service key refreshes it on a timer, so tag filters in a lane can lag by that

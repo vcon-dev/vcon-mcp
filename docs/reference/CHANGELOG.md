@@ -104,6 +104,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     are refused. Plugins and the Redis cache are off, and the tag view is never refreshed
     through a lane: the writer's timer keeps it current
   - `delete_vcon` reports not found when the delete removed no row
+  - a token its PostgREST refuses with HTTP 401 (expired, bad signature, no anonymous access) gives
+    the tool error `Unauthorized: the store refused this request's token (HTTP 401)`, which never
+    holds the token or the store's text
   - `search_vcons_semantic` with query text needs `EMBEDDING_PROVIDER=openai` in a lane, since
     the default provider calls its edge function with the service key
   - logs the token's `tenant_id`, never the bearer
@@ -112,6 +115,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `IVConQueries.deleteVCon` may resolve to the number of vCons it removed. `VConService.delete`
   treats 0 as not found. The Supabase and MongoDB implementations used by `TENANT_MODE=off` do not
   report a count, so their behaviour is unchanged
+- `VConService.delete` reports not found only when the vCon does not exist. A store error on the
+  read that checks it exists (a refused key, a 5xx, a network failure) used to be reported as not
+  found. It now surfaces as an error, in every mode: `delete_vcon` returns a tool error instead of
+  "not found", and `DELETE /api/v1/vcons/:uuid` answers 500 instead of 404. Nothing is deleted
+- An unknown `TENANT_MODE` value stops the server at start in every mode, `off` included. Unset or
+  blank keeps today's behaviour
 
 ---
 
