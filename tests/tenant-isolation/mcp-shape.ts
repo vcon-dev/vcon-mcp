@@ -169,11 +169,32 @@ function refusedStart(storeUrl: string, extra: NodeJS.ProcessEnv): Promise<{ cod
 
 interface Out {
   ok: boolean;
-  /** The tool result text, or the error message. */
+  /** The tool result's text content, or the error message. */
   text: string;
   json: any;
   /** JSON-RPC error code, when the call failed with one. */
   code?: number;
+  /**
+   * Everything the answer carried, serialised: every content part, structuredContent, _meta and
+   * any other field of a result, or an error's message, code and data. Markers are looked for here.
+   */
+  raw: string;
+}
+
+/** An Out from a tools/call result, with every field of it kept for the marker scan. */
+function resultOut(r: Record<string, unknown>): Out {
+  const parts = Array.isArray(r.content) ? (r.content as { type: string; text?: string }[]) : [];
+  const text = parts.map((p) => p.text ?? '').join('');
+  let json: any = null;
+  try { json = JSON.parse(text); } catch { /* not JSON */ }
+  return { ok: !r.isError, text, json, raw: JSON.stringify(r) };
+}
+
+/** An Out from a failed call, with the error's message, code and data kept for the marker scan. */
+function errorOut(e: any): Out {
+  const text = String(e?.message ?? e);
+  const code = typeof e?.code === 'number' ? e.code : undefined;
+  return { ok: false, text, json: null, code, raw: JSON.stringify({ message: text, code, data: e?.data }) };
 }
 
 const clients = new Map<string, Promise<Client | Error>>();
@@ -200,15 +221,11 @@ function clientFor(lane: Lane, token: string): Promise<Client | Error> {
 
 async function call(lane: Lane, token: string, name: string, args: Record<string, unknown>): Promise<Out> {
   const client = await clientFor(lane, token);
-  if (client instanceof Error) return { ok: false, text: client.message, json: null };
+  if (client instanceof Error) return errorOut(client);
   try {
-    const r = await client.callTool({ name, arguments: args });
-    const text = (r.content as { type: string; text?: string }[]).map((p) => p.text ?? '').join('');
-    let json: any = null;
-    try { json = JSON.parse(text); } catch { /* not JSON */ }
-    return { ok: !r.isError, text, json };
-  } catch (e: any) {
-    return { ok: false, text: String(e?.message ?? e), json: null, code: typeof e?.code === 'number' ? e.code : undefined };
+    return resultOut(await client.callTool({ name, arguments: args }) as Record<string, unknown>);
+  } catch (e) {
+    return errorOut(e);
   }
 }
 
@@ -226,9 +243,12 @@ async function call(lane: Lane, token: string, name: string, args: Record<string
  */
 type Exp = 'isolated' | 'empty' | 'notfound' | 'unauthorized' | 'unavailable' | 'refused' | 'deleted' | 'leak';
 
-/** Markers in an answer, ignoring the values the caller sent (a not-found message echoes the uuid). */
+/**
+ * Markers anywhere in an answer (every field, not only its text), ignoring the values the caller
+ * sent (a not-found message echoes the uuid).
+ */
 function scan(o: Out, args: Record<string, unknown>): { own: boolean; foreign: string[] } {
-  let text = o.text;
+  let text = o.raw;
   for (const v of Object.values(args)) if (typeof v === 'string' && v.length > 8) text = text.split(v).join('<sent>');
   const m = markersIn(text);
   return { own: m.has('A*'), foreign: [...m].filter((k) => k !== 'A*').sort() };
@@ -289,6 +309,26 @@ function expectValue(id: string, desc: string, actual: unknown, exp: [unknown, u
 // ---------------------------------------------------------------- the run
 
 async function main(): Promise<number> {
+  // ------------------------------------------------------------ the scan itself
+  // A leak can sit in any field of an answer. Each planted answer below holds only A's uuid in its
+  // text and another fixture's marker elsewhere; an isolated read must fail on it.
+  rep.section('the marker scan sees every field of an answer');
+  const ownText = { content: [{ type: 'text', text: JSON.stringify({ success: true, results: [A.uuid] }) }] };
+  const planted: Array<[string, Out]> = [
+    ['structuredContent', resultOut({ ...ownText, structuredContent: { results: [A.uuid], note: B.canary } })],
+    ['_meta', resultOut({ ...ownText, _meta: { origin: B.uuid } })],
+    ['a second content part', resultOut({ content: [...ownText.content, { type: 'resource', resource: { uri: `vcon://${N.uuid}`, text: '' } }] })],
+    ['an unknown result field', resultOut({ ...ownText, extra: { deep: [Q.canary] } })],
+    ['error data', errorOut(Object.assign(new Error('failed'), { code: -32603, data: { uuid: B.uuid } }))],
+  ];
+  for (const [where, o] of planted) {
+    const s = scan(o, {});
+    rep.check(`${MODE}-scan-${where.replace(/\W+/g, '-')}`, `a foreign marker planted in ${where} makes an isolated read fail`,
+      s.foreign.length > 0 && !meets(o, 'isolated', s), `foreign=[${s.foreign.join(',')}]`);
+  }
+  const control = resultOut({ ...ownText, structuredContent: { results: [A.uuid] } });
+  rep.check(`${MODE}-scan-control`, "the same answer with only A's markers passes as isolated", meets(control, 'isolated', scan(control, {})), '');
+
   const prep = await prepareStack({ label: BASELINE ? 'mcpbase' : 'mcp', strict: !BASELINE });
   const stack: Stack = prep.stack;
   let proxy: Awaited<ReturnType<typeof startProxy>> | null = null;
@@ -432,6 +472,19 @@ async function main(): Promise<number> {
     expectValue('delete-own-cascade', 'the vCon and every child row of it are gone, in all ten tables', left, ['0', '0']);
     expectValue('delete-own-others', "A's other vCon and B's vCons are untouched",
       stack.sql(`SELECT count(*) FROM vcons WHERE uuid IN ('${A.uuid}', '${B.uuid}', '${BN.uuid}')`).trim(), ['3', '3']);
+
+    // A delete the row-security policies refuse while the read is allowed: the lane's existence read
+    // finds the vCon, the DELETE removes no row and PostgREST answers without an error. The lane must
+    // report not found (src/services/vcon-service.ts: removed === 0), not "Deleted".
+    stack.sql(`CREATE POLICY mcp_shape_refuse_delete ON vcons AS RESTRICTIVE FOR DELETE TO authenticated USING (uuid <> '${A.uuid}')`);
+    try {
+      await expectCall(lane, 'delete-refused-by-policy', "delete_vcon(A's own vCon) when a policy refuses the delete but allows the read",
+        T.A, 'delete_vcon', { uuid: A.uuid }, ['notfound', 'notfound']);
+      expectValue('delete-refused-by-policy-kept', 'and the vCon is still there', stack.sql(`SELECT count(*) FROM vcons WHERE uuid = '${A.uuid}'`).trim(), ['1', '1']);
+    } finally {
+      stack.sql('DROP POLICY mcp_shape_refuse_delete ON vcons');
+    }
+    await expectCall(lane, 'get-own-after', 'get_vcon(A) still reads it', T.A, 'get_vcon', { uuid: A.uuid }, ['isolated', 'isolated']);
 
     // ------------------------------------------------------------ what reached the store
     rep.section('what reached the store');
