@@ -100,7 +100,9 @@ REDIS_URL=redis://localhost:6379
 | `npm run test:mcp` | Test MCP tools |
 | `npm run test:search` | Test search functionality |
 | `npm run test:tags` | Test tag system |
-| `npm run test:tenant` | Test tenant isolation (RLS) |
+| `npm run test:tenant` | Tenant isolation REST shape on a throwaway Docker stack, strict pack applied (needs Docker) |
+| `npm run test:tenant:baseline` | The same requests on the unmodified schema; asserts the known leaks still show |
+| `npm run test:tenant:guard` | Strict pack apply script and catalog guard |
 | `npm run test:stress` | Simulated MCP clients, load tests, and oracle checks against the real DB (see below) |
 
 ### Stress tests (`npm run test:stress`)
