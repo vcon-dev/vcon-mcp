@@ -77,6 +77,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or conflicting stamp under `_quarantine` (where `RLS_ENABLED=true` kept the first of two ids
   silently), and refreshes `vcon_tags_mv` at start and every `TAGS_MV_REFRESH_INTERVAL_MS`
   (default 60000). See `docs/guide/rls-multi-tenant.md`
+  - Refuses to start with `CURRENT_TENANT_ID` set: the writer serves every tenant, and the
+    session tenant it sets outlives a request on a pooled connection and reaches other callers.
+    With `TENANT_MODE` unset, `CURRENT_TENANT_ID` works as before
+  - Refuses to start with `TENANT_ATTACHMENT_TYPE` or `TENANT_JSON_PATH` set to anything but
+    `tenant` and `id`, so the TypeScript rule and the SQL backfill cannot differ
+  - Refuses to start unless `save_vcon_batch` and `20261112120000_keep_stored_tenant.sql` are in
+    the store; the probe writes nothing. Never takes the non-atomic per-table fallback, whose
+    plain upsert overwrites a stored tenant: if `save_vcon_batch` is missing at write time the
+    write fails with an error
+  - Logs a warning (uuid, stored tenant, stamped tenant) when a re-post kept a stored tenant
+    different from its stamp. One read per batch, after the commit
 - `scripts/test-tenant-writer.sh` proves both migrations on a throwaway Postgres: re-posts keep
   the stored tenant, the release function and its log, both backfills, a re-run, and the anon
   lockdown checks. `VCON_SQL_TESTS=1` runs it from vitest

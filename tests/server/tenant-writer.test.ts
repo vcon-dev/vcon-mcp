@@ -6,6 +6,7 @@ import {
   startTagsMvRefreshTimer,
   startTenantWriter,
   stopTenantWriter,
+  verifyWriterStore,
 } from '../../src/server/tenant-writer.js';
 
 const writerEnv = (extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv => ({
@@ -43,6 +44,36 @@ describe('checkTenantModeAtStartup', () => {
 
   it('refuses a writer with a bad refresh interval', () => {
     expect(() => checkTenantModeAtStartup(writerEnv({ TAGS_MV_REFRESH_INTERVAL_MS: '500' }))).toThrow(/at least 1000/);
+  });
+
+  it('refuses a writer with CURRENT_TENANT_ID set', () => {
+    expect(() => checkTenantModeAtStartup(writerEnv({ CURRENT_TENANT_ID: 't-aaaaaaaaaaaaaaaa' })))
+      .toThrow('TENANT_MODE=writer serves every tenant; unset CURRENT_TENANT_ID');
+  });
+
+  it('accepts a writer with CURRENT_TENANT_ID blank', () => {
+    expect(checkTenantModeAtStartup(writerEnv({ CURRENT_TENANT_ID: '' }))).toBe('writer');
+    expect(checkTenantModeAtStartup(writerEnv({ CURRENT_TENANT_ID: '  ' }))).toBe('writer');
+  });
+
+  it('refuses a writer whose tenant attachment type or path differs from the SQL backfill', () => {
+    expect(() => checkTenantModeAtStartup(writerEnv({ TENANT_ATTACHMENT_TYPE: 'account' })))
+      .toThrow("TENANT_MODE=writer needs TENANT_ATTACHMENT_TYPE unset or 'tenant'");
+    expect(() => checkTenantModeAtStartup(writerEnv({ TENANT_ATTACHMENT_TYPE: ' tenant' })))
+      .toThrow(/TENANT_ATTACHMENT_TYPE/);
+    expect(() => checkTenantModeAtStartup(writerEnv({ TENANT_JSON_PATH: 'org.id' })))
+      .toThrow("TENANT_MODE=writer needs TENANT_JSON_PATH unset or 'id'");
+  });
+
+  it('accepts a writer with the default attachment type and path, set or blank', () => {
+    expect(checkTenantModeAtStartup(writerEnv({ TENANT_ATTACHMENT_TYPE: 'tenant', TENANT_JSON_PATH: 'id' }))).toBe('writer');
+    expect(checkTenantModeAtStartup(writerEnv({ TENANT_ATTACHMENT_TYPE: '', TENANT_JSON_PATH: '' }))).toBe('writer');
+  });
+
+  it('off: CURRENT_TENANT_ID and custom tenant settings are accepted as before', () => {
+    expect(checkTenantModeAtStartup({
+      CURRENT_TENANT_ID: 't-aaaaaaaaaaaaaaaa', TENANT_ATTACHMENT_TYPE: 'account', TENANT_JSON_PATH: 'org.id',
+    })).toBe('off');
   });
 
   it('leaves lane to its own checks', () => {
@@ -121,5 +152,46 @@ describe('tag view refresh timer', () => {
     startTenantWriter(supabase, { TAGS_MV_REFRESH_INTERVAL_MS: '2000' });
     await vi.advanceTimersByTimeAsync(4_000);
     expect(refreshCalls(supabase)).toBe(3);
+  });
+});
+
+describe('verifyWriterStore', () => {
+  type Reply = { data: unknown; error: { code?: string; message?: string } | null };
+  const store = (batch: Reply, release: Reply) => ({
+    rpc: vi.fn((fn: string) => Promise.resolve(fn === 'save_vcon_batch' ? batch : release)),
+  }) as any;
+  const OK: Reply = { data: null, error: null };
+  const REFUSED: Reply = { data: null, error: { code: '22023', message: 'tenant id must be t- and 16 lowercase hex digits' } };
+  const MISSING: Reply = { data: null, error: { code: 'PGRST202', message: 'Could not find the function' } };
+
+  it('passes when save_vcon_batch runs and the release function refuses the NULL probe', async () => {
+    const s = store(OK, REFUSED);
+    await expect(verifyWriterStore(s)).resolves.toBeUndefined();
+    expect(s.rpc).toHaveBeenCalledWith('save_vcon_batch', {
+      p_vcons: [], p_parties: [], p_dialog: [], p_analysis: [], p_attachments: [],
+    });
+    expect(s.rpc).toHaveBeenCalledWith('release_vcon_from_quarantine', {
+      p_vcon_uuid: null, p_tenant_id: null, p_reason: null, p_evidence: null, p_released_by: null,
+    });
+  });
+
+  it('refuses a store without save_vcon_batch', async () => {
+    await expect(verifyWriterStore(store(MISSING, REFUSED))).rejects.toThrow('TENANT_MODE=writer needs save_vcon_batch');
+  });
+
+  it('refuses when save_vcon_batch cannot be confirmed', async () => {
+    await expect(verifyWriterStore(store({ data: null, error: { code: '08006', message: 'connection failure' } }, REFUSED)))
+      .rejects.toThrow('could not confirm save_vcon_batch: 08006: connection failure');
+  });
+
+  it('refuses a store without the keep-stored-tenant migration', async () => {
+    await expect(verifyWriterStore(store(OK, MISSING))).rejects.toThrow('needs 20261112120000_keep_stored_tenant.sql');
+    await expect(verifyWriterStore(store(OK, { data: null, error: { code: '42883', message: 'function does not exist' } })))
+      .rejects.toThrow('needs 20261112120000_keep_stored_tenant.sql');
+  });
+
+  it('refuses when the release function answers with any other error', async () => {
+    await expect(verifyWriterStore(store(OK, { data: null, error: { code: '42501', message: 'permission denied' } })))
+      .rejects.toThrow('could not confirm 20261112120000_keep_stored_tenant.sql: 42501: permission denied');
   });
 });

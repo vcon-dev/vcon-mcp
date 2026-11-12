@@ -214,9 +214,19 @@ CREATE POLICY "vcons_tenant_isolation" ON vcons
 That process:
 
 - needs `SUPABASE_SERVICE_ROLE_KEY` and the Supabase backend, and refuses to start without them
+- refuses to start with `CURRENT_TENANT_ID` set. The writer serves every tenant, and the session
+  tenant that variable sets outlives a request on a pooled connection
+- refuses to start with `TENANT_ATTACHMENT_TYPE` or `TENANT_JSON_PATH` set to anything but
+  `tenant` and `id`, the only values the SQL backfill (`vcon_tenant_stamp`) knows
+- refuses to start unless the store has `save_vcon_batch` and migration
+  `20261112120000_keep_stored_tenant.sql`. It probes both without writing. If `save_vcon_batch`
+  disappears later, writes fail with an error; the writer never falls back to per-table writes,
+  which overwrite a stored tenant
 - reads the tenant attachment on every vCon it stores, whatever `RLS_ENABLED` says
 - stores a vCon whose stamp is missing, malformed or conflicting under the reserved tenant
   `_quarantine`, and logs a warning with the reason. No vCon is dropped because of its stamp
+- logs a warning, naming the uuid and the stored and stamped tenants, when a re-post kept a
+  stored tenant that differs from its stamp
 - refreshes `vcon_tags_mv` at start and every `TAGS_MV_REFRESH_INTERVAL_MS` (default 60000),
   since tenant tokens cannot refresh it and nothing else does without pg_cron
 

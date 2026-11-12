@@ -29,7 +29,10 @@
  *
  * supabase/migrations/20261112120100_fix_tenant_backfill.sql applies the same
  * rule in SQL (vcon_tenant_stamp with p_strict = true), for the default
- * attachment type `tenant` and path `id` only.
+ * attachment type `tenant` and path `id` only. So a writer refuses to start
+ * with TENANT_ATTACHMENT_TYPE or TENANT_JSON_PATH set to anything else
+ * (src/server/tenant-writer.ts); the config parameters here stay for tests and
+ * for the off-mode extractor's settings.
  */
 
 import { Attachment, VCon } from '../types/vcon.js';

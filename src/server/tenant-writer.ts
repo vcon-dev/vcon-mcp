@@ -14,8 +14,11 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { getTenantMode, TenantMode } from '../config/tenant-mode.js';
 import { refreshTagsMvNow } from '../db/tags-mv.js';
 import { logWithContext } from '../observability/instrumentation.js';
-import { extractErrorMessage } from '../utils/errors.js';
+import { extractErrorMessage, isMissingFunctionError } from '../utils/errors.js';
+import { isSaveVConBatchMissing } from '../db/batch-writer.js';
 
+export const WRITER_ATTACHMENT_TYPE = 'tenant';
+export const WRITER_JSON_PATH = 'id';
 export const DEFAULT_TAGS_MV_REFRESH_INTERVAL_MS = 60_000;
 export const MIN_TAGS_MV_REFRESH_INTERVAL_MS = 1_000;
 
@@ -47,10 +50,19 @@ export function checkTenantModeAtStartup(env: NodeJS.ProcessEnv = process.env): 
   }
   const intervalMs = getTagsMvRefreshIntervalMs(env);
 
-  if (env.CURRENT_TENANT_ID) {
-    logWithContext('warn', 'TENANT_MODE=writer serves every tenant, but CURRENT_TENANT_ID is set', {
-      hint: 'CURRENT_TENANT_ID pins one tenant on a pooled database connection; unset it on the writer',
-    });
+  // The writer serves every tenant. CURRENT_TENANT_ID sets a session tenant
+  // that outlives the request on a pooled connection and reaches other callers.
+  if ((env.CURRENT_TENANT_ID ?? '').trim() !== '') {
+    throw new Error('TENANT_MODE=writer serves every tenant; unset CURRENT_TENANT_ID');
+  }
+
+  // The SQL backfill (vcon_tenant_stamp) knows only the defaults, so the
+  // writer refuses anything else rather than let the two rules differ.
+  if (env.TENANT_ATTACHMENT_TYPE && env.TENANT_ATTACHMENT_TYPE !== WRITER_ATTACHMENT_TYPE) {
+    throw new Error(`TENANT_MODE=writer needs TENANT_ATTACHMENT_TYPE unset or '${WRITER_ATTACHMENT_TYPE}'`);
+  }
+  if (env.TENANT_JSON_PATH && env.TENANT_JSON_PATH !== WRITER_JSON_PATH) {
+    throw new Error(`TENANT_MODE=writer needs TENANT_JSON_PATH unset or '${WRITER_JSON_PATH}'`);
   }
 
   logWithContext('info', 'TENANT_MODE=writer', {
@@ -59,6 +71,39 @@ export function checkTenantModeAtStartup(env: NodeJS.ProcessEnv = process.env): 
     tags_mv_refresh_interval_ms: intervalMs,
   });
   return mode;
+}
+
+/**
+ * Check the store before the writer takes traffic. Throws, and the server
+ * exits, unless:
+ *   - save_vcon_batch exists: without it the batch writer would fall back to
+ *     per-table writes that overwrite a stored tenant (it refuses that too);
+ *   - release_vcon_from_quarantine exists, i.e. 20261112120000_keep_stored_tenant.sql
+ *     is applied, so save_vcon_batch is the version that keeps a stored tenant.
+ * Neither probe writes: save_vcon_batch gets empty arrays, and
+ * release_vcon_from_quarantine gets NULLs, which it refuses (22023) before
+ * reading anything.
+ */
+export async function verifyWriterStore(supabase: SupabaseClient): Promise<void> {
+  const batch = await supabase.rpc('save_vcon_batch', {
+    p_vcons: [], p_parties: [], p_dialog: [], p_analysis: [], p_attachments: [],
+  });
+  if (batch.error) {
+    if (isSaveVConBatchMissing(batch.error)) {
+      throw new Error('TENANT_MODE=writer needs save_vcon_batch; apply 20261020130000_save_vcon_batch.sql and 20261112120000_keep_stored_tenant.sql');
+    }
+    throw new Error(`TENANT_MODE=writer could not confirm save_vcon_batch: ${extractErrorMessage(batch.error)}`);
+  }
+
+  const release = await supabase.rpc('release_vcon_from_quarantine', {
+    p_vcon_uuid: null, p_tenant_id: null, p_reason: null, p_evidence: null, p_released_by: null,
+  });
+  if (release.error && release.error.code !== '22023') {
+    if (isMissingFunctionError(release.error)) {
+      throw new Error('TENANT_MODE=writer needs 20261112120000_keep_stored_tenant.sql, so a re-post keeps a stored tenant');
+    }
+    throw new Error(`TENANT_MODE=writer could not confirm 20261112120000_keep_stored_tenant.sql: ${extractErrorMessage(release.error)}`);
+  }
 }
 
 export interface TagsMvRefreshTimer {

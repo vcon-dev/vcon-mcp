@@ -29,7 +29,7 @@ import { PluginManager } from '../hooks/plugin-manager.js';
 import { createLogger } from '../observability/logger.js';
 import { VConService } from '../services/vcon-service.js';
 import { createHandlerRegistry, type ToolHandlerRegistry } from '../tools/handlers/index.js';
-import { checkTenantModeAtStartup, startTenantWriter } from './tenant-writer.js';
+import { checkTenantModeAtStartup, startTenantWriter, verifyWriterStore } from './tenant-writer.js';
 
 const logger = createLogger('server-setup');
 
@@ -255,6 +255,7 @@ export async function setupServer(): Promise<ServerContext> {
   } = await initializeDatabase();
 
   if (tenantMode === 'writer') {
+    await verifyWriterStore(supabase);
     startTenantWriter(supabase);
   }
 

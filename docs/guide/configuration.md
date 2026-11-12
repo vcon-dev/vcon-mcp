@@ -142,8 +142,10 @@ TENANT_MODE=writer
 TAGS_MV_REFRESH_INTERVAL_MS=60000
 ```
 
-An unknown `TENANT_MODE` stops startup. A writer without `SUPABASE_SERVICE_ROLE_KEY`, or with
-`DB_TYPE=mongodb`, stops startup. See
+An unknown `TENANT_MODE` stops startup. A writer stops at startup without
+`SUPABASE_SERVICE_ROLE_KEY`, with `DB_TYPE=mongodb`, with `CURRENT_TENANT_ID` set, with
+`TENANT_ATTACHMENT_TYPE` or `TENANT_JSON_PATH` set to anything but `tenant` and `id`, or on a
+store without `save_vcon_batch` and migration `20261112120000_keep_stored_tenant.sql`. See
 [Writer Mode](rls-multi-tenant.md#writer-mode-tenant-mode-writer).
 
 #### Dataset Taxonomy Guidance

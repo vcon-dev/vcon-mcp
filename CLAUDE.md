@@ -368,10 +368,16 @@ The database uses Row Level Security (RLS) with `tenant_id`:
 - With RLS enabled and no `CURRENT_TENANT_ID`, queries return only rows with a NULL tenant
 - See `src/config/tenant-config.ts`
 - `TENANT_MODE` (`src/config/tenant-mode.ts`): unset or `off` is all of the above. `writer`
-  (`src/server/tenant-writer.ts`) needs the service key, extracts the tenant on every write
-  whatever `RLS_ENABLED` says, stores a missing, malformed or conflicting stamp under
-  `_quarantine` (rule in `src/config/tenant-stamp.ts`, mirrored in SQL by `vcon_tenant_stamp`),
-  and refreshes `vcon_tags_mv` on a timer. `lane` is reserved for the per-request tenant lane
+  (`src/server/tenant-writer.ts`) needs the service key, refuses `CURRENT_TENANT_ID` and a
+  non-default `TENANT_ATTACHMENT_TYPE` or `TENANT_JSON_PATH`, checks the store has the
+  stored-tenant migration, extracts the tenant on every write whatever `RLS_ENABLED` says,
+  stores a missing, malformed or conflicting stamp under `_quarantine` (rule in
+  `src/config/tenant-stamp.ts`, mirrored in SQL by `vcon_tenant_stamp`), never takes the
+  per-table write fallback, and refreshes `vcon_tags_mv` on a timer. `lane` is reserved for the
+  per-request tenant lane
+- Every vCon insert goes VConService.create -> queries.createVCon -> batchSaveVCon ->
+  save_vcon_batch. `tests/db/tenant-writer-guard.test.ts` fails if a new insert path skips the
+  writer stamp
 - `save_vcon_batch` never changes a stored tenant on a re-post (a NULL takes the new one). Only
   `release_vcon_from_quarantine()` moves a vCon out of `_quarantine`, logging to
   `tenant_quarantine_releases`. `scripts/test-tenant-writer.sh` proves both on a real Postgres
