@@ -15,6 +15,7 @@ import { Analysis, Attachment, Dialog, Party, VCon } from '../types/vcon.js';
 import { deserializeBody, serializeBody } from '../utils/body-serialization.js';
 import { logWithContext, recordCounter } from '../observability/instrumentation.js';
 import { extractErrorMessage } from '../utils/errors.js';
+import { getTenantMode } from '../config/tenant-mode.js';
 
 export const BATCH_SIZE = 100;
 export const BATCH_MAX_AGE_MS = 200;
@@ -194,11 +195,16 @@ async function commitBatch(pending: Pending[], tenantId: string | null): Promise
   if (batchError === undefined) {
     recordBatchCommit(pending.length, tenantId);
     await invalidateCache(pending);
+    reportKeptTenants(pending);
     for (const p of pending) p.resolve({ uuid: p.vcon.uuid, id: p.vcon.uuid });
     return;
   }
 
   if (isSaveVConBatchMissing(batchError as { code?: string; message?: string })) {
+    if (getTenantMode() === 'writer') {
+      refuseLegacyWrite(pending, tenantId, batchError);
+      return;
+    }
     await commitBatchLegacy(pending, tenantId, batchError as { message?: string });
     return;
   }
@@ -219,8 +225,64 @@ async function commitBatch(pending: Pending[], tenantId: string | null): Promise
     }
     recordBatchCommit(1, tenantId);
     await invalidateCache([p]);
+    reportKeptTenants([p]);
     p.resolve({ uuid: p.vcon.uuid, id: p.vcon.uuid });
   }
+}
+
+/**
+ * TENANT_MODE=writer never takes the per-table fallback: its plain vcons upsert
+ * overwrites tenant_id, so a re-post would move a stored vCon and its children,
+ * and an unstamped re-post would send a stamped vCon to _quarantine. The write
+ * fails loudly instead. Startup refuses a store without save_vcon_batch
+ * (src/server/tenant-writer.ts), so this is reached only if it disappears later.
+ */
+export const WRITER_NEEDS_SAVE_VCON_BATCH =
+  'save_vcon_batch is missing; TENANT_MODE=writer does not fall back to per-table writes, which overwrite a stored tenant. ' +
+  'Apply 20261020130000_save_vcon_batch.sql and 20261112120000_keep_stored_tenant.sql';
+
+function refuseLegacyWrite(pending: Pending[], tenantId: string | null, reason: unknown): void {
+  flushFailed(pending.length, tenantId, reason);
+  logWithContext('error', WRITER_NEEDS_SAVE_VCON_BATCH, {
+    batch_size: pending.length,
+    reason: extractErrorMessage(reason),
+  });
+  const err = new Error(WRITER_NEEDS_SAVE_VCON_BATCH);
+  for (const p of pending) p.reject(err);
+}
+
+/**
+ * TENANT_MODE=writer: after a commit, warn for each vCon whose stored tenant
+ * differs from the stamp just sent. save_vcon_batch keeps a stored tenant, so
+ * this is a re-post stamped for another tenant, or an unstamped re-post of a
+ * stamped vCon. One read per flush, off the caller's path; a failed read is
+ * ignored. The log names the uuid and the two tenant values, nothing else.
+ */
+function reportKeptTenants(committed: Pending[]): void {
+  if (getTenantMode() !== 'writer' || !supabaseRef || committed.length === 0) return;
+  const supabase = supabaseRef;
+  const sent = new Map(committed.map((p) => [p.vcon.uuid, p.tenantId]));
+  void (async () => {
+    try {
+      const { data, error } = (await supabase
+        .from('vcons')
+        .select('uuid, tenant_id')
+        .in('uuid', [...sent.keys()])) as { data: Array<{ uuid: string; tenant_id: string | null }> | null; error: unknown };
+      if (error || !data) return;
+      for (const row of data) {
+        const stamped = sent.get(row.uuid);
+        if (stamped === undefined || row.tenant_id === null || row.tenant_id === stamped) continue;
+        recordCounter('vcon.tenant.kept_on_repost', 1, {}, 'Writer re-posts that kept a different stored tenant');
+        logWithContext('warn', 'writer re-post kept the stored tenant', {
+          vcon_uuid: row.uuid,
+          stored_tenant: row.tenant_id,
+          stamped_tenant: stamped,
+        });
+      }
+    } catch {
+      // A missing or failing read only loses the warning.
+    }
+  })();
 }
 
 /**

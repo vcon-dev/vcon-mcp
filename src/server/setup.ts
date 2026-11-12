@@ -29,6 +29,7 @@ import { PluginManager } from '../hooks/plugin-manager.js';
 import { createLogger } from '../observability/logger.js';
 import { VConService } from '../services/vcon-service.js';
 import { createHandlerRegistry, type ToolHandlerRegistry } from '../tools/handlers/index.js';
+import { checkTenantModeAtStartup, startTenantWriter, verifyWriterStore } from './tenant-writer.js';
 
 const logger = createLogger('server-setup');
 
@@ -237,6 +238,9 @@ export async function loadPlugins(
  * Setup complete server context
  */
 export async function setupServer(): Promise<ServerContext> {
+  // TENANT_MODE first: a bad value or a writer without the service key stops startup.
+  const tenantMode = checkTenantModeAtStartup();
+
   // Initialize server
   const server = createServer();
 
@@ -249,6 +253,11 @@ export async function setupServer(): Promise<ServerContext> {
     supabase,
     redis,
   } = await initializeDatabase();
+
+  if (tenantMode === 'writer') {
+    await verifyWriterStore(supabase);
+    startTenantWriter(supabase);
+  }
 
   // Initialize plugin manager
   const pluginManager = new PluginManager();

@@ -29,6 +29,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     fails if one is missed
   - Applies to `public` only. Per-group schemas made earlier with `scripts/bootstrap-schema.sh`
     keep their old grants until the same revokes are applied in that schema
+- `20261112120000_keep_stored_tenant.sql` changes `save_vcon_batch` for every deployment: a
+  re-post of a stored uuid no longer changes its `tenant_id`. Before, a service-key re-post with
+  no tenant moved a stamped vCon and all its children to NULL, and a re-post stamped for another
+  tenant moved them there. A vCon stored with a NULL tenant still takes the re-post's tenant.
+  Everything else in a re-post is written as before. Deployments that never set a tenant see no
+  change. A direct `UPDATE vcons SET tenant_id` still works
+  - Adds `release_vcon_from_quarantine(uuid, tenant, reason, evidence, released_by)` and the
+    append-only table `tenant_quarantine_releases`, both `service_role` only. Nothing calls them
+    unless `TENANT_MODE=writer` has stored a vCon under `_quarantine`
+- `20261112120100_fix_tenant_backfill.sql`
+  - `backfill_tenant_id_batch('s3_sync_tracking', n)` no longer fails with
+    `column s3.id does not exist`. The function is now `service_role` only; `authenticated`
+    loses `EXECUTE`
+  - Adds `backfill_vcon_tenant_ids(batch_size, writer_rule)` and
+    `vcon_tenant_stamp(vcon_id, strict)`, `service_role` only. They correct what
+    `20251202180000_backfill_tenant_ids.sql` did once: read `purpose` as well as `type`, and
+    skip a body that is not JSON instead of aborting. They are called by an operator; applying
+    the migration changes no stored tenant
 
 ### Security
 - Deployments that run the server with `SUPABASE_ANON_KEY` instead of
@@ -52,6 +70,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   server binaries; downloads PostgREST once
 - `supabase/tests/anon_lockdown.sql` runs the same grants as catalog and `SET ROLE` checks
   against any migrated database
+- `TENANT_MODE` environment variable: `off` (default when unset), `writer` or `lane`. An unknown
+  value stops startup; unset keeps today's behaviour
+- `TENANT_MODE=writer`: needs `SUPABASE_SERVICE_ROLE_KEY` and the Supabase backend. Reads the
+  tenant stamp on every vCon it stores whatever `RLS_ENABLED` says, stores a missing, malformed
+  or conflicting stamp under `_quarantine` (where `RLS_ENABLED=true` kept the first of two ids
+  silently), and refreshes `vcon_tags_mv` at start and every `TAGS_MV_REFRESH_INTERVAL_MS`
+  (default 60000). See `docs/guide/rls-multi-tenant.md`
+  - Refuses to start with `CURRENT_TENANT_ID` set: the writer serves every tenant, and the
+    session tenant it sets outlives a request on a pooled connection and reaches other callers.
+    With `TENANT_MODE` unset, `CURRENT_TENANT_ID` works as before
+  - Refuses to start with `TENANT_ATTACHMENT_TYPE` or `TENANT_JSON_PATH` set to anything but
+    `tenant` and `id`, so the TypeScript rule and the SQL backfill cannot differ
+  - Refuses to start unless `save_vcon_batch` and `20261112120000_keep_stored_tenant.sql` are in
+    the store; the probe writes nothing. Never takes the non-atomic per-table fallback, whose
+    plain upsert overwrites a stored tenant: if `save_vcon_batch` is missing at write time the
+    write fails with an error
+  - Logs a warning (uuid, stored tenant, stamped tenant) when a re-post kept a stored tenant
+    different from its stamp. One read per batch, after the commit
+- `scripts/test-tenant-writer.sh` proves both migrations on a throwaway Postgres: re-posts keep
+  the stored tenant, the release function and its log, both backfills, a re-run, and the anon
+  lockdown checks. `VCON_SQL_TESTS=1` runs it from vitest
 
 ---
 
