@@ -26,7 +26,7 @@ import { allTagTools } from '../../src/tools/tag-tools.js';
 import { createFromTemplateTool } from '../../src/tools/templates.js';
 import { allTools } from '../../src/tools/vcon-crud.js';
 import {
-  CANARY_A, CANARY_B, fakeStore, TENANT_A, TENANT_B, tenantJwt, UUID_A, UUID_A2, UUID_B, type FakeStore,
+  CANARY_A, CANARY_B, fakeStore, storeAnswer, TENANT_A, TENANT_B, tenantJwt, UUID_A, UUID_A2, UUID_B, type FakeStore,
 } from './helpers.js';
 
 const realFetch = globalThis.fetch;
@@ -67,6 +67,7 @@ beforeEach(() => {
   store.requests.length = 0;
   store.delayMs = 0;
   store.deleteMatchesNothing = false;
+  store.override = undefined;
 });
 
 afterEach(() => {
@@ -325,6 +326,123 @@ describe('delete_vcon', () => {
     expect(del[0].params.get('uuid')).toBe(`eq.${UUID_A2}`);
     expect(del[0].headers.get('authorization')).toBe(`Bearer ${jwt}`);
     expect(store.rows.some((x) => x.uuid === UUID_A2)).toBe(false);
+  });
+});
+
+describe('delete_vcon with a store error', () => {
+  const STORE_DOWN = { code: 'XX000', message: 'store unavailable' };
+
+  it('surfaces an error on the existence read, never not found, and deletes nothing', async () => {
+    store.override = (r) => (r.method === 'GET' && r.path === '/rest/v1/vcons' ? storeAnswer(500, STORE_DOWN) : undefined);
+    const client = await connect(tenantJwt(TENANT_A));
+    const error = await client.callTool({ name: 'delete_vcon', arguments: { uuid: UUID_A } }).catch((e) => e);
+    await client.close();
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toMatch(/store unavailable/);
+    expect(error.message).not.toMatch(/not found/i);
+    expect(store.requests.some((r) => r.method === 'DELETE')).toBe(false);
+    expect(store.rows.some((r) => r.uuid === UUID_A)).toBe(true);
+  });
+
+  it('surfaces an error on the delete itself, never not found, and deletes nothing', async () => {
+    store.override = (r) => (r.method === 'DELETE' ? storeAnswer(500, STORE_DOWN) : undefined);
+    const client = await connect(tenantJwt(TENANT_A));
+    const error = await client.callTool({ name: 'delete_vcon', arguments: { uuid: UUID_A } }).catch((e) => e);
+    await client.close();
+    expect(error.message).toMatch(/store unavailable/);
+    expect(error.message).not.toMatch(/not found/i);
+    expect(store.rows.some((r) => r.uuid === UUID_A)).toBe(true);
+  });
+});
+
+describe('a token the store refuses', () => {
+  const refusals: [string, () => Response][] = [
+    ['PGRST301 JWT expired', () => storeAnswer(401, { code: 'PGRST301', details: null, hint: null, message: 'JWT expired' })],
+    ['PGRST301 bad signature', () => storeAnswer(401, { code: 'PGRST301', details: null, hint: null, message: 'JWSError JWSInvalidSignature' })],
+    ['PGRST302 no anonymous access', () => storeAnswer(401, { code: 'PGRST302', details: null, hint: null, message: 'Anonymous access is disabled' })],
+    ['a proxy 401', () => storeAnswer(401, { message: 'Invalid authentication credentials' })],
+    ['a plain-text 401', () => storeAnswer(401, 'Unauthorized')],
+  ];
+  const calls: [string, Record<string, unknown>][] = [
+    ['get_vcon', { uuid: UUID_A }],
+    ['search_vcons', { limit: 5, response_format: 'ids_only', include_count: true }],
+    ['search_vcons', { limit: 5, response_format: 'metadata', tags: { synthetic: 'e2e' } }],
+    ['search_vcons_content', { query: CANARY_A, limit: 5, response_format: 'ids_only' }],
+    ['delete_vcon', { uuid: UUID_A }],
+  ];
+
+  for (const [label, answer] of refusals) {
+    it(`is reported as unauthorized, without the token: ${label}`, async () => {
+      store.override = () => answer();
+      const jwt = tenantJwt(TENANT_A);
+      const client = await connect(jwt);
+      for (const [name, args] of calls) {
+        const error = await client.callTool({ name, arguments: args }).catch((e) => e);
+        expect(error, name).toBeInstanceOf(Error);
+        expect(error.message, name).toMatch(/unauthorized/i);
+        expect(error.message, name).toMatch(/\b401\b/);
+        expect(error.message, name).not.toMatch(/not found/i);
+        for (const part of jwt.split('.')) expect(error.message).not.toContain(part);
+      }
+      await client.close();
+      expect(store.rows.some((r) => r.uuid === UUID_A)).toBe(true);
+    });
+  }
+
+  it('is not claimed for a store error that is not a 401', async () => {
+    store.override = () => storeAnswer(503, { code: 'XX000', message: 'store unavailable' });
+    const client = await connect(tenantJwt(TENANT_A));
+    const error = await client.callTool({ name: 'get_vcon', arguments: { uuid: UUID_A } }).catch((e) => e);
+    await client.close();
+    expect(error.message).not.toMatch(/unauthorized/i);
+  });
+});
+
+describe('a JSON-RPC batch', () => {
+  /** Every JSON-RPC message in a JSON or SSE answer. */
+  async function messages(res: Response): Promise<any[]> {
+    const text = await res.text();
+    if ((res.headers.get('content-type') ?? '').includes('text/event-stream')) {
+      return text.split('\n').filter((l) => l.startsWith('data:')).map((l) => JSON.parse(l.slice(5)));
+    }
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : [parsed];
+  }
+
+  it('refuses the disallowed tool in it, and nothing reaches the store for that tool', async () => {
+    const auth = { authorization: `Bearer ${tenantJwt(TENANT_A)}` };
+    const initialize = {
+      jsonrpc: '2.0', id: 1, method: 'initialize',
+      params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'batch-test', version: '0' } },
+    };
+    const ping = { jsonrpc: '2.0', id: 2, method: 'ping' };
+    const initialized = { jsonrpc: '2.0', method: 'notifications/initialized' };
+    const allowed = { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'get_vcon', arguments: { uuid: UUID_A } } };
+    const refused = { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'create_vcon', arguments: { subject: 'x', parties: [] } } };
+    const refusedDelete = { jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'manage_tag', arguments: { vcon_uuid: UUID_A, action: 'set', key: 'k', value: 'v' } } };
+
+    // initialize may not share a batch: the whole batch is refused before any handler runs.
+    const withInit = await rawPost(auth, [initialize, ping, initialized, allowed, refused]);
+    expect(withInit.status).toBe(400);
+    expect((await withInit.json()).error.message).toMatch(/Only one initialization request/);
+    expect(store.requests).toHaveLength(0);
+
+    // initialize alone, then the rest as one batch.
+    expect((await rawPost(auth, initialize)).status).toBe(200);
+    const res = await rawPost(auth, [ping, initialized, allowed, refused, refusedDelete]);
+    expect(res.status).toBe(200);
+    const byId = new Map((await messages(res)).map((m) => [m.id, m]));
+    expect(byId.get(2)).toMatchObject({ result: {} });
+    expect(JSON.stringify(byId.get(3).result)).toContain(CANARY_A);
+    expect(byId.get(4).error).toMatchObject({ code: -32601 });
+    expect(byId.get(4).error.message).toMatch(/not served in TENANT_MODE=lane/);
+    expect(byId.get(5).error).toMatchObject({ code: -32601 });
+
+    // Only the allowed read reached the store: GETs for UUID_A and its children, no write of any kind.
+    expect(store.requests.length).toBeGreaterThan(0);
+    expect(store.requests.every((r) => r.method === 'GET')).toBe(true);
+    expect(store.requests.some((r) => r.path.includes('/rpc/'))).toBe(false);
+    expect(store.rows).toHaveLength(3);
   });
 });
 

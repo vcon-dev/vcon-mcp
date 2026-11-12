@@ -31,8 +31,12 @@ export function laneStoreOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): L
 }
 
 /**
- * A supabase-js client that sends `jwt` as both `apikey` and `Authorization: Bearer`. The accessToken
- * option keeps supabase-js from building an auth client, so no session is read or refreshed.
+ * A supabase-js client that sends `jwt` as both `apikey` and `Authorization: Bearer`.
+ *
+ * The key argument alone would already do that: with no session, supabase-js sends its key as the
+ * bearer. The accessToken option is kept for two reasons. It skips building a supabase-js auth client
+ * (session storage and an auth-state listener) for every request, which a lane never uses. And it
+ * makes any use of `client.auth` throw, so no code path can sign in or swap the token on this client.
  */
 export function createLaneStoreClient(jwt: string, options: LaneStoreOptions): SupabaseClient {
   return createClient(options.url, jwt, {
@@ -79,12 +83,28 @@ function refused<T>(name: string): T {
   ) as T;
 }
 
+/** The handler context of one lane request. */
+export interface LaneRequestContext extends ToolHandlerContext {
+  /** True once the store has answered any call of this request with 401: it refused the token. */
+  storeRefusedToken(): boolean;
+}
+
 /** The handler context for one lane request, built from its bearer JWT. */
-export function createLaneContext(jwt: string, options: LaneStoreOptions): ToolHandlerContext {
-  const supabase = createLaneStoreClient(jwt, options);
+export function createLaneContext(jwt: string, options: LaneStoreOptions): LaneRequestContext {
+  // Every store response passes through here, so a 401 is seen whatever body PostgREST or a proxy
+  // in front of it sends. Per request, like everything else in this context.
+  let tokenRefused = false;
+  const watched = (async (...args: Parameters<typeof fetch>) => {
+    const response = await (options.fetch ?? globalThis.fetch)(...args);
+    if (response.status === 401) tokenRefused = true;
+    return response;
+  }) as typeof fetch;
+
+  const supabase = createLaneStoreClient(jwt, { ...options, fetch: watched });
   const queries = new LaneVConQueries(supabase);
   const pluginManager = new PluginManager();
   return {
+    storeRefusedToken: () => tokenRefused,
     queries,
     pluginManager,
     vconService: new VConService({ queries, pluginManager }),

@@ -15,7 +15,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { stripCategories, type ToolDefinition } from '../config/tools.js';
 import { getPackageVersion } from '../server/setup.js';
-import type { ToolHandlerContext } from '../tools/handlers/base.js';
+import type { LaneRequestContext } from './context.js';
 import { createHandlerRegistry } from '../tools/handlers/index.js';
 import { allTools } from '../tools/vcon-crud.js';
 
@@ -48,8 +48,15 @@ const LANE_HANDLERS = (() => {
   }));
 })();
 
+/**
+ * The error a tool call gets when the store refused the request's token (HTTP 401: expired, bad
+ * signature, no role). Callers match "unauthorized" or "401" to tell a refused credential from a
+ * failed read. Fixed text: nothing from the store and never the token.
+ */
+export const STORE_REFUSED_TOKEN_MESSAGE = "Unauthorized: the store refused this request's token (HTTP 401)";
+
 /** A fresh MCP server bound to one request's context. */
-export function createLaneMcpServer(context: ToolHandlerContext): Server {
+export function createLaneMcpServer(context: LaneRequestContext): Server {
   const instructions = process.env.MCP_SERVER_INSTRUCTIONS?.trim() || undefined;
   const server = new Server(
     { name: 'vcon-mcp-server', version: getPackageVersion() },
@@ -64,7 +71,12 @@ export function createLaneMcpServer(context: ToolHandlerContext): Server {
     if (!handler) {
       throw new McpError(ErrorCode.MethodNotFound, `Tool '${name}' is not served in TENANT_MODE=lane`);
     }
-    return handler.handle(args, context) as any;
+    try {
+      return (await handler.handle(args, context)) as any;
+    } catch (error) {
+      if (context.storeRefusedToken()) throw new McpError(ErrorCode.InternalError, STORE_REFUSED_TOKEN_MESSAGE);
+      throw error;
+    }
   });
 
   return server;

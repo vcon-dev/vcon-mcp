@@ -43,6 +43,21 @@ describe('lane store client', () => {
     }
   });
 
+  it('builds no auth client: any use of client.auth throws, so nothing can sign in or swap the token', () => {
+    const client = createLaneStoreClient(tenantJwt(TENANT_A), { url: URL_ });
+    expect(() => client.auth.getSession()).toThrow(/accessToken option/);
+  });
+
+  it('notes a 401 from the store on the request context, and only a 401', async () => {
+    for (const [status, refused] of [[401, true], [403, false], [500, false], [200, false]] as const) {
+      const answer = (async () => new Response('[]', { status, headers: { 'Content-Type': 'application/json' } })) as typeof fetch;
+      const ctx = createLaneContext(tenantJwt(TENANT_A), { url: URL_, fetch: answer });
+      expect(ctx.storeRefusedToken()).toBe(false);
+      await ctx.supabase.from('vcons').select('uuid');
+      expect(ctx.storeRefusedToken(), String(status)).toBe(refused);
+    }
+  });
+
   it('gives two requests two clients, two query layers and two services', () => {
     const a = createLaneContext(tenantJwt(TENANT_A), { url: URL_ });
     const b = createLaneContext(tenantJwt(TENANT_B), { url: URL_ });
