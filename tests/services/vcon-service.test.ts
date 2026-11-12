@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { randomUUID } from 'crypto';
-import { VConService, VConValidationError } from '../../src/services/vcon-service.js';
+import { VConNotFoundError, VConService, VConValidationError } from '../../src/services/vcon-service.js';
 import { VCon } from '../../src/types/vcon.js';
 import { VConQueries } from '../../src/db/queries.js';
 import { PluginManager } from '../../src/hooks/plugin-manager.js';
@@ -390,12 +390,46 @@ describe('VConService', () => {
 
     it('should return false if vCon not found', async () => {
       const uuid = randomUUID();
-      mockQueries.getVCon.mockRejectedValue(new Error('Not found'));
+      // The error every getVCon implementation throws when no row matches.
+      mockQueries.getVCon.mockRejectedValue(new Error(`vCon not found: ${uuid}`));
 
       const result = await service.delete(uuid);
 
       expect(result).toBe(false);
       expect(mockQueries.deleteVCon).not.toHaveBeenCalled();
+    });
+
+    it('should return false for a VConNotFoundError', async () => {
+      const uuid = randomUUID();
+      mockQueries.getVCon.mockRejectedValue(new VConNotFoundError(uuid));
+
+      await expect(service.delete(uuid)).resolves.toBe(false);
+      expect(mockQueries.deleteVCon).not.toHaveBeenCalled();
+    });
+
+    it('should throw, not report not found, when the existence read fails', async () => {
+      const uuid = randomUUID();
+      for (const error of [
+        new Error('fetch failed'),
+        Object.assign(new Error('JWT expired'), { code: 'PGRST301' }),
+        { code: 'XX000', message: 'store unavailable' },
+        new Error('Not found'), // not the getVCon not-found shape, so not a not-found
+      ]) {
+        mockQueries.getVCon.mockRejectedValueOnce(error);
+        await expect(service.delete(uuid)).rejects.toBe(error);
+      }
+      expect(mockQueries.deleteVCon).not.toHaveBeenCalled();
+      expect(mockPluginManager.executeHook).not.toHaveBeenCalled();
+    });
+
+    it('should throw when the delete itself fails, and run no afterDelete hook', async () => {
+      const uuid = randomUUID();
+      mockQueries.getVCon.mockResolvedValue({ vcon: '0.4.0', uuid, created_at: new Date().toISOString(), parties: [] });
+      mockQueries.deleteVCon.mockRejectedValue(new Error('store unavailable'));
+      mockPluginManager.executeHook.mockResolvedValue(undefined);
+
+      await expect(service.delete(uuid)).rejects.toThrow('store unavailable');
+      expect(mockPluginManager.executeHook).not.toHaveBeenCalledWith('afterDelete', uuid, expect.anything());
     });
 
     it('should call beforeDelete hook before deleting', async () => {

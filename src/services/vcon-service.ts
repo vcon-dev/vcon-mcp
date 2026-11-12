@@ -14,7 +14,7 @@ import { PluginManager } from '../hooks/plugin-manager.js';
 import { ATTR_VCON_UUID } from '../observability/attributes.js';
 import { logWithContext, recordCounter } from '../observability/instrumentation.js';
 import { VCon } from '../types/vcon.js';
-import { VConNotFoundError } from '../utils/errors.js';
+import { isVConNotFoundError, VConNotFoundError } from '../utils/errors.js';
 import { validateVCon } from '../utils/validation.js';
 
 // ============================================================================
@@ -345,11 +345,13 @@ export class VConService {
     const source = options.source || 'unknown';
     const requestContext = this.normalizeRequestContext(options.requestContext, 'delete');
 
-    // Check if vCon exists
+    // Check if vCon exists. Only a genuine not-found is reported as one; any other failure
+    // (refused credential, store or network error) propagates, so it is never mistaken for it.
     try {
       await this.context.queries.getVCon(uuid);
-    } catch {
-      return false; // Not found
+    } catch (error) {
+      if (isVConNotFoundError(error)) return false;
+      throw error;
     }
 
     // Execute beforeDelete hook (can throw to prevent)
@@ -357,8 +359,10 @@ export class VConService {
       await this.context.pluginManager.executeHook('beforeDelete', uuid, requestContext);
     }
 
-    // Delete from database
-    await this.context.queries.deleteVCon(uuid);
+    // Delete from database. A backend that counts the rows it removed reports 0 when none was visible:
+    // under row-level security another tenant's uuid matches nothing and no error comes back.
+    const removed = await this.context.queries.deleteVCon(uuid);
+    if (removed === 0) return false;
 
     // Execute afterDelete hook
     if (!options.skipHooks) {

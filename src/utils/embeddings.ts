@@ -16,6 +16,8 @@
  * was built with — check it before overriding EMBEDDING_PROVIDER.
  */
 
+import { getTenantMode } from '../config/tenant-mode.js';
+
 export class EmbeddingError extends Error {
   constructor(message: string) {
     super(message);
@@ -39,6 +41,10 @@ export function resolveProvider(): { provider: QueryEmbeddingProvider; model: st
 const DIMENSIONS = 384;
 
 async function embedViaSupabase(query: string): Promise<number[]> {
+  // The edge function is called with the service key. A lane holds none and never sends an env key.
+  if (getTenantMode() === 'lane') {
+    throw new EmbeddingError('TENANT_MODE=lane cannot embed with gte-small: it holds no service key. Set EMBEDDING_PROVIDER=openai or pass an embedding');
+  }
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {

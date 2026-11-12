@@ -10,6 +10,7 @@
 
 import dotenv from 'dotenv';
 import http from 'http';
+import { getTenantMode, type TenantMode } from './config/tenant-mode.js';
 import { initializeObservability, shutdownObservability } from './observability/config.js';
 import { logWithContext } from './observability/instrumentation.js';
 import { logger } from './observability/logger.js';
@@ -38,20 +39,36 @@ logger.info({
   schema: process.env.SUPABASE_DB_SCHEMA || 'public',
 }, `vCon MCP Server starting - version ${getVersionString()}`);
 
-// Setup server (database, plugins, handlers)
-let serverContext: ServerContext;
+// TENANT_MODE: off (default) is the server as it has always been. lane holds no store key and builds
+// its store client per request (src/lane), so it skips the shared setup below: no shared client, no
+// plugins, no Redis, no tenant session variable.
+let tenantMode: TenantMode;
 try {
-  serverContext = await setupServer();
+  tenantMode = getTenantMode();
+  if (tenantMode === 'lane') (await import('./lane/index.js')).assertLaneCanStart();
 } catch (error) {
   logger.fatal({
-    err: error,
     error_message: error instanceof Error ? error.message : String(error)
-  }, 'Failed to initialize server');
+  }, 'Refusing to start');
   process.exit(1);
 }
 
-// Register all MCP request handlers
-registerHandlers(serverContext);
+// Setup server (database, plugins, handlers)
+let serverContext: ServerContext | undefined;
+if (tenantMode !== 'lane') {
+  try {
+    serverContext = await setupServer();
+  } catch (error) {
+    logger.fatal({
+      err: error,
+      error_message: error instanceof Error ? error.message : String(error)
+    }, 'Failed to initialize server');
+    process.exit(1);
+  }
+
+  // Register all MCP request handlers
+  registerHandlers(serverContext);
+}
 
 // ============================================================================
 // Start Server
@@ -62,6 +79,13 @@ let httpServerInstance: http.Server | null = null;
 
 async function main() {
   try {
+    // TENANT_MODE=lane has no shared context: it builds one per request.
+    if (!serverContext) {
+      const { startTenantLane } = await import('./lane/index.js');
+      httpServerInstance = await startTenantLane();
+      return;
+    }
+
     const transportType = process.env.MCP_TRANSPORT || 'stdio';
 
     if (transportType === 'http') {
@@ -81,9 +105,10 @@ async function main() {
       
       // A Server binds to one transport, so HTTP needs a fresh one per
       // session (stateful) / per request (stateless).
+      const context = serverContext;
       httpServerInstance = await startHttpServer(({ readonly }) => {
         const server = createServer();
-        registerHandlers({ ...serverContext, server }, { readonly });
+        registerHandlers({ ...context, server }, { readonly });
         return server;
       }, config);
       
@@ -122,7 +147,7 @@ process.on('SIGINT', async () => {
   }
 
   await shutdownObservability();
-  await serverContext.pluginManager.shutdown();
+  await serverContext?.pluginManager.shutdown();
 
   process.exit(0);
 });
@@ -137,7 +162,7 @@ process.on('SIGTERM', async () => {
   }
 
   await shutdownObservability();
-  await serverContext.pluginManager.shutdown();
+  await serverContext?.pluginManager.shutdown();
 
   process.exit(0);
 });

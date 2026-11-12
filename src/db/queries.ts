@@ -912,7 +912,7 @@ export class SupabaseVConQueries implements IVConQueries {
   /**
    * Delete a vCon by UUID
    */
-  async deleteVCon(uuid: string): Promise<void> {
+  async deleteVCon(uuid: string): Promise<number | void> {
     return withSpan('db.deleteVCon', async (span) => {
       span.setAttributes({
         [ATTR_VCON_UUID]: uuid,

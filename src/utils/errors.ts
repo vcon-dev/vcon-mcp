@@ -15,6 +15,15 @@ export class VConNotFoundError extends Error {
 }
 
 /**
+ * True only for a genuine "no such vCon": a VConNotFoundError, or the error every getVCon
+ * implementation throws when no row matches (`vCon not found: <uuid>`, the PGRST116 path in the
+ * Supabase backend). A store error (refused credential, 5xx, network) is not a not-found.
+ */
+export function isVConNotFoundError(error: unknown): boolean {
+  return error instanceof VConNotFoundError || (error instanceof Error && /^vCon not found: /.test(error.message));
+}
+
+/**
  * Convert the PostgREST "no rows" error (PGRST116, from `.single()`) on a vcons
  * lookup into a VConNotFoundError. Any other error is returned untouched.
  */

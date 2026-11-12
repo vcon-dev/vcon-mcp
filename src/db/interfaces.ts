@@ -69,9 +69,10 @@ export interface IVConQueries {
     addAnalysis(vconUuid: string, analysis: Analysis): Promise<void>;
 
     /**
-     * Delete a vCon by UUID
+     * Delete a vCon by UUID. Resolves to the number of vCons removed when the backend reports it
+     * (TENANT_MODE=lane does, so another tenant's uuid reads as not found), otherwise to nothing.
      */
-    deleteVCon(uuid: string): Promise<void>;
+    deleteVCon(uuid: string): Promise<number | void>;
 
     /**
      * Add attachment to a vCon

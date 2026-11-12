@@ -135,18 +135,27 @@ See [RLS Multi-Tenant Guide](rls-multi-tenant.md) for complete setup instruction
 # writer: service key; reads every vCon's tenant stamp whatever RLS_ENABLED says;
 #         a missing, malformed or conflicting stamp stores under _quarantine;
 #         refreshes vcon_tags_mv on a timer
-# lane: reserved for the per-request tenant lane
+# lane:   no store key; a tenant JWT on every request, forwarded to the lane's own
+#         PostgREST; serves search_vcons, search_vcons_content, search_vcons_semantic,
+#         get_vcon and delete_vcon, and refuses everything else
 TENANT_MODE=writer
 
 # Writer only: how often vcon_tags_mv is checked and refreshed, in ms (default 60000, minimum 1000)
 TAGS_MV_REFRESH_INTERVAL_MS=60000
 ```
 
-An unknown `TENANT_MODE` stops startup. A writer stops at startup without
-`SUPABASE_SERVICE_ROLE_KEY`, with `DB_TYPE=mongodb`, with `CURRENT_TENANT_ID` set, with
-`TENANT_ATTACHMENT_TYPE` or `TENANT_JSON_PATH` set to anything but `tenant` and `id`, or on a
-store without `save_vcon_batch` and migration `20261112120000_keep_stored_tenant.sql`. See
+An unknown `TENANT_MODE` stops startup in every mode.
+
+A writer stops at startup without `SUPABASE_SERVICE_ROLE_KEY`, with `DB_TYPE=mongodb`, with
+`CURRENT_TENANT_ID` set, with `TENANT_ATTACHMENT_TYPE` or `TENANT_JSON_PATH` set to anything but
+`tenant` and `id`, or on a store without `save_vcon_batch` and migration
+`20261112120000_keep_stored_tenant.sql`. See
 [Writer Mode](rls-multi-tenant.md#writer-mode-tenant-mode-writer).
+
+A lane stops at startup with `SUPABASE_SERVICE_ROLE_KEY` or `SUPABASE_ANON_KEY` set, on stdio,
+without `MCP_HTTP_STATELESS=true`, or without an http or https `SUPABASE_URL`. It builds its store
+client per request from the caller's token and refreshes nothing; the writer keeps `vcon_tags_mv`
+current for it. See [Tenant Lane](tenant-lane.md).
 
 #### Dataset Taxonomy Guidance
 

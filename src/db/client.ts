@@ -6,6 +6,7 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import Redis from 'ioredis';
+import { getTenantMode } from '../config/tenant-mode.js';
 import { logWithContext, recordCounter } from '../observability/instrumentation.js';
 
 let supabase: SupabaseClient | null = null;
@@ -18,6 +19,12 @@ let redis: Redis | null = null;
  */
 export function getSupabaseClient(): SupabaseClient {
   if (!supabase) {
+    // A lane builds a client per request from the caller's bearer (src/lane/context.ts) and never one
+    // from an env key, so this shared client must not exist there.
+    if (getTenantMode() === 'lane') {
+      throw new Error('TENANT_MODE=lane has no shared store client; each request uses its own bearer');
+    }
+
     const url = process.env.SUPABASE_URL;
     // For RLS with service role, prefer SERVICE_ROLE_KEY if available
     // Otherwise fall back to ANON_KEY
@@ -88,6 +95,10 @@ export async function testConnection(): Promise<boolean> {
 export function getRedisClient(): Redis | null {
   // Redis is optional - if not configured, cache layer is disabled
   if (!process.env.REDIS_URL) {
+    return null;
+  }
+  // The cache key carries no tenant, so a lane never caches.
+  if (getTenantMode() === 'lane') {
     return null;
   }
 

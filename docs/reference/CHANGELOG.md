@@ -91,6 +91,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scripts/test-tenant-writer.sh` proves both migrations on a throwaway Postgres: re-posts keep
   the stored tenant, the release function and its log, both backfills, a re-run, and the anon
   lockdown checks. `VCON_SQL_TESTS=1` runs it from vitest
+- `TENANT_MODE=lane` serves many tenants of a row-level store from one process that holds no store
+  key. See `docs/guide/tenant-lane.md`
+  - refuses to start with `SUPABASE_SERVICE_ROLE_KEY` or `SUPABASE_ANON_KEY` set, on stdio, or
+    without `MCP_HTTP_STATELESS=true`
+  - each request must carry `Authorization: Bearer <jwt>` with `role: authenticated` and a
+    `tenant_id` claim. A request without one gets 401 before any store call. The lane builds a
+    store client per request and sends that token, and nothing else, as `apikey` and
+    `Authorization` to its own PostgREST, which verifies it
+  - serves `search_vcons`, `search_vcons_content`, `search_vcons_semantic`, `get_vcon` and
+    `delete_vcon`. Every other tool, every resource and prompt, and every REST route but health
+    are refused. Plugins and the Redis cache are off, and the tag view is never refreshed
+    through a lane: the writer's timer keeps it current
+  - `delete_vcon` reports not found when the delete removed no row
+  - a token its PostgREST refuses with HTTP 401 (expired, bad signature, no anonymous access) gives
+    the tool error `Unauthorized: the store refused this request's token (HTTP 401)`, which never
+    holds the token or the store's text
+  - `search_vcons_semantic` with query text needs `EMBEDDING_PROVIDER=openai` in a lane, since
+    the default provider calls its edge function with the service key
+  - logs the token's `tenant_id`, never the bearer
+
+### Changed
+- `IVConQueries.deleteVCon` may resolve to the number of vCons it removed. `VConService.delete`
+  treats 0 as not found. The Supabase and MongoDB implementations used by `TENANT_MODE=off` do not
+  report a count, so their behaviour is unchanged
+- `VConService.delete` reports not found only when the vCon does not exist. A store error on the
+  read that checks it exists (a refused key, a 5xx, a network failure) used to be reported as not
+  found. It now surfaces as an error, in every mode: `delete_vcon` returns a tool error instead of
+  "not found", and `DELETE /api/v1/vcons/:uuid` answers 500 instead of 404. Nothing is deleted
+- An unknown `TENANT_MODE` value stops the server at start in every mode, `off` included. Unset or
+  blank keeps today's behaviour
 
 ---
 
