@@ -124,3 +124,46 @@ describe('TENANT_MODE unset (off)', () => {
     expect(code).toBe(0);
   }, 30_000);
 });
+
+describe('TENANT_MODE writer and lane keep their start checks apart', () => {
+  it('a lane never runs the writer checks: writer-only settings are ignored and no store is probed', async () => {
+    const port = await freePort();
+    const { code, output } = await runServer(
+      {
+        ...LANE_ENV,
+        MCP_HTTP_PORT: String(port),
+        // Each of these stops a writer at start.
+        CURRENT_TENANT_ID: 't-aaaaaaaaaaaaaaaa',
+        TENANT_ATTACHMENT_TYPE: 'other',
+        TENANT_JSON_PATH: 'other',
+        TAGS_MV_REFRESH_INTERVAL_MS: '5',
+      },
+      async (out) => {
+        for (let i = 0; i < 100 && !out().includes('Tenant lane started'); i++) {
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        expect((await fetch(`http://127.0.0.1:${port}/api/v1/health`)).status).toBe(200);
+      }
+    );
+    expect(output).toContain('Tenant lane started');
+    expect(output).toMatch(/ignores these settings.*CURRENT_TENANT_ID, TENANT_ATTACHMENT_TYPE, TENANT_JSON_PATH, TAGS_MV_REFRESH_INTERVAL_MS/);
+    expect(output).not.toContain('TENANT_MODE=writer');
+    expect(output).not.toContain('save_vcon_batch');
+    expect(code).toBe(0);
+  }, 30_000);
+
+  it('a writer never meets the lane refusals: keys, stdio and stateful HTTP reach the writer checks', async () => {
+    const { MCP_TRANSPORT: _t, MCP_HTTP_STATELESS: _s, ...stdio } = LANE_ENV;
+    const { code, output } = await runServer({
+      ...stdio,
+      TENANT_MODE: 'writer',
+      SUPABASE_SERVICE_ROLE_KEY: 'canary-writer-key-41d0',
+      SUPABASE_ANON_KEY: 'placeholder',
+    });
+    expect(code).toBe(1);
+    expect(output).not.toContain('TENANT_MODE=lane cannot start');
+    // The writer got as far as its own store check, against a store that is not there.
+    expect(output).toContain('TENANT_MODE=writer could not confirm save_vcon_batch');
+    expect(output).not.toContain('canary-writer-key-41d0');
+  }, 30_000);
+});

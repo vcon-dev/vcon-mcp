@@ -317,6 +317,7 @@ src/
 │   ├── setup.ts          # MCP server initialization
 │   ├── tenant-writer.ts  # TENANT_MODE=writer startup checks and tag view refresh timer
 │   └── handlers.ts       # MCP request handlers (tools, resources, resource templates, prompts)
+├── lane/                 # TENANT_MODE=lane: start checks, bearer, per-request store client, five-tool server, HTTP
 ├── transport/            # stdio and Streamable HTTP transports, HTTP middleware
 ├── services/
 │   └── vcon-service.ts   # Shared business logic (MCP + REST)
@@ -373,8 +374,11 @@ The database uses Row Level Security (RLS) with `tenant_id`:
   stored-tenant migration, extracts the tenant on every write whatever `RLS_ENABLED` says,
   stores a missing, malformed or conflicting stamp under `_quarantine` (rule in
   `src/config/tenant-stamp.ts`, mirrored in SQL by `vcon_tenant_stamp`), never takes the
-  per-table write fallback, and refreshes `vcon_tags_mv` on a timer. `lane` is reserved for the
-  per-request tenant lane
+  per-table write fallback, and refreshes `vcon_tags_mv` on a timer. `lane` (`src/lane/`,
+  `docs/guide/tenant-lane.md`) holds no store key and refuses to start with one: it builds a
+  store client per request from the caller's bearer JWT, serves only `search_vcons`,
+  `search_vcons_content`, `search_vcons_semantic`, `get_vcon` and `delete_vcon` over stateless
+  HTTP, and skips `setupServer()` entirely, so the writer's checks never run there
 - Every vCon insert goes VConService.create -> queries.createVCon -> batchSaveVCon ->
   save_vcon_batch. `tests/db/tenant-writer-guard.test.ts` fails if a new insert path skips the
   writer stamp

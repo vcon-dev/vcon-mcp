@@ -71,7 +71,12 @@ describe('laneIgnoredSettings', () => {
       API_KEYS: 'k',
       OAUTH_ISSUER: 'https://issuer.invalid',
       CURRENT_TENANT_ID: 't-aaaaaaaaaaaaaaaa',
+      TENANT_ATTACHMENT_TYPE: 'other',
+      TAGS_MV_REFRESH_INTERVAL_MS: '5',
       MCP_DISABLED_TOOLS: 'get_vcon',
-    })).toEqual(['REDIS_URL', 'VCON_PLUGINS_PATH', 'API_KEYS', 'OAUTH_ISSUER', 'CURRENT_TENANT_ID', 'MCP_DISABLED_TOOLS']);
+    })).toEqual([
+      'REDIS_URL', 'VCON_PLUGINS_PATH', 'API_KEYS', 'OAUTH_ISSUER', 'CURRENT_TENANT_ID', 'TENANT_ATTACHMENT_TYPE',
+      'TAGS_MV_REFRESH_INTERVAL_MS', 'MCP_DISABLED_TOOLS',
+    ]);
   });
 });
