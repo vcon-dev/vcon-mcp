@@ -14,7 +14,7 @@ import { PluginManager } from '../hooks/plugin-manager.js';
 import { ATTR_VCON_UUID } from '../observability/attributes.js';
 import { logWithContext, recordCounter } from '../observability/instrumentation.js';
 import { VCon } from '../types/vcon.js';
-import { VConNotFoundError } from '../utils/errors.js';
+import { isVConNotFoundError, VConNotFoundError } from '../utils/errors.js';
 import { validateVCon } from '../utils/validation.js';
 
 // ============================================================================
@@ -345,11 +345,13 @@ export class VConService {
     const source = options.source || 'unknown';
     const requestContext = this.normalizeRequestContext(options.requestContext, 'delete');
 
-    // Check if vCon exists
+    // Check if vCon exists. Only a genuine not-found is reported as one; any other failure
+    // (refused credential, store or network error) propagates, so it is never mistaken for it.
     try {
       await this.context.queries.getVCon(uuid);
-    } catch {
-      return false; // Not found
+    } catch (error) {
+      if (isVConNotFoundError(error)) return false;
+      throw error;
     }
 
     // Execute beforeDelete hook (can throw to prevent)

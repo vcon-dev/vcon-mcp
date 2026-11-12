@@ -80,6 +80,16 @@ export interface FakeStore {
   delayMs: number;
   /** Answer DELETE with no rows even when one is visible (a policy that allows reading but not deleting). */
   deleteMatchesNothing: boolean;
+  /** When set and it returns a Response, that is the answer: a store error or a refused token. */
+  override?: (request: StoreRequest) => Response | undefined;
+}
+
+/** A PostgREST-style JSON answer. */
+export function storeAnswer(status: number, body: unknown): Response {
+  return new Response(typeof body === 'string' ? body : JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': typeof body === 'string' ? 'text/plain' : 'application/json' },
+  });
 }
 
 export function fakeStore(): FakeStore {
@@ -108,8 +118,11 @@ export function fakeStore(): FakeStore {
     const body = typeof raw === 'string' && raw ? JSON.parse(raw) : undefined;
     const method = (init?.method ?? 'GET').toUpperCase();
     const tenant = tenantOf(headers);
-    store.requests.push({ method, path: url.pathname, params: url.searchParams, headers, body, tenant });
+    const request = { method, path: url.pathname, params: url.searchParams, headers, body, tenant };
+    store.requests.push(request);
     if (store.delayMs) await new Promise((r) => setTimeout(r, store.delayMs));
+    const overridden = store.override?.(request);
+    if (overridden) return overridden;
 
     if (!tenant || headers.get('apikey') === null) return json(401, { code: 'PGRST301', message: 'JWT required' });
     const visible = store.rows.filter((r) => r.tenant_id === tenant);
