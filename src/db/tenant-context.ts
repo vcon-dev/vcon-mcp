@@ -10,14 +10,19 @@ import { logWithContext } from '../observability/instrumentation.js';
 import { extractErrorMessage } from '../utils/errors.js';
 
 /**
- * Set tenant context in PostgreSQL session for RLS policies
- * 
- * This sets the app.current_tenant_id session variable that
- * get_current_tenant_id() function reads in RLS policies.
- * 
- * Note: The database function get_current_tenant_id() checks JWT claims first
- * (auth.jwt()->>'tenant_id'), then falls back to this session variable.
- * This provides flexibility for both authenticated users (JWT) and service role (session variable).
+ * Set app.current_tenant_id on one pooled database connection (legacy).
+ *
+ * This does not scope reads. The service role key bypasses row level security,
+ * so table reads through it return every tenant's rows whatever is set here.
+ * Before the strict pack, get_current_tenant_id() fell back to this session
+ * variable when a request carried no tenant claim, so it changed only the RPCs
+ * that call get_current_tenant_id(), and only on the pooled connection the call
+ * happened to use; that connection then handed the tenant to later requests
+ * with no claim. Migration 20261109163739_revoke_anon_read_paths.sql limits
+ * set_tenant_context to service_role, and the strict pack (supabase/strict/)
+ * makes get_current_tenant_id() read the signed JWT claim only, so with the
+ * pack applied this call has no effect. Tenant scoping comes from a JWT that
+ * carries tenant_id. See docs/guide/strict-tenant-pack.md.
  */
 export async function setTenantContext(
   supabase: SupabaseClient
@@ -38,6 +43,12 @@ export async function setTenantContext(
   }
   
   if (!config.currentTenantId) {
+    // The message below is not accurate. With the service role key, which
+    // bypasses row level security, table reads return every tenant's rows
+    // whether or not CURRENT_TENANT_ID is set. Without a tenant the search RPCs
+    // also returned every tenant's rows before the strict pack, and return none
+    // after it. Only an `authenticated` JWT with no tenant claim was limited to
+    // rows with a NULL tenant, and the strict pack closes that as well.
     logWithContext('warn', 'RLS is enabled but CURRENT_TENANT_ID is not set', {
       message: 'Queries will only return vCons with tenant_id=NULL',
       hint: 'Set CURRENT_TENANT_ID environment variable to filter by tenant',
@@ -46,8 +57,9 @@ export async function setTenantContext(
   }
   
   try {
-    // Set the PostgreSQL session variable using our helper function
-    // This is what get_current_tenant_id() will read
+    // Sets app.current_tenant_id on whichever pooled connection serves this
+    // call. get_current_tenant_id() read it as a fallback before the strict
+    // pack; with the pack applied it is ignored.
     const { error } = await supabase.rpc('set_tenant_context', {
       p_tenant_id: config.currentTenantId,
     });

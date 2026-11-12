@@ -111,6 +111,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     the default provider calls its edge function with the service key
   - logs the token's `tenant_id`, never the bearer
 
+- `supabase/strict/`, the strict tenant pack: opt-in SQL that makes row-level security fail
+  closed for multi-tenant deployments. `supabase db push` does not apply it. Run
+  `supabase/strict/apply.sh`, which applies it and a catalog guard in one transaction, refuses
+  while any tenant table holds a row with no tenant or a child whose tenant differs from its
+  vCon's, and changes nothing on a second run. Re-run it after every upgrade;
+  `apply.sh --check` runs the guard alone. See `docs/guide/strict-tenant-pack.md`
+  - one policy per tenant table, for `authenticated`, with no NULL branch; RLS forced
+  - `get_current_tenant_id()` reads the JWT `tenant_id` claim only; no claim, an empty claim and
+    `_quarantine` mean no tenant, and the `app.current_tenant_id` fallback is gone
+  - `vcon_tags_scoped`, a tenant-filtered view over `vcon_tags_mv`; `authenticated` loses
+    `vcon_tags_mv` and the refresh functions, and the twelve search and tag RPCs read the scoped
+    view with no NULL branch. `search_vcons_by_tags_and_date` and its count gain a tenant
+    predicate, so the service role gets rows from them only with a tenant claim
+  - `tenant_id` `NOT NULL` and never empty on all ten tenant tables
+  - composite keys: each child references its parent by `(id, tenant_id)`
+  - `authenticated` loses `vkong.vcons`; the always-false `embedding_queue` policy is dropped
+- `tests/tenant-isolation/`: a REST-level tenant isolation harness on a throwaway PostgreSQL 17
+  with pgvector and PostgREST 16.2 in Docker, with signed JWTs and a canary per tenant.
+  `npm run test:tenant` (strict pack), `npm run test:tenant:baseline` (unmodified schema, asserts
+  the known leaks) and `npm run test:tenant:guard` (apply script and catalog guard). The
+  `Tenant isolation` workflow runs all three on pull requests
+
 ### Changed
 - `IVConQueries.deleteVCon` may resolve to the number of vCons it removed. `VConService.delete`
   treats 0 as not found. The Supabase and MongoDB implementations used by `TENANT_MODE=off` do not
@@ -121,6 +143,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "not found", and `DELETE /api/v1/vcons/:uuid` answers 500 instead of 404. Nothing is deleted
 - An unknown `TENANT_MODE` value stops the server at start in every mode, `off` included. Unset or
   blank keeps today's behaviour
+- `npm run test:tenant` runs the new REST shape. `scripts/test-tenant-isolation.ts` now starts
+  it; the old script's "authenticated" client used the service role key and could not see a leak
+
+### Fixed
+- `docs/guide/debugging-tenant-rls.md` described the service role key as tenant-scoped, named
+  migrations and functions that do not exist, and treated rows with no tenant as shared. It now
+  describes what each setting does, with and without the strict pack
+- Comments in `src/db/tenant-context.ts` and `src/config/tenant-config.ts` no longer claim that
+  the session variable scopes service-key reads or that a database trigger reads the tenant
+  attachment
 
 ---
 

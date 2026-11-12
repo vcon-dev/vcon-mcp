@@ -45,8 +45,9 @@ export function extractTenantFromAttachment(
   // Check if attachment type matches
   // `purpose` is the spec field; `type` is legacy. Matching only `type` missed every
   // purpose-only tenant attachment, so the vcons row was written with a NULL tenant and
-  // children upserted in parallel copied NULL from it (the DB trigger fixes the parent too late).
-  // Same rule as the DB trigger set_vcon_tenant_from_attachment: purpose OR type.
+  // children upserted in parallel copied NULL from it. No database trigger reads the tenant
+  // attachment, so this is the only place a vCon gets its tenant; the child triggers
+  // (set_<table>_tenant_id) copy the parent's.
   if (attachment.purpose !== config.attachmentType && attachment.type !== config.attachmentType) {
     return null;
   }
