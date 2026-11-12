@@ -28,9 +28,17 @@ The pack lives in `supabase/strict/`:
     WHERE d.id = h.dialog_id AND h.tenant_id IS DISTINCT FROM d.tenant_id;
    ```
 
-   The refusal message lists each table and count still in the way.
+   The refusal message lists each table and count still in the way. For data that carries tenant
+   attachments, `backfill_vcon_tenant_ids` and `backfill_tenant_id_batch` do the same in batches;
+   see [the writer guide](./rls-multi-tenant.md). A vCon placed in `_quarantine` leaves it only
+   through `release_vcon_from_quarantine`, which logs who moved it and why.
 
-3. **Move service-key searches onto a claim.** After the pack, the search RPCs (`search_vcons_keyword`, `search_vcons_semantic`, `search_vcons_hybrid`, the tag searches and `search_vcons_by_tags_and_date` with its count) return rows only for the tenant in the request's JWT. A service key with no `tenant_id` claim gets an empty result. Table reads through the service key are unchanged.
+3. **Write every vCon with a tenant.** After the pack, a write whose `vcons` row has no `tenant_id`
+   fails with a not-null error, including a `save_vcon_batch` re-post that leaves it out: the
+   constraint is checked before the re-post can keep the stored tenant. `TENANT_MODE=writer`
+   always stamps one (`_quarantine` when the stamp is missing or bad). Child rows take their vCon's
+   tenant from their insert triggers.
+4. **Move service-key searches onto a claim.** After the pack, the search RPCs (`search_vcons_keyword`, `search_vcons_semantic`, `search_vcons_hybrid`, the tag searches and `search_vcons_by_tags_and_date` with its count) return rows only for the tenant in the request's JWT. A service key with no `tenant_id` claim gets an empty result. Table reads through the service key are unchanged.
 
 ## Apply
 
@@ -77,6 +85,7 @@ An upgrade that drops `vcon_tags_mv` without `CASCADE` fails on a strict databas
 | Tenant source | `get_current_tenant_id()` reads the signed JWT claim only. A missing claim, an empty claim and `_quarantine` all mean no tenant. The `app.current_tenant_id` session fallback is gone, so `set_tenant_context()` has no effect |
 | Views | Every view runs with the caller's privileges (`security_invoker`) |
 | Tag view | `vcon_tags_scoped` shows the caller's tenant's rows of `vcon_tags_mv`. `authenticated` reads it and loses `vcon_tags_mv` and the refresh functions; the service key keeps both |
+| Service-only functions | `exec_sql`, `explain_query`, the session-tenant and health functions, the tag refresh, `backfill_tenant_id_batch`, `backfill_vcon_tenant_ids`, `vcon_tenant_stamp` and `release_vcon_from_quarantine` stay `service_role` only. A later grant to `anon` or `authenticated` is taken back |
 | Search RPCs | Twelve functions lose their NULL-tenant branch and read `vcon_tags_scoped`. `search_vcons_by_tags_and_date` and its count gain a tenant predicate |
 | `vkong.vcons` | `authenticated` loses it. It has no tenant column |
 | Backstops | `tenant_id` is `NOT NULL` and never empty on all ten tables. These bind the service key too |
@@ -88,7 +97,7 @@ The ten tenant tables are `vcons`, `parties`, `dialog`, `attachments`, `analysis
 
 - Every table with a `tenant_id` column has row level security on and forced, a `NOT NULL` non-empty `tenant_id`, and only the tenant filter as a permissive policy for `anon`, `authenticated` or `PUBLIC`.
 - Every foreign key between tenant tables includes `tenant_id` on both sides.
-- No function `anon` or `authenticated` can execute is `SECURITY DEFINER`, tests a tenant for NULL, reads `vcon_tags_mv`, or reads a session setting other than the JWT claims.
+- No function `anon` or `authenticated` can execute is `SECURITY DEFINER`, tests a tenant for NULL, reads `vcon_tags_mv`, or reads a session setting other than the JWT claims, and none of the service-only functions above is executable by them.
 - Every view runs as the caller, except `vcon_tags_scoped`, which must be exactly the tenant filter.
 - `anon` and `authenticated` hold nothing on any materialized view, and `anon` holds nothing on any table or function.
 - `get_current_tenant_id()` returns NULL with no claim, an empty claim, `_quarantine`, or only the session variable set.
@@ -107,11 +116,12 @@ On Node 22.18 or later, `node tests/tenant-isolation/rest-shape.ts` works withou
 
 The REST shape sends each request as the first tenant and fails if a response contains another fixture's canary, or if a read that should return the tenant's own rows does not contain its canary. It covers the ten tables by read, insert, upsert, update and delete; the search and tag RPCs, including those behind `search_vcons`, `search_vcons_content`, `search_vcons_semantic`, `get_vcon` and `delete_vcon`; both views; the tag views; `exec_sql` and `explain_query`; the session-variable spoof; the composite keys; no, null, empty and quarantine claims, expired and wrongly signed tokens, `anon`; and service-key searches and re-posts. The baseline run expects the leaks the pack closes, which shows the harness can see a leak.
 
+The strict run ends by serving PostgREST the way the [tenant lane](./tenant-lane.md) needs it: a login role that is a member of `authenticated` only and no anon role, so a `service_role` or anon token fails and a request with no token gets 401. `startRest('lane')` in `tests/tenant-isolation/stack.ts` gives that shape to other tests.
+
 The guard test checks that the pack refuses NULL rows and leaves the catalog unchanged, that a second run leaves a catalog snapshot identical row for row, and that each kind of upgrade regression makes the guard fail until the pack runs again.
 
 ## Known limits
 
 - The service key still reads every tenant on direct table reads. It carries no tenant traffic.
-- A service-key re-post of a vCon with a different `tenant_id` moves the vCon and its children to that tenant. Keeping a stored tenant is the writer's job, not the pack's.
 - Unique keys still tell a caller that can insert whether a vCon uuid exists: inserting another tenant's uuid fails with a duplicate-key error rather than succeeding. vCon uuids are random, and a tenant-scoped reader that does not insert never reaches this.
 - `FORCE ROW LEVEL SECURITY` binds a table owner without `BYPASSRLS`. On Supabase, `postgres` and `service_role` have `BYPASSRLS`, which beats it.

@@ -23,7 +23,9 @@
 --   4. Every view runs as the caller (security_invoker), as tier 1 set for
 --      the views that existed then.
 --   5. vcon_tags_scoped: the tag view filtered to the caller's tenant.
---      `authenticated` reads it and loses vcon_tags_mv.
+--      `authenticated` reads it and loses vcon_tags_mv. Functions meant for
+--      service_role only (exec_sql, the tag refresh, the tenant backfills,
+--      release_vcon_from_quarantine and others) are taken back if granted.
 --   6. Search and tag RPCs: the NULL branches are removed and the tag joins
 --      read vcon_tags_scoped. search_vcons_by_tags_and_date and its count gain
 --      a tenant predicate. A function the rewrite cannot place aborts the run.
@@ -257,17 +259,23 @@ BEGIN
   END IF;
 END $strict$;
 
--- The refresh functions need MAINTAIN on vcon_tags_mv, which tenant roles no
--- longer hold, so they fail for a tenant anyway. Close them at the door: the
--- writer, with the service key, refreshes the view.
+-- Service-only functions. Tier 1 and the writer migrations limit these to
+-- service_role: SQL as the owner, the session fallback, the health metrics,
+-- the tag refresh (which needs MAINTAIN on vcon_tags_mv, gone above), the
+-- tenant backfills and the release from quarantine. A later GRANT would reopen
+-- one; the pack takes it back.
 DO $strict$
 DECLARE
+  service_only constant text[] := ARRAY['exec_sql', 'explain_query', 'set_tenant_context', 'clear_tenant_context',
+    'get_connection_metrics', 'get_index_health', 'get_performance_metrics', 'get_storage_efficiency',
+    'refresh_vcon_tags_mv', 'refresh_vcon_tags_mv_if_stale', 'backfill_tenant_id_batch', 'backfill_vcon_tenant_ids',
+    'vcon_tenant_stamp', 'release_vcon_from_quarantine'];
   r record;
 BEGIN
   FOR r IN
     SELECT p.oid::regprocedure AS sig
       FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-     WHERE n.nspname = 'public' AND p.proname LIKE 'refresh\_vcon\_tags\_mv%'
+     WHERE n.nspname = 'public' AND p.proname = ANY (service_only)
        AND (has_function_privilege('authenticated', p.oid, 'EXECUTE') OR has_function_privilege('anon', p.oid, 'EXECUTE'))
      ORDER BY 1::text
   LOOP
@@ -275,7 +283,7 @@ BEGIN
       EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', r.sig);
     END IF;
     EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC, anon, authenticated', r.sig);
-    RAISE NOTICE 'strict-pack: changed: anon and authenticated cannot execute %', r.sig;
+    RAISE NOTICE 'strict-pack: changed: anon and authenticated cannot execute %, which is service_role only', r.sig;
   END LOOP;
 END $strict$;
 

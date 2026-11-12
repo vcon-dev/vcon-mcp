@@ -21,10 +21,20 @@
  *   await stack.applyMigrations();
  *   await loadFixtures(stack);            // ./fixtures.ts
  *   await stack.applyStrictPack();        // runs supabase/strict/apply.sh
- *   await stack.startRest();
+ *   await stack.startRest();              // or startRest('lane'), see below
  *   stack.restUrl;                        // http://127.0.0.1:<port>
  *   stack.mint({ role: 'authenticated', tenant_id: TENANT_A });
  *   await stack.stop();
+ *
+ * startRest('lane') serves PostgREST the way the tenant lane's PostgREST is
+ * meant to run: it logs in as `tenant_authenticator`, a member of
+ * `authenticated` only, has no anon role, and exposes `public` only. A token
+ * that claims service_role then fails at SET ROLE, and a request with no token
+ * gets 401. startRest() (or 'supabase') is the stock Supabase shape. Calling
+ * it with the other mode replaces the container; with the same mode it
+ * restarts it, which also empties the connection pool. PostgREST serves at
+ * the root; supabase-js appends /rest/v1, so a client test needs a proxy or a
+ * fetch wrapper that strips it.
  *
  * KEEP=1 leaves the containers running and prints their names.
  */
@@ -45,6 +55,8 @@ export const PGRST_IMAGE = process.env.TENANT_PGRST_IMAGE ?? 'postgrest/postgres
 export const DB_NAME = 'vcon_tenant';
 
 export type SqlRole = 'supabase_admin' | 'postgres';
+
+export type RestMode = 'supabase' | 'lane';
 
 export interface StackOptions {
   /** Short label used in container names. */
@@ -98,7 +110,7 @@ export class Stack {
   readonly pool: number;
   restUrl = '';
   private started = false;
-  private restStarted = false;
+  private restMode: RestMode | null = null;
 
   constructor(opts: StackOptions = {}) {
     const label = (opts.label ?? 'shape').replace(/[^a-z0-9-]/gi, '').toLowerCase() || 'shape';
@@ -132,7 +144,7 @@ export class Stack {
       if (i === 119) throw new Error('PostgreSQL did not become ready');
       await sleep(250);
     }
-    this.sql(BOOTSTRAP_SQL.replace('%AUTHENTICATOR_PASSWORD%', this.authenticatorCredential), { role: 'supabase_admin' });
+    this.sql(BOOTSTRAP_SQL.replaceAll('%AUTHENTICATOR_PASSWORD%', this.authenticatorCredential), { role: 'supabase_admin' });
   }
 
   /**
@@ -204,16 +216,19 @@ export class Stack {
   }
 
   /** Start (or restart) PostgREST. A restart also empties its connection pool. */
-  async startRest(): Promise<void> {
-    if (this.restStarted) {
+  async startRest(mode: RestMode = 'supabase'): Promise<void> {
+    if (this.restMode === mode) {
       docker(['restart', '-t', '2', this.restName]);
     } else {
+      if (this.restMode) docker(['rm', '-f', this.restName]);
+      const lane = mode === 'lane';
+      const login = lane ? 'tenant_authenticator' : 'authenticator';
       docker([
         'run', '-d', '--name', this.restName, '--network', this.network,
         '-p', '127.0.0.1::3000', '-p', '127.0.0.1::3001',
-        '-e', `PGRST_DB_URI=postgres://authenticator:${this.authenticatorCredential}@${this.pgName}:5432/${DB_NAME}`,
-        '-e', `PGRST_DB_SCHEMAS=${this.schemas}`,
-        '-e', 'PGRST_DB_ANON_ROLE=anon',
+        '-e', `PGRST_DB_URI=postgres://${login}:${this.authenticatorCredential}@${this.pgName}:5432/${DB_NAME}`,
+        '-e', `PGRST_DB_SCHEMAS=${lane ? 'public' : this.schemas}`,
+        ...(lane ? [] : ['-e', 'PGRST_DB_ANON_ROLE=anon']),
         '-e', 'PGRST_DB_EXTRA_SEARCH_PATH=public,extensions',
         '-e', 'PGRST_DB_MAX_ROWS=1000',
         '-e', `PGRST_DB_POOL=${this.pool}`,
@@ -222,7 +237,7 @@ export class Stack {
         '-e', 'PGRST_ADMIN_SERVER_PORT=3001',
         PGRST_IMAGE,
       ]);
-      this.restStarted = true;
+      this.restMode = mode;
     }
     const port = (p: number) => docker(['port', this.restName, `${p}/tcp`]).trim().split('\n')[0].split(':').pop();
     this.restUrl = `http://127.0.0.1:${port(3000)}`;
@@ -288,6 +303,9 @@ CREATE ROLE authenticated NOLOGIN NOINHERIT;
 CREATE ROLE service_role NOLOGIN NOINHERIT BYPASSRLS;
 CREATE ROLE authenticator LOGIN NOINHERIT PASSWORD '%AUTHENTICATOR_PASSWORD%';
 GRANT anon, authenticated, service_role TO authenticator;
+-- The tenant lane's PostgREST login: authenticated only, so a service_role claim fails.
+CREATE ROLE tenant_authenticator LOGIN NOINHERIT PASSWORD '%AUTHENTICATOR_PASSWORD%';
+GRANT authenticated TO tenant_authenticator;
 GRANT anon, authenticated, service_role TO postgres;
 ALTER DATABASE vcon_tenant OWNER TO postgres;
 ALTER SCHEMA public OWNER TO postgres;

@@ -518,16 +518,70 @@ async function main(): Promise<number> {
     expectValue('compact-bn', "A remove_vcon_child_and_compact on the analysis of B's vCon with NULL children",
       rowState('analysis', 'id', rowId(BN, 'analysis')) === before ? 'unchanged' : 'removed', ['unchanged', 'removed'], true);
 
-    // service_role re-posts through save_vcon_batch: with no tenant, then with another tenant.
+    // service_role re-posts through save_vcon_batch, which keeps a stored tenant
+    // (migration 20261112120000_keep_stored_tenant.sql).
     const w = freshId('aaaaaaaa');
-    r = await rpc('save_vcon_batch', batch(w, TENANT_A, 'zebra repost'), T.svc);
-    rep.check(`${MODE}-repost-setup`, 'service_role writes a tenant A vCon', r.status < 300, brief(r));
+    const childCount = (u: string, tenant: string) => stack.sql(`SELECT ${VCON_CHILDREN.map(t =>
+      `(SELECT count(*) FROM ${t} WHERE vcon_id = '${u}' AND tenant_id = '${tenant}')`).join(' + ')}`).trim();
+    r = await rpc('save_vcon_batch', {
+      ...batch(w, TENANT_A, 'zebra repost'),
+      p_parties: [{ vcon_id: w, party_index: 0, name: 'zebra repost party', tenant_id: TENANT_A }],
+    }, T.svc);
+    rep.check(`${MODE}-repost-setup`, 'service_role writes a tenant A vCon with a party', r.status < 300, brief(r));
+    const childrenA = childCount(w, TENANT_A);
     r = await rpc('save_vcon_batch', batch(w, null, 'zebra repost'), T.svc);
-    expectValue('repost-null', 'service_role re-post with no tenant: the vCon keeps tenant A', tenantOf('vcons', 'uuid', w), [TENANT_A, 'NULL'], true);
+    expectValue('repost-null', `service_role re-post with tenant_id null: the vCon keeps tenant A (${brief(r)})`,
+      `${tenantOf('vcons', 'uuid', w)} ${r.status < 300 ? 'written' : 'refused'}`, [`${TENANT_A} refused`, `${TENANT_A} written`]);
+    // Under the strict pack NOT NULL is checked before the conflict branch, so a
+    // re-post whose vCon row has no tenant fails as a whole; the writer always stamps one.
+    const noTenantKey = batch(w, null, 'zebra repost');
+    delete (noTenantKey.p_vcons[0] as Record<string, unknown>).tenant_id;
+    r = await rpc('save_vcon_batch', noTenantKey, T.svc);
+    expectValue('repost-omitted', `service_role re-post with tenant_id left out: the vCon keeps tenant A (${brief(r)})`,
+      `${tenantOf('vcons', 'uuid', w)} ${r.status < 300 ? 'written' : 'refused'}`, [`${TENANT_A} refused`, `${TENANT_A} written`]);
     r = await rpc('save_vcon_batch', batch(w, TENANT_B, 'zebra repost'), T.svc);
-    rep.note(`${MODE}-repost-other`, "service_role re-post with tenant B moves the vCon; keeping a stored tenant is the writer's job, not the pack's",
-      `stored tenant is now ${tenantOf('vcons', 'uuid', w)} (${brief(r)})`);
+    expectValue('repost-other', `service_role re-post stamped for tenant B: the vCon keeps tenant A (${brief(r)})`, tenantOf('vcons', 'uuid', w), [TENANT_A, TENANT_A]);
+    r = await rpc('save_vcon_batch', batch(w, QUARANTINE, 'zebra repost'), T.svc);
+    expectValue('repost-quarantine', `service_role re-post stamped _quarantine: the vCon keeps tenant A (${brief(r)})`, tenantOf('vcons', 'uuid', w), [TENANT_A, TENANT_A]);
+    expectValue('repost-children', 'and its children stay with tenant A', childCount(w, TENANT_A), [childrenA, childrenA]);
     stack.sql(`DELETE FROM vcons WHERE uuid = '${w}'`);
+    const quarantined = freshId('aaaaaaaa');
+    stack.sql(`INSERT INTO vcons (id, uuid, vcon_version, subject, tenant_id) VALUES ('${quarantined}', '${quarantined}', '0.4.0', 'held', '${QUARANTINE}')`);
+    r = await rpc('save_vcon_batch', batch(quarantined, TENANT_A, 'zebra repost'), T.svc);
+    expectValue('repost-no-release', `a re-post stamped for tenant A does not take a vCon out of quarantine (${brief(r)})`, tenantOf('vcons', 'uuid', quarantined), [QUARANTINE, QUARANTINE]);
+    stack.sql(`DELETE FROM vcons WHERE uuid = '${quarantined}'`);
+
+    // ------------------------------------------------------------ writer functions
+    rep.section('service_role only: quarantine release and tenant backfills');
+    const releaseArgs = (u: string) => ({ p_vcon_uuid: u, p_tenant_id: TENANT_A, p_reason: 'test release', p_evidence: { check: 'fixture' }, p_released_by: 'test' });
+    const writerOnly: Array<[string, unknown]> = [
+      ['release_vcon_from_quarantine', releaseArgs(Qf.uuid)],
+      ['backfill_tenant_id_batch', { p_table_name: 'parties', p_batch_size: 10 }],
+      ['backfill_vcon_tenant_ids', { p_batch_size: 10, p_writer_rule: false }],
+      ['vcon_tenant_stamp', { p_vcon_id: Qf.uuid, p_strict: true }],
+    ];
+    for (const [fn, args] of writerOnly) {
+      expect(`writer-fn-${fn}`, `A POST /rpc/${fn}`, await rpc(fn, args), ['denied', 'denied']);
+      expect(`writer-fn-${fn}-anon`, `anon POST /rpc/${fn}`, await api(stack, 'POST', `/rpc/${fn}`, { body: args }), ['denied', 'denied']);
+    }
+    expectValue('writer-fn-quarantine-kept', "after those calls the quarantined vCon is still in quarantine", tenantOf('vcons', 'uuid', Qf.uuid), [QUARANTINE, QUARANTINE]);
+    expect('writer-log', 'A GET /tenant_quarantine_releases', await api(stack, 'GET', '/tenant_quarantine_releases?select=*', { token: T.A }), ['denied', 'denied']);
+    // The release moves a vCon and every child; under the strict pack the composite keys carry it.
+    const held = freshId('aaaaaaaa');
+    const heldDialog = freshId('aaaaaaaa');
+    stack.sql(`
+      INSERT INTO vcons (id, uuid, vcon_version, subject, tenant_id) VALUES ('${held}', '${held}', '0.4.0', 'zebra held', '${QUARANTINE}');
+      INSERT INTO parties (id, vcon_id, party_index, name, tenant_id) VALUES ('${freshId('aaaaaaaa')}', '${held}', 0, 'held caller', '${QUARANTINE}');
+      INSERT INTO dialog (id, vcon_id, dialog_index, type, body, encoding, tenant_id) VALUES ('${heldDialog}', '${held}', 0, 'text', 'zebra held', 'none', '${QUARANTINE}');
+      INSERT INTO party_history (id, dialog_id, party_index, time, event, tenant_id) VALUES ('${freshId('aaaaaaaa')}', '${heldDialog}', 0, now(), 'join', '${QUARANTINE}');`);
+    expect('release-before', 'A cannot read a quarantined vCon', await api(stack, 'GET', `/vcons?select=*&uuid=eq.${held}`, { token: T.A }), ['empty', 'empty']);
+    r = await rpc('release_vcon_from_quarantine', releaseArgs(held), T.svc);
+    rep.check(`${MODE}-release-svc`, 'service_role releases it to tenant A, logging the release', r.status < 300 && Number(r.json) > 0, brief(r));
+    expectValue('release-children', 'the vCon and its party, dialog, party_history and embedding_queue rows are all tenant A',
+      stack.sql(`SELECT (SELECT count(*) FROM vcons WHERE uuid = '${held}' AND tenant_id = '${TENANT_A}') || ',' || ${childCount(held, TENANT_A)} || ',' ||
+                        (SELECT count(*) FROM party_history WHERE dialog_id = '${heldDialog}' AND tenant_id = '${TENANT_A}')`).trim(), ['1,3,1', '1,3,1']);
+    expect('release-after', 'A reads the released vCon', await api(stack, 'GET', `/vcons?select=*&uuid=eq.${held}`, { token: T.A }), ['isolated', 'isolated']);
+    stack.sql(`DELETE FROM vcons WHERE uuid = '${held}'`);
 
     // ------------------------------------------------------------ delete_vcon
     rep.section('delete_vcon');
@@ -540,6 +594,17 @@ async function main(): Promise<number> {
       `(SELECT count(*) FROM party_history WHERE dialog_id = '${rowId(a2, 'dialog')}')`].join(' + ')}`).trim();
     expectValue('lane-delete-cascade', 'and every child row of it, in all nine child tables', left, ['0', '0']);
     expectValue('lane-delete-others', "B's and the no-tenant vCons are untouched", stack.sql(`SELECT count(*) FROM vcons WHERE uuid IN ('${B.uuid}', '${BN.uuid}', '${NONE().uuid}')`).trim(), ['3', '3']);
+
+    // ------------------------------------------------------------ lane PostgREST
+    // The lane's own PostgREST logs in as a member of authenticated only, with no anon role.
+    rep.section("PostgREST as the tenant lane's (authenticated only, no anon role)");
+    await stack.startRest('lane');
+    expect('lanerest-A', 'A GET /vcons', await api(stack, 'GET', '/vcons?select=*', { token: T.A }), ['isolated', 'leak']);
+    expect('lanerest-A-kw', 'A keyword search', await rpc('search_vcons_keyword', { query_text: 'zebra' }), ['isolated', 'leak']);
+    expect('lanerest-svc', 'a service_role token fails at SET ROLE', await api(stack, 'GET', '/vcons?select=*', { token: T.svc }), ['refused', 'refused']);
+    expect('lanerest-anon', 'no token gets nothing', await api(stack, 'GET', '/vcons?select=*'), ['denied', 'denied']);
+    expect('lanerest-anon-key', 'an anon-role token fails at SET ROLE', await api(stack, 'GET', '/vcons?select=*', { token: T.anonKey }), ['refused', 'refused']);
+    expect('lanerest-vkong', 'the vkong schema is not served', await api(stack, 'GET', '/vcons?select=*', { token: T.A, profile: 'vkong' }), ['refused', 'refused']);
   } finally {
     await stack.stop();
   }

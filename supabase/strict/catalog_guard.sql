@@ -21,7 +21,9 @@
 --   rpcs       no function anon or authenticated can execute is SECURITY
 --              DEFINER, tests a tenant for NULL, reads vcon_tags_mv or reads
 --              the app.current_tenant_id session setting. The tag-and-date
---              search functions carry a tenant predicate.
+--              search functions carry a tenant predicate. Functions meant for
+--              service_role only (exec_sql, the tag refresh, the tenant
+--              backfills, release_vcon_from_quarantine, ...) stay that way.
 --   views      every view runs as the caller (security_invoker), except
 --              vcon_tags_scoped, which must be exactly the tenant filter.
 --   matviews   anon and authenticated hold no privilege on any.
@@ -37,6 +39,10 @@ DECLARE
   scoped_def constant text := 'SELECT tenant_id, vcon_id, tags, tag_updated_at, tag_created_at FROM vcon_tags_mv WHERE (tenant_id = ( SELECT get_current_tenant_id() AS get_current_tenant_id));';
   null_branch constant text := '(current_tenant|tenant_id|get_current_tenant_id\(\))\s+IS\s+NULL';
   roles constant oid[] := ARRAY[0::oid, 'anon'::regrole::oid, 'authenticated'::regrole::oid];
+  service_only constant text[] := ARRAY['exec_sql', 'explain_query', 'set_tenant_context', 'clear_tenant_context',
+    'get_connection_metrics', 'get_index_health', 'get_performance_metrics', 'get_storage_efficiency',
+    'refresh_vcon_tags_mv', 'refresh_vcon_tags_mv_if_stale', 'backfill_tenant_id_batch', 'backfill_vcon_tenant_ids',
+    'vcon_tenant_stamp', 'release_vcon_from_quarantine'];
   v text[] := '{}';
   checks int := 0;
   r record;
@@ -176,6 +182,18 @@ BEGIN
     END IF;
     IF r.prosrc ~* 'app\.current_tenant_id' OR (r.prosrc ~* 'current_setting' AND r.prosrc !~* 'request\.jwt\.claims') THEN
       v := v || format('rpcs: %s reads a session setting other than the JWT claims', r.sig);
+    END IF;
+  END LOOP;
+
+  FOR r IN
+    SELECT p.oid::regprocedure AS sig
+      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname = 'public' AND p.proname = ANY (service_only)
+     ORDER BY 1::text
+  LOOP
+    checks := checks + 1;
+    IF has_function_privilege('anon', r.sig, 'EXECUTE') OR has_function_privilege('authenticated', r.sig, 'EXECUTE') THEN
+      v := v || format('rpcs: %s is service_role only, but anon or authenticated can execute it', r.sig);
     END IF;
   END LOOP;
 

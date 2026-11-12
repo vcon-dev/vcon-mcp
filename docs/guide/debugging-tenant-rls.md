@@ -51,10 +51,11 @@ Two things differ until the [strict pack](./strict-tenant-pack.md) is applied:
 
 | Variable | Default | What it does |
 |---|---|---|
+| `TENANT_MODE` | unset (`off`) | `writer` stamps every vCon (`_quarantine` when the stamp is missing or bad) and refreshes the tag view; `lane` serves tenants with their own JWT and holds no key. See [the writer guide](./rls-multi-tenant.md) and [the tenant lane](./tenant-lane.md) |
 | `RLS_ENABLED` | `false` | Turns on tenant extraction on write, and the startup tenant checks below |
 | `TENANT_ATTACHMENT_TYPE` | `tenant` | Attachment `purpose` (or legacy `type`) that holds the tenant |
 | `TENANT_JSON_PATH` | `id` | Path to the tenant id inside that attachment's body |
-| `CURRENT_TENANT_ID` | (none) | Passed to `set_tenant_context()` at startup. It does not filter table reads through the service key. With the strict pack applied it has no effect |
+| `CURRENT_TENANT_ID` | (none) | Passed to `set_tenant_context()` at startup. It does not filter table reads through the service key. With the strict pack applied it has no effect. `TENANT_MODE=writer` refuses to start with it set |
 | `RLS_DEBUG`, `MCP_DEBUG` | `false` | Log a count of visible vCons by tenant at startup |
 
 ## Startup log messages
@@ -94,5 +95,7 @@ With the strict pack, every row needs a tenant. An `authenticated` caller can wr
 
 - `get_current_tenant_id()`: the request's tenant, from the JWT `tenant_id` claim (and, without the strict pack, the session fallback).
 - `set_tenant_context(text)`, `clear_tenant_context()`: set or clear `app.current_tenant_id`. `service_role` only. Legacy.
-- `backfill_tenant_id_batch(table, batch_size)`: gives child rows their parent vCon's tenant, one batch at a time.
+- `backfill_vcon_tenant_ids(batch_size, writer_rule)`: fills `vcons.tenant_id` from tenant attachments, one batch at a time. `service_role` only.
+- `backfill_tenant_id_batch(table, batch_size)`: gives child rows their parent vCon's tenant, one batch at a time. `service_role` only.
+- `release_vcon_from_quarantine(uuid, tenant, reason, evidence, released_by)`: the one way out of `_quarantine`, logged. `service_role` only.
 - `scripts/backfill-tenant-ids.ts`: runs `backfill_tenant_id_batch` over every child table.

@@ -127,11 +127,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `tenant_id` `NOT NULL` and never empty on all ten tenant tables
   - composite keys: each child references its parent by `(id, tenant_id)`
   - `authenticated` loses `vkong.vcons`; the always-false `embedding_queue` policy is dropped
+  - functions meant for `service_role` only (`exec_sql`, the tag refresh, the tenant backfills,
+    `vcon_tenant_stamp`, `release_vcon_from_quarantine` and others) are taken back from `anon`
+    and `authenticated` if a later grant reopened one
+  - with the pack applied, a write whose `vcons` row has no `tenant_id` fails with a not-null
+    error, a `save_vcon_batch` re-post included; `TENANT_MODE=writer` always stamps one
 - `tests/tenant-isolation/`: a REST-level tenant isolation harness on a throwaway PostgreSQL 17
   with pgvector and PostgREST 16.2 in Docker, with signed JWTs and a canary per tenant.
   `npm run test:tenant` (strict pack), `npm run test:tenant:baseline` (unmodified schema, asserts
   the known leaks) and `npm run test:tenant:guard` (apply script and catalog guard). The
-  `Tenant isolation` workflow runs all three on pull requests
+  `Tenant isolation` workflow runs all three on pull requests. `startRest('lane')` serves
+  PostgREST as the tenant lane needs it: authenticated only, no anon role
 
 ### Changed
 - `IVConQueries.deleteVCon` may resolve to the number of vCons it removed. `VConService.delete`

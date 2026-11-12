@@ -98,7 +98,7 @@ The lane must reach its own PostgREST, never the one that accepts the service ke
 
 The rows the lane reads are only isolated when the store's policies are keyed on the verified
 `tenant_id` claim, with no NULL-tenant fallback, and when nothing an `authenticated` role can execute
-bypasses those policies. Apply the strict row-level tenancy pack before any tenant traffic reaches a
+bypasses those policies. Apply the [strict tenant pack](./strict-tenant-pack.md) before any tenant traffic reaches a
 lane, and re-run it after every upgrade, since a migration can replace a function and restore a NULL
 branch.
 

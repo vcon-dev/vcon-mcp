@@ -18,7 +18,7 @@
  *      NULL reverted) make the guard fail; a re-run of the pack restores the
  *      strict state. Shapes the pack does not know fail loudly.
  *   7. Composite keys refuse a child under another tenant's parent in every
- *      child table, and carry a tenant move to every child.
+ *      child table, and carry a release from quarantine to every child.
  *
  * Exit 0 when every check passes.
  */
@@ -75,6 +75,10 @@ async function main(): Promise<number> {
       SELECT json_object_agg(p.oid::regprocedure::text, pg_get_functiondef(p.oid))
         FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname = ANY (ARRAY[${UPSTREAM_RPCS.map(x => `'${x}'`).join(',')}])`) ?? {};
     rep.eq('setup-rpcs', 'the 12 search and tag RPCs the pack rewrites are present', UPSTREAM_RPCS.length, Object.keys(upstream).length);
+    rep.eq('setup-writer-fns', 'the writer migrations\' service_role functions are present',
+      'backfill_tenant_id_batch,backfill_vcon_tenant_ids,release_vcon_from_quarantine,vcon_tenant_stamp',
+      stack.sql(`SELECT string_agg(proname, ',' ORDER BY proname) FROM pg_proc WHERE pronamespace = 'public'::regnamespace
+                 AND proname IN ('release_vcon_from_quarantine', 'backfill_tenant_id_batch', 'backfill_vcon_tenant_ids', 'vcon_tenant_stamp')`).trim());
 
     // ------------------------------------------------------------ 1
     rep.section('1. the guard fails on the unmodified schema');
@@ -195,6 +199,12 @@ async function main(): Promise<number> {
       'vkong.vcons has no tenant column and no row level security');
     regress('up-refresh', 'authenticated granted the tag refresh RPC again', `GRANT EXECUTE ON FUNCTION refresh_vcon_tags_mv() TO authenticated`,
       'refresh_vcon_tags_mv() reads vcon_tags_mv');
+    regress('up-release', 'authenticated granted release_vcon_from_quarantine',
+      `GRANT EXECUTE ON FUNCTION release_vcon_from_quarantine(uuid, text, text, jsonb, text) TO authenticated`,
+      'release_vcon_from_quarantine(uuid,text,text,jsonb,text) is service_role only');
+    regress('up-backfill', 'authenticated granted backfill_vcon_tenant_ids',
+      `GRANT EXECUTE ON FUNCTION backfill_vcon_tenant_ids(integer, boolean) TO authenticated`,
+      'backfill_vcon_tenant_ids(integer,boolean) is service_role only');
     regress('up-extra-policy', 'an extra permissive policy that admits every row',
       `CREATE POLICY open_read ON dialog FOR SELECT TO authenticated USING (true)`,
       'policy open_read on public.dialog is not the tenant filter', { packFixes: false, cleanup: 'DROP POLICY open_read ON dialog' });
@@ -275,8 +285,9 @@ async function main(): Promise<number> {
     const childCounts = (tenant: string) => stack.sql(`SELECT ${[...VCON_CHILDREN.map(t => `(SELECT count(*) FROM ${t} WHERE vcon_id = '${q.uuid}' AND tenant_id = '${tenant}')`),
       `(SELECT count(*) FROM party_history WHERE dialog_id = '${rowId(q, 'dialog')}' AND tenant_id = '${tenant}')`].join(' || \',\' || ')}`).trim();
     const before = childCounts(QUARANTINE);
-    const moved = stack.trySql(`UPDATE vcons SET tenant_id = '${TENANT_A}' WHERE uuid = '${q.uuid}'`);
-    rep.check('move-ok', 'moving a vCon out of quarantine succeeds', moved.ok, moved.ok ? '' : moved.out.trim().slice(-200));
+    const moved = stack.trySql(`SELECT release_vcon_from_quarantine('${q.uuid}', '${TENANT_A}', 'test release', '{"check":"fixture"}', 'test')`);
+    rep.check('move-ok', 'release_vcon_from_quarantine moves a vCon out of quarantine under the composite keys', moved.ok, moved.ok ? '' : moved.out.trim().slice(-200));
+    rep.eq('move-log', 'and logs the release', '1', stack.sql(`SELECT count(*) FROM tenant_quarantine_releases WHERE vcon_uuid = '${q.uuid}' AND to_tenant = '${TENANT_A}'`).trim());
     rep.eq('move-children', 'every child row follows it (counts per child table, then party_history)', before, childCounts(TENANT_A));
     stack.sql(`UPDATE vcons SET tenant_id = '${QUARANTINE}' WHERE uuid = '${q.uuid}'`);
     rep.eq('move-back', 'and back', before, childCounts(QUARANTINE));
