@@ -199,13 +199,19 @@ export class Stack {
    * Run supabase/strict/apply.sh inside the database container, so the test
    * exercises the script operators run. Returns its exit code and output.
    */
-  runApplyScript(args: string[] = []): { code: number; out: string } {
+  runApplyScript(args: string[] = [], env: Record<string, string> = {}): { code: number; out: string } {
     docker(['exec', this.pgName, 'rm', '-rf', '/strict']);
     docker(['cp', STRICT_DIR, `${this.pgName}:/strict`]);
+    const vars = { DATABASE_URL: `postgresql://postgres@localhost/${DB_NAME}`, ...env };
     const r = spawnSync('docker',
-      ['exec', this.pgName, 'bash', '/strict/apply.sh', ...args, `postgresql://postgres@localhost/${DB_NAME}`],
+      ['exec', ...Object.entries(vars).flatMap(([k, v]) => ['-e', `${k}=${v}`]), this.pgName, 'bash', '/strict/apply.sh', ...args],
       { encoding: 'utf8' });
     return { code: r.status ?? -1, out: `${r.stdout}${r.stderr}` };
+  }
+
+  /** Write a file inside the database container (for apply.sh --url-file). */
+  writeFile(path: string, content: string): void {
+    docker(['exec', '-i', this.pgName, 'sh', '-c', `cat > '${path}'`], content);
   }
 
   /** Apply the strict pack and throw unless it succeeds. */

@@ -2,7 +2,8 @@
 # apply.sh: apply the strict pack (tier 2 tenant isolation) to a vcon-mcp
 # database, or check that it is in place.
 #
-#   supabase/strict/apply.sh [--check | --dry-run] [DATABASE_URL]
+#   DATABASE_URL=postgresql://... supabase/strict/apply.sh [--check | --dry-run]
+#   supabase/strict/apply.sh [--check | --dry-run] --url-file FILE
 #
 #   (no flag)  apply strict_pack.sql, then run catalog_guard.sql, in one
 #              transaction. Any error or guard failure rolls everything back.
@@ -11,8 +12,11 @@
 #              and bring a NULL branch back, and the guard fails if so.
 #   --dry-run  apply and guard as above, then roll back.
 #
-# DATABASE_URL is a postgres:// URL for a role that owns the vcon-mcp schema
-# (postgres on Supabase). Without one, psql uses the usual PG* variables.
+# The connection string comes from DATABASE_URL or from the first line of
+# --url-file, never from the command line, where `ps` would show its password.
+# It is a postgres:// URL for a role that owns the vcon-mcp schema (postgres on
+# Supabase). Its password is handed to psql in PGPASSWORD, not as an argument.
+# With neither, psql uses the usual PG* variables.
 #
 # The pack refuses, changing nothing, while any tenant table holds a row with
 # no tenant_id, or a child row whose tenant differs from its parent's. Re-running
@@ -29,17 +33,33 @@ DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 mode=apply
 url=${DATABASE_URL:-}
 
-usage() { sed -n '2,27p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,32p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 while [ $# -gt 0 ]; do
   case $1 in
     --check) mode=check ;;
     --dry-run) mode=dry-run ;;
+    --url-file)
+      [ $# -ge 2 ] && [ -r "$2" ] || { echo "apply.sh: --url-file needs a readable file" >&2; exit 2; }
+      IFS= read -r url <"$2" || [ -n "$url" ] || { echo "apply.sh: $2 is empty" >&2; exit 2; }
+      shift ;;
     -h|--help) usage; exit 0 ;;
     -*) echo "apply.sh: unknown option $1" >&2; usage >&2; exit 2 ;;
-    *) url=$1 ;;
+    *) echo "apply.sh: pass the connection string in DATABASE_URL or --url-file, not as an argument (ps shows arguments)" >&2; exit 2 ;;
   esac
   shift
 done
+
+# Keep the password out of psql's arguments: move it to PGPASSWORD.
+if [[ $url =~ ^(postgres(ql)?://)([^:@/?#]*):([^@/?#]*)@(.*)$ ]]; then
+  pw=${BASH_REMATCH[4]}
+  PGPASSWORD=$(printf '%b' "${pw//%/\\x}")
+  export PGPASSWORD
+  url="${BASH_REMATCH[1]}${BASH_REMATCH[3]}@${BASH_REMATCH[5]}"
+fi
+if [[ $url == *password=* ]]; then
+  echo "apply.sh: give the password in PGPASSWORD or in the URL's user:secret part, not as a URL query parameter" >&2
+  exit 2
+fi
 
 command -v psql >/dev/null 2>&1 || { echo "apply.sh: psql not found" >&2; exit 2; }
 for f in strict_pack.sql catalog_guard.sql; do

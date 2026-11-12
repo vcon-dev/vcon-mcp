@@ -17,6 +17,13 @@
 --   1. One policy per tenant table, for `authenticated` only:
 --      tenant_id = (SELECT get_current_tenant_id()), no NULL branch, for USING
 --      and WITH CHECK. RLS is enabled and forced.
+--  1b. Tenant roles read and delete, nothing else. `authenticated` keeps
+--      SELECT and DELETE on the tenant tables and SELECT on views. PUBLIC,
+--      anon and authenticated lose TRUNCATE, TRIGGER, REFERENCES and MAINTAIN
+--      on every table and view, now and (by default privileges) later. They
+--      execute no VOLATILE function, so no RPC that writes.
+--  1c. The trigger that refreshes conversation_start after a dialog or
+--      attachment delete runs as its owner, so a tenant's delete still works.
 --   2. get_current_tenant_id() reads the signed JWT claim only. An empty
 --      claim, a missing claim and `_quarantine` all mean no tenant. The
 --      app.current_tenant_id session fallback is gone.
@@ -26,6 +33,7 @@
 --      `authenticated` reads it and loses vcon_tags_mv. Functions meant for
 --      service_role only (exec_sql, the tag refresh, the tenant backfills,
 --      release_vcon_from_quarantine and others) are taken back if granted.
+--      Its owner is pinned to the materialized view's.
 --   6. Search and tag RPCs: the NULL branches are removed and the tag joins
 --      read vcon_tags_scoped. search_vcons_by_tags_and_date and its count gain
 --      a tenant predicate. A function the rewrite cannot place aborts the run.
@@ -199,6 +207,107 @@ BEGIN
 END $strict$;
 
 -- ---------------------------------------------------------------------------
+-- 1b. Table privileges: tenant roles read and delete their rows, nothing else.
+--     Row level security does not govern TRUNCATE, and TRIGGER, REFERENCES and
+--     MAINTAIN (LOCK, VACUUM, REFRESH) act on a table without reading a row, so
+--     PUBLIC, anon and authenticated lose all four on every relation in public
+--     and vkong, and on tables postgres creates there later. On the tenant
+--     tables authenticated also loses INSERT and UPDATE: a tenant's one write
+--     is delete_vcon, and an insert told a tenant whether another tenant's
+--     uuid existed and let it claim a uuid before the writer stored it. Views
+--     keep SELECT only.
+-- ---------------------------------------------------------------------------
+DO $strict$
+DECLARE
+  tenant_tables constant text[] := ARRAY['vcons', 'parties', 'dialog', 'attachments', 'analysis', 'groups',
+    'party_history', 'vcon_embeddings', 'embedding_queue', 's3_sync_tracking'];
+  noread constant text[] := ARRAY['TRUNCATE', 'TRIGGER', 'REFERENCES']
+    || CASE WHEN current_setting('server_version_num')::int >= 170000 THEN ARRAY['MAINTAIN'] ELSE '{}'::text[] END;
+  roles constant oid[] := ARRAY[0::oid, 'anon'::regrole::oid, 'authenticated'::regrole::oid];
+  r record;
+  t text;
+  rel regclass;
+BEGIN
+  FOR r IN
+    SELECT c.oid::regclass AS rel
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname IN ('public', 'vkong') AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+       AND EXISTS (SELECT 1 FROM aclexplode(c.relacl) a WHERE a.grantee = ANY (roles) AND a.privilege_type = ANY (noread))
+     ORDER BY 1::text
+  LOOP
+    EXECUTE format('REVOKE %s ON %s FROM PUBLIC, anon, authenticated', array_to_string(noread, ', '), r.rel);
+    RAISE NOTICE 'strict-pack: changed: PUBLIC, anon and authenticated lose % on %', array_to_string(noread, ', '), r.rel;
+  END LOOP;
+
+  FOREACH t IN ARRAY tenant_tables LOOP
+    rel := ('public.' || quote_ident(t))::regclass;
+    IF has_any_column_privilege('authenticated', rel, 'INSERT,UPDATE') OR has_any_column_privilege('anon', rel, 'INSERT,UPDATE') THEN
+      EXECUTE format('REVOKE INSERT, UPDATE ON public.%I FROM PUBLIC, anon, authenticated', t);
+      RAISE NOTICE 'strict-pack: changed: authenticated cannot insert into or update %', t;
+    END IF;
+    IF NOT has_table_privilege('authenticated', rel, 'SELECT') OR NOT has_table_privilege('authenticated', rel, 'DELETE') THEN
+      EXECUTE format('GRANT SELECT, DELETE ON public.%I TO authenticated', t);
+      RAISE NOTICE 'strict-pack: changed: authenticated reads and deletes its own rows of %', t;
+    END IF;
+  END LOOP;
+
+  FOR r IN
+    SELECT c.oid::regclass AS rel
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname IN ('public', 'vkong') AND c.relkind = 'v'
+       AND (has_any_column_privilege('authenticated', c.oid, 'INSERT,UPDATE') OR has_table_privilege('authenticated', c.oid, 'DELETE')
+            OR has_any_column_privilege('anon', c.oid, 'INSERT,UPDATE') OR has_table_privilege('anon', c.oid, 'DELETE'))
+     ORDER BY 1::text
+  LOOP
+    EXECUTE format('REVOKE INSERT, UPDATE, DELETE ON %s FROM PUBLIC, anon, authenticated', r.rel);
+    RAISE NOTICE 'strict-pack: changed: view % is read-only for authenticated', r.rel;
+  END LOOP;
+
+  -- Tables postgres creates in public later. Changing postgres's defaults
+  -- needs postgres or a member of it, which is who runs Supabase migrations.
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'postgres')
+     AND EXISTS (SELECT 1 FROM pg_default_acl d, aclexplode(d.defaclacl) a
+                  WHERE d.defaclrole = 'postgres'::regrole AND d.defaclnamespace = 'public'::regnamespace
+                    AND d.defaclobjtype = 'r' AND a.grantee = ANY (roles) AND a.privilege_type = ANY (noread)) THEN
+    IF pg_has_role(current_user, 'postgres', 'MEMBER') THEN
+      EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE %s ON TABLES FROM PUBLIC, anon, authenticated',
+        array_to_string(noread, ', '));
+      RAISE NOTICE 'strict-pack: changed: tables postgres creates in public later grant no %', array_to_string(noread, ', ');
+    ELSE
+      RAISE NOTICE 'strict-pack: % cannot change default privileges for postgres; new tables will need the pack re-run', current_user;
+    END IF;
+  END IF;
+END $strict$;
+
+-- ---------------------------------------------------------------------------
+-- 1c. Deleting a dialog or attachment row refreshes its vCon's
+--     conversation_start through a statement trigger that runs as the caller
+--     and updates vcons. Tenant roles no longer update anything, so a tenant's
+--     delete_vcon would fail in that trigger. It runs as its owner instead,
+--     which needs BYPASSRLS (postgres has it on Supabase). It recomputes only
+--     the vCons whose rows the caller has just changed, which row level
+--     security already limited. A trigger needs no EXECUTE grant to fire, so
+--     tenant roles lose that.
+-- ---------------------------------------------------------------------------
+DO $strict$
+DECLARE
+  fn regprocedure := to_regprocedure('public.child_refresh_conversation_start()');
+BEGIN
+  IF fn IS NULL THEN
+    RETURN;
+  END IF;
+  IF NOT (SELECT prosecdef FROM pg_proc WHERE oid = fn)
+     OR (SELECT proconfig FROM pg_proc WHERE oid = fn) IS DISTINCT FROM ARRAY['search_path=public, pg_temp'] THEN
+    ALTER FUNCTION public.child_refresh_conversation_start() SECURITY DEFINER SET search_path = public, pg_temp;
+    RAISE NOTICE 'strict-pack: changed: child_refresh_conversation_start() runs as its owner';
+  END IF;
+  IF has_function_privilege('authenticated', fn, 'EXECUTE') OR has_function_privilege('anon', fn, 'EXECUTE') THEN
+    REVOKE EXECUTE ON FUNCTION public.child_refresh_conversation_start() FROM PUBLIC, anon, authenticated;
+    RAISE NOTICE 'strict-pack: changed: anon and authenticated cannot execute child_refresh_conversation_start() directly';
+  END IF;
+END $strict$;
+
+-- ---------------------------------------------------------------------------
 -- 5. A tenant-filtered view over the tag materialized view, which cannot
 --    carry RLS. It runs as its owner, so it can read vcon_tags_mv, and filters
 --    to the caller's tenant. security_barrier keeps caller predicates from
@@ -227,6 +336,14 @@ BEGIN
     COMMENT ON VIEW public.vcon_tags_scoped IS
       'vcon_tags_mv rows of the caller''s tenant only. Runs as its owner on purpose; the catalog guard checks its filter. Set by supabase/strict/strict_pack.sql.';
     RAISE NOTICE 'strict-pack: changed: view vcon_tags_scoped created';
+  END IF;
+  -- It reads vcon_tags_mv with its owner's privileges, so its owner is pinned
+  -- to the materialized view's.
+  IF (SELECT relowner FROM pg_class WHERE oid = 'public.vcon_tags_scoped'::regclass)
+     <> (SELECT relowner FROM pg_class WHERE oid = 'public.vcon_tags_mv'::regclass) THEN
+    EXECUTE format('ALTER VIEW public.vcon_tags_scoped OWNER TO %s',
+      (SELECT relowner::regrole FROM pg_class WHERE oid = 'public.vcon_tags_mv'::regclass));
+    RAISE NOTICE 'strict-pack: changed: vcon_tags_scoped owned by the owner of vcon_tags_mv';
   END IF;
 END $strict$;
 
@@ -259,11 +376,13 @@ BEGIN
   END IF;
 END $strict$;
 
--- Service-only functions. Tier 1 and the writer migrations limit these to
--- service_role: SQL as the owner, the session fallback, the health metrics,
--- the tag refresh (which needs MAINTAIN on vcon_tags_mv, gone above), the
--- tenant backfills and the release from quarantine. A later GRANT would reopen
--- one; the pack takes it back.
+-- Functions tenant roles may execute. None of the service-only list: tier 1
+-- and the writer migrations limit these to service_role (SQL as the owner, the
+-- session fallback, the health metrics, the tag refresh, the tenant backfills,
+-- the release from quarantine), and a later GRANT would reopen one. And no
+-- VOLATILE function, the only kind PostgreSQL lets write: save_vcon_batch,
+-- remove_vcon_child_and_compact and the like. The search and tag RPCs are
+-- STABLE and stay. Trigger functions are never called directly; left alone.
 DO $strict$
 DECLARE
   service_only constant text[] := ARRAY['exec_sql', 'explain_query', 'set_tenant_context', 'clear_tenant_context',
@@ -273,17 +392,21 @@ DECLARE
   r record;
 BEGIN
   FOR r IN
-    SELECT p.oid::regprocedure AS sig
+    SELECT p.oid::regprocedure AS sig, p.proname = ANY (service_only) AS svc
       FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-     WHERE n.nspname = 'public' AND p.proname = ANY (service_only)
+     WHERE n.nspname = 'public' AND p.prokind IN ('f', 'p')
+       AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e')
+       AND (p.proname = ANY (service_only)
+            OR (p.provolatile = 'v' AND p.prorettype NOT IN ('trigger'::regtype, 'event_trigger'::regtype)))
        AND (has_function_privilege('authenticated', p.oid, 'EXECUTE') OR has_function_privilege('anon', p.oid, 'EXECUTE'))
      ORDER BY 1::text
   LOOP
     IF has_function_privilege('service_role', r.sig, 'EXECUTE') THEN
-      EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', r.sig);
+      EXECUTE format('GRANT EXECUTE ON ROUTINE %s TO service_role', r.sig);
     END IF;
-    EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC, anon, authenticated', r.sig);
-    RAISE NOTICE 'strict-pack: changed: anon and authenticated cannot execute %, which is service_role only', r.sig;
+    EXECUTE format('REVOKE EXECUTE ON ROUTINE %s FROM PUBLIC, anon, authenticated', r.sig);
+    RAISE NOTICE 'strict-pack: changed: anon and authenticated cannot execute % (%)', r.sig,
+      CASE WHEN r.svc THEN 'service_role only' ELSE 'volatile: it may write' END;
   END LOOP;
 END $strict$;
 

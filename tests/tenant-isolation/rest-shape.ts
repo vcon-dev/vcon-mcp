@@ -93,6 +93,11 @@ function expectValue(id: string, desc: string, actual: unknown, exp: [unknown, u
   if (ok && BASELINE && leakInBaseline) leaksSeen++;
 }
 
+/** A check that only the strict pack makes meaningful; skipped in the baseline run. */
+function strictOnly(id: string, desc: string, r: Res, exp: Exp): void {
+  if (!BASELINE) expect(id, desc, r, [exp, exp]);
+}
+
 const q = (s: string) => `'${s.replace(/'/g, "''")}'`;
 function rowState(table: string, pkCol: string, pk: string | number): string {
   return stack.sql(`SELECT coalesce((SELECT row_to_json(t)::text FROM ${table} t WHERE ${pkCol} = ${q(String(pk))}), 'absent')`, { role: 'postgres' }).trim();
@@ -321,11 +326,15 @@ async function main(): Promise<number> {
     expectValue('dealer-tags-count', 'count_vcons_tags_and_dealer', (await rpc('count_vcons_tags_and_dealer', { tag_filter: tags, p_name_ilike: 'motors' })).json, [ownCount, ownCount + 1], true);
     expect('dealer-agg', 'aggregate_vcons_by_dealer_stats', await rpc('aggregate_vcons_by_dealer_stats', { tag_filter: tags }), ['isolated', 'leak']);
     // get_vcon_embeddings returns vectors, not text, so the canary cannot show: test for the subject entry.
-    const hasSubject = async (u: string) => !!(await rpc('get_vcon_embeddings', { p_vcon_id: u })).json?.subject;
-    expectValue('embeddings-own', 'get_vcon_embeddings(A) returns its subject embedding', await hasSubject(A.uuid), [true, true]);
-    expectValue('embeddings-none', 'get_vcon_embeddings(no-tenant vCon) returns a subject embedding', await hasSubject(N.uuid), [false, true], true);
-    expectValue('embeddings-bn', "get_vcon_embeddings(B's vCon with NULL children) returns a subject embedding", await hasSubject(BN.uuid), [false, true], true);
-    expectValue('embeddings-b', "get_vcon_embeddings(B) returns a subject embedding", await hasSubject(B.uuid), [false, false]);
+    // It is VOLATILE, so under the pack a tenant cannot call it at all.
+    for (const [id, f, want] of [['own', A, true], ['none', N, true], ['bn', BN, true], ['b', B, false]] as const) {
+      const er = await rpc('get_vcon_embeddings', { p_vcon_id: f.uuid });
+      if (BASELINE) {
+        expectValue(`embeddings-${id}`, `get_vcon_embeddings(${f.key}) returns a subject embedding`, !!er.json?.subject, [want, want], id === 'none' || id === 'bn');
+      } else {
+        expect(`embeddings-${id}`, `get_vcon_embeddings(${f.key}): a volatile function, refused`, er, ['denied', 'denied']);
+      }
+    }
     expect('kw-b', 'B: keyword "zebra" sees B and not A', await rpc('search_vcons_keyword', { query_text: 'zebra' }, T.B), ['isolated', 'leak'], 'B');
     expect('tags-date-b', 'B: search_vcons_by_tags_and_date sees B and not A', await rpc('search_vcons_by_tags_and_date', { tag_filter: tags }, T.B), ['isolated', 'leak'], 'B');
 
@@ -402,19 +411,27 @@ async function main(): Promise<number> {
 
     // ------------------------------------------------------------ writes
     rep.section('tables: write, upsert, update, delete');
-    // A's own vCon for positive writes, with one row in every table.
+    // Under the pack a tenant reads and deletes; it writes nothing, its own rows included.
     const own = freshId('aaaaaaaa');
     const ownDialog = freshId('aaaaaaaa');
     let r = await api(stack, 'POST', '/vcons', { token: T.A, body: rowBody('vcons', { vcon: own, tenant: TENANT_A, id: own, idx: 0 }), prefer: 'return=representation' });
-    expect('write-own-vcons', 'A inserts its own vCon', r, ['isolated', 'isolated']);
+    expect('write-own-vcons', 'A inserts its own vCon', r, ['denied', 'isolated']);
+    if (!BASELINE) stack.sql(`INSERT INTO vcons (id, uuid, vcon_version, subject, tenant_id) VALUES ('${own}', '${own}', '0.4.0', 'zqwrite subject', '${TENANT_A}')`);
     for (const t of VCON_CHILDREN) {
       if (t === 'embedding_queue') continue; // the vCon insert already queued one
       const id = t === 'dialog' ? ownDialog : freshId('aaaaaaaa');
       r = await api(stack, 'POST', `/${t}`, { token: T.A, body: rowBody(t, { vcon: own, tenant: TENANT_A, id, idx: 0 }), prefer: 'return=representation' });
-      expect(`write-own-${t}`, `A inserts its own ${t} row`, r, ['isolated', 'isolated']);
+      expect(`write-own-${t}`, `A inserts its own ${t} row`, r, ['denied', 'isolated']);
     }
     r = await api(stack, 'POST', '/party_history', { token: T.A, body: rowBody('party_history', { vcon: own, dialog: ownDialog, tenant: TENANT_A, id: freshId('aaaaaaaa'), idx: 0 }), prefer: 'return=representation' });
-    expect('write-own-party_history', 'A inserts its own party_history row', r, ['isolated', 'isolated']);
+    expect('write-own-party_history', 'A inserts its own party_history row', r, ['denied', 'isolated']);
+    r = await api(stack, 'PATCH', `/vcons?uuid=eq.${own}`, { token: T.A, body: { subject: 'zqwrite renamed' }, prefer: 'return=representation' });
+    expect('write-update-own', 'A updates its own vCon', r, ['denied', 'isolated']);
+    const viaView = freshId('aaaaaaaa');
+    r = await api(stack, 'POST', '/vcons_legacy', { token: T.A, body: { id: viaView, uuid: viaView, vcon_version: '0.4.0', subject: 'zqwrite view' } });
+    expectValue('write-view', `A inserts through the vcons_legacy view, leaving a vCon with no tenant (${brief(r)})`,
+      r.status < 300 ? `written, tenant ${tenantOf('vcons', 'uuid', viaView)}` : 'refused', ['refused', 'written, tenant NULL'], true);
+    stack.sql(`DELETE FROM vcons WHERE uuid = '${viaView}'`);
     r = await api(stack, 'POST', '/vcons', { token: T.A, body: rowBody('vcons', { vcon: '', tenant: null, id: freshId('aaaaaaaa'), idx: 0 }), prefer: 'return=representation' });
     expectValue('write-null-vcon', 'A inserts a vCon with no tenant (before the pack, every tenant reads it)', r.status < 300 ? 'written' : 'refused', ['refused', 'written'], true);
     r = await api(stack, 'POST', '/vcons', { token: T.A, body: rowBody('vcons', { vcon: '', tenant: TENANT_B, id: freshId('aaaaaaaa'), idx: 0 }) });
@@ -447,9 +464,24 @@ async function main(): Promise<number> {
     expectValue('probe', "a child insert answers the same for B's uuid as for an unknown uuid",
       `${probeB.status} ${probeB.json?.code}` === `${probeNone.status} ${probeNone.json?.code}` ? 'same' : `differs (${probeB.status} ${probeB.json?.code} vs ${probeNone.status} ${probeNone.json?.code})`,
       ['same', `differs (${probeB.status} ${probeB.json?.code} vs ${probeNone.status} ${probeNone.json?.code})`], true);
+    // A vCon insert with B's uuid against one with a fresh uuid: a duplicate-key
+    // error told A that B's uuid exists. Under the pack both are refused alike.
+    const fresh = freshId('aaaaaaaa');
     const dupB = await api(stack, 'POST', '/vcons', { token: T.A, body: rowBody('vcons', { vcon: '', tenant: TENANT_A, id: B.uuid, idx: 0 }) });
-    rep.note(`${MODE}-probe-unique`, "A inserts a vCon with B's uuid: a unique key still answers differently from a fresh uuid",
-      `${brief(dupB)}. uuids are random v4 and the lane does not insert, so this is recorded, not failed`);
+    const dupFresh = await api(stack, 'POST', '/vcons', { token: T.A, body: rowBody('vcons', { vcon: '', tenant: TENANT_A, id: fresh, idx: 0 }) });
+    const sig = (x: Res) => `${x.status} ${x.json?.code ?? ''}`.trim();
+    expectValue('probe-unique', "a vCon insert answers the same for B's uuid as for a fresh one",
+      sig(dupB) === sig(dupFresh) ? 'same' : 'differs', ['same', 'differs'], true);
+    stack.sql(`DELETE FROM vcons WHERE uuid = '${fresh}'`);
+    // The squat: A stores a uuid first; the writer's later post for B keeps A's tenant (a stored tenant wins).
+    const squat = freshId('aaaaaaaa');
+    r = await api(stack, 'POST', '/vcons', { token: T.A, body: rowBody('vcons', { vcon: '', tenant: TENANT_A, id: squat, idx: 0 }) });
+    await rpc('save_vcon_batch', {
+      p_vcons: [{ id: squat, uuid: squat, vcon_version: '0.4.0', subject: `zebra ${B.canary} squatted`, created_at: '2026-11-01T00:00:00Z', updated_at: '2026-11-01T00:00:00Z', tenant_id: TENANT_B }],
+    }, T.svc);
+    expectValue('squat', `A claims a uuid before the writer stores B's vCon under it (A's insert: ${brief(r)}); the vCon belongs to`,
+      tenantOf('vcons', 'uuid', squat), [TENANT_B, TENANT_A], true);
+    stack.sql(`DELETE FROM vcons WHERE uuid = '${squat}'`);
     const n0 = NONE();
     r = await api(stack, 'POST', '/parties', { token: T.A, body: rowBody('parties', { vcon: n0.uuid, tenant: null, id: freshId('eeeeeeee'), idx: 97 }), prefer: 'return=minimal' });
     const attached = Number(stack.sql(`SELECT count(*) FROM parties WHERE party_index = 97`).trim());
@@ -465,7 +497,8 @@ async function main(): Promise<number> {
       r = await api(stack, 'POST', `/${t}?on_conflict=${pkCol}`, { token: T.A, body, prefer: 'resolution=merge-duplicates,return=representation' });
       rep.check(`${MODE}-upsert-b-${t}`, `A upserts over B's ${t} row: refused, row unchanged`, r.status >= 400 && rowState(t, pkCol, pk) === before && seen(r.body, 'A').foreign.length === 0, brief(r));
       r = await api(stack, 'PATCH', `/${t}?${pkCol}=eq.${pk}`, { token: T.A, body: { tenant_id: TENANT_A }, prefer: 'return=representation' });
-      rep.check(`${MODE}-patch-b-${t}`, `A updates B's ${t} row: no row matched, row unchanged`, r.status < 300 && isEmptyBody(r) && rowState(t, pkCol, pk) === before, brief(r));
+      rep.check(`${MODE}-patch-b-${t}`, `A updates B's ${t} row: ${BASELINE ? 'no row matched' : 'refused'}, row unchanged`,
+        (BASELINE ? r.status < 300 && isEmptyBody(r) : r.status === 403) && rowState(t, pkCol, pk) === before, brief(r));
       r = await api(stack, 'DELETE', `/${t}?${pkCol}=eq.${pk}`, { token: T.A, prefer: 'return=representation' });
       rep.check(`${MODE}-delete-b-${t}`, `A deletes B's ${t} row: no row matched, row still there`, r.status < 300 && isEmptyBody(r) && rowState(t, pkCol, pk) === before, brief(r));
     }
@@ -505,6 +538,24 @@ async function main(): Promise<number> {
     let before = rowState('vcons', 'uuid', B.uuid);
     r = await rpc('save_vcon_batch', batch(B.uuid, TENANT_A, 'zqhijack'));
     rep.check(`${MODE}-batch-b`, "A save_vcon_batch over B's vCon: refused, unchanged", r.status >= 400 && rowState('vcons', 'uuid', B.uuid) === before, brief(r));
+    const batchB = r;
+    const batchFresh = await rpc('save_vcon_batch', batch(freshId('aaaaaaaa'), TENANT_A, 'zqwrite batch'));
+    expectValue('batch-oracle', "save_vcon_batch answers the same for B's id as for a fresh id",
+      sig(batchB) === sig(batchFresh) ? 'same' : `differs (${sig(batchB)} vs ${sig(batchFresh)})`,
+      ['same', `differs (${sig(batchB)} vs ${sig(batchFresh)})`], true);
+    // Every VOLATILE function, the kind that may write, is closed to tenants.
+    const writeRpcs: Array<[string, unknown]> = [
+      ['save_vcon_batch', batch(freshId('aaaaaaaa'), TENANT_A, 'zqwrite')],
+      ['remove_vcon_child_and_compact', { p_table: 'attachments', p_vcon_id: A.uuid, p_index: 0 }],
+      ['mark_vcon_synced', { p_vcon_id: A.uuid, p_vcon_uuid: A.uuid, p_s3_key: 'zqwrite' }],
+      ['recompute_vcon_conversation_start', { p_schema: 'public', p_vcon_ids: [A.uuid] }],
+      ['backfill_search_vector_batch', { p_table_name: 'dialog', p_batch_size: 10 }],
+      ['get_unsynced_vcons', { p_limit: 10 }],
+      ['check_vcon_embeddings_complete', { p_vcon_id: A.uuid }],
+    ];
+    for (const [fn, args] of writeRpcs) {
+      strictOnly(`volatile-${fn}`, `A POST /rpc/${fn} (VOLATILE)`, await rpc(fn, args), 'denied');
+    }
     const orphan = freshOrphan('vcons');
     const orphanBefore = tenantOf('vcons', 'uuid', orphan);
     r = await rpc('save_vcon_batch', batch(orphan, TENANT_A, 'zqhijack'));
@@ -582,6 +633,21 @@ async function main(): Promise<number> {
                         (SELECT count(*) FROM party_history WHERE dialog_id = '${heldDialog}' AND tenant_id = '${TENANT_A}')`).trim(), ['1,3,1', '1,3,1']);
     expect('release-after', 'A reads the released vCon', await api(stack, 'GET', `/vcons?select=*&uuid=eq.${held}`, { token: T.A }), ['isolated', 'isolated']);
     stack.sql(`DELETE FROM vcons WHERE uuid = '${held}'`);
+
+    // ------------------------------------------------------------ TRUNCATE
+    // Row level security does not govern TRUNCATE. A session that can SET ROLE
+    // authenticated (a PostgREST login, for one) could empty every tenant's rows.
+    rep.section('TRUNCATE and TRIGGER as authenticated (SQL, rolled back)');
+    for (const t of [...TENANT_TABLES, 'privacy_requests', 'migration_reports'] as string[]) {
+      const tr = stack.trySql(`BEGIN; SET LOCAL ROLE authenticated; TRUNCATE ${t} CASCADE; ROLLBACK;`);
+      expectValue(`truncate-${t}`, `SET ROLE authenticated; TRUNCATE ${t}`, tr.ok ? 'emptied' : (tr.out.includes('permission denied') ? 'refused' : tr.out.trim().slice(-120)),
+        ['refused', 'emptied'], true);
+    }
+    const trg = stack.trySql(`BEGIN; SET LOCAL ROLE authenticated;
+      CREATE TRIGGER zq_probe BEFORE INSERT ON vcons FOR EACH ROW EXECUTE FUNCTION enqueue_embedding(); ROLLBACK;`);
+    expectValue('trigger-vcons', 'SET ROLE authenticated; CREATE TRIGGER on vcons', trg.ok ? 'created' : (trg.out.includes('permission denied') ? 'refused' : trg.out.trim().slice(-120)),
+      ['refused', 'created'], true);
+    expectValue('rows-intact', 'every fixture vCon is still there', stack.sql(`SELECT count(*) FROM vcons WHERE uuid IN (${Object.values(FIXTURES).map(f => `'${f.uuid}'`).join(',')})`).trim(), ['6', '6']);
 
     // ------------------------------------------------------------ delete_vcon
     rep.section('delete_vcon');

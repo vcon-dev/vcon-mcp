@@ -91,7 +91,11 @@ async function main(): Promise<number> {
       ['g-base-spoof', "with no claims and app.current_tenant_id set, the tenant is 't-guard-spoof'"],
       ['g-base-quarantine', 'a _quarantine claim gives tenant'],
       ['g-base-mv', 'holds a privilege on public.vcon_tags_mv'],
-      ['g-base-rpc', 'search_vcons_keyword(text,timestamp with time zone,timestamp with time zone,jsonb,integer,text) tests a tenant for NULL'],
+      ['g-base-rpc', 'search_vcons_keyword(text,timestamp with time zone,timestamp with time zone,jsonb,integer,text) treats the tenant in a NULL-tolerant way (IS NULL)'],
+      ['g-base-truncate', 'anon or authenticated holds TRUNCATE, TRIGGER, REFERENCES or MAINTAIN on public.vcons'],
+      ['g-base-insert', 'authenticated can insert into or update tenant table public.vcons'],
+      ['g-base-write-rpc', 'save_vcon_batch(jsonb,jsonb,jsonb,jsonb,jsonb) is VOLATILE, so it may write'],
+      ['g-base-view-write', 'authenticated can write through view public.vcons_legacy'],
       ['g-base-tagdate', 'search_vcons_by_tags_and_date(jsonb,timestamp with time zone,timestamp with time zone,integer,text) reads vcons without a tenant predicate'],
       ['g-base-key', 'parties has no key to vcons that includes tenant_id'],
       ['g-base-phkey', 'party_history has no key to dialog that includes tenant_id'],
@@ -141,6 +145,15 @@ async function main(): Promise<number> {
     const guardChecks = /catalog-guard: ok, (\d+) checks passed/.exec(g.out)?.[1];
     rep.check('apply-guard', 'apply.sh --check passes', g.code === 0, guardChecks ? `${guardChecks} guard checks passed` : g.out.slice(-300));
 
+    // apply.sh keeps the connection string out of its arguments.
+    let u = stack.runApplyScript(['--check', 'postgresql://postgres@localhost/vcon_tenant']);
+    rep.check('url-arg', 'apply.sh refuses a connection string given as an argument (exit 2)', u.code === 2 && u.out.includes('not as an argument'), `exit ${u.code}`);
+    u = stack.runApplyScript(['--check'], { DATABASE_URL: 'postgresql://postgres:p%40ss%2Fword@localhost/vcon_tenant' });
+    rep.check('url-password', 'apply.sh connects with a password URL in DATABASE_URL (password moved to PGPASSWORD)', u.code === 0, `exit ${u.code}`);
+    stack.writeFile('/tmp/strict-url', 'postgresql://postgres@localhost/vcon_tenant\n');
+    u = stack.runApplyScript(['--check', '--url-file', '/tmp/strict-url'], { DATABASE_URL: '' });
+    rep.check('url-file', 'apply.sh reads the connection string from --url-file', u.code === 0, `exit ${u.code}`);
+
     // ------------------------------------------------------------ 5
     rep.section('5. a second run changes nothing');
     const s3 = snapshot(stack);
@@ -173,7 +186,7 @@ async function main(): Promise<number> {
     // The headline case: an upgrade CREATE OR REPLACEs a search RPC with its NULL branch.
     const kw = Object.keys(upstream).find(k => k.startsWith('search_vcons_keyword('))!;
     regress('up-rpc', 'search_vcons_keyword replaced by its upstream body', `${upstream[kw]};`,
-      `${kw} tests a tenant for NULL`);
+      `${kw} treats the tenant in a NULL-tolerant way (IS NULL)`);
     regress('up-all-rpcs', 'all 12 RPCs replaced by their upstream bodies', Object.values(upstream).join(';\n') + ';',
       'reads vcons without a tenant predicate');
     regress('up-fallback-migration', 're-running migration 20251122175916 (session fallback)',
@@ -205,16 +218,81 @@ async function main(): Promise<number> {
     regress('up-backfill', 'authenticated granted backfill_vcon_tenant_ids',
       `GRANT EXECUTE ON FUNCTION backfill_vcon_tenant_ids(integer, boolean) TO authenticated`,
       'backfill_vcon_tenant_ids(integer,boolean) is service_role only');
+    regress('up-truncate', 'authenticated granted TRUNCATE, TRIGGER and MAINTAIN on vcons again',
+      `GRANT TRUNCATE, TRIGGER, MAINTAIN ON vcons TO authenticated`,
+      'anon or authenticated holds TRUNCATE, TRIGGER, REFERENCES or MAINTAIN on public.vcons');
+    regress('up-references-public', 'PUBLIC granted REFERENCES on privacy_requests',
+      `GRANT REFERENCES ON privacy_requests TO PUBLIC`,
+      'anon or authenticated holds TRUNCATE, TRIGGER, REFERENCES or MAINTAIN on public.privacy_requests');
+    regress('up-insert', 'authenticated granted INSERT and UPDATE on parties again',
+      `GRANT INSERT, UPDATE ON parties TO authenticated`,
+      'authenticated can insert into or update tenant table public.parties');
+    regress('up-insert-column', 'authenticated granted UPDATE on one column of vcons',
+      `GRANT UPDATE (subject) ON vcons TO authenticated`,
+      'authenticated can insert into or update tenant table public.vcons');
+    regress('up-view-write', 'authenticated granted INSERT through vcons_legacy',
+      `GRANT INSERT ON vcons_legacy TO authenticated`,
+      'authenticated can write through view public.vcons_legacy');
+    regress('up-write-rpc', 'authenticated granted save_vcon_batch again',
+      `GRANT EXECUTE ON FUNCTION save_vcon_batch(jsonb, jsonb, jsonb, jsonb, jsonb) TO authenticated`,
+      'save_vcon_batch(jsonb,jsonb,jsonb,jsonb,jsonb) is VOLATILE, so it may write');
+    regress('up-write-rpc2', 'authenticated granted remove_vcon_child_and_compact again',
+      `GRANT EXECUTE ON FUNCTION remove_vcon_child_and_compact(text, uuid, integer) TO authenticated`,
+      'remove_vcon_child_and_compact(text,uuid,integer) is VOLATILE, so it may write');
+    stack.sql(`CREATE ROLE guard_probe_owner NOLOGIN; GRANT CREATE ON SCHEMA public TO guard_probe_owner; GRANT guard_probe_owner TO postgres;`);
+    regress('up-scoped-owner', 'vcon_tags_scoped given another owner',
+      `ALTER VIEW vcon_tags_scoped OWNER TO guard_probe_owner`,
+      'public.vcon_tags_scoped is not owned by the owner of vcon_tags_mv');
+    stack.sql(`REVOKE CREATE ON SCHEMA public FROM guard_probe_owner; DROP ROLE guard_probe_owner;`);
+    regress('up-refresh-trigger', 'the conversation_start refresh trigger replaced as SECURITY INVOKER',
+      `ALTER FUNCTION child_refresh_conversation_start() SECURITY INVOKER RESET search_path`,
+      'child_refresh_conversation_start() runs as the caller');
+
+    // NULL-tolerant spellings other than IS NULL. The pack does not rewrite
+    // these; the guard has to stop them. The first is the review's case.
+    const tolerantBodies: Array<[string, string, string]> = [
+      ['not-distinct-or-coalesce', `v.tenant_id IS NOT DISTINCT FROM current_tenant OR coalesce(current_tenant, '') = ''`, 'IS [NOT] DISTINCT FROM'],
+      ['not-distinct', `v.tenant_id IS NOT DISTINCT FROM current_tenant`, 'IS [NOT] DISTINCT FROM'],
+      ['coalesce', `v.tenant_id = coalesce(current_tenant, v.tenant_id)`, 'COALESCE or NULLIF'],
+      ['nullif', `nullif(current_tenant, '') IS NOT NULL AND v.tenant_id = current_tenant OR nullif(current_tenant, '') = v.tenant_id`, 'COALESCE or NULLIF'],
+      ['empty-string', `v.tenant_id = current_tenant OR current_tenant = ''`, 'compared with an empty string'],
+      ['claim-is-null', `v.tenant_id = get_current_tenant_id() OR get_current_tenant_id() IS NULL`, 'IS NULL'],
+    ];
+    for (const [name, predicate, spelling] of tolerantBodies) {
+      const fn = `guard_probe_${name.replace(/-/g, '_')}`;
+      regress(`up-tolerant-${name}`, `a reachable function with a NULL-tolerant predicate (${name})`,
+        `CREATE FUNCTION public.${fn}() RETURNS SETOF uuid LANGUAGE plpgsql STABLE AS $f$
+           DECLARE current_tenant text := get_current_tenant_id();
+           BEGIN RETURN QUERY SELECT v.uuid FROM vcons v WHERE ${predicate}; END $f$;
+         REVOKE EXECUTE ON FUNCTION public.${fn}() FROM PUBLIC, anon;
+         GRANT EXECUTE ON FUNCTION public.${fn}() TO authenticated, service_role;`,
+        `${fn}() treats the tenant in a NULL-tolerant way (${spelling})`,
+        { packFixes: false, cleanup: `DROP FUNCTION public.${fn}()` });
+    }
+    // The same predicate in a function only service_role can execute is not a tenant path; the guard leaves it.
+    stack.sql(`CREATE FUNCTION public.guard_probe_service() RETURNS SETOF uuid LANGUAGE plpgsql STABLE AS $f$
+                 DECLARE current_tenant text := get_current_tenant_id();
+                 BEGIN RETURN QUERY SELECT v.uuid FROM vcons v WHERE v.tenant_id IS NOT DISTINCT FROM current_tenant; END $f$;
+               REVOKE EXECUTE ON FUNCTION public.guard_probe_service() FROM PUBLIC, anon, authenticated;
+               GRANT EXECUTE ON FUNCTION public.guard_probe_service() TO service_role;`);
+    rep.check('tolerant-service-only', 'the same predicate in a service_role-only function passes the guard', guard(stack).code === 0);
+    stack.sql(`DROP FUNCTION public.guard_probe_service()`);
+
+    stack.sql(`CREATE TABLE public.guard_probe_later (id int)`);
+    rep.eq('later-table', 'a table postgres creates after the pack grants authenticated no TRUNCATE, TRIGGER, REFERENCES or MAINTAIN', 'f',
+      stack.sql(`SELECT has_table_privilege('authenticated', 'public.guard_probe_later', 'TRUNCATE,TRIGGER,REFERENCES,MAINTAIN')`).trim());
+    stack.sql(`DROP TABLE public.guard_probe_later`);
+
     regress('up-extra-policy', 'an extra permissive policy that admits every row',
       `CREATE POLICY open_read ON dialog FOR SELECT TO authenticated USING (true)`,
       'policy open_read on public.dialog is not the tenant filter', { packFixes: false, cleanup: 'DROP POLICY open_read ON dialog' });
     regress('up-definer', 'a SECURITY DEFINER function authenticated can execute',
-      `CREATE FUNCTION public.guard_probe_definer() RETURNS bigint LANGUAGE sql SECURITY DEFINER AS 'SELECT count(*) FROM vcons';
+      `CREATE FUNCTION public.guard_probe_definer() RETURNS bigint LANGUAGE sql STABLE SECURITY DEFINER AS 'SELECT count(*) FROM vcons';
        REVOKE EXECUTE ON FUNCTION public.guard_probe_definer() FROM PUBLIC, anon;
        GRANT EXECUTE ON FUNCTION public.guard_probe_definer() TO authenticated;`,
       'guard_probe_definer() is SECURITY DEFINER', { packFixes: false, cleanup: 'DROP FUNCTION public.guard_probe_definer()' });
     regress('up-anon-fn', 'a new function left executable by PUBLIC (and so anon)',
-      `CREATE FUNCTION public.guard_probe_public() RETURNS int LANGUAGE sql AS 'SELECT 1'`,
+      `CREATE FUNCTION public.guard_probe_public() RETURNS int LANGUAGE sql STABLE AS 'SELECT 1'`,
       'anon can execute guard_probe_public()', { packFixes: false, cleanup: 'DROP FUNCTION public.guard_probe_public()' });
     regress('up-matview', 'a new materialized view readable by authenticated',
       `CREATE MATERIALIZED VIEW public.guard_probe_mv AS SELECT uuid, tenant_id FROM vcons; GRANT SELECT ON public.guard_probe_mv TO authenticated;`,

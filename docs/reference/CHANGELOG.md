@@ -118,6 +118,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   vCon's, and changes nothing on a second run. Re-run it after every upgrade;
   `apply.sh --check` runs the guard alone. See `docs/guide/strict-tenant-pack.md`
   - one policy per tenant table, for `authenticated`, with no NULL branch; RLS forced
+  - tenant roles read and delete only: `authenticated` keeps `SELECT` and `DELETE` on the tenant
+    tables and `SELECT` on views, and executes no `VOLATILE` function (`save_vcon_batch`,
+    `remove_vcon_child_and_compact` and the other write RPCs, plus three read-only helpers
+    declared `VOLATILE`: `get_vcon_embeddings`, `get_unsynced_vcons`,
+    `check_vcon_embeddings_complete`). `PUBLIC`, `anon` and `authenticated` lose `TRUNCATE`,
+    `TRIGGER`, `REFERENCES` and `MAINTAIN` on every table and view, also by default for tables
+    `postgres` creates later. `child_refresh_conversation_start()` runs as its owner so a
+    tenant's delete still refreshes `conversation_start`
   - `get_current_tenant_id()` reads the JWT `tenant_id` claim only; no claim, an empty claim and
     `_quarantine` mean no tenant, and the `app.current_tenant_id` fallback is gone
   - `vcon_tags_scoped`, a tenant-filtered view over `vcon_tags_mv`; `authenticated` loses
@@ -132,6 +140,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     and `authenticated` if a later grant reopened one
   - with the pack applied, a write whose `vcons` row has no `tenant_id` fails with a not-null
     error, a `save_vcon_batch` re-post included; `TENANT_MODE=writer` always stamps one
+  - the catalog guard also fails on those privileges, on a reachable `VOLATILE` function, and on a
+    NULL-tolerant tenant test in a reachable function: `IS NULL`, `IS [NOT] DISTINCT FROM`,
+    `COALESCE` or `NULLIF` around the tenant, or a comparison with `''`. It pins the owner of
+    `vcon_tags_scoped`
+  - with the service key and no `tenant_id` claim, every rewritten search RPC returns nothing:
+    `search_vcons_content`, `search_vcons_semantic`, `search_vcons_hybrid`, `search_by_tags`,
+    `search_vcons` with tags or a dealer filter, `vcon_search`, `vcon_aggregate` and the matching
+    REST routes. The guide lists each
+  - the first apply scans every tenant table under `ACCESS EXCLUSIVE` locks in one transaction;
+    apply it in a maintenance window
+  - `apply.sh` takes the connection string from `DATABASE_URL` or `--url-file`, not from its
+    arguments, and hands the password to `psql` in `PGPASSWORD`
 - `tests/tenant-isolation/`: a REST-level tenant isolation harness on a throwaway PostgreSQL 17
   with pgvector and PostgREST 16.2 in Docker, with signed JWTs and a canary per tenant.
   `npm run test:tenant` (strict pack), `npm run test:tenant:baseline` (unmodified schema, asserts

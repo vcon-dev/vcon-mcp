@@ -21,7 +21,7 @@ Two things differ until the [strict pack](./strict-tenant-pack.md) is applied:
 ## Quick diagnosis
 
 1. **Which key does the server use?** The startup log shows `key_type`. With `service_role`, tables are not filtered by tenant. That is expected: the service key is for the writer and operators, not for tenant traffic.
-2. **Is the strict pack in place?** Run `supabase/strict/apply.sh --check "$DATABASE_URL"`. Exit 0 means it is; exit 4 lists what is missing.
+2. **Is the strict pack in place?** Run `supabase/strict/apply.sh --check` with `DATABASE_URL` set in the environment. Exit 0 means it is; exit 4 lists what is missing.
 3. **Do the rows have tenants?**
 
    ```sql
@@ -83,9 +83,9 @@ Check, in order:
 2. The rows carry a different tenant id than the token, for example a different case or a stray space.
 3. The search RPC needs the tag view: with the strict pack, tag searches read `vcon_tags_scoped`, which shows only the caller's tenant. If tags look stale, the writer has not refreshed `vcon_tags_mv`; a tenant token cannot refresh it.
 
-### A write fails with a row level security or not-null error
+### A write fails with a row level security, permission or not-null error
 
-With the strict pack, every row needs a tenant. An `authenticated` caller can write only rows of its own tenant, and a child must belong to the same tenant as its vCon. The service key may write any tenant but not none.
+With the strict pack, an `authenticated` caller reads and deletes its own tenant's rows and writes nothing else: inserts, updates and write RPCs such as `save_vcon_batch` are refused with a permission error. Writes go through the service key, which may write any tenant but not none, and a child must belong to the same tenant as its vCon.
 
 ## Test tenant isolation
 

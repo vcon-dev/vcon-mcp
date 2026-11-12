@@ -18,18 +18,38 @@
 --   keys       every foreign key between two tenant tables includes
 --              tenant_id on both sides, and each child of vcons and dialog
 --              has one.
+--   privileges anon and authenticated hold no TRUNCATE, TRIGGER, REFERENCES or
+--              MAINTAIN on any table or view (row level security does not
+--              govern them), no INSERT or UPDATE on a tenant table, and only
+--              SELECT on a view.
 --   rpcs       no function anon or authenticated can execute is SECURITY
---              DEFINER, tests a tenant for NULL, reads vcon_tags_mv or reads
---              the app.current_tenant_id session setting. The tag-and-date
---              search functions carry a tenant predicate. Functions meant for
---              service_role only (exec_sql, the tag refresh, the tenant
---              backfills, release_vcon_from_quarantine, ...) stay that way.
+--              DEFINER or VOLATILE (the only kind that may write), reads
+--              vcon_tags_mv, reads a session setting other than the JWT
+--              claims, or treats the tenant in a NULL-tolerant way: IS NULL,
+--              IS [NOT] DISTINCT FROM, COALESCE or NULLIF around it, or a
+--              comparison with ''. The tag-and-date search functions carry a
+--              tenant predicate. Functions meant for service_role only
+--              (exec_sql, the tag refresh, the tenant backfills,
+--              release_vcon_from_quarantine, ...) stay that way.
+--              child_refresh_conversation_start() runs as its owner, so a
+--              tenant's delete can refresh conversation_start.
 --   views      every view runs as the caller (security_invoker), except
---              vcon_tags_scoped, which must be exactly the tenant filter.
+--              vcon_tags_scoped, which must be exactly the tenant filter,
+--              a security barrier, and owned by the owner of vcon_tags_mv.
 --   matviews   anon and authenticated hold no privilege on any.
 --   anon       anon holds no privilege on any table or function.
 --   tenant id  get_current_tenant_id() reads the signed claim only: no claim,
 --              an empty claim, `_quarantine` and a session setting all give NULL.
+--
+-- What it cannot see: the function-body checks are text patterns on the
+-- functions tenant roles can execute. They miss a tenant test written without
+-- those spellings (`OR true`, `length(current_tenant) = 0`, a tenant held in a
+-- variable whose name lacks "tenant"), a predicate that is simply missing, and
+-- SQL assembled at run time from pieces. For an `authenticated` caller the
+-- policies still bind, since these functions run as the caller; what a body
+-- test protects is a service_role caller that passes a tenant claim. Trigger
+-- functions are not scanned (they cannot be called directly), nor are
+-- functions only service_role can execute.
 DO $guard$
 DECLARE
   schemas constant text[] := ARRAY['public', 'vkong'];
@@ -37,7 +57,9 @@ DECLARE
     'party_history', 'vcon_embeddings', 'embedding_queue', 's3_sync_tracking'];
   strict_expr constant text := '^\(tenant_id = \( SELECT (public\.)?get_current_tenant_id\(\) AS get_current_tenant_id\)\)$';
   scoped_def constant text := 'SELECT tenant_id, vcon_id, tags, tag_updated_at, tag_created_at FROM vcon_tags_mv WHERE (tenant_id = ( SELECT get_current_tenant_id() AS get_current_tenant_id));';
-  null_branch constant text := '(current_tenant|tenant_id|get_current_tenant_id\(\))\s+IS\s+NULL';
+  -- An identifier containing "tenant", optionally called: current_tenant, v.tenant_id, get_current_tenant_id().
+  tid constant text := '\w*tenant\w*(\s*\(\s*\))?';
+  tolerant text;
   roles constant oid[] := ARRAY[0::oid, 'anon'::regrole::oid, 'authenticated'::regrole::oid];
   service_only constant text[] := ARRAY['exec_sql', 'explain_query', 'set_tenant_context', 'clear_tenant_context',
     'get_connection_metrics', 'get_index_health', 'get_performance_metrics', 'get_storage_efficiency',
@@ -52,6 +74,8 @@ DECLARE
   got text;
   -- MAINTAIN (REFRESH, VACUUM, ...) is a table privilege from PostgreSQL 17.
   mv_privs constant text := 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'
+    || CASE WHEN current_setting('server_version_num')::int >= 170000 THEN ',MAINTAIN' ELSE '' END;
+  noread constant text := 'TRUNCATE,TRIGGER,REFERENCES'
     || CASE WHEN current_setting('server_version_num')::int >= 170000 THEN ',MAINTAIN' ELSE '' END;
 BEGIN
   -- ---------------------------------------------------------------- tables
@@ -157,9 +181,31 @@ BEGIN
     END IF;
   END LOOP;
 
+  -- ---------------------------------------------------------------- privileges
+  FOR r IN
+    SELECT n.nspname || '.' || c.relname AS name, c.oid, c.relkind,
+           EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attname = 'tenant_id' AND NOT a.attisdropped) AS tenant
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = ANY (schemas) AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+     ORDER BY 1
+  LOOP
+    checks := checks + 3;
+    IF has_table_privilege('authenticated', r.oid, noread) OR has_table_privilege('anon', r.oid, noread) THEN
+      v := v || format('privileges: anon or authenticated holds TRUNCATE, TRIGGER, REFERENCES or MAINTAIN on %s, which row level security does not govern', r.name);
+    END IF;
+    IF r.tenant AND r.relkind IN ('r', 'p')
+       AND (has_any_column_privilege('authenticated', r.oid, 'INSERT,UPDATE') OR has_any_column_privilege('anon', r.oid, 'INSERT,UPDATE')) THEN
+      v := v || format('privileges: authenticated can insert into or update tenant table %s; tenant roles read and delete only', r.name);
+    END IF;
+    IF r.relkind = 'v' AND (has_any_column_privilege('authenticated', r.oid, 'INSERT,UPDATE') OR has_table_privilege('authenticated', r.oid, 'DELETE')) THEN
+      v := v || format('privileges: authenticated can write through view %s', r.name);
+    END IF;
+  END LOOP;
+
   -- ---------------------------------------------------------------- rpcs
   FOR r IN
-    SELECT p.oid::regprocedure AS sig, p.prosecdef, p.prosrc, p.proname,
+    SELECT p.oid::regprocedure AS sig, p.prosecdef, p.prosrc, p.proname, p.provolatile,
+           p.prorettype IN ('trigger'::regtype, 'event_trigger'::regtype) AS is_trigger,
            has_function_privilege('anon', p.oid, 'EXECUTE') AS anon_x
       FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
      WHERE n.nspname = ANY (schemas)
@@ -167,17 +213,31 @@ BEGIN
        AND (has_function_privilege('anon', p.oid, 'EXECUTE') OR has_function_privilege('authenticated', p.oid, 'EXECUTE'))
      ORDER BY 1::text
   LOOP
-    checks := checks + 5;
+    checks := checks + 6;
     IF r.prosecdef THEN
       v := v || format('rpcs: %s is SECURITY DEFINER and anon or authenticated can execute it', r.sig);
     END IF;
     IF r.anon_x THEN
       v := v || format('rpcs: anon can execute %s', r.sig);
     END IF;
-    IF r.prosrc ~* null_branch THEN
-      v := v || format('rpcs: %s tests a tenant for NULL, which admits rows with no tenant', r.sig);
+    IF NOT r.is_trigger AND r.provolatile = 'v' THEN
+      v := v || format('rpcs: %s is VOLATILE, so it may write, and authenticated or anon can execute it', r.sig);
     END IF;
-    IF r.prosrc ~ '\mvcon_tags_mv\M' THEN
+    -- get_current_tenant_id() is checked by behaviour below.
+    IF NOT r.is_trigger AND r.proname <> 'get_current_tenant_id' THEN
+      tolerant := CASE
+        WHEN r.prosrc ~* (tid || '\s*\)?\s+IS\s+NULL') THEN 'IS NULL'
+        WHEN r.prosrc ~* (tid || '\s*\)?\s+IS\s+(NOT\s+)?DISTINCT\s+FROM')
+          OR r.prosrc ~* ('IS\s+(NOT\s+)?DISTINCT\s+FROM\s+\(?\s*(\w+\.)?' || tid) THEN 'IS [NOT] DISTINCT FROM'
+        WHEN r.prosrc ~* '\m(coalesce|nullif)\s*\((\([^()]*\)|[^()])*tenant' THEN 'COALESCE or NULLIF'
+        WHEN r.prosrc ~* (tid || '\s*\)?\s*(=|<>|!=)\s*''''')
+          OR r.prosrc ~* ('''''\s*(=|<>|!=)\s*\(?\s*(\w+\.)?' || tid) THEN 'compared with an empty string'
+      END;
+      IF tolerant IS NOT NULL THEN
+        v := v || format('rpcs: %s treats the tenant in a NULL-tolerant way (%s), which can admit rows with no tenant or a caller with no claim', r.sig, tolerant);
+      END IF;
+    END IF;
+    IF NOT r.is_trigger AND r.prosrc ~ '\mvcon_tags_mv\M' THEN
       v := v || format('rpcs: %s reads vcon_tags_mv, which has no row level security; read vcon_tags_scoped', r.sig);
     END IF;
     IF r.prosrc ~* 'app\.current_tenant_id' OR (r.prosrc ~* 'current_setting' AND r.prosrc !~* 'request\.jwt\.claims') THEN
@@ -209,6 +269,14 @@ BEGIN
     END IF;
   END LOOP;
 
+  -- Tenant roles cannot update vcons, so the conversation_start refresh that a
+  -- dialog or attachment delete fires has to run as its owner.
+  checks := checks + 1;
+  IF to_regprocedure('public.child_refresh_conversation_start()') IS NOT NULL
+     AND NOT (SELECT prosecdef FROM pg_proc WHERE oid = 'public.child_refresh_conversation_start()'::regprocedure) THEN
+    v := v || 'rpcs: child_refresh_conversation_start() runs as the caller, so a tenant delete of a vCon, dialog or attachment fails; re-run the pack'::text;
+  END IF;
+
   -- ---------------------------------------------------------------- views
   FOR r IN
     SELECT c.oid, n.nspname || '.' || c.relname AS name, c.relname,
@@ -216,16 +284,25 @@ BEGIN
              IN ('true', 'on', '1', 'yes') AS invoker,
            coalesce((SELECT lower(option_value) FROM pg_options_to_table(c.reloptions) WHERE option_name = 'security_barrier'), 'false')
              IN ('true', 'on', '1', 'yes') AS barrier,
-           has_table_privilege('anon', c.oid, 'SELECT') AS anon_sel
+           has_table_privilege('anon', c.oid, 'SELECT') AS anon_sel,
+           c.relowner IS DISTINCT FROM (SELECT m.relowner FROM pg_class m WHERE m.oid = to_regclass('public.vcon_tags_mv')) AS other_owner
       FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
      WHERE n.nspname = ANY (schemas) AND c.relkind = 'v'
      ORDER BY 2
   LOOP
     checks := checks + 1;
     IF r.name = 'public.vcon_tags_scoped' THEN
-      IF btrim(regexp_replace(regexp_replace(pg_get_viewdef(r.oid), '\s+', ' ', 'g'), '(public|vcon_tags_mv)\.', '', 'g')) <> scoped_def
-         OR NOT r.barrier OR r.invoker OR r.anon_sel THEN
-        v := v || 'views: public.vcon_tags_scoped is not exactly the tenant filter over vcon_tags_mv, is not a security barrier, or anon can read it';
+      IF btrim(regexp_replace(regexp_replace(pg_get_viewdef(r.oid), '\s+', ' ', 'g'), '(public|vcon_tags_mv)\.', '', 'g')) <> scoped_def THEN
+        v := v || 'views: public.vcon_tags_scoped is not exactly the tenant filter over vcon_tags_mv'::text;
+      END IF;
+      IF NOT r.barrier OR r.invoker THEN
+        v := v || 'views: public.vcon_tags_scoped must be a security barrier that runs as its owner'::text;
+      END IF;
+      IF r.anon_sel THEN
+        v := v || 'views: anon can read public.vcon_tags_scoped'::text;
+      END IF;
+      IF r.other_owner THEN
+        v := v || 'views: public.vcon_tags_scoped is not owned by the owner of vcon_tags_mv'::text;
       END IF;
     ELSIF NOT r.invoker THEN
       v := v || format('views: %s runs as its owner (no security_invoker), so row level security is checked against the owner', r.name);
