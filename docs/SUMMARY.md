@@ -10,6 +10,7 @@
 * [Tag Management](guide/tags.md)
 * [Query Prompts](guide/prompts.md)
 * [Database Tools](guide/database-tools.md)
+* [Tenant Lane](guide/tenant-lane.md)
 * [Troubleshooting](guide/troubleshooting.md)
 * [FAQ](guide/faq.md)
 
