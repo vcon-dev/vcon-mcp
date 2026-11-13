@@ -160,6 +160,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the known leaks) and `npm run test:tenant:guard` (apply script and catalog guard). The
   `Tenant isolation` workflow runs all three on pull requests. `startRest('lane')` serves
   PostgREST as the tenant lane needs it: authenticated only, no anon role
+- `tests/tenant-isolation/mcp-shape.ts`: the MCP shape. Runs the server as a tenant lane
+  (`TENANT_MODE=lane`, no key) against the lane's PostgREST through a proxy that strips
+  `/rest/v1`, with a real MCP client, real supabase-js and real pgvector. One tenant's token
+  against the other tenant's uuid and text through all five tools, its own canary through each
+  (markers looked for in every field of an answer), `delete_vcon` across tenants, of its own vCon
+  with every child, and of its own vCon when a policy refuses the delete, quarantine, missing-claim,
+  wrong-signature, `service_role` and expired tokens, every other tool, and the start refusals.
+  `npm run test:tenant:mcp` and `npm run test:tenant:mcp:baseline` (fails unless the unmodified
+  schema leaks through the lane). The `Tenant isolation` workflow runs both, and now runs on
+  pull requests whatever their base branch
 
 ### Changed
 - `IVConQueries.deleteVCon` may resolve to the number of vCons it removed. `VConService.delete`

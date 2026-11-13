@@ -5,6 +5,8 @@ import { PluginManager } from '../../src/hooks/plugin-manager.js';
 import { createLaneContext, createLaneStoreClient, LaneVConQueries } from '../../src/lane/context.js';
 import { LANE_TOOL_NAMES } from '../../src/lane/mcp-server.js';
 import { VConService } from '../../src/services/vcon-service.js';
+import { DeleteVConHandler } from '../../src/tools/handlers/vcon-crud.js';
+import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { EmbeddingError, generateEmbedding } from '../../src/utils/embeddings.js';
 import { fakeStore, TENANT_A, TENANT_B, tenantJwt, UUID_A, UUID_A2, UUID_B } from './helpers.js';
 
@@ -107,6 +109,28 @@ describe('LaneVConQueries', () => {
     })) as typeof fetch;
     const queries = new LaneVConQueries(createLaneStoreClient(tenantJwt(TENANT_A), { url: URL_, fetch: failing }));
     await expect(queries.deleteVCon(UUID_A)).rejects.toMatchObject({ message: 'JWT expired' });
+  });
+});
+
+describe("delete_vcon through the lane's query layer when the delete removes no row", () => {
+  // The existence read finds the vCon, then the DELETE matches nothing and PostgREST answers 200 with
+  // no rows: what a row-security policy that allows the read but refuses the delete gives. Only the
+  // `removed === 0` branch in VConService.delete turns that into "not found".
+  it('reports not found, and the row stays', async () => {
+    const store = fakeStore();
+    store.deleteMatchesNothing = true;
+    const queries = new LaneVConQueries(createLaneStoreClient(tenantJwt(TENANT_A), { url: URL_, fetch: store.fetch }));
+    const pluginManager = new PluginManager();
+    const context = { queries, pluginManager, vconService: new VConService({ queries, pluginManager }) } as any;
+
+    const error = await new DeleteVConHandler().handle({ uuid: UUID_A }, context).catch((e) => e);
+    expect(error).toBeInstanceOf(McpError);
+    expect(error.code).toBe(ErrorCode.InvalidRequest);
+    expect(error.message).toMatch(/not found/);
+    // The existence read found the row, and the DELETE was sent and removed nothing.
+    expect(store.requests.some((r) => r.method === 'GET' && r.params.get('uuid') === `eq.${UUID_A}`)).toBe(true);
+    expect(store.requests.filter((r) => r.method === 'DELETE')).toHaveLength(1);
+    expect(store.rows.some((r) => r.uuid === UUID_A)).toBe(true);
   });
 });
 

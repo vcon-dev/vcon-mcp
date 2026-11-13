@@ -5,16 +5,18 @@ name: Tenant isolation
 # (postgrest/postgrest:v16.2), the image tags pinned in
 # tests/tenant-isolation/stack.ts. No npm install: the harness uses Node
 # built-ins only, and Node 24 runs the TypeScript directly.
+#
+# The MCP shape jobs run the server itself as a tenant lane against the same
+# stack, so they need npm ci (the lane, supabase-js and the MCP client) and tsx.
 
 on:
   push:
     branches:
       - main
       - develop
+  # Every pull request, whatever its base, so a PR stacked on another branch
+  # gets the isolation shapes too.
   pull_request:
-    branches:
-      - main
-      - develop
 
 permissions:
   contents: read
@@ -58,3 +60,44 @@ jobs:
       # fail; move that check's baseline expectation in rest-shape.ts.
       - name: REST shape, unmodified schema
         run: node tests/tenant-isolation/rest-shape.ts --baseline
+
+  mcp:
+    name: MCP shape through the tenant lane, strict pack applied
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - run: npm ci
+
+      # The real server as a lane (TENANT_MODE=lane, no key) behind a proxy
+      # that strips /rest/v1, against the lane's PostgREST. Tenant A's token
+      # against B's uuid and text through all five tools, bad tokens, every
+      # other tool, own-tenant delete with its children, start refusals.
+      - name: MCP shape, strict pack applied
+        run: npx tsx tests/tenant-isolation/mcp-shape.ts
+
+  mcp-baseline:
+    name: MCP shape baseline (known leaks visible through the lane)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - run: npm ci
+
+      # Same calls on the schema the migrations leave. Passes only while the
+      # leaks the strict pack closes still show through the lane, and fails if
+      # it sees none, which proves the MCP shape can fail.
+      - name: MCP shape, unmodified schema
+        run: npx tsx tests/tenant-isolation/mcp-shape.ts --baseline

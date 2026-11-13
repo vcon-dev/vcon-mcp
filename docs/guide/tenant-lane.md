@@ -117,7 +117,10 @@ an error that says so and sends nothing. Two options:
 
 The tenant token goes to the store only. It is never sent to the embedding provider.
 
-## Not yet tested
+## Tests
 
-The lane is tested in process against a stand-in store. Not yet tested: a real PostgREST with a tenant
-secret behind a proxy, Kong in the path, real pgvector, connection poolers and load.
+`tests/lane/` tests the lane in process against a stand-in store. `npm run test:tenant:mcp`
+(`tests/tenant-isolation/mcp-shape.ts`, see [Strict tenant pack](./strict-tenant-pack.md#test-it)) runs
+the server as a lane against a real PostgREST in the lane's shape, behind a proxy that strips `/rest/v1`,
+with real supabase-js and real pgvector, and the strict pack applied. Not yet tested: Kong in the path,
+connection poolers and load.

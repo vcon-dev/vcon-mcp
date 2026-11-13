@@ -169,6 +169,8 @@ The tests run on a throwaway stack in Docker and need nothing else of yours: Pos
 npm run test:tenant            # REST shape with the strict pack applied
 npm run test:tenant:baseline   # the same requests on the unmodified schema
 npm run test:tenant:guard      # apply.sh and the catalog guard
+npm run test:tenant:mcp        # MCP shape: the server as a tenant lane, strict pack applied
+npm run test:tenant:mcp:baseline  # the same calls on the unmodified schema
 ```
 
 On Node 22.18 or later, `node tests/tenant-isolation/rest-shape.ts` works without `npm install`. `KEEP=1` leaves the containers running.
@@ -190,6 +192,8 @@ The REST shape sends each request as the first tenant and fails if a response co
 The baseline run expects the leaks the pack closes, which shows the harness can see a leak.
 
 The strict run ends by serving PostgREST the way the [tenant lane](./tenant-lane.md) needs it: a login role that is a member of `authenticated` only and no anon role, so a `service_role` or anon token fails and a request with no token gets 401. `startRest('lane')` in `tests/tenant-isolation/stack.ts` gives that shape to other tests.
+
+The MCP shape runs the server itself as a [tenant lane](./tenant-lane.md) (`TENANT_MODE=lane`, no key) against that PostgREST, through a proxy that strips the `/rest/v1` prefix supabase-js adds, and calls it with a real MCP client. As the first tenant it calls each of the five tools with the second tenant's uuid and canary text and fails on any answer that holds them, and checks that its own canary comes back through each. `search_vcons_semantic` gets a precomputed embedding; with query text and no embedding provider it must report itself unavailable. Markers are looked for in every field of an answer (text, `structuredContent`, `_meta`, error data), not only its text. It also checks `delete_vcon` of the other tenant's uuid (not found, the row stays), of its own vCon (gone with every child row), and of its own vCon while a row-security policy refuses the delete but allows the read (not found, the row stays); that a `_quarantine` claim, a missing tenant claim, a wrong signature, a `service_role` claim and an expired token each read nothing; that every other tool, resources and prompts are refused; that every store request carried the caller's token and nothing else; and that the lane refuses to start with a service or anon key. It needs `npm ci`, since it runs the server and the MCP client from this repo. The baseline run expects the leaks the pack closes to show through the lane, and fails if none does.
 
 The guard test checks:
 
