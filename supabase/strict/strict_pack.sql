@@ -284,7 +284,8 @@ END $strict$;
 --     conversation_start through a statement trigger that runs as the caller
 --     and updates vcons. Tenant roles no longer update anything, so a tenant's
 --     delete_vcon would fail in that trigger. It runs as its owner instead,
---     which needs BYPASSRLS (postgres has it on Supabase). It recomputes only
+--     with search_path pinned to public, pg_temp; the owner must have
+--     BYPASSRLS (postgres has it on Supabase). It recomputes only
 --     the vCons whose rows the caller has just changed, which row level
 --     security already limited. A trigger needs no EXECUTE grant to fire, so
 --     tenant roles lose that.
@@ -292,9 +293,19 @@ END $strict$;
 DO $strict$
 DECLARE
   fn regprocedure := to_regprocedure('public.child_refresh_conversation_start()');
+  table_owner regrole := (SELECT relowner::regrole FROM pg_class WHERE oid = 'public.vcons'::regclass);
 BEGIN
   IF fn IS NULL THEN
     RETURN;
+  END IF;
+  -- Its owner must bypass row level security, or the refresh it runs as that
+  -- owner is bound by the tenant policies. Hand it to the owner of vcons.
+  IF NOT (SELECT r.rolbypassrls OR r.rolsuper FROM pg_proc p JOIN pg_roles r ON r.oid = p.proowner WHERE p.oid = fn) THEN
+    IF NOT (SELECT rolbypassrls OR rolsuper FROM pg_roles WHERE oid = table_owner) THEN
+      RAISE EXCEPTION 'strict-pack: refused: child_refresh_conversation_start() must be owned by a role with BYPASSRLS, and the owner of vcons (%) has none', table_owner;
+    END IF;
+    EXECUTE format('ALTER FUNCTION public.child_refresh_conversation_start() OWNER TO %s', table_owner);
+    RAISE NOTICE 'strict-pack: changed: child_refresh_conversation_start() owned by %, which bypasses row level security', table_owner;
   END IF;
   IF NOT (SELECT prosecdef FROM pg_proc WHERE oid = fn)
      OR (SELECT proconfig FROM pg_proc WHERE oid = fn) IS DISTINCT FROM ARRAY['search_path=public, pg_temp'] THEN

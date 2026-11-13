@@ -125,7 +125,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `check_vcon_embeddings_complete`). `PUBLIC`, `anon` and `authenticated` lose `TRUNCATE`,
     `TRIGGER`, `REFERENCES` and `MAINTAIN` on every table and view, also by default for tables
     `postgres` creates later. `child_refresh_conversation_start()` runs as its owner so a
-    tenant's delete still refreshes `conversation_start`
+    tenant's delete still refreshes `conversation_start`: `SECURITY DEFINER`, `search_path`
+    pinned to `public, pg_temp`, an owner with `BYPASSRLS`, no `EXECUTE` for tenant roles. The
+    guard checks all four
   - `get_current_tenant_id()` reads the JWT `tenant_id` claim only; no claim, an empty claim and
     `_quarantine` mean no tenant, and the `app.current_tenant_id` fallback is gone
   - `vcon_tags_scoped`, a tenant-filtered view over `vcon_tags_mv`; `authenticated` loses

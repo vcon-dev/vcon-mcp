@@ -247,6 +247,20 @@ async function main(): Promise<number> {
     regress('up-refresh-trigger', 'the conversation_start refresh trigger replaced as SECURITY INVOKER',
       `ALTER FUNCTION child_refresh_conversation_start() SECURITY INVOKER RESET search_path`,
       'child_refresh_conversation_start() runs as the caller');
+    regress('up-refresh-path-removed', 'the refresh trigger loses its pinned search_path',
+      `ALTER FUNCTION child_refresh_conversation_start() RESET search_path`,
+      'child_refresh_conversation_start() runs as its owner, so its search_path must be exactly public, pg_temp; it has none');
+    regress('up-refresh-path-changed', 'the refresh trigger gets another search_path',
+      `ALTER FUNCTION child_refresh_conversation_start() SET search_path = pg_temp, public`,
+      'its search_path must be exactly public, pg_temp; it has search_path=pg_temp, public');
+    stack.sql(`CREATE ROLE guard_probe_nobypass NOLOGIN; GRANT CREATE ON SCHEMA public TO guard_probe_nobypass; GRANT guard_probe_nobypass TO postgres;`);
+    regress('up-refresh-owner', 'the refresh trigger handed to an owner without BYPASSRLS',
+      `ALTER FUNCTION child_refresh_conversation_start() OWNER TO guard_probe_nobypass`,
+      'child_refresh_conversation_start() is owned by guard_probe_nobypass, which has no BYPASSRLS');
+    stack.sql(`REVOKE CREATE ON SCHEMA public FROM guard_probe_nobypass; DROP ROLE guard_probe_nobypass;`);
+    regress('up-refresh-execute', 'authenticated granted EXECUTE on the refresh trigger',
+      `GRANT EXECUTE ON FUNCTION child_refresh_conversation_start() TO authenticated`,
+      'anon or authenticated can execute child_refresh_conversation_start(), a SECURITY DEFINER function');
 
     // NULL-tolerant spellings other than IS NULL. The pack does not rewrite
     // these; the guard has to stop them. The first is the review's case.

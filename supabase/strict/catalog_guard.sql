@@ -32,7 +32,9 @@
 --              (exec_sql, the tag refresh, the tenant backfills,
 --              release_vcon_from_quarantine, ...) stay that way.
 --              child_refresh_conversation_start() runs as its owner, so a
---              tenant's delete can refresh conversation_start.
+--              tenant's delete can refresh conversation_start: SECURITY
+--              DEFINER, search_path exactly public, pg_temp, an owner with
+--              BYPASSRLS, and no EXECUTE for anon or authenticated.
 --   views      every view runs as the caller (security_invoker), except
 --              vcon_tags_scoped, which must be exactly the tenant filter,
 --              a security barrier, and owned by the owner of vcon_tags_mv.
@@ -271,10 +273,26 @@ BEGIN
 
   -- Tenant roles cannot update vcons, so the conversation_start refresh that a
   -- dialog or attachment delete fires has to run as its owner.
-  checks := checks + 1;
-  IF to_regprocedure('public.child_refresh_conversation_start()') IS NOT NULL
-     AND NOT (SELECT prosecdef FROM pg_proc WHERE oid = 'public.child_refresh_conversation_start()'::regprocedure) THEN
-    v := v || 'rpcs: child_refresh_conversation_start() runs as the caller, so a tenant delete of a vCon, dialog or attachment fails; re-run the pack'::text;
+  IF to_regprocedure('public.child_refresh_conversation_start()') IS NOT NULL THEN
+    checks := checks + 4;
+    SELECT p.prosecdef, p.proconfig, p.proowner::regrole AS owner, (rr.rolbypassrls OR rr.rolsuper) AS bypass,
+           has_function_privilege('anon', p.oid, 'EXECUTE') OR has_function_privilege('authenticated', p.oid, 'EXECUTE') AS reachable
+      INTO r
+      FROM pg_proc p JOIN pg_roles rr ON rr.oid = p.proowner
+     WHERE p.oid = 'public.child_refresh_conversation_start()'::regprocedure;
+    IF NOT r.prosecdef THEN
+      v := v || 'rpcs: child_refresh_conversation_start() runs as the caller, so a tenant delete of a vCon, dialog or attachment fails; re-run the pack'::text;
+    END IF;
+    IF r.proconfig IS DISTINCT FROM ARRAY['search_path=public, pg_temp'] THEN
+      v := v || format('rpcs: child_refresh_conversation_start() runs as its owner, so its search_path must be exactly public, pg_temp; it has %s',
+        coalesce(array_to_string(r.proconfig, '; '), 'none'));
+    END IF;
+    IF NOT r.bypass THEN
+      v := v || format('rpcs: child_refresh_conversation_start() is owned by %s, which has no BYPASSRLS, so the refresh it runs is bound by the tenant policies', r.owner);
+    END IF;
+    IF r.reachable THEN
+      v := v || 'rpcs: anon or authenticated can execute child_refresh_conversation_start(), a SECURITY DEFINER function; a trigger needs no grant'::text;
+    END IF;
   END IF;
 
   -- ---------------------------------------------------------------- views
