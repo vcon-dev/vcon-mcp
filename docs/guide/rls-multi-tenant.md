@@ -188,6 +188,9 @@ SET app.current_tenant_id = '1124';
 
 The migration creates policies on all tables:
 
+These are the policies the migrations create. The [strict pack](./strict-tenant-pack.md) replaces them with
+fail-closed ones: no NULL branch, `tenant_id` required, and the tenant read from the JWT claim only.
+
 ### vcons Table
 - Users can only see vCons where `tenant_id` matches their current tenant
 - vCons with `tenant_id IS NULL` are accessible to all (for backward compatibility)

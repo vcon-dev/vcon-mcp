@@ -1,323 +1,101 @@
 # Debugging Tenant ID and RLS
 
-Complete guide for debugging Row Level Security (RLS) and tenant isolation in the vCon MCP Server.
+How the tenant reaches a row, which caller row level security binds, and how to check each step.
 
-## Quick Diagnosis
+## How tenancy works in the store
 
-If your tenant ID isn't being picked up, follow these steps:
+- `vcons.tenant_id` holds the tenant. Nine child tables carry the same column, and an insert trigger on each (`set_<table>_tenant_id`) copies it from the parent vCon. `party_history` takes it through `dialog`.
+- With `RLS_ENABLED=true` the server reads the tenant from the vCon's tenant attachment (`purpose` or `type` equal to `TENANT_ATTACHMENT_TYPE`, value at `TENANT_JSON_PATH`) and writes it to `vcons.tenant_id`. No database trigger reads the attachment.
+- The tenant policies admit the `authenticated` role to rows whose `tenant_id` equals `get_current_tenant_id()`. That function reads the `tenant_id` claim of the request's JWT.
+- The service role key bypasses row level security. A server using it, which is the default, reads every tenant's rows from the tables whatever `CURRENT_TENANT_ID` says. Per-tenant isolation needs a JWT with `role: authenticated` and a `tenant_id` claim on each request.
 
-### 1. Check Environment Variables
+Two things differ until the [strict pack](./strict-tenant-pack.md) is applied:
 
-Your MCP server configuration should include:
+| | Without the strict pack | With it |
+|---|---|---|
+| Rows with a NULL `tenant_id` | Every `authenticated` caller reads and can claim them | Cannot exist (`NOT NULL`) |
+| `get_current_tenant_id()` with no claim | Falls back to the `app.current_tenant_id` session variable | NULL, so no rows |
+| Search RPCs with no tenant | Return every tenant's rows | Return no rows |
+| `set_tenant_context()` | Sets the fallback on one pooled connection, which later requests with no claim inherit | Ignored |
 
-```json
-{
-  "mcpServers": {
-    "vcon": {
-      "command": "node",
-      "args": ["path/to/vcon-mcp/build/index.js"],
-      "env": {
-        "SUPABASE_URL": "https://your-project.supabase.co",
-        "SUPABASE_SERVICE_ROLE_KEY": "your_service_role_key",
-        "RLS_ENABLED": "true",
-        "CURRENT_TENANT_ID": "your_tenant_id",
-        "MCP_DEBUG": "true"
-      }
-    }
-  }
-}
-```
+## Quick diagnosis
 
-**Important:** 
-- Use `SUPABASE_SERVICE_ROLE_KEY` (not `SUPABASE_ANON_KEY`) for RLS operations
-- Set `RLS_ENABLED=true` to enable RLS support
-- Set `CURRENT_TENANT_ID` to your actual tenant ID
-- Set `MCP_DEBUG=true` for verbose logging
+1. **Which key does the server use?** The startup log shows `key_type`. With `service_role`, tables are not filtered by tenant. That is expected: the service key is for the writer and operators, not for tenant traffic.
+2. **Is the strict pack in place?** Run `supabase/strict/apply.sh --check` with `DATABASE_URL` set in the environment. Exit 0 means it is; exit 4 lists what is missing.
+3. **Do the rows have tenants?**
 
-### 2. Check the Logs
-
-When using STDIO transport (Claude Desktop), logs go to **stderr** and appear in:
-
-**macOS:**
-```bash
-# Claude Desktop logs
-tail -f ~/Library/Logs/Claude/mcp*.log
-
-# Or check Console.app and filter for "vcon" or "tenant"
-```
-
-**Linux:**
-```bash
-# Check systemd journal if running as service
-journalctl -f | grep -i tenant
-
-# Or application logs
-tail -f ~/.local/share/Claude/logs/mcp*.log
-```
-
-**Windows:**
-```powershell
-# Claude Desktop logs
-Get-Content "$env:APPDATA\Claude\logs\mcp*.log" -Wait
-```
-
-Look for these log messages:
-
-```
-✅ Database client initialized
-[INFO] Initializing Supabase client: {"key_type":"service_role","rls_enabled":true}
-[DEBUG] Tenant configuration loaded: {"rls_enabled":true,"current_tenant_id":"your_tenant_id"}
-✅ Tenant context set successfully: {"tenant_id":"your_tenant_id"}
-[INFO] Tenant context verification: {"expected_tenant_id":"your_tenant_id","actual_tenant_id":"your_tenant_id","match":true}
-```
-
-### 3. Enable Debug Mode
-
-Add these environment variables for maximum debugging:
-
-```bash
-MCP_DEBUG=true          # Enable MCP protocol debugging
-RLS_DEBUG=true          # Enable RLS-specific debugging
-```
-
-With `RLS_DEBUG=true`, you'll see:
-- Tenant distribution in database
-- Visible vCons count
-- RLS policy effectiveness
-
-Example output:
-```json
-{
-  "message": "vCon visibility report",
-  "current_tenant_id": "1124",
-  "visible_vcons": 5,
-  "tenant_distribution": {
-    "1124": 5,
-    "1125": 0
-  }
-}
-```
-
-## Common Issues and Solutions
-
-### Issue 1: "Failed to set tenant context"
-
-**Symptoms:**
-```
-[ERROR] Failed to set tenant context: function set_tenant_context does not exist
-```
-
-**Solution:**
-Run the missing migration:
-```bash
-psql $DATABASE_URL -f supabase/migrations/20251113000000_add_set_tenant_helper.sql
-```
-
-### Issue 2: Using ANON_KEY instead of SERVICE_ROLE_KEY
-
-**Symptoms:**
-```
-[INFO] Initializing Supabase client: {"key_type":"anon"}
-```
-
-**Solution:**
-Replace `SUPABASE_ANON_KEY` with `SUPABASE_SERVICE_ROLE_KEY` in your configuration. The anon key has limited permissions and may not work with RLS session variables.
-
-### Issue 3: Tenant Context Mismatch
-
-**Symptoms:**
-```
-[ERROR] ❌ Tenant context mismatch!
-  expected: "1124"
-  actual: null
-```
-
-**Solution:**
-1. Check that `set_tenant_context` function exists
-2. Verify service role has permission to execute it
-3. Try setting manually in psql:
    ```sql
-   SELECT set_tenant_context('1124');
-   SELECT get_current_tenant_id();  -- Should return '1124'
+   SELECT coalesce(tenant_id, '(none)') AS tenant, count(*) FROM vcons GROUP BY 1 ORDER BY 2 DESC;
    ```
 
-### Issue 4: RLS Enabled but No vCons Visible
+   A vCon whose tenant attachment was missing or unreadable at write time has `tenant_id` NULL.
+4. **Which tenant does a request carry?** Call the function through PostgREST with the same token the caller uses:
 
-**Symptoms:**
-- RLS is enabled
-- Tenant ID is set correctly
-- But queries return 0 vCons
+   ```bash
+   curl -s -X POST "$SUPABASE_URL/rest/v1/rpc/get_current_tenant_id" \
+     -H "apikey: $SUPABASE_ANON_KEY" -H "Authorization: Bearer $TENANT_JWT" -H 'Content-Type: application/json' -d '{}'
+   ```
 
-**Diagnosis:**
-Check if vCons have tenant_id set:
-```sql
-SELECT uuid, tenant_id 
-FROM vcons 
-LIMIT 10;
-```
+   Or in psql, as the request would run:
 
-If `tenant_id` is NULL, your vCons weren't populated with tenant IDs.
+   ```sql
+   BEGIN;
+   SET LOCAL ROLE authenticated;
+   SELECT set_config('request.jwt.claims', '{"role":"authenticated","tenant_id":"t-aaaaaaaaaaaaaaaa"}', true);
+   SELECT get_current_tenant_id();          -- t-aaaaaaaaaaaaaaaa
+   SELECT uuid, tenant_id FROM vcons LIMIT 5;  -- only that tenant's rows
+   ROLLBACK;
+   ```
 
-**Solution:**
-Populate tenant IDs from attachments:
-```sql
--- Process in batches to avoid timeout
-SELECT * FROM populate_tenant_ids_batch('tenant', 'id', 1000);
-```
+## Environment variables
 
-Or manually set for testing:
-```sql
-UPDATE vcons SET tenant_id = '1124' WHERE uuid = 'some-uuid';
-```
+| Variable | Default | What it does |
+|---|---|---|
+| `TENANT_MODE` | unset (`off`) | `writer` stamps every vCon (`_quarantine` when the stamp is missing or bad) and refreshes the tag view; `lane` serves tenants with their own JWT and holds no key. See [the writer guide](./rls-multi-tenant.md) and [the tenant lane](./tenant-lane.md) |
+| `RLS_ENABLED` | `false` | Turns on tenant extraction on write, and the startup tenant checks below |
+| `TENANT_ATTACHMENT_TYPE` | `tenant` | Attachment `purpose` (or legacy `type`) that holds the tenant |
+| `TENANT_JSON_PATH` | `id` | Path to the tenant id inside that attachment's body |
+| `CURRENT_TENANT_ID` | (none) | Passed to `set_tenant_context()` at startup. It does not filter table reads through the service key. With the strict pack applied it has no effect. `TENANT_MODE=writer` refuses to start with it set |
+| `RLS_DEBUG`, `MCP_DEBUG` | `false` | Log a count of visible vCons by tenant at startup |
 
-### Issue 5: Environment Variables Not Picked Up in STDIO
+## Startup log messages
 
-**Symptoms:**
-```
-[DEBUG] Tenant configuration loaded: {"current_tenant_id":"(not set)"}
-```
+| Message | Meaning |
+|---|---|
+| `RLS is enabled but CURRENT_TENANT_ID is not set` | Informational. The message's own text ("only tenant_id=NULL") is not accurate: through the service key every row is visible |
+| `Tenant context set successfully` | `set_tenant_context()` ran on one pooled connection. Other connections did not get it |
+| `Tenant context mismatch!` | `get_current_tenant_id()` ran on a connection without the setting, or the strict pack is applied and ignores it. Neither affects table reads through the service key |
+| `Failed to set tenant context` | Since migration `20261109163739_revoke_anon_read_paths.sql`, only `service_role` may call `set_tenant_context()`. An anon or `authenticated` key gets permission denied |
 
-**Solution:**
-Environment variables in Claude Desktop config are case-sensitive and must be in the `env` object:
+## Common issues
 
-```json
-{
-  "mcpServers": {
-    "vcon": {
-      "command": "node",
-      "args": ["build/index.js"],
-      "env": {
-        "CURRENT_TENANT_ID": "1124",
-        "RLS_ENABLED": "true"
-      }
-    }
-  }
-}
-```
+### A tenant sees rows it should not
 
-**Don't** put them at the top level or in `args`.
+Check, in order:
 
-## Manual Testing
+1. The caller uses the service key. It sees everything by design.
+2. The rows have NULL `tenant_id` and the strict pack is not applied, so the policies admit them to every tenant. Assign the rows a tenant (or `_quarantine`), then apply the pack.
+3. A search RPC was replaced by an upgrade and lost its tenant filter. `apply.sh --check` names it; re-run `apply.sh`.
 
-### Test 1: Verify Tenant Context is Set
+### A tenant sees nothing
 
-```bash
-# In your terminal, with same env vars
-export SUPABASE_URL="https://your-project.supabase.co"
-export SUPABASE_SERVICE_ROLE_KEY="your_service_role_key"
-export RLS_ENABLED="true"
-export CURRENT_TENANT_ID="1124"
+1. The JWT has no `tenant_id` claim, an empty one, or `_quarantine`. All three mean no tenant.
+2. The rows carry a different tenant id than the token, for example a different case or a stray space.
+3. The search RPC needs the tag view: with the strict pack, tag searches read `vcon_tags_scoped`, which shows only the caller's tenant. If tags look stale, the writer has not refreshed `vcon_tags_mv`; a tenant token cannot refresh it.
 
-# Run the server with debug
-MCP_DEBUG=true node build/index.js
-```
+### A write fails with a row level security, permission or not-null error
 
-Look for the initialization messages in stderr.
+With the strict pack, an `authenticated` caller reads and deletes its own tenant's rows and writes nothing else: inserts, updates and write RPCs such as `save_vcon_batch` are refused with a permission error. Writes go through the service key, which may write any tenant but not none, and a child must belong to the same tenant as its vCon.
 
-### Test 2: Direct Database Check
+## Test tenant isolation
 
-```sql
--- Connect to your Supabase database
-psql $DATABASE_URL
+`npm run test:tenant` runs the REST shape on a throwaway PostgreSQL 17 and PostgREST 16.2 in Docker, with every migration, the strict pack and two synthetic tenants. It needs Docker, not your database. `npm run test:tenant:baseline` runs the same requests on the unmodified schema and expects the known leaks; `npm run test:tenant:guard` tests the apply script and the catalog guard. See [the strict pack guide](./strict-tenant-pack.md#test-it).
 
--- Check RLS is enabled
-SELECT tablename, rowsecurity 
-FROM pg_tables 
-WHERE schemaname = 'public' 
-  AND tablename = 'vcons';
+## Key functions
 
--- Check policies exist
-SELECT policyname, tablename, roles, cmd, qual
-FROM pg_policies
-WHERE tablename = 'vcons';
-
--- Test tenant context manually
-SELECT set_tenant_context('1124');
-SELECT get_current_tenant_id();  -- Should return '1124'
-
--- Test what's visible
-SELECT uuid, tenant_id, subject 
-FROM vcons 
-LIMIT 5;
-```
-
-### Test 3: Comprehensive Tenant Isolation Test
-
-Run the comprehensive test script to verify all tenant isolation features:
-
-```bash
-npm run test:tenant
-# Or directly:
-npx tsx scripts/test-tenant-isolation.ts
-```
-
-This script tests:
-- Tenant context setting and retrieval
-- Tenant isolation (users can only see their own tenant's data)
-- Cross-tenant access blocking
-- NULL tenant_id shared access
-- RLS policies on all tables
-- Child table triggers setting tenant_id correctly
-
-For a simple manual test, you can also create a minimal `test-tenant.ts` script (see the scripts directory for examples).
-
-## Verification Checklist
-
-- [ ] `RLS_ENABLED=true` in environment
-- [ ] `CURRENT_TENANT_ID` is set to actual tenant ID
-- [ ] Using `SUPABASE_SERVICE_ROLE_KEY` (not ANON_KEY)
-- [ ] Migration `20251113000000_add_set_tenant_helper.sql` is applied
-- [ ] `set_tenant_context` function exists in database
-- [ ] `get_current_tenant_id` function exists in database
-- [ ] RLS policies are enabled on `vcons` table
-- [ ] vCons have `tenant_id` populated (not NULL)
-- [ ] Logs show "✅ Tenant context set successfully"
-- [ ] Tenant context verification shows `"match":true`
-
-## Still Having Issues?
-
-If you've checked everything and it's still not working:
-
-1. **Restart Claude Desktop** after changing configuration
-2. **Check for typos** in environment variable names (case-sensitive!)
-3. **Verify database connection** works at all (try without RLS first)
-4. **Check Supabase logs** in the dashboard under "Logs"
-5. **Test with a simple SQL query** directly in Supabase SQL editor
-
-## Reference
-
-### Environment Variables
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `RLS_ENABLED` | No | `false` | Enable RLS multi-tenant support |
-| `CURRENT_TENANT_ID` | No | (none) | Current tenant ID for queries |
-| `TENANT_ATTACHMENT_TYPE` | No | `tenant` | Attachment type for tenant extraction |
-| `TENANT_JSON_PATH` | No | `id` | JSON path to extract tenant ID |
-| `MCP_DEBUG` | No | `false` | Enable MCP protocol debugging |
-| `RLS_DEBUG` | No | `false` | Enable RLS-specific debugging |
-| `SUPABASE_SERVICE_ROLE_KEY` | Yes* | (none) | Service role key for RLS operations |
-
-*Required when `RLS_ENABLED=true`
-
-### Key Functions
-
-- `set_tenant_context(p_tenant_id TEXT)` - Sets session tenant ID
-- `get_current_tenant_id()` - Returns current session tenant ID
-- `extract_tenant_from_attachments(p_vcon_id UUID, p_attachment_type TEXT, p_json_path TEXT)` - Extracts tenant from vCon
-- `populate_tenant_ids_batch(p_attachment_type TEXT, p_json_path TEXT, p_batch_size INTEGER)` - Backfills tenant IDs
-
-### Log Locations
-
-- **Claude Desktop (macOS):** `~/Library/Logs/Claude/mcp*.log`
-- **Claude Desktop (Windows):** `%APPDATA%\Claude\logs\mcp*.log`
-- **Claude Desktop (Linux):** `~/.local/share/Claude/logs/mcp*.log`
-- **STDIO stderr:** All server logs go to stderr, never stdout
-
-
-
-
-
-
-
-
+- `get_current_tenant_id()`: the request's tenant, from the JWT `tenant_id` claim (and, without the strict pack, the session fallback).
+- `set_tenant_context(text)`, `clear_tenant_context()`: set or clear `app.current_tenant_id`. `service_role` only. Legacy.
+- `backfill_vcon_tenant_ids(batch_size, writer_rule)`: fills `vcons.tenant_id` from tenant attachments, one batch at a time. `service_role` only.
+- `backfill_tenant_id_batch(table, batch_size)`: gives child rows their parent vCon's tenant, one batch at a time. `service_role` only.
+- `release_vcon_from_quarantine(uuid, tenant, reason, evidence, released_by)`: the one way out of `_quarantine`, logged. `service_role` only.
+- `scripts/backfill-tenant-ids.ts`: runs `backfill_tenant_id_batch` over every child table.

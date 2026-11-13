@@ -55,6 +55,7 @@ export default defineConfig({
           items: [
             { text: 'Getting Started (Developers)', link: '/guide/getting-started' },
             { text: 'Multi-Supabase Isolation', link: '/guide/multi-supabase-isolation' },
+            { text: 'Strict Tenant Pack', link: '/guide/strict-tenant-pack' },
           ]
         },
         {

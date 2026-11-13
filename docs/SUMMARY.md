@@ -11,6 +11,7 @@
 * [Query Prompts](guide/prompts.md)
 * [Database Tools](guide/database-tools.md)
 * [Tenant Lane](guide/tenant-lane.md)
+* [Strict Tenant Pack](guide/strict-tenant-pack.md)
 * [Troubleshooting](guide/troubleshooting.md)
 * [FAQ](guide/faq.md)
 

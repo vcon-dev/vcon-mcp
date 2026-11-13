@@ -1,0 +1,60 @@
+name: Tenant isolation
+
+# Runs the strict pack's catalog guard and the REST shape on a throwaway
+# PostgreSQL 17 (pgvector/pgvector:0.8.1-pg17) behind PostgREST 16.2
+# (postgrest/postgrest:v16.2), the image tags pinned in
+# tests/tenant-isolation/stack.ts. No npm install: the harness uses Node
+# built-ins only, and Node 24 runs the TypeScript directly.
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tenant-isolation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  strict:
+    name: Strict pack, catalog guard and REST shape
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Catalog guard and apply script
+        run: node tests/tenant-isolation/catalog-guard.ts
+
+      - name: REST shape, strict pack applied
+        run: node tests/tenant-isolation/rest-shape.ts
+
+  baseline:
+    name: REST shape baseline (known leaks visible)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # Same requests on the schema the migrations leave. Passes only while the
+      # leaks the strict pack closes still show, which proves the harness can
+      # see a leak. A migration that closes one of them on its own makes this
+      # fail; move that check's baseline expectation in rest-shape.ts.
+      - name: REST shape, unmodified schema
+        run: node tests/tenant-isolation/rest-shape.ts --baseline
