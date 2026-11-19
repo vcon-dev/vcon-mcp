@@ -16,6 +16,7 @@ import { logWithContext, recordCounter } from '../observability/instrumentation.
 import { VCon, VCON_VERSION } from '../types/vcon.js';
 import { MigrationReport, carryMigrationReport, looksLegacy, migrate040To050, reportSummary } from '../utils/vcon-migration.js';
 import { extensionsInUse } from '../utils/vcon-validation.js';
+import { encryptedForm, signedForm, validateVconDict } from '../utils/vcon-reference-validation.js';
 import { isVConNotFoundError, VConNotFoundError } from '../utils/errors.js';
 import { validateVCon } from '../utils/validation.js';
 
@@ -730,6 +731,18 @@ export class VConService {
    * `extensions` because 0.5.0 makes listing them a MUST.
    */
   private normalizeVCon(data: Partial<VCon>): { vcon: VCon; migration?: MigrationReport } {
+    // A signed (JWS) or encrypted (JWE) container is not a vCon this server can store:
+    // the rows would hold neither the signature nor the ciphertext. It is refused, with
+    // what the reference finds in it, before any default (uuid, created_at) is added.
+    if (signedForm(data) || encryptedForm(data)) {
+      const what = signedForm(data)
+        ? 'A signed (JWS) vCon cannot be stored as is: verify it'
+        : 'An encrypted (JWE) vCon cannot be stored as is: verify and decrypt it';
+      throw new VConValidationError([
+        `${what} and send the vCon it carries.`,
+        ...validateVconDict(data as Record<string, any>).errors,
+      ]);
+    }
     let migration: MigrationReport | undefined;
     let input: Record<string, any> = data as Record<string, any>;
 

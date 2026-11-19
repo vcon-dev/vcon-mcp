@@ -34,7 +34,7 @@ const v04 = (extra: Record<string, any> = {}): any => ({
 });
 const rec = (extra: Record<string, any> = {}): any => ({
   type: 'recording', start: T0, duration: 10, parties: [0, 1],
-  mediatype: 'audio/x-wav', url: 'https://e.com/a.wav', content_hash: 'sha512-x', ...extra,
+  mediatype: 'audio/x-wav', url: 'https://e.com/a.wav', content_hash: 'sha512-K7gkq531t9atY96FBDkQ9b7tiTZxnlO-X17gnDOayQY6NU4tWLz6AXZxFK7R_l_kqwI_iDUVkqvg2ljFK0Z-4Q', ...extra,
 });
 const text = (extra: Record<string, any> = {}): any => ({
   type: 'text', start: T1, parties: [0, 1], body: 'hi', encoding: 'none', mediatype: 'text/plain', ...extra,
@@ -614,5 +614,12 @@ describe('parity with the reference implementation', () => {
     const { report } = migrate040To050(v04({ dialog: [rec(), rec({ start: T1 })] }));
     const t9b = report.entries.find((e) => e.step === 'T9b');
     expect(t9b?.message).toMatch(/^Dialog\(s\) \[0, 1\] /);
+  });
+
+  it('post-checks content_hash form, as vcon-lib 1.0.5 does', () => {
+    const { report } = migrate040To050(v04({ dialog: [rec({ content_hash: 'sha256-' + 'a'.repeat(64) })] }));
+    expect(report.entries.filter((e) => e.step === 'post').map((e) => e.message)).toContain(
+      `Result does not validate: Dialog at index 0 has an invalid content_hash: 'sha256-${'a'.repeat(64)}' has a sha256 digest of 64 base64url characters, expected 43.`
+    );
   });
 });

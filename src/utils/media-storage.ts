@@ -125,10 +125,11 @@ export function decodeBase64Url(base64url: string): Buffer {
 }
 
 /**
- * Compute SHA-256 hash of content (for content_hash field)
+ * ContentHash of content (core-05 section 2.2): `sha512-<unpadded base64url digest>`.
+ * A bare hex digest is not a ContentHash and fails validation.
  */
 export function computeContentHash(content: Buffer): string {
-  return createHash('sha256').update(content).digest('hex');
+  return `sha512-${createHash('sha512').update(content).digest('base64url')}`;
 }
 
 /**

@@ -18,7 +18,7 @@ const base = (extra: Record<string, any> = {}): any => ({
 });
 const call = (extra: Record<string, any> = {}) => base({
   sessions: [{ start: T, parties: [0, 1], dialog: [0] }],
-  dialog: [{ type: 'recording', start: T, parties: [0, 1], url: 'https://e.com/a.wav', content_hash: 'sha512-x', mediatype: 'audio/x-wav' }],
+  dialog: [{ type: 'recording', start: T, parties: [0, 1], url: 'https://e.com/a.wav', content_hash: 'sha512-K7gkq531t9atY96FBDkQ9b7tiTZxnlO-X17gnDOayQY6NU4tWLz6AXZxFK7R_l_kqwI_iDUVkqvg2ljFK0Z-4Q', mediatype: 'audio/x-wav' }],
   ...extra,
 });
 
@@ -125,7 +125,7 @@ describe('document rules', () => {
   it('accepts the empty Dialog Object and null contributors, and rejects 0.4.0 Dialog content', () => {
     const ok = call({ dialog: [{}, { type: 'text', parties: [0, null], body: 'x', encoding: 'none' }], sessions: [{ start: T, parties: [0], dialog: [1] }] });
     expect(validateVConDocument(ok).errors).toEqual([]);
-    const bad = call({ dialog: [{ type: 'recording', parties: [0], originator: 0, party_history: [], url: 'https://e.com', content_hash: 'h' }] });
+    const bad = call({ dialog: [{ type: 'recording', parties: [0], originator: 0, party_history: [], url: 'https://e.com', content_hash: 'sha512-K7gkq531t9atY96FBDkQ9b7tiTZxnlO-X17gnDOayQY6NU4tWLz6AXZxFK7R_l_kqwI_iDUVkqvg2ljFK0Z-4Q' }] });
     const e = validateVConDocument(bad).errors.join();
     expect(e).toContain("parameter 'originator', which was removed in 0.5.0");
     expect(e).toContain("parameter 'party_history'");
@@ -135,7 +135,7 @@ describe('document rules', () => {
   });
 
   it('audio and video Dialogs read with a warning', () => {
-    const d = call({ dialog: [{ type: 'audio', parties: [0], url: 'https://e.com/a', content_hash: 'h' }] });
+    const d = call({ dialog: [{ type: 'audio', parties: [0], url: 'https://e.com/a', content_hash: 'sha512-K7gkq531t9atY96FBDkQ9b7tiTZxnlO-X17gnDOayQY6NU4tWLz6AXZxFK7R_l_kqwI_iDUVkqvg2ljFK0Z-4Q' }] });
     const r = validateVConDocument(d);
     expect(r.errors).toEqual([]);
     expect(r.warnings.join()).toContain("type 'audio', which core-05 does not define");

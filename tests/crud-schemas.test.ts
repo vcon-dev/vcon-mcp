@@ -372,7 +372,7 @@ describe('CRUD Schema Validation', () => {
       const attachment = {
         type: 'image',
         url: 'https://example.com/image.jpg',
-        content_hash: 'sha256:abcd1234'
+        content_hash: 'sha512-K7gkq531t9atY96FBDkQ9b7tiTZxnlO-X17gnDOayQY6NU4tWLz6AXZxFK7R_l_kqwI_iDUVkqvg2ljFK0Z-4Q'
       };
 
       const result = AttachmentSchema.safeParse(attachment);
@@ -413,7 +413,7 @@ describe('CRUD Schema Validation', () => {
       const attachment1 = {
         type: 'document',
         url: 'https://example.com/doc.pdf',
-        content_hash: 'sha256:abcd1234'
+        content_hash: 'sha512-K7gkq531t9atY96FBDkQ9b7tiTZxnlO-X17gnDOayQY6NU4tWLz6AXZxFK7R_l_kqwI_iDUVkqvg2ljFK0Z-4Q'
       };
 
       const attachment2 = {

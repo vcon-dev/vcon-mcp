@@ -206,7 +206,7 @@ describe('Integration Tests', () => {
           {
             type: 'recording',
             url: 'https://example.com/recording.wav',
-            content_hash: 'sha256:abcd1234',
+            content_hash: 'sha512-K7gkq531t9atY96FBDkQ9b7tiTZxnlO-X17gnDOayQY6NU4tWLz6AXZxFK7R_l_kqwI_iDUVkqvg2ljFK0Z-4Q',
             start: new Date().toISOString(),
             duration: 120
           }

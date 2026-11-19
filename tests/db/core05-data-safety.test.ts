@@ -87,7 +87,7 @@ describe('upgrade on write stores the migration report first', () => {
   const legacy = () => migrateOnRead({
     vcon: '0.4.0', uuid, created_at: '2022-01-01T00:00:00Z', parties: [{}, {}],
     dialog: [
-      { type: 'recording', start: '2022-01-01T00:00:00Z', parties: [0, 1], mediatype: 'audio/x-wav', url: 'https://e/a', content_hash: 'sha512-x' },
+      { type: 'recording', start: '2022-01-01T00:00:00Z', parties: [0, 1], mediatype: 'audio/x-wav', url: 'https://e/a', content_hash: 'sha512-K7gkq531t9atY96FBDkQ9b7tiTZxnlO-X17gnDOayQY6NU4tWLz6AXZxFK7R_l_kqwI_iDUVkqvg2ljFK0Z-4Q' },
       { type: 'transfer', start: '2022-01-01T00:01:00Z', transferee: 0, transferor: 1, original: 0, x_vendor: 'kept in report' },
     ],
   } as any);

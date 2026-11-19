@@ -126,7 +126,7 @@ describe('Validation Utilities', () => {
         party: 0,
         dialog: 0,
         url: 'https://example.com/file',
-        content_hash: 'hash123',
+        content_hash: 'sha512-K7gkq531t9atY96FBDkQ9b7tiTZxnlO-X17gnDOayQY6NU4tWLz6AXZxFK7R_l_kqwI_iDUVkqvg2ljFK0Z-4Q',
       };
       expect(() => requireValidAttachment(attachment)).not.toThrow();
     });

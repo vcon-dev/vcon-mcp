@@ -104,7 +104,7 @@ describe('reading rows stored as 0.4.0', () => {
     const vconRow = { id: UUID, uuid: UUID, vcon_version: '0.4.0', created_at: T0, redacted: { uuid: 'prior', type: 'pii' }, amended: {}, group_data: [] };
     const parties = [{ name: 'Agent' }, { name: 'Caller' }, { name: 'Supervisor' }];
     const dialog = [
-      { type: 'recording', start_time: T0, duration_seconds: 60, parties: [0, 1], originator: 1, mediatype: 'audio/x-wav', url: 'https://e.com/a.wav', content_hash: 'h',
+      { type: 'recording', start_time: T0, duration_seconds: 60, parties: [0, 1], originator: 1, mediatype: 'audio/x-wav', url: 'https://e.com/a.wav', content_hash: 'sha512-K7gkq531t9atY96FBDkQ9b7tiTZxnlO-X17gnDOayQY6NU4tWLz6AXZxFK7R_l_kqwI_iDUVkqvg2ljFK0Z-4Q',
         body: null, encoding: null, session_id: null, extra: { party_history: [{ party: 0, time: T0, event: 'join' }, { party: 1, time: T1, event: 'drop' }] } },
       { type: 'transfer', start_time: T1, parties: null, originator: null, body: null, extra: { transferee: 1, transferor: 0, transfer_target: 2, original: 0, target_dialog: null } },
     ];

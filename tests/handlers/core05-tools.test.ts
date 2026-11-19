@@ -63,7 +63,7 @@ describe('core-05 tools', () => {
       const result = await new CreateVConHandler().handle({
         parties: [{ name: 'A' }, { name: 'B' }],
         sessions: [{ start: T, parties: [0, 1], dialog: [0] }],
-        dialog: [{ type: 'recording', start: T, parties: [0, 1], url: 'https://e.com/a.wav', content_hash: 'h' }],
+        dialog: [{ type: 'recording', start: T, parties: [0, 1], url: 'https://e.com/a.wav', content_hash: 'sha512-K7gkq531t9atY96FBDkQ9b7tiTZxnlO-X17gnDOayQY6NU4tWLz6AXZxFK7R_l_kqwI_iDUVkqvg2ljFK0Z-4Q' }],
         events: [{ type: 'join', time: T, sessions: 0, party: 0 }],
         redacted_from: { uuid: randomUUID(), type: 'pii' },
       }, ctx);
@@ -77,7 +77,7 @@ describe('core-05 tools', () => {
 
     it('rejects dialog with no Session, an Event that breaks the type table, and a legacy Dialog parameter', async () => {
       const handler = new CreateVConHandler();
-      const dialog = [{ type: 'recording', parties: [0], url: 'https://e.com/a.wav', content_hash: 'h' }];
+      const dialog = [{ type: 'recording', parties: [0], url: 'https://e.com/a.wav', content_hash: 'sha512-K7gkq531t9atY96FBDkQ9b7tiTZxnlO-X17gnDOayQY6NU4tWLz6AXZxFK7R_l_kqwI_iDUVkqvg2ljFK0Z-4Q' }];
       await expect(handler.handle({ vcon: '0.5.0', parties: [{ name: 'A' }], dialog }, ctx)).rejects.toThrow(/At least one Session/);
       await expect(handler.handle({
         parties: [{ name: 'A' }], sessions: [{}], events: [{ type: 'keydown', time: T, sessions: 0, party: 0 }],
@@ -93,7 +93,7 @@ describe('core-05 tools', () => {
         vcon: '0.4.0',
         parties: [{ name: 'A' }, { name: 'B' }],
         dialog: [{
-          type: 'recording', start: T, duration: 30, parties: [0, 1], originator: 1, url: 'https://e.com/a.wav', content_hash: 'h',
+          type: 'recording', start: T, duration: 30, parties: [0, 1], originator: 1, url: 'https://e.com/a.wav', content_hash: 'sha512-K7gkq531t9atY96FBDkQ9b7tiTZxnlO-X17gnDOayQY6NU4tWLz6AXZxFK7R_l_kqwI_iDUVkqvg2ljFK0Z-4Q',
           party_history: [{ party: 0, time: T, event: 'join' }],
         }],
         redacted: { uuid: randomUUID(), type: 'pii' },
@@ -121,7 +121,7 @@ describe('core-05 tools', () => {
       queries.saveMigrationReport.mockRejectedValueOnce(new Error('no table'));
       const result = await new CreateVConHandler().handle({
         vcon: '0.4.0', parties: [{ name: 'A' }, { name: 'B' }],
-        dialog: [{ type: 'recording', start: T, parties: [0, 1], url: 'https://e.com/a.wav', content_hash: 'h' }],
+        dialog: [{ type: 'recording', start: T, parties: [0, 1], url: 'https://e.com/a.wav', content_hash: 'sha512-K7gkq531t9atY96FBDkQ9b7tiTZxnlO-X17gnDOayQY6NU4tWLz6AXZxFK7R_l_kqwI_iDUVkqvg2ljFK0Z-4Q' }],
       }, ctx);
       expect(queries.createVCon).toHaveBeenCalledTimes(1);
       expect(body(result).migration_report.source_version).toBe('0.4.0');
@@ -163,7 +163,7 @@ describe('core-05 tools', () => {
     it('reports the migration when the stored vCon was 0.4.0, in every response format', async () => {
       const stored = {
         vcon: '0.4.0', uuid: randomUUID(), created_at: T, parties: [{ name: 'A' }, { name: 'B' }],
-        dialog: [{ type: 'recording', start: T, parties: [0, 1], url: 'https://e.com/a.wav', content_hash: 'h' }],
+        dialog: [{ type: 'recording', start: T, parties: [0, 1], url: 'https://e.com/a.wav', content_hash: 'sha512-K7gkq531t9atY96FBDkQ9b7tiTZxnlO-X17gnDOayQY6NU4tWLz6AXZxFK7R_l_kqwI_iDUVkqvg2ljFK0Z-4Q' }],
         analysis: [{ type: 'summary', vendor: 'v', dialog: 0, body: 's', encoding: 'none' }],
       };
       queries.getVCon.mockImplementation(async () => migrateOnRead(stored));

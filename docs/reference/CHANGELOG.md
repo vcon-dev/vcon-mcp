@@ -13,7 +13,7 @@ Retargets the server to `draft-ietf-vcon-vcon-core-05` (syntax `"0.5.0"`). This 
 release: the Dialog Object lost its transfer, recording-set, party history and originator content,
 which moved to the new Session and Event Objects. Writers emit 0.5.0. Readers accept 0.4.0 and
 migrate it on read (and on create), using the semantics of the Python reference migration
-(vcon-lib 1.0.3, `migrate_0_4_0_to_0_5_0`).
+(vcon-lib 1.0.5, `migrate_0_4_0_to_0_5_0`).
 
 The tenant isolation work listed at the end of this entry landed on main while 2.0.0 was in review
 and ships with it.
@@ -95,13 +95,32 @@ Deploy the migration and the server together: the server reads and writes the re
 
 ### Fixed (since the port branched)
 - the migration reports a Dialog `start` that is not an RFC 3339 date-time as unresolved under T1
-  (strict mode throws), as the Python reference 1.0.3 and vcon-js do
-- the migration post-check applies the reference's validation rules in full (Attachment `start`,
-  `purpose`, `mediatype` and content, Dialog `mediatype`, `incomplete` disposition, Analysis `type`,
-  `vendor` and `encoding`, `created_at` format), so a report counts what the reference's counts;
-  accepting a vCon stays as lenient as before. Report messages print values as the reference does.
-  On 248 real 0.4.0 vCons the migrated documents and the full report entry lists equal the
-  reference's
+  (strict mode throws), as the Python reference and vcon-js do
+- the migration post-check runs the reference's `validate_vcon_dict` exactly
+  (`src/utils/vcon-reference-validation.ts`, a port of vcon-lib 1.0.5 by way of vcon-js), so a report
+  says what the reference's says; accepting a vCon stays as lenient as before about Attachment
+  `start` / `purpose` / `mediatype`, Dialog `mediatype` and the like. Report messages print values as
+  the reference does. On 248 real 0.4.0 vCons the migrated documents and the full report entry lists
+  equal vcon-lib 1.0.5's, and on 257 + 147 validation cases the verdicts, errors and warnings do too
+
+### Changed (since the port branched): the vcon-lib 1.0.4 / 1.0.5 rules
+- a malformed `content_hash` on a Dialog, Attachment, Analysis, `redacted_from` or `amended_from`
+  is a validation error, so `create_vcon` and `POST /vcons` refuse it. A ContentHash is
+  `<algorithm>-<unpadded base64url digest>`; `sha512` and `sha256` digests must be 86 and 43
+  characters, which catches hex digests (`sha256-<hex>`, `sha-256:<hex>`) and padding
+- warnings for a `url` with no `content_hash` (an error in vcon 1.1) and for an `encoding: "json"`
+  body that is a serialized JSON string
+- `lawful_basis` attachment bodies are checked with the reference's validator (required
+  `lawful_basis`, `expiration`, `purpose_grants`; the fields of each grant, proof mechanism, content
+  hash and registry). The reference reports problems as errors; on create they are warnings, as
+  every lawful basis finding of this server is, so a vCon is not refused over its basis. Values
+  outside the draft's open vocabularies are warnings in both
+- `created_at` and `updated_at` must be ISO 8601 date-times; an offset of 24 hours or more is invalid
+- a signed (JWS) or encrypted (JWE) vCon is validated as one (signatures, payload validated as a
+  vCon; JWE members, with a warning that its content was not checked) and refused on create: the
+  tables cannot hold the container. Verify (and decrypt) it and send the vCon it carries
+- media offloaded to object storage gets `content_hash: "sha512-<base64url>"`; it was a bare SHA-256
+  hex digest, which is not a ContentHash
 
 ### Known gaps
 - `remove_analysis` and `remove_attachment` still renumber without rewriting `analysis.attachment`

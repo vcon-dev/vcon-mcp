@@ -74,7 +74,7 @@ const fixture = {
       parties: [[0], [1]],
       mediatype: 'audio/x-wav',
       url: 'https://example.com/a.wav',
-      content_hash: 'sha512-abc',
+      content_hash: 'sha512-K7gkq531t9atY96FBDkQ9b7tiTZxnlO-X17gnDOayQY6NU4tWLz6AXZxFK7R_l_kqwI_iDUVkqvg2ljFK0Z-4Q',
       meta: { leg: 1 },
       alg: 'SHA-512',
       signature: 'sig-value',

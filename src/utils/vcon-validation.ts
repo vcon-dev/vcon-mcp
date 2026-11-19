@@ -7,9 +7,20 @@
  * event.py, session.py), relaxed where this server has always been lenient
  * (missing Attachment start/purpose/mediatype, Dialog mediatype, party
  * identifiers), strict on the 0.5.0 structure: Sessions, Events, references,
- * Attachment scope, redacted_from / amended_from. The `reference` option turns
- * the relaxed rules back on; the migration post-check uses it.
+ * Attachment scope, redacted_from / amended_from. The content rules of
+ * vcon-lib 1.0.5 (content_hash form, url without content_hash, a JSON body
+ * serialized as a string, lawful_basis bodies, created_at / updated_at) apply
+ * here too. The `reference` option runs the reference rules exactly
+ * (src/utils/vcon-reference-validation.ts); the migration post-check uses it.
  */
+import {
+  checkContent,
+  encryptedForm,
+  lawfulBasisFindings,
+  signedForm,
+  validateVconDict,
+} from './vcon-reference-validation.js';
+import { dateTimeProblem, parseDateTime } from './py-compat.js';
 
 export const SYNTAX_VERSION = '0.5.0';
 
@@ -66,29 +77,13 @@ export interface DocumentFindings {
 
 export interface DocumentOptions {
   /**
-   * Apply every rule of the reference validate_vcon_dict, including the ones this server
-   * relaxes when it accepts a vCon (Attachment start / purpose / mediatype / content,
-   * Dialog mediatype, incomplete disposition, Analysis type / vendor / encoding, the
-   * created_at format). The 0.4.0 -> 0.5.0 migration post-check uses it, so its report
-   * counts what the reference's counts.
+   * Apply the reference's validate_vcon_dict (vcon-lib 1.0.5) exactly, including the
+   * rules this server relaxes when it accepts a vCon (Attachment start / purpose /
+   * mediatype / content, Dialog mediatype, incomplete disposition, Analysis type /
+   * vendor / encoding). The 0.4.0 -> 0.5.0 migration post-check uses it, so its report
+   * says what the reference's says.
    */
   reference?: boolean;
-}
-
-/** The reference's Dialog.MIME_TYPES (vcon-lib dialog.py), which its migration post-check uses. */
-export const REFERENCE_DIALOG_MIME_TYPES: readonly string[] = [
-  'text/plain', 'audio/x-wav', 'audio/wav', 'audio/wave', 'audio/mpeg', 'audio/mp3', 'audio/x-mp3',
-  'audio/x-mp4', 'audio/ogg', 'audio/webm', 'audio/x-m4a', 'audio/aac', 'video/x-mp4', 'video/ogg',
-  'video/mp4', 'video/quicktime', 'video/webm', 'video/x-msvideo', 'video/x-matroska', 'video/mpeg',
-  'video/x-flv', 'video/3gpp', 'video/x-m4v', 'multipart/mixed', 'message/rfc822', 'image/jpeg',
-  'image/tiff', 'application/pdf', 'application/json',
-];
-
-/** The reference's mediatype_ok: parameters ignored; any multipart/, message/ or text/ subtype accepted. */
-export function mediatypeOk(mediatype: unknown, known: readonly string[] = REFERENCE_DIALOG_MIME_TYPES): boolean {
-  if (typeof mediatype !== 'string') return false;
-  const base = mediatype.split(';', 1)[0].trim().toLowerCase();
-  return known.includes(base) || base.startsWith('multipart/') || base.startsWith('message/') || base.startsWith('text/');
 }
 
 export function isIndex(v: unknown): v is number {
@@ -106,15 +101,6 @@ function asList(v: unknown): any[] {
 
 function isIndexOrList(v: unknown): boolean {
   return isIndex(v) || (Array.isArray(v) && v.every(isIndex));
-}
-
-/** Python str() of a JSON value, as the reference's f-strings print it. */
-function pyStr(v: unknown): string {
-  if (typeof v === 'string') return v;
-  if (v === null || v === undefined) return 'None';
-  if (v === true) return 'True';
-  if (v === false) return 'False';
-  return JSON.stringify(v);
 }
 
 function validDate(v: unknown): boolean {
@@ -387,32 +373,29 @@ function scanRedactedRefs(obj: unknown, found: Set<number>): void {
 /**
  * Validate a 0.5.0 vCon document. Structural only: the content rules the server
  * has always applied (identifiers, body/encoding pairs) stay in VConValidator.
+ * A signed (JWS) or encrypted (JWE) container is checked as the reference checks it.
  */
 export function validateVConDocument(vcon: Obj, opts: DocumentOptions = {}): DocumentFindings {
+  if (opts.reference) return validateVconDict(vcon);
+  if (signedForm(vcon) || encryptedForm(vcon)) {
+    const container = validateVconDict(vcon);
+    const lb = lawfulBasisFindings(vcon);
+    return { errors: container.errors, warnings: [...container.warnings, ...lb.errors, ...lb.warnings] };
+  }
   const errors: string[] = [];
   const warnings: string[] = [];
-  const ref = opts.reference === true;
 
-  if (ref) {
-    for (const field of ['uuid', 'created_at']) {
-      if (!(field in vcon)) errors.push(`Missing required field: ${field}`);
-    }
-    for (const ts of ['created_at', 'updated_at']) {
-      if (ts in vcon && !validDate(vcon[ts])) {
-        errors.push(`Invalid ${ts} format. Must be an ISO 8601 datetime string: Unknown string format: ${vcon[ts]}`);
-      }
-    }
-    if ('parties' in vcon) {
-      if (!Array.isArray(vcon.parties)) errors.push("Field 'parties' must be a list.");
-      else vcon.parties.forEach((p: unknown, i: number) => { if (!isObj(p)) errors.push(`Party at index ${i} must be a dictionary.`); });
+  // created_at / updated_at: the reference's date-time rules (an offset of 24 hours or
+  // more is invalid). The value is not rewritten here.
+  for (const ts of ['created_at', 'updated_at']) {
+    if (vcon[ts] !== undefined && parseDateTime(vcon[ts]) === undefined) {
+      errors.push(`Invalid ${ts} format. Must be an ISO 8601 datetime string: ${dateTimeProblem(vcon[ts])}`);
     }
   }
 
   // The vcon parameter is deprecated: any value or none is accepted. A value other than
   // 0.5.0 only draws a warning, because the service migrates 0.4.0 input before it validates.
-  if (ref && vcon.vcon !== undefined && vcon.vcon !== SYNTAX_VERSION) {
-    errors.push(`Unsupported vcon syntax version '${vcon.vcon}': this library writes '${SYNTAX_VERSION}'.`);
-  } else if (vcon.vcon !== undefined && vcon.vcon !== SYNTAX_VERSION) {
+  if (vcon.vcon !== undefined && vcon.vcon !== SYNTAX_VERSION) {
     warnings.push(
       `vcon syntax version is '${vcon.vcon}', not '${SYNTAX_VERSION}': a 0.4.0 vCon is migrated on read and on create.`
     );
@@ -440,8 +423,8 @@ export function validateVConDocument(vcon: Obj, opts: DocumentOptions = {}): Doc
     const rf = vcon.redacted_from;
     if (!isObj(rf)) errors.push("Field 'redacted_from' must be an object.");
     else {
-      if (ref && rf.type === undefined) errors.push('redacted_from is missing required field: type');
       if (rf.url !== undefined && rf.content_hash === undefined) errors.push('redacted_from with url must include content_hash.');
+      checkContent(rf, 'redacted_from', errors, warnings, false);
     }
   }
   if (hasAf) {
@@ -450,16 +433,14 @@ export function validateVConDocument(vcon: Obj, opts: DocumentOptions = {}): Doc
     else {
       if (af.uuid === undefined && af.url === undefined) errors.push('amended_from must include uuid, or an external reference (url).');
       if (af.url !== undefined && af.content_hash === undefined) errors.push('amended_from with url must include content_hash.');
+      checkContent(af, 'amended_from', errors, warnings, false);
     }
   }
   const redacted = isObj(vcon.redacted_from);
 
   // extensions / critical
-  const strings = (v: unknown) => Array.isArray(v) && v.every((x) => typeof x === 'string');
-  const extListed: string[] = strings(vcon.extensions) ? vcon.extensions : [];
-  const crit: string[] = strings(vcon.critical) ? vcon.critical : [];
-  if (ref && 'extensions' in vcon && !strings(vcon.extensions)) errors.push("Field 'extensions' must be a list of strings.");
-  if (ref && 'critical' in vcon && !strings(vcon.critical)) errors.push("Field 'critical' must be a list of strings.");
+  const extListed: string[] = Array.isArray(vcon.extensions) ? vcon.extensions : [];
+  const crit: string[] = Array.isArray(vcon.critical) ? vcon.critical : [];
   for (const name of crit) {
     if (!extListed.includes(name)) errors.push(`Extension '${name}' is listed in critical but not in extensions.`);
   }
@@ -497,7 +478,6 @@ export function validateVConDocument(vcon: Obj, opts: DocumentOptions = {}): Doc
       if (legacy in dialog) errors.push(`Dialog at index ${i} has parameter '${legacy}', which was removed in 0.5.0.`);
     }
     if (dtype === 'incomplete') {
-      if (ref && !('disposition' in dialog)) errors.push(`Dialog at index ${i} of type 'incomplete' must have a disposition.`);
       for (const forbidden of ['mediatype', 'filename', 'body', 'encoding', 'url', 'content_hash', 'message_id', 'redacted_segments']) {
         if (forbidden in dialog) errors.push(`Dialog at index ${i} of type 'incomplete' must not have field: ${forbidden}`);
       }
@@ -516,20 +496,10 @@ export function validateVConDocument(vcon: Obj, opts: DocumentOptions = {}): Doc
     if ('start' in dialog && !validDate(dialog.start)) {
       errors.push(`Dialog at index ${i} has an invalid 'start' format. Must be an ISO 8601 datetime string.`);
     }
-    if (ref && dtype !== 'incomplete') {
-      if ('mediatype' in dialog) {
-        if (!mediatypeOk(dialog.mediatype)) errors.push(`Dialog at index ${i} has an invalid or missing mediatype: ${pyStr(dialog.mediatype)}`);
-      } else if ('body' in dialog) {
-        errors.push(`Dialog at index ${i} has an invalid or missing mediatype: missing`);
-      }
-    }
     if ('redacted_segments' in dialog && !Array.isArray(dialog.redacted_segments)) {
       errors.push(`Dialog at index ${i} field 'redacted_segments' must be a list.`);
-    } else if (ref && Array.isArray(dialog.redacted_segments)) {
-      dialog.redacted_segments.forEach((seg: unknown, n: number) => {
-        if (!isObj(seg) || !('start' in seg) || !('end' in seg)) errors.push(`Dialog at index ${i} redacted_segments[${n}] requires start and end.`);
-      });
     }
+    if (dtype !== 'incomplete') checkContent(dialog, `Dialog at index ${i}`, errors, warnings);
   });
 
   // sessions
@@ -585,21 +555,6 @@ export function validateVConDocument(vcon: Obj, opts: DocumentOptions = {}): Doc
       errors.push(`Attachment at index ${i} must be an object.`);
       return;
     }
-    if (ref) {
-      if (!('purpose' in att)) errors.push(`Attachment at index ${i} is missing required field: purpose`);
-      const inline = 'body' in att && 'encoding' in att;
-      const external = 'url' in att && 'content_hash' in att;
-      if (!(inline || external || redacted)) errors.push(`Attachment at index ${i} must include body+encoding or url+content_hash.`);
-    }
-    if (ref && att.encoding !== undefined && !(CORE_ENCODINGS as readonly string[]).includes(att.encoding) && extListed.length === 0) {
-      errors.push(`Attachment at index ${i} has invalid encoding: ${att.encoding}`);
-    }
-    if (ref) {
-      if ('body' in att && att.body !== '' && !('mediatype' in att)) {
-        errors.push(`Attachment at index ${i} is missing required field: mediatype (needed for inline content)`);
-      }
-      if (!('start' in att)) errors.push(`Attachment at index ${i} is missing required field: start`);
-    }
     if (!('party' in att) || att.party === undefined) {
       errors.push(`Attachment at index ${i} is missing required field: party`);
     } else if (!isIndex(att.party) || att.party >= parties.length) {
@@ -623,9 +578,10 @@ export function validateVConDocument(vcon: Obj, opts: DocumentOptions = {}): Doc
         if (!isIndex(v) || v >= sessions.length) errors.push(`Attachment at index ${i} references invalid session index: ${v}`);
       }
     }
-    if (!ref && att.encoding !== undefined && !(CORE_ENCODINGS as readonly string[]).includes(att.encoding) && extListed.length === 0) {
+    if (att.encoding !== undefined && !(CORE_ENCODINGS as readonly string[]).includes(att.encoding) && extListed.length === 0) {
       errors.push(`Attachment at index ${i} has invalid encoding: ${att.encoding}`);
     }
+    checkContent(att, `Attachment at index ${i}`, errors, warnings, ('body' in att && 'encoding' in att) || redacted);
   });
 
   // analysis
@@ -634,17 +590,7 @@ export function validateVConDocument(vcon: Obj, opts: DocumentOptions = {}): Doc
       errors.push(`Analysis at index ${i} must be an object.`);
       return;
     }
-    if (ref) {
-      for (const field of ['type', 'vendor']) {
-        if (!(field in analysis)) errors.push(`Analysis at index ${i} is missing required field: ${field}`);
-      }
-      if ('body' in analysis && analysis.body !== '' && !('encoding' in analysis)) {
-        errors.push(`Analysis at index ${i} is missing required field: encoding`);
-      }
-      if ('encoding' in analysis && !(CORE_ENCODINGS as readonly string[]).includes(analysis.encoding) && extListed.length === 0) {
-        errors.push(`Analysis at index ${i} has invalid encoding: ${analysis.encoding}`);
-      }
-    }
+    checkContent(analysis, `Analysis at index ${i}`, errors, warnings);
     const refs: Array<[string, number, string]> = [
       ['dialog', dialogs.length, 'dialog'],
       ['sessions', sessions.length, 'session'],
@@ -692,6 +638,12 @@ export function validateVConDocument(vcon: Obj, opts: DocumentOptions = {}): Doc
   for (const ref of [...found].sort((a, b) => a - b)) {
     if (!declared.has(ref)) errors.push(`__REDACTED_REF_${ref} appears in the vCon but has no entry in redacted_strings.`);
   }
+
+  // lawful_basis attachment bodies, checked with the reference's LawfulBasisValidator.
+  // The reference reports body problems as errors; here they are warnings, as every
+  // lawful basis finding of this server has been: a vCon is not refused over its basis.
+  const lb = lawfulBasisFindings(vcon);
+  warnings.push(...lb.errors, ...lb.warnings);
 
   return { errors, warnings };
 }

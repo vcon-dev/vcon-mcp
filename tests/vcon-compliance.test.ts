@@ -350,7 +350,7 @@ describe('IETF vCon Spec Compliance', () => {
           duration: 4,
           parties: [1, 0],
           url: 'https://example.com/rec.wav',
-          content_hash: 'abc',
+          content_hash: 'sha512-K7gkq531t9atY96FBDkQ9b7tiTZxnlO-X17gnDOayQY6NU4tWLz6AXZxFK7R_l_kqwI_iDUVkqvg2ljFK0Z-4Q',
         }],
         attachments: [{ type: 'ingress_info', party: 0, session: 0, encoding: 'none', body: { source: 'example-carrier' } }],
       } as unknown as VCon;

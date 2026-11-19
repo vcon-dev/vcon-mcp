@@ -45,6 +45,26 @@ describe('VConService', () => {
   });
 
   describe('create', () => {
+    it('refuses a signed (JWS) or encrypted (JWE) vCon instead of storing the container', async () => {
+      const payload = Buffer.from(JSON.stringify({ uuid: randomUUID(), created_at: '2026-01-01T00:00:00Z', parties: [{ name: 'A' }] })).toString('base64url');
+      await expect(service.create({ payload, signatures: [{ protected: 'e30', signature: 's' }] } as any))
+        .rejects.toThrow(/A signed \(JWS\) vCon cannot be stored as is/);
+      await expect(service.create({ ciphertext: 'x', recipients: [{}] } as any))
+        .rejects.toThrow(/An? encrypted \(JWE\) vCon cannot be stored as is: verify and decrypt it/);
+      expect(mockQueries.createVCon).not.toHaveBeenCalled();
+    });
+
+    it('refuses a malformed content_hash and reports lawful basis body problems as warnings only', async () => {
+      mockPluginManager.executeHook.mockResolvedValue(undefined);
+      const att = { purpose: 'note', party: 0, dialog: 0, encoding: 'none', body: 'x', content_hash: 'sha256:abcd' };
+      await expect(service.create({
+        parties: [{ name: 'A' }],
+        sessions: [{ parties: [0], dialog: [0] }],
+        dialog: [{ type: 'text', start: '2026-01-01T00:00:00Z', parties: [0], encoding: 'none', body: 'hi' }],
+        attachments: [att],
+      } as any)).rejects.toThrow(/Attachment at index 0 has an invalid content_hash/);
+    });
+
     it('should create a vCon with auto-generated UUID and timestamp', async () => {
       const createdUuid = randomUUID();
       mockQueries.createVCon.mockResolvedValue({ uuid: createdUuid, id: '1' });
