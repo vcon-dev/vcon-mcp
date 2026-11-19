@@ -544,7 +544,7 @@ export class SupabaseVConQueries implements IVConQueries {
   }
 
   /**
-   * Append a migration report to vcon_migration_reports (migration 20261101120000). The
+   * Append a migration report to vcon_migration_reports (migration 20261118120000). The
    * table is append-only; tenant_id follows the parent vCon (insert trigger).
    */
   async saveMigrationReport(

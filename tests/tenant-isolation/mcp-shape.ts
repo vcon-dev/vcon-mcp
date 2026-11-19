@@ -469,7 +469,7 @@ async function main(): Promise<number> {
       ...VCON_CHILDREN.map((t) => `(SELECT count(*) FROM ${t} WHERE vcon_id = '${A2.uuid}')`),
       `(SELECT count(*) FROM party_history WHERE dialog_id = '${rowId(A2, 'dialog')}')`,
     ].join(' + ')}`).trim();
-    expectValue('delete-own-cascade', 'the vCon and every child row of it are gone, in all ten tables', left, ['0', '0']);
+    expectValue('delete-own-cascade', 'the vCon and every child row of it are gone, in every tenant table', left, ['0', '0']);
     expectValue('delete-own-others', "A's other vCon and B's vCons are untouched",
       stack.sql(`SELECT count(*) FROM vcons WHERE uuid IN ('${A.uuid}', '${B.uuid}', '${BN.uuid}')`).trim(), ['3', '3']);
 

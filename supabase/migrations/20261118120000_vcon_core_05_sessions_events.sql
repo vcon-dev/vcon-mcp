@@ -28,6 +28,20 @@
 -- Per-group schemas: like save_vcon_batch before it, this creates objects in the caller's
 -- search_path (public). Apply it again in each per-group schema.
 --
+-- Ordering and tenancy. This sorts after 20261109163739_revoke_anon_read_paths.sql and
+-- 20261112120000_keep_stored_tenant.sql and keeps what they established:
+--   * save_vcon_batch keeps a stored tenant on a re-post (COALESCE(stored, new) on
+--     vcons.tenant_id), exactly as 20261112120000 does; only the Session and Event arguments
+--     are new. TENANT_MODE=writer relies on this.
+--   * sessions, events and vcon_migration_reports carry tenant_id, take the parent vCon's
+--     tenant on insert, follow it when it changes (cascade_tenant_id_update) and have the
+--     same RLS policy as the other child tables. anon and PUBLIC hold nothing on them, and
+--     every function this file creates or replaces is closed to PUBLIC and anon (the rule
+--     the anon lockdown migration sets for later migrations; supabase/tests/anon_lockdown.sql
+--     checks it).
+--   * The strict pack (supabase/strict) lists the three tables as tenant tables, so a strict
+--     deployment applies this migration and then re-runs the pack.
+--
 -- Idempotent: every statement guards on existing state.
 --
 -- Data: nothing is dropped. The two renames keep their data; dialog.originator and the
@@ -42,8 +56,10 @@
 --   ALTER TABLE vcons DROP COLUMN redacted_strings;
 --   then restore sync_vcon_deprecated_fields() and get_vcon_amended() from
 --   20251120150100_field_renames.sql, the dialog_type_check of the initial schema and
---   type NOT NULL, the five-argument save_vcon_batch from 20261020130000_save_vcon_batch.sql,
---   and cascade_tenant_id_update() from 20251122175919_create_tenant_triggers.sql;
+--   type NOT NULL, the five-argument save_vcon_batch from 20261112120000_keep_stored_tenant.sql
+--   (with its REVOKE and GRANT), and cascade_tenant_id_update() from
+--   20251122175919_create_tenant_triggers.sql; on a strict-pack deployment, re-run the pack
+--   from before this migration;
 --   DROP TABLE events, sessions, vcon_migration_reports; drop the session_indices columns.
 -- After 0.5.0 writes, rolling back loses Sessions and Events; restore from a backup instead.
 
@@ -258,6 +274,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+REVOKE EXECUTE ON FUNCTION set_sessions_tenant_id() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION set_events_tenant_id() FROM PUBLIC, anon, authenticated;
+
 DROP TRIGGER IF EXISTS trg_set_sessions_tenant_id ON sessions;
 CREATE TRIGGER trg_set_sessions_tenant_id
   BEFORE INSERT ON sessions
@@ -297,6 +316,12 @@ $$ LANGUAGE plpgsql;
 
 ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE events   ENABLE ROW LEVEL SECURITY;
+
+-- anon reads no tenant table (20261109163739_revoke_anon_read_paths.sql). Its default
+-- privileges already keep anon off new tables when postgres runs this; the explicit revoke
+-- also covers a runner whose defaults differ and a per-group schema.
+REVOKE ALL ON sessions FROM PUBLIC, anon;
+REVOKE ALL ON events   FROM PUBLIC, anon;
 
 DROP POLICY IF EXISTS "sessions_tenant_isolation" ON sessions;
 CREATE POLICY "sessions_tenant_isolation" ON sessions
@@ -359,8 +384,13 @@ BEGIN
   LOOP
     CONTINUE WHEN spec.rows IS NULL OR jsonb_array_length(spec.rows) = 0;
 
+    -- On vcons, a stored tenant wins over the re-post's (20261112120000_keep_stored_tenant.sql).
+    -- Children need no special case: their insert triggers already give them the parent's.
     SELECT string_agg(format('%I', k), ', ' ORDER BY k),
-           string_agg(format('%I = EXCLUDED.%I', k, k), ', ' ORDER BY k)
+           string_agg(CASE WHEN spec.tbl = 'vcons' AND k = 'tenant_id'
+                           THEN 'tenant_id = COALESCE(vcons.tenant_id, EXCLUDED.tenant_id)'
+                           ELSE format('%I = EXCLUDED.%I', k, k) END,
+                      ', ' ORDER BY k)
       INTO col_list, set_list
       FROM (SELECT DISTINCT jsonb_object_keys(r) AS k
               FROM jsonb_array_elements(spec.rows) AS r) AS keys;
@@ -374,6 +404,7 @@ BEGIN
 END;
 $$;
 
+REVOKE EXECUTE ON FUNCTION save_vcon_batch(JSONB, JSONB, JSONB, JSONB, JSONB, JSONB, JSONB) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION save_vcon_batch(JSONB, JSONB, JSONB, JSONB, JSONB, JSONB, JSONB)
   TO authenticated, service_role;
 
@@ -414,6 +445,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+REVOKE EXECUTE ON FUNCTION set_vcon_migration_reports_tenant_id() FROM PUBLIC, anon, authenticated;
+
 DROP TRIGGER IF EXISTS trg_set_vcon_migration_reports_tenant_id ON vcon_migration_reports;
 CREATE TRIGGER trg_set_vcon_migration_reports_tenant_id
   BEFORE INSERT ON vcon_migration_reports
@@ -421,8 +454,20 @@ CREATE TRIGGER trg_set_vcon_migration_reports_tenant_id
 
 ALTER TABLE vcon_migration_reports ENABLE ROW LEVEL SECURITY;
 
+REVOKE ALL ON vcon_migration_reports FROM PUBLIC, anon;
+
 DROP POLICY IF EXISTS "vcon_migration_reports_tenant_isolation" ON vcon_migration_reports;
 CREATE POLICY "vcon_migration_reports_tenant_isolation" ON vcon_migration_reports
   FOR ALL TO authenticated
   USING (tenant_id IS NULL OR tenant_id = get_current_tenant_id())
   WITH CHECK (tenant_id IS NULL OR tenant_id = get_current_tenant_id());
+
+-- ============================================================================
+-- 9. Functions replaced above: closed to PUBLIC and anon
+-- ============================================================================
+-- CREATE OR REPLACE keeps an existing function's grants, so on a database that applied
+-- 20261109163739 these are already closed. On one where a function did not exist yet (or a
+-- per-group schema), it was created with the default PUBLIC grant; take it back.
+REVOKE EXECUTE ON FUNCTION sync_vcon_deprecated_fields() FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION get_vcon_amended(UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION cascade_tenant_id_update() FROM PUBLIC, anon;

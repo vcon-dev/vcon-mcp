@@ -411,7 +411,7 @@ The API follows semantic versioning:
 
 ### vCon Version
 
-Current: **0.5.0** (package 2.0.0). The sessions and events tables need the migration `20261101120000_vcon_core_05_sessions_events.sql`, which the operator applies; it is not applied automatically.
+Current: **0.5.0** (package 2.0.0). The sessions and events tables need the migration `20261118120000_vcon_core_05_sessions_events.sql`, which the operator applies; it is not applied automatically.
 
 Follows IETF vCon specification versions.
 

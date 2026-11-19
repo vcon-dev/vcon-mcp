@@ -584,7 +584,7 @@ The server never invents a lawful basis. When `lawful_basis` is supplied it is s
 
 ## Component Management
 
-Index-addressed tools use zero-based positions in the vCon's `parties`, `dialog`, `analysis`, and `attachments` arrays. These tools write through the database layer directly and do not run plugin hooks. A stored 0.4.0 vCon is upgraded to 0.5.0 in place on the first structural write (`add_dialog`, `add_attachment`, tag writes, `update_dialog`, `remove_dialog`, `update_attachment`). The upgrade needs the `20261101120000_vcon_core_05_sessions_events.sql` migration, which the operator applies.
+Index-addressed tools use zero-based positions in the vCon's `parties`, `dialog`, `analysis`, and `attachments` arrays. These tools write through the database layer directly and do not run plugin hooks. A stored 0.4.0 vCon is upgraded to 0.5.0 in place on the first structural write (`add_dialog`, `add_attachment`, tag writes, `update_dialog`, `remove_dialog`, `update_attachment`). The upgrade needs the `20261118120000_vcon_core_05_sessions_events.sql` migration, which the operator applies.
 
 ### Child object fields
 

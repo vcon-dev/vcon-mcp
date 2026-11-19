@@ -336,7 +336,7 @@ function buildBatchRows(pending: Pending[], tenantId: string | null) {
 
 /**
  * Fallback for databases without save_vcon_batch (migration
- * 20261020130000_save_vcon_batch.sql, or its 0.5.0 replacement 20261101120000_vcon_core_05_sessions_events.sql, not applied). Not atomic: a failed child
+ * 20261020130000_save_vcon_batch.sql, or its 0.5.0 replacement 20261118120000_vcon_core_05_sessions_events.sql, not applied). Not atomic: a failed child
  * write leaves the vcons row and the other children committed. The whole batch
  * settles together, as it did before CON-957.
  */

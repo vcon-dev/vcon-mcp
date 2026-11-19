@@ -15,7 +15,7 @@ import { VConQueries } from '../../src/db/queries.js';
 import { getMigrationReport, migrateOnRead } from '../../src/utils/vcon-migration.js';
 
 const SQL = readFileSync(
-  join(__dirname, '..', '..', 'supabase', 'migrations', '20261101120000_vcon_core_05_sessions_events.sql'),
+  join(__dirname, '..', '..', 'supabase', 'migrations', '20261118120000_vcon_core_05_sessions_events.sql'),
   'utf8'
 );
 const fn = (name: string) => {
@@ -23,7 +23,7 @@ const fn = (name: string) => {
   return m ? m[0] : '';
 };
 
-describe('20261101120000 migration SQL', () => {
+describe('20261118120000 migration SQL', () => {
   it('redefines the draft-01 sync trigger on amended_from, so vcons INSERT/UPDATE keep working after the rename', () => {
     const body = fn('sync_vcon_deprecated_fields');
     expect(body).not.toBe('');

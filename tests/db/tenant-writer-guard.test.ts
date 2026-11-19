@@ -52,14 +52,23 @@ describe('static: every vcons insert path in src is the stamped one', () => {
     expect(probe).toMatch(/rpc\('save_vcon_batch', \{\s*p_vcons: \[\], p_parties: \[\], p_dialog: \[\], p_analysis: \[\], p_attachments: \[\],\s*\}\)/);
   });
 
-  it('batchSaveVCon has one caller: createVCon, after the writer stamp', () => {
+  it('batchSaveVCon has two callers: createVCon, after the writer stamp, and the 0.5.0 upgrade with the stored tenant', () => {
     const callers = files.flatMap((f) =>
       [...f.text.matchAll(/(?<!function )batchSaveVCon\(/g)].map(() => f.path));
-    expect(callers).toEqual(['src/db/queries.ts']);
+    expect(callers).toEqual(['src/db/queries.ts', 'src/db/queries.ts']);
     const body = methodBody('src/db/queries.ts', 'createVCon');
     expect(body).toMatch(/getTenantMode\(\) === 'writer'/);
     expect(body.indexOf('resolveWriterTenant(')).toBeGreaterThan(-1);
     expect(body.indexOf('resolveWriterTenant(')).toBeLessThan(body.indexOf('batchSaveVCon('));
+    // Upgrade on write rewrites a vCon that is already stored, under the tenant it is stored
+    // with (and save_vcon_batch keeps a stored tenant whatever it is sent).
+    const upgrade = methodBody('src/db/queries.ts', 'upgradeStoredVCon');
+    expect(upgrade).toMatch(/batchSaveVCon\(migrated, tenantId,/);
+    const load = methodBody('src/db/queries.ts', 'loadVConForWrite');
+    expect(load).toMatch(/upgradeStoredVCon\(vconUuid, \(data as any\)\.tenant_id \?\? null\)/);
+    const loads = files.flatMap((f) => [...f.text.matchAll(/loadVConForWrite\(vconUuid, '([^']*)'\)/g)].map((m) => m[1]));
+    expect(loads.length).toBeGreaterThan(0);
+    for (const columns of loads) expect(columns.split(/,\s*/)).toContain('tenant_id');
   });
 
   it('a direct vcons insert or upsert exists only in the per-table fallback, which a writer refuses', () => {
@@ -113,6 +122,7 @@ describe('dynamic: every create entry point stamps what reaches the store (write
   let saved: Record<string, string | undefined>;
   let rows: Array<{ vcons: any[]; children: any[] }>;
   let tableWrites: string[];
+  let reportWrites: any[];
   let supabase: any;
   let vconService: VConService;
   let context: any;
@@ -125,15 +135,22 @@ describe('dynamic: every create entry point stamps what reaches the store (write
     _resetBatchWriterForTests();
     rows = [];
     tableWrites = [];
+    reportWrites = [];
     supabase = {
       rpc: vi.fn((fn: string, args: any) => {
         if (fn === 'save_vcon_batch') {
-          rows.push({ vcons: args.p_vcons, children: [...args.p_parties, ...args.p_dialog, ...args.p_analysis, ...args.p_attachments] });
+          rows.push({ vcons: args.p_vcons, children: [...args.p_parties, ...args.p_dialog, ...(args.p_sessions ?? []), ...(args.p_events ?? []), ...args.p_analysis, ...args.p_attachments] });
         }
         return Promise.resolve({ data: null, error: null });
       }),
       from: vi.fn((table: string) => ({
-        insert: vi.fn(() => { tableWrites.push(table); return Promise.resolve({ error: null }); }),
+        // vcon_migration_reports (a 0.4.0 vCon posted and migrated) is the one table insert a
+        // create makes; its tenant comes from the stored vCon through the insert trigger.
+        insert: vi.fn((row: any) => {
+          if (table === 'vcon_migration_reports') reportWrites.push(row);
+          else tableWrites.push(table);
+          return Promise.resolve({ error: null });
+        }),
         upsert: vi.fn(() => { tableWrites.push(table); return Promise.resolve({ error: null }); }),
         select: vi.fn(() => ({ in: vi.fn(() => Promise.resolve({ data: [], error: null })) })),
       })),
@@ -155,11 +172,21 @@ describe('dynamic: every create entry point stamps what reaches the store (write
   /** Every vcons row and child row the store received carries `tenant`, and nothing went around the RPC. */
   function expectStored(tenant: string, count: number) {
     expect(tableWrites).toEqual([]);
+    expectReportsFollowStoredVCons();
     const vconRows = rows.flatMap((r) => r.vcons);
     expect(vconRows).toHaveLength(count);
     for (const r of rows) {
       for (const v of r.vcons) expect(v.tenant_id).toBe(tenant);
       for (const c of r.children) expect(c.tenant_id).toBe(tenant);
+    }
+  }
+
+  /** A migration report names a stored vCon and sets no tenant of its own. */
+  function expectReportsFollowStoredVCons() {
+    const stored = new Set(rows.flatMap((r) => r.vcons).map((v) => v.uuid));
+    for (const r of reportWrites) {
+      expect(r).not.toHaveProperty('tenant_id');
+      expect(stored.has(r.vcon_id), r.vcon_id).toBe(true);
     }
   }
 
@@ -190,6 +217,7 @@ describe('dynamic: every create entry point stamps what reaches the store (write
     await request(app().callback()).post('/api/v1/vcons').send(body([stamp])).expect(201);
     expectStored(TA, 1);
     rows = [];
+    reportWrites = [];
     await request(app().callback()).post('/api/v1/vcons').send(body([])).expect(201);
     expectStored('_quarantine', 1);
   });
@@ -201,6 +229,8 @@ describe('dynamic: every create entry point stamps what reaches the store (write
       .expect(201);
     expect(res.body.created).toBe(3);
     expect(tableWrites).toEqual([]);
+    expect(reportWrites).toHaveLength(3);
+    expectReportsFollowStoredVCons();
     const byTenant = rows.flatMap((r) => r.vcons).map((v) => v.tenant_id).sort();
     expect(byTenant).toEqual(['_quarantine', '_quarantine', TA]);
     for (const r of rows) {

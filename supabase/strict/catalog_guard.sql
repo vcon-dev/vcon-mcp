@@ -56,7 +56,8 @@ DO $guard$
 DECLARE
   schemas constant text[] := ARRAY['public', 'vkong'];
   tenant_tables constant text[] := ARRAY['vcons', 'parties', 'dialog', 'attachments', 'analysis', 'groups',
-    'party_history', 'vcon_embeddings', 'embedding_queue', 's3_sync_tracking'];
+    'party_history', 'vcon_embeddings', 'embedding_queue', 's3_sync_tracking',
+    'sessions', 'events', 'vcon_migration_reports'];
   strict_expr constant text := '^\(tenant_id = \( SELECT (public\.)?get_current_tenant_id\(\) AS get_current_tenant_id\)\)$';
   scoped_def constant text := 'SELECT tenant_id, vcon_id, tags, tag_updated_at, tag_created_at FROM vcon_tags_mv WHERE (tenant_id = ( SELECT get_current_tenant_id() AS get_current_tenant_id));';
   -- An identifier containing "tenant", optionally called: current_tenant, v.tenant_id, get_current_tenant_id().
@@ -169,7 +170,8 @@ BEGIN
   FOR r IN
     SELECT x.child, x.parent FROM (VALUES
       ('parties', 'vcons'), ('dialog', 'vcons'), ('attachments', 'vcons'), ('analysis', 'vcons'), ('groups', 'vcons'),
-      ('vcon_embeddings', 'vcons'), ('embedding_queue', 'vcons'), ('s3_sync_tracking', 'vcons'), ('party_history', 'dialog')) AS x(child, parent)
+      ('vcon_embeddings', 'vcons'), ('embedding_queue', 'vcons'), ('s3_sync_tracking', 'vcons'), ('party_history', 'dialog'),
+      ('sessions', 'vcons'), ('events', 'vcons'), ('vcon_migration_reports', 'vcons')) AS x(child, parent)
      WHERE to_regclass('public.' || x.child) IS NOT NULL
   LOOP
     checks := checks + 1;
