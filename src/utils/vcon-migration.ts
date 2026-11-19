@@ -328,7 +328,7 @@ class Context {
       const chosen = orig[0];
       const others = [...new Set(orig.slice(1).filter((o) => o !== chosen))].sort((a, b) => a - b);
       if (others.length > 0) {
-        this.add(step, 'unresolved', `${label}: Dialogs name different originators; kept ${chosen}, did not record ${JSON.stringify(others)}.`, undefined, { kept: chosen, dropped: others });
+        this.add(step, 'unresolved', `${label}: Dialogs name different originators; kept ${chosen}, did not record ${pyRepr(others)}.`, undefined, { kept: chosen, dropped: others });
       }
       if (parties.length === 0 || chosen !== parties[0]) session.originator = chosen;
     }
@@ -344,7 +344,38 @@ class Context {
 // Steps
 // ---------------------------------------------------------------------------
 
+/** Python repr() of a JSON value, so report messages read as the reference's do. */
+function pyRepr(value: unknown): string {
+  if (typeof value === 'string') {
+    const quote = value.includes("'") && !value.includes('"') ? '"' : "'";
+    const body = value.replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
+    return quote + (quote === "'" ? body.replace(/'/g, "\\'") : body) + quote;
+  }
+  if (value === null || value === undefined) return 'None';
+  if (value === true) return 'True';
+  if (value === false) return 'False';
+  if (Array.isArray(value)) return `[${value.map(pyRepr).join(', ')}]`;
+  if (typeof value === 'object') {
+    return `{${Object.entries(value as Obj).map(([k, v]) => `${pyRepr(k)}: ${pyRepr(v)}`).join(', ')}}`;
+  }
+  return String(value);
+}
+
+/**
+ * core-05 Date is RFC 3339: a Dialog start that is not one is never used as a Session
+ * start. Strict mode throws; otherwise the value is reported as unresolved.
+ */
+function checkDialogDates(ctx: Context): void {
+  ctx.dialogs.forEach((d, i) => {
+    if (!d || typeof d !== 'object' || Array.isArray(d) || d.start === undefined || d.start === null || parseDt(d.start) !== null) return;
+    const msg = `dialog[${i}] start ${pyRepr(d.start)} is not an RFC 3339 date-time`;
+    if (ctx.strict) throw new MigrationError(`T1: ${msg} (strict mode)`);
+    ctx.add('T1', 'unresolved', `${msg}; not used to derive a Session start.`, undefined, { dialog: i, start: d.start });
+  });
+}
+
 function t1Version(ctx: Context): void {
+  checkDialogDates(ctx);
   if (!has(ctx.out, 'vcon')) {
     ctx.add('T1', 'inferred', "Input had no 'vcon' parameter; set to '0.5.0' (AMB-12: writers emit it).", 'AMB-12');
   }
@@ -379,7 +410,7 @@ function t3PartyHistory(ctx: Context): void {
         ? ctx.rsSession.has(i) ? [ctx.rsSession.get(i)!] : []
         : [...(ctx.dialogSessions.get(i) ?? [])].sort((a, b) => a - b);
     if (sess.length > 1) {
-      ctx.add('T3', 'inferred', `dialog[${i}] belongs to Sessions ${JSON.stringify(sess)}; its party_history Events list all of them in 'sessions' (4.3.3: an Event applies only to the Sessions listed).`, 'AMB-3', { dialog: i, sessions: sess });
+      ctx.add('T3', 'inferred', `dialog[${i}] belongs to Sessions ${pyRepr(sess)}; its party_history Events list all of them in 'sessions' (4.3.3: an Event applies only to the Sessions listed).`, 'AMB-3', { dialog: i, sessions: sess });
     }
     const history = srcD.party_history;
     if (!Array.isArray(history)) {
@@ -404,7 +435,7 @@ function t3PartyHistory(ctx: Context): void {
           if (parseDt(fb) === null) {
             throw new MigrationError(`T3: dialog[${i}].party_history[${n}] has no time, and neither the Dialog start nor the vCon created_at can stand in`);
           }
-          ctx.needFallback('T3', `dialog[${i}].party_history[${n}] has no usable time (${JSON.stringify(entry.time)}); used the ${source} (${JSON.stringify(fb)}) as the Event time.`, undefined, { dialog: i, entry: n, original_time: entry.time, source, time: fb });
+          ctx.needFallback('T3', `dialog[${i}].party_history[${n}] has no usable time (${pyRepr(entry.time)}); used the ${source} (${pyRepr(fb)}) as the Event time.`, undefined, { dialog: i, entry: n, original_time: entry.time, source, time: fb });
           ev.time = fb;
         }
         if (sess.length > 0) ev.sessions = sess.length === 1 ? sess[0] : sess;
@@ -427,7 +458,7 @@ function t3PartyHistory(ctx: Context): void {
           const carried = Object.fromEntries(unknown.filter(([k]) => !core.includes(k)));
           const dropped = Object.fromEntries(unknown.filter(([k]) => core.includes(k)));
           Object.assign(ev, carried);
-          ctx.add('T3', 'unresolved', `dialog[${i}].party_history[${n}] had non-core parameter(s) ${JSON.stringify(unknown.map(([k]) => k).sort())}; carried onto the Event: ${JSON.stringify(Object.keys(carried).sort())}, dropped (name clashes with a core Event parameter): ${JSON.stringify(Object.keys(dropped).sort())}. List the defining extension in 'extensions'.`, undefined, { dialog: i, entry: n, carried, dropped });
+          ctx.add('T3', 'unresolved', `dialog[${i}].party_history[${n}] had non-core parameter(s) ${pyRepr(unknown.map(([k]) => k).sort())}; carried onto the Event: ${pyRepr(Object.keys(carried).sort())}, dropped (name clashes with a core Event parameter): ${pyRepr(Object.keys(dropped).sort())}. List the defining extension in 'extensions'.`, undefined, { dialog: i, entry: n, carried, dropped });
         }
         ctx.events.push(ev);
       });
@@ -446,7 +477,7 @@ function t4Transfers(ctx: Context): void {
     const sessionFor = (ref: unknown, role: string): number | null => {
       if (ref === undefined || ref === null) return null;
       if (!isInt(ref) || ref < 0 || ref >= ctx.dialogs.length) {
-        ctx.add(step, 'unresolved', `transfer dialog[${k}] ${role}=${JSON.stringify(ref)} is not a Dialog index.`, undefined, { dialog: k });
+        ctx.add(step, 'unresolved', `transfer dialog[${k}] ${role}=${pyRepr(ref)} is not a Dialog index.`, undefined, { dialog: k });
         return null;
       }
       if (ctx.rsSession.has(ref)) {
@@ -506,7 +537,7 @@ function t4Transfers(ctx: Context): void {
     if (hasCons) types.push('consultation-start');
     if (hasTarget || hasTargetParty) types.push(hasCons ? 'consultative-transfer' : 'blind-transfer');
     else types.push('transfer-abandoned');
-    ctx.add(step, 'inferred', `transfer dialog[${k}] mapped to Event type(s) ${JSON.stringify(types)} (consultation present -> consultation-start + consultative-transfer; otherwise blind-transfer; no target_dialog and no transfer_target -> transfer-abandoned).`, 'AMB-7', { dialog: k, types });
+    ctx.add(step, 'inferred', `transfer dialog[${k}] mapped to Event type(s) ${pyRepr(types)} (consultation present -> consultation-start + consultative-transfer; otherwise blind-transfer; no target_dialog and no transfer_target -> transfer-abandoned).`, 'AMB-7', { dialog: k, types });
     if (types.includes('blind-transfer') || types.includes('consultative-transfer')) {
       if (targetSess === null) {
         targetSess = placeholder('target_dialog', 'the target call was not captured; 4.3.1.3 uses a placeholder Session in that case', false);
@@ -539,7 +570,7 @@ function t4Transfers(ctx: Context): void {
       }
       const created = ctx.out.created_at;
       if (parseDt(created) !== null) {
-        ctx.needFallback(step, `transfer dialog[${k}] has no start and no other time source; used the vCon created_at (${JSON.stringify(created)}) as the Event time.`, 'AMB-7', { dialog: k });
+        ctx.needFallback(step, `transfer dialog[${k}] has no start and no other time source; used the vCon created_at (${pyRepr(created)}) as the Event time.`, 'AMB-7', { dialog: k });
         return created;
       }
       throw new MigrationError(`${step}: transfer dialog[${k}] has no start and the vCon has no created_at; no time can be sourced`);
@@ -563,7 +594,7 @@ function t4Transfers(ctx: Context): void {
     const hasParties = Array.isArray(tr.parties) ? tr.parties.length > 0 : !!tr.parties;
     if (extra.length > 0 || hasParties) {
       const fields = [...extra, ...(hasParties ? ['parties'] : [])];
-      ctx.add(step, 'unresolved', `transfer dialog[${k}] had parameters with no Event equivalent (${JSON.stringify(fields)}); not migrated. Original kept in report.removed_dialogs.`, undefined, { dialog: k, dropped: Object.fromEntries(fields.map((f) => [f, tr[f]])) });
+      ctx.add(step, 'unresolved', `transfer dialog[${k}] had parameters with no Event equivalent (${pyRepr(fields)}); not migrated. Original kept in report.removed_dialogs.`, undefined, { dialog: k, dropped: Object.fromEntries(fields.map((f) => [f, tr[f]])) });
     }
   }
 }
@@ -577,7 +608,7 @@ function t6Originator(ctx: Context): void {
       const val = d.originator;
       delete d.originator;
       if (isInt(val)) ctx.originators.set(i, val);
-      else ctx.add('T6', 'unresolved', `dialog[${i}] originator ${JSON.stringify(val)} is not a party index; dropped.`, undefined, { dialog: i });
+      else ctx.add('T6', 'unresolved', `dialog[${i}] originator ${pyRepr(val)} is not a party index; dropped.`, undefined, { dialog: i });
     }
   }
 }
@@ -593,7 +624,7 @@ function t7RecordingSets(ctx: Context): void {
     const ref = ctx.dialogs[i].recording_set;
     if (ref === undefined || ref === null) continue;
     if (isInt(ref) && ctx.rsSession.has(ref)) pushMap(back, ref, i);
-    else ctx.add('T7', 'unresolved', `dialog[${i}] recording_set=${JSON.stringify(ref)} does not reference a recording-set Dialog; parameter removed, no Session membership derived from it.`, undefined, { dialog: i, recording_set: ref });
+    else ctx.add('T7', 'unresolved', `dialog[${i}] recording_set=${pyRepr(ref)} does not reference a recording-set Dialog; parameter removed, no Session membership derived from it.`, undefined, { dialog: i, recording_set: ref });
   }
 
   for (const k of rsIds) {
@@ -609,7 +640,7 @@ function t7RecordingSets(ctx: Context): void {
         } else if (isInt(r) && r >= 0 && r < ctx.dialogs.length && !ctx.removed.has(r) && ctx.dialogs[r] && typeof ctx.dialogs[r] === 'object' && Object.keys(ctx.dialogs[r]).length > 0) {
           if (!recs.includes(r)) recs.push(r);
         } else {
-          ctx.add('T7', 'unresolved', `recording-set dialog[${k}] lists recordings entry ${JSON.stringify(r)}, which is not a kept Dialog or another recording-set; left out of the Session.`, undefined, { dialog: k, entry: r });
+          ctx.add('T7', 'unresolved', `recording-set dialog[${k}] lists recordings entry ${pyRepr(r)}, which is not a kept Dialog or another recording-set; left out of the Session.`, undefined, { dialog: k, entry: r });
         }
       }
     } else {
@@ -618,7 +649,7 @@ function t7RecordingSets(ctx: Context): void {
     const addedBack = (back.get(k) ?? []).filter((i) => !recs.includes(i));
     if (addedBack.length > 0) {
       recs.push(...addedBack);
-      ctx.add('T7', 'inferred', `dialog(s) ${JSON.stringify(addedBack)} name recording-set dialog[${k}] in recording_set but are not in its recordings list; added to Session ${sidx}.`, undefined, { dialog: k, added: addedBack, session: sidx });
+      ctx.add('T7', 'inferred', `dialog(s) ${pyRepr(addedBack)} name recording-set dialog[${k}] in recording_set but are not in its recordings list; added to Session ${sidx}.`, undefined, { dialog: k, added: addedBack, session: sidx });
     }
     const sess: Obj = {};
     const derived = recs.length > 0 ? ctx.span(recs) : { start: null, duration: null };
@@ -632,7 +663,7 @@ function t7RecordingSets(ctx: Context): void {
     const orig = rs.originator;
     if (isInt(orig) && (parties.length === 0 || orig !== parties[0])) sess.originator = orig;
     else if (orig !== undefined && orig !== null && !isInt(orig)) {
-      ctx.add('T7', 'unresolved', `recording-set dialog[${k}] originator ${JSON.stringify(orig)} is not a party index; dropped.`, undefined, { dialog: k });
+      ctx.add('T7', 'unresolved', `recording-set dialog[${k}] originator ${pyRepr(orig)} is not a party index; dropped.`, undefined, { dialog: k });
     }
     const sid = rs.session_id;
     if (sid && typeof sid === 'object' && !Array.isArray(sid)) sess.session_id = sid;
@@ -642,17 +673,17 @@ function t7RecordingSets(ctx: Context): void {
     }
     if (children.length > 0) {
       sess.sessions = children.map((c) => ({ session: c, type: 'child' }));
-      ctx.add('T7', 'inferred', `recording-set dialog[${k}] lists other recording-set(s); Session ${sidx} references their Session(s) ${JSON.stringify(children)} as 'child'.`, 'AMB-1', { dialog: k, session: sidx, children });
+      ctx.add('T7', 'inferred', `recording-set dialog[${k}] lists other recording-set(s); Session ${sidx} references their Session(s) ${pyRepr(children)} as 'child'.`, 'AMB-1', { dialog: k, session: sidx, children });
     }
     if (recs.length > 0) sess.dialog = recs;
     ctx.sessions[sidx] = orderSession(sess);
     for (const r of recs) pushMap(ctx.dialogSessions, r, sidx);
     const moved = ['start', 'duration', 'parties', 'session_id', 'originator'].filter((f) => has(rs, f));
-    ctx.add('T7', 'inferred', `recording-set dialog[${k}] -> Session ${sidx}; its ${JSON.stringify(moved)} moved to the Session (A.1 silent about them); Session start/duration/parties fall back to values derived from the recordings when absent.`, 'AMB-4', { dialog: k, session: sidx });
+    ctx.add('T7', 'inferred', `recording-set dialog[${k}] -> Session ${sidx}; its ${pyRepr(moved)} moved to the Session (A.1 silent about them); Session start/duration/parties fall back to values derived from the recordings when absent.`, 'AMB-4', { dialog: k, session: sidx });
     const knownRs = ['type', 'recordings', 'start', 'duration', 'parties', 'session_id', 'originator', 'party_history'];
     const extra = Object.keys(rs).filter((key) => !knownRs.includes(key)).sort();
     if (extra.length > 0) {
-      ctx.add('T7', 'unresolved', `recording-set dialog[${k}] had parameter(s) ${JSON.stringify(extra)} with no Session equivalent; not migrated. Original kept in report.removed_dialogs.`, undefined, { dialog: k, dropped: Object.fromEntries(extra.map((f) => [f, rs[f]])) });
+      ctx.add('T7', 'unresolved', `recording-set dialog[${k}] had parameter(s) ${pyRepr(extra)} with no Session equivalent; not migrated. Original kept in report.removed_dialogs.`, undefined, { dialog: k, dropped: Object.fromEntries(extra.map((f) => [f, rs[f]])) });
     }
     if (ctx.catchAll !== null && recs.length > 0) {
       ctx.add('T7', 'unresolved', `Session ${sidx} (recording-set dialog[${k}]) overlaps Session ${ctx.catchAll}, which also lists its recordings; A.1 does not say whether to relate them, so no Session_Reference was added.`, 'AMB-1', { session: sidx, catch_all: ctx.catchAll });
@@ -665,7 +696,7 @@ function t7RecordingSets(ctx: Context): void {
       if (has(dialogs[i], 'recordings')) {
         const rec = dialogs[i].recordings;
         delete dialogs[i].recordings;
-        ctx.add('T7', 'unresolved', `dialog[${i}] (${JSON.stringify(ctx.dialogs[i].type)}) had a recordings parameter, which only a recording-set may carry; removed.`, undefined, { dialog: i, recordings: rec });
+        ctx.add('T7', 'unresolved', `dialog[${i}] (${pyRepr(ctx.dialogs[i].type)}) had a recordings parameter, which only a recording-set may carry; removed.`, undefined, { dialog: i, recordings: rec });
       }
     }
   }
@@ -733,13 +764,13 @@ function t9bRecordingParties(ctx: Context): void {
     }
   }
   if (idxs.length > 0) {
-    ctx.add('T9b', 'inferred', `Dialog(s) ${JSON.stringify(idxs)} (recording or other type): parties left as the contributors; the Session parties are the union of the contributors across its Dialogs (A.1 gives no rule).`, 'AMB-6', { dialogs: idxs });
+    ctx.add('T9b', 'inferred', `Dialog(s) ${pyRepr(idxs)} (recording or other type): parties left as the contributors; the Session parties are the union of the contributors across its Dialogs (A.1 gives no rule).`, 'AMB-6', { dialogs: idxs });
   }
   const texts = ctx.kept().filter((i) => ctx.dialogs[i].type === 'text');
   if (texts.length > 0) {
     const sets = new Set(texts.map((i) => JSON.stringify([...(ctx.receivers.get(i) ?? [])].sort((a, b) => a - b))));
     if (sets.size > 1) {
-      ctx.add('T8', 'unresolved', `text Dialogs ${JSON.stringify(texts)} have different receiver sets; they were put in one Session whose parties are the union. 4.5.4 prescribes a parent Session with a child Session per receiver set; that split was not made.`, 'AMB-5', { dialogs: texts });
+      ctx.add('T8', 'unresolved', `text Dialogs ${pyRepr(texts)} have different receiver sets; they were put in one Session whose parties are the union. 4.5.4 prescribes a parent Session with a child Session per receiver set; that split was not made.`, 'AMB-5', { dialogs: texts });
     }
     if ([...sets].some((s) => (JSON.parse(s) as number[]).length > 2)) {
       ctx.add('T8', 'unresolved', '0.4.0 parties do not distinguish To, Cc and Bcc, so Bcc recipients cannot be identified or excluded.', 'AMB-5', { dialogs: texts });
@@ -797,7 +828,7 @@ function t10bRetarget(ctx: Context): void {
     if (newDialogs.length > 0) an.dialog = newDialogs.length === 1 && !Array.isArray(old) ? newDialogs[0] : newDialogs;
     else delete an.dialog;
     if (sessAdd.length > 0) an.sessions = mergeIndex(an.sessions, sessAdd);
-    ctx.add('T10b', 'inferred', `analysis[${n}].dialog ${JSON.stringify(old)} pointed at a removed Dialog; now dialog=${JSON.stringify(an.dialog)}, sessions=${JSON.stringify(an.sessions)}.`, 'AMB-2', { analysis: n });
+    ctx.add('T10b', 'inferred', `analysis[${n}].dialog ${pyRepr(old)} pointed at a removed Dialog; now dialog=${pyRepr(an.dialog)}, sessions=${pyRepr(an.sessions)}.`, 'AMB-2', { analysis: n });
   });
   (Array.isArray(ctx.out.attachments) ? ctx.out.attachments : []).forEach((att: any, n: number) => {
     if (!att || typeof att !== 'object' || !(isInt(att.dialog) && removed.has(att.dialog))) return;
@@ -806,7 +837,7 @@ function t10bRetarget(ctx: Context): void {
     delete att.dialog;
     if (sidx !== null) {
       att.session = mergeIndex(att.session, [sidx]);
-      ctx.add('T10b', 'inferred', `attachments[${n}].dialog=${e} pointed at a removed Dialog; replaced by session=${JSON.stringify(att.session)}.`, 'AMB-2', { attachment: n });
+      ctx.add('T10b', 'inferred', `attachments[${n}].dialog=${e} pointed at a removed Dialog; replaced by session=${pyRepr(att.session)}.`, 'AMB-2', { attachment: n });
     } else {
       ctx.add('T10b', 'unresolved', `attachments[${n}].dialog=${e} pointed at a removed Dialog with no Session to re-point to; the attachment now has neither dialog nor session.`, 'AMB-2', { attachment: n });
     }
@@ -879,7 +910,7 @@ function t14Extensions(ctx: Context): void {
   }
   if (added.length > 0) {
     ctx.out.extensions = listed;
-    ctx.add('T14', 'inferred', `Added extension name(s) ${JSON.stringify(added)} to extensions.`, undefined, { added });
+    ctx.add('T14', 'inferred', `Added extension name(s) ${pyRepr(added)} to extensions.`, undefined, { added });
   }
   if (unnamed.length > 0 && listed.length === 0) {
     ctx.add('T14', 'unresolved', `Values outside the core vocabulary are in use but their defining extension cannot be identified: ${unnamed.join('; ')}. extensions was not changed.`, undefined, { uses: unnamed });
@@ -980,7 +1011,7 @@ export function migrate040To050(input: unknown, opts: { strict?: boolean } = {})
   const version = data.vcon;
   const signed = has(data, 'payload') && has(data, 'signatures');
   if (version !== undefined && version !== null && version !== SOURCE_VERSION && !signed) {
-    throw new MigrationError(`cannot migrate: input vcon is ${JSON.stringify(version)}, expected ${JSON.stringify(SOURCE_VERSION)}`);
+    throw new MigrationError(`cannot migrate: input vcon is ${pyRepr(version)}, expected ${pyRepr(SOURCE_VERSION)}`);
   }
   for (const step of MIGRATION_STEPS) {
     report.steps_run.push(step.id);
@@ -988,12 +1019,12 @@ export function migrate040To050(input: unknown, opts: { strict?: boolean } = {})
     if (step.id === 'T13') {
       const v = ctx.out.vcon;
       if (v !== undefined && v !== null && v !== SOURCE_VERSION) {
-        throw new MigrationError(`cannot migrate: input vcon is ${JSON.stringify(v)}, expected ${JSON.stringify(SOURCE_VERSION)}`);
+        throw new MigrationError(`cannot migrate: input vcon is ${pyRepr(v)}, expected ${pyRepr(SOURCE_VERSION)}`);
       }
       if (v === undefined || v === null) {
         const markers = V050_ONLY_KEYS.filter((k) => has(ctx.out, k)).sort();
         if (markers.length > 0) {
-          throw new MigrationError(`cannot migrate: input has no 'vcon' parameter but has 0.5.0-only parameter(s) ${JSON.stringify(markers)}; it is already 0.5.0 (vcon is optional there)`);
+          throw new MigrationError(`cannot migrate: input has no 'vcon' parameter but has 0.5.0-only parameter(s) ${pyRepr(markers)}; it is already 0.5.0 (vcon is optional there)`);
         }
         ctx.add('T13', 'info', "Input has no 'vcon' parameter; treated as 0.4.0.");
       }
@@ -1013,7 +1044,9 @@ export function migrate040To050(input: unknown, opts: { strict?: boolean } = {})
   });
 
   // Post-check: the result must satisfy the core-05 rules; anything left is reported.
-  for (const err of validateVConDocument(out).errors) ctx.add('post', 'unresolved', `Result does not validate: ${err}`);
+  // The reference rules in full (validateVConDocument's reference mode), so the report counts
+  // what the reference's does; the server's own acceptance check stays more lenient.
+  for (const err of validateVConDocument(out, { reference: true }).errors) ctx.add('post', 'unresolved', `Result does not validate: ${err}`);
   return { vcon: out, report };
 }
 
@@ -1059,7 +1092,7 @@ export function migrateOnRead<T extends object>(vcon: T, onError?: (err: unknown
       report.source_version = declared;
       report.entries.unshift({
         step: 'T1', kind: 'info',
-        message: `Stored version ${JSON.stringify(declared)} read as the 0.4.0 shape.`,
+        message: `Stored version ${pyRepr(declared)} read as the 0.4.0 shape.`,
       });
     }
     reports.set(migrated, report);

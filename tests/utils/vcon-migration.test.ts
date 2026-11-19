@@ -581,4 +581,38 @@ describe('parity with the reference implementation', () => {
     expect(vcon.vcon).toBe('0.5.0');
     expect(() => migrate040To050(v04({ vcon: null, sessions: [] }))).toThrow(MigrationError);
   });
+
+  it('reports a dialog start that is not RFC 3339 under T1, as the reference does', () => {
+    const { report } = migrate040To050(v04({ dialog: [text({ start: '{{now}}' })] }));
+    const t1 = report.entries.filter((e) => e.step === 'T1' && e.kind === 'unresolved');
+    expect(t1).toHaveLength(1);
+    expect(t1[0].message).toBe("dialog[0] start '{{now}}' is not an RFC 3339 date-time; not used to derive a Session start.");
+    expect(t1[0].details).toEqual({ dialog: 0, start: '{{now}}' });
+  });
+
+  it('throws on a non-RFC 3339 dialog start in strict mode', () => {
+    expect(() => migrate040To050(v04({ dialog: [text({ start: '{{now}}' })] }), { strict: true })).toThrow(MigrationError);
+  });
+
+  it('says nothing under T1 for a valid or absent dialog start', () => {
+    const { report } = migrate040To050(v04({ dialog: [text(), text({ start: undefined })] }));
+    expect(report.entries.filter((e) => e.step === 'T1' && e.kind === 'unresolved')).toHaveLength(0);
+  });
+
+  it('post-checks with the reference rules, so the report counts what the reference counts', () => {
+    const { report } = migrate040To050(v04({
+      dialog: [rec()],
+      attachments: [{ purpose: 'note', party: 0, dialog: 0, encoding: 'none', body: 'x' }],
+    }));
+    expect(report.entries.filter((e) => e.step === 'post' && e.kind === 'unresolved').map((e) => e.message)).toEqual([
+      'Result does not validate: Attachment at index 0 is missing required field: mediatype (needed for inline content)',
+      'Result does not validate: Attachment at index 0 is missing required field: start',
+    ]);
+  });
+
+  it('writes lists in report messages as the reference does', () => {
+    const { report } = migrate040To050(v04({ dialog: [rec(), rec({ start: T1 })] }));
+    const t9b = report.entries.find((e) => e.step === 'T9b');
+    expect(t9b?.message).toMatch(/^Dialog\(s\) \[0, 1\] /);
+  });
 });

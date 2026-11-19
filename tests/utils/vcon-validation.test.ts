@@ -222,3 +222,31 @@ describe('VConValidator wires the document rules in', () => {
     expect(validateVCon(call({ parties: [{}, { name: 'B' }] }) as any).valid).toBe(true);
   });
 });
+
+describe('reference mode (the migration post-check)', () => {
+  const att = { party: 0, session: 0, body: 'x', encoding: 'none' };
+  const doc = () => call({ attachments: [att] });
+
+  it('is lenient by default about Attachment start, purpose and mediatype', () => {
+    expect(validateVConDocument(doc()).errors).toEqual([]);
+  });
+
+  it('applies the reference rules the server relaxes', () => {
+    expect(validateVConDocument(doc(), { reference: true }).errors).toEqual([
+      'Attachment at index 0 is missing required field: purpose',
+      'Attachment at index 0 is missing required field: mediatype (needed for inline content)',
+      'Attachment at index 0 is missing required field: start',
+    ]);
+  });
+
+  it('checks Dialog mediatype against the reference list, ignoring parameters', () => {
+    const d = (mediatype?: string) => call({
+      dialog: [{ type: 'recording', start: T, parties: [0, 1], body: 'x', encoding: 'none', ...(mediatype ? { mediatype } : {}) }],
+    });
+    expect(validateVConDocument(d('audio/x-wav; rate=8000'), { reference: true }).errors).toEqual([]);
+    expect(validateVConDocument(d('application/dash+xml'), { reference: true }).errors)
+      .toEqual(['Dialog at index 0 has an invalid or missing mediatype: application/dash+xml']);
+    expect(validateVConDocument(d(), { reference: true }).errors)
+      .toEqual(['Dialog at index 0 has an invalid or missing mediatype: missing']);
+  });
+});
