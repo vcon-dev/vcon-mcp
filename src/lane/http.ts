@@ -11,7 +11,7 @@
 import http from 'http';
 import { isRestApiPath } from '../api/rest-router.js';
 import { logWithContext } from '../observability/instrumentation.js';
-import { createHttpTransport, type HttpTransportConfig } from '../transport/http.js';
+import { applyKeepAliveTimeouts, createHttpTransport, type HttpTransportConfig } from '../transport/http.js';
 import { setupHttpMiddleware } from '../transport/middleware.js';
 import { getVersionInfo } from '../version.js';
 import { readLaneBearer } from './bearer.js';
@@ -116,6 +116,8 @@ export async function startLaneHttpServer(config: LaneHttpConfig, store: LaneSto
       }
     });
   });
+
+  applyKeepAliveTimeouts(httpServer);
 
   httpServer.on('error', (error) => {
     logWithContext('error', 'HTTP server error', { error_message: error.message });
