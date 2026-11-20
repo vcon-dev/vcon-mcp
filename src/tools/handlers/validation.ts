@@ -71,7 +71,8 @@ export function requireValidDialog(dialog: any): void {
 
 /**
  * Validate Attachment object
- * Per spec Section 4.6, attachments must have either (body + encoding) or (url + content_hash)
+ * Per spec Section 4.6, attachments must have either (body + encoding) or url (a url without
+ * a content_hash is allowed, vcon-lib 1.0.6)
  * and a `party`. `requireScope` also demands dialog or session; add_attachment leaves it off
  * because the query layer defaults the scope when the vCon has exactly one Session.
  */
@@ -87,13 +88,13 @@ export function validateAttachment(attachment: Attachment, options: { requireSco
     );
   }
 
-  // Must have either (body + encoding) or (url + content_hash)
+  // Must have either (body + encoding) or url
   const hasInline = attachment.body !== undefined && attachment.encoding !== undefined;
-  const hasExternal = attachment.url !== undefined && attachment.content_hash !== undefined;
+  const hasExternal = attachment.url !== undefined;
   
   if (!hasInline && !hasExternal) {
     errors.push(
-      'Attachment must have either (body + encoding) or (url + content_hash)'
+      'Attachment must have either (body + encoding) or url'
     );
   }
 

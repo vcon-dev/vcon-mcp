@@ -8,7 +8,7 @@
  * - Update dialog objects to use external URLs
  *
  * Per IETF vcon-core-01 spec:
- * - Dialog content can be inline (body + encoding) or external (url + content_hash)
+ * - Dialog content can be inline (body + encoding) or external (url, with content_hash recommended)
  * - HTTPS MUST be used for retrieval to protect privacy
  * - content_hash SHOULD be provided for integrity verification
  */

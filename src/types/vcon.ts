@@ -21,7 +21,7 @@
  *   JWS alg "none"                               - forbidden
  *
  * Key spec requirements kept from earlier versions:
- *   1. Dialog content can be inline (body + encoding) or external (url + content_hash)
+ *   1. Dialog content can be inline (body + encoding) or external (url, with content_hash recommended)
  *   2. body and url are mutually exclusive for content storage
  *   3. HTTPS MUST be used for external content retrieval
  *   4. encoding: 'base64url' | 'json' | 'none'
@@ -169,7 +169,7 @@ export interface Event {
  *
  * Content stored in two mutually exclusive ways:
  *   Inline:   body + encoding
- *   External: url + content_hash (HTTPS required)
+ *   External: url (HTTPS required), content_hash recommended
  *
  * 'incomplete' MUST NOT have content parameters. An empty Dialog Object `{}`
  * holds a position in the dialog array so other indices do not change; `type`

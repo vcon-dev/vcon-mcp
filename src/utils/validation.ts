@@ -136,14 +136,15 @@ export class VConValidator {
       }
 
       // Content validation is relaxed - dialogs may have missing content in some cases
-      // (e.g., incomplete recordings, external references not yet available)
+      // (e.g., incomplete recordings, external references not yet available).
+      // A url without a content_hash is allowed (vcon-lib 1.0.6, core issue #40).
       const hasInline = dialog.body !== undefined && dialog.encoding !== undefined;
-      const hasExternal = dialog.url !== undefined && dialog.content_hash !== undefined;
+      const hasExternal = dialog.url !== undefined;
       
       if (!hasInline && !hasExternal && dialog.type !== 'incomplete') {
         // Only warn, don't error - some dialogs may legitimately have no content
         this.warnings.push(
-          `Dialog ${index} has no content (body + encoding) or external reference (url + content_hash)`
+          `Dialog ${index} has no content (body + encoding) or external reference (url)`
         );
       }
 
@@ -188,13 +189,14 @@ export class VConValidator {
         }
       }
 
-      // Must have either (body + encoding) or (url + content_hash)
+      // Must have either (body + encoding) or url; a url without a content_hash is
+      // allowed (vcon-lib 1.0.6, core issue #40)
       const hasInline = analysis.body !== undefined && analysis.encoding !== undefined;
-      const hasExternal = analysis.url !== undefined && analysis.content_hash !== undefined;
+      const hasExternal = analysis.url !== undefined;
       
       if (!hasInline && !hasExternal) {
         this.errors.push(
-          `Analysis ${index} must have either (body + encoding) or (url + content_hash)`
+          `Analysis ${index} must have either (body + encoding) or url`
         );
       }
 
@@ -218,13 +220,14 @@ export class VConValidator {
         );
       }
 
-      // Must have either (body + encoding) or (url + content_hash)
+      // Must have either (body + encoding) or url; a url without a content_hash is
+      // allowed (vcon-lib 1.0.6, core issue #40)
       const hasInline = attachment.body !== undefined && attachment.encoding !== undefined;
-      const hasExternal = attachment.url !== undefined && attachment.content_hash !== undefined;
+      const hasExternal = attachment.url !== undefined;
       
       if (!hasInline && !hasExternal) {
         this.errors.push(
-          `Attachment ${index} must have either (body + encoding) or (url + content_hash)`
+          `Attachment ${index} must have either (body + encoding) or url`
         );
       }
     });
@@ -392,7 +395,8 @@ export function validateParty(party: Party): ValidationResult {
 
 /**
  * Validate Attachment object
- * Per spec Section 4.6, attachments must have either (body + encoding) or (url + content_hash)
+ * Per spec Section 4.6, attachments must have either (body + encoding) or url (a url without
+ * a content_hash is allowed, vcon-lib 1.0.6)
  * and a scope: at least one of dialog or session. Index range is checked against the vCon
  * by validateVCon; a lone attachment is checked for shape only.
  */
@@ -408,13 +412,13 @@ export function validateAttachment(attachment: any): ValidationResult {
     );
   }
 
-  // Must have either (body + encoding) or (url + content_hash)
+  // Must have either (body + encoding) or url
   const hasInline = attachment.body !== undefined && attachment.encoding !== undefined;
-  const hasExternal = attachment.url !== undefined && attachment.content_hash !== undefined;
+  const hasExternal = attachment.url !== undefined;
   
   if (!hasInline && !hasExternal) {
     errors.push(
-      'Attachment must have either (body + encoding) or (url + content_hash)'
+      'Attachment must have either (body + encoding) or url'
     );
   }
 

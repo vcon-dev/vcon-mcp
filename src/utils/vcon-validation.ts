@@ -8,8 +8,8 @@
  * (missing Attachment start/purpose/mediatype, Dialog mediatype, party
  * identifiers), strict on the 0.5.0 structure: Sessions, Events, references,
  * Attachment scope, redacted_from / amended_from. The content rules of
- * vcon-lib 1.0.5 (content_hash form, url without content_hash, a JSON body
- * serialized as a string, lawful_basis bodies, created_at / updated_at) apply
+ * vcon-lib 1.0.6 (content_hash form, a url without content_hash allowed, a JSON
+ * body serialized as a string, lawful_basis bodies, created_at / updated_at) apply
  * here too. The `reference` option runs the reference rules exactly
  * (src/utils/vcon-reference-validation.ts); the migration post-check uses it.
  */
@@ -77,7 +77,7 @@ export interface DocumentFindings {
 
 export interface DocumentOptions {
   /**
-   * Apply the reference's validate_vcon_dict (vcon-lib 1.0.5) exactly, including the
+   * Apply the reference's validate_vcon_dict (vcon-lib 1.0.6) exactly, including the
    * rules this server relaxes when it accepts a vCon (Attachment start / purpose /
    * mediatype / content, Dialog mediatype, incomplete disposition, Analysis type /
    * vendor / encoding). The 0.4.0 -> 0.5.0 migration post-check uses it, so its report
@@ -424,7 +424,7 @@ export function validateVConDocument(vcon: Obj, opts: DocumentOptions = {}): Doc
     if (!isObj(rf)) errors.push("Field 'redacted_from' must be an object.");
     else {
       if (rf.url !== undefined && rf.content_hash === undefined) errors.push('redacted_from with url must include content_hash.');
-      checkContent(rf, 'redacted_from', errors, warnings, false);
+      checkContent(rf, 'redacted_from', errors, warnings);
     }
   }
   if (hasAf) {
@@ -433,7 +433,7 @@ export function validateVConDocument(vcon: Obj, opts: DocumentOptions = {}): Doc
     else {
       if (af.uuid === undefined && af.url === undefined) errors.push('amended_from must include uuid, or an external reference (url).');
       if (af.url !== undefined && af.content_hash === undefined) errors.push('amended_from with url must include content_hash.');
-      checkContent(af, 'amended_from', errors, warnings, false);
+      checkContent(af, 'amended_from', errors, warnings);
     }
   }
   const redacted = isObj(vcon.redacted_from);
@@ -581,7 +581,7 @@ export function validateVConDocument(vcon: Obj, opts: DocumentOptions = {}): Doc
     if (att.encoding !== undefined && !(CORE_ENCODINGS as readonly string[]).includes(att.encoding) && extListed.length === 0) {
       errors.push(`Attachment at index ${i} has invalid encoding: ${att.encoding}`);
     }
-    checkContent(att, `Attachment at index ${i}`, errors, warnings, ('body' in att && 'encoding' in att) || redacted);
+    checkContent(att, `Attachment at index ${i}`, errors, warnings);
   });
 
   // analysis

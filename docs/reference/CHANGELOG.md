@@ -97,19 +97,28 @@ Deploy the migration and the server together: the server reads and writes the re
 - the migration reports a Dialog `start` that is not an RFC 3339 date-time as unresolved under T1
   (strict mode throws), as the Python reference and vcon-js do
 - the migration post-check runs the reference's `validate_vcon_dict` exactly
-  (`src/utils/vcon-reference-validation.ts`, a port of vcon-lib 1.0.5 by way of vcon-js), so a report
+  (`src/utils/vcon-reference-validation.ts`, a port of vcon-lib 1.0.6 by way of vcon-js), so a report
   says what the reference's says; accepting a vCon stays as lenient as before about Attachment
   `start` / `purpose` / `mediatype`, Dialog `mediatype` and the like. Report messages print values as
   the reference does. On 248 real 0.4.0 vCons the migrated documents and the full report entry lists
-  equal vcon-lib 1.0.5's, and on 257 + 147 validation cases the verdicts, errors and warnings do too
+  equal vcon-lib 1.0.6's, and on 257 + 147 + 176 + 23 validation cases the verdicts, errors and
+  warnings do too
+- a signed vCon whose `payload` holds a non-ASCII character is reported as not base64url JSON, as
+  the reference does (its payload used to be decoded and validated anyway)
 
-### Changed (since the port branched): the vcon-lib 1.0.4 / 1.0.5 rules
+### Changed (since the port branched): the vcon-lib 1.0.4 / 1.0.5 / 1.0.6 rules
 - a malformed `content_hash` on a Dialog, Attachment, Analysis, `redacted_from` or `amended_from`
   is a validation error, so `create_vcon` and `POST /vcons` refuse it. A ContentHash is
   `<algorithm>-<unpadded base64url digest>`; `sha512` and `sha256` digests must be 86 and 43
   characters, which catches hex digests (`sha256-<hex>`, `sha-256:<hex>`) and padding
-- warnings for a `url` with no `content_hash` (an error in vcon 1.1) and for an `encoding: "json"`
-  body that is a serialized JSON string
+- a `url` without a `content_hash` is allowed on a Dialog, Attachment or Analysis, with no error and
+  no warning (vcon-lib 1.0.6, following the working group's direction on draft-ietf-vcon-vcon-core
+  issue #40: a producer cannot always obtain stable bytes for the URL; core-05 itself still says
+  MUST). `create_vcon`, `POST /vcons` and `add_attachment` accept an Attachment or Analysis with only
+  a `url` (they used to require `url` + `content_hash`), and the reference rules say
+  `Attachment at index N must include body+encoding or url.` `redacted_from` and `amended_from` with
+  a `url` still need a `content_hash`, and a malformed `content_hash` is still refused
+- a warning for an `encoding: "json"` body that is a serialized JSON string
 - `lawful_basis` attachment bodies are checked with the reference's validator (required
   `lawful_basis`, `expiration`, `purpose_grants`; the fields of each grant, proof mechanism, content
   hash and registry). The reference reports problems as errors; on create they are warnings, as

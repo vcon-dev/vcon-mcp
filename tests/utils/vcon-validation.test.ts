@@ -152,6 +152,16 @@ describe('document rules', () => {
     expect(e).toContain("'amended' was renamed 'amended_from'");
   });
 
+  it('the accept path allows a url without content_hash and does not warn about it', () => {
+    const r = validateVCon(call({
+      dialog: [{ type: 'recording', start: T, parties: [0, 1], url: 'https://e.com/a.wav', mediatype: 'audio/x-wav' }],
+      attachments: [{ purpose: 'note', party: 0, dialog: 0, url: 'https://e.com/n.txt' }],
+      analysis: [{ type: 'summary', vendor: 'v', dialog: 0, url: 'https://e.com/s.json' }],
+    }) as any);
+    expect(r.errors).toEqual([]);
+    expect(r.warnings.filter((w) => /content_hash/.test(w))).toEqual([]);
+  });
+
   it('redacted_from and amended_from are mutually exclusive; url needs content_hash', () => {
     expect(validateVConDocument(call({ redacted_from: { uuid: 'a', type: 't' }, amended_from: { uuid: 'b' } })).errors.join()).toContain('mutually exclusive');
     expect(validateVConDocument(call({ redacted_from: { url: 'https://e.com/x' } })).errors.join()).toContain('must include content_hash');

@@ -65,6 +65,30 @@ describe('VConService', () => {
       } as any)).rejects.toThrow(/Attachment at index 0 has an invalid content_hash/);
     });
 
+    it('accepts a url without content_hash on Dialog, Attachment and Analysis (vcon-lib 1.0.6)', async () => {
+      mockQueries.createVCon.mockResolvedValue({ uuid: randomUUID(), id: '1' });
+      mockPluginManager.executeHook.mockResolvedValue(undefined);
+      const result = await service.create({
+        parties: [{ name: 'A' }],
+        sessions: [{ parties: [0], dialog: [0] }],
+        dialog: [{ type: 'recording', start: '2026-01-01T00:00:00Z', parties: [0], url: 'https://example.com/a.wav' }],
+        attachments: [{ purpose: 'note', party: 0, dialog: 0, url: 'https://example.com/n.txt' }],
+        analysis: [{ type: 'summary', vendor: 'v', dialog: 0, url: 'https://example.com/s.json' }],
+      } as any);
+      expect(result.vcon.attachments?.[0].url).toBe('https://example.com/n.txt');
+      expect(mockQueries.createVCon).toHaveBeenCalled();
+    });
+
+    it('refuses a malformed content_hash next to a url', async () => {
+      mockPluginManager.executeHook.mockResolvedValue(undefined);
+      await expect(service.create({
+        parties: [{ name: 'A' }],
+        sessions: [{ parties: [0], dialog: [0] }],
+        dialog: [{ type: 'recording', start: '2026-01-01T00:00:00Z', parties: [0], url: 'https://example.com/a.wav', content_hash: 'sha256-' + 'a'.repeat(64) }],
+      } as any)).rejects.toThrow(/Dialog at index 0 has an invalid content_hash/);
+      expect(mockQueries.createVCon).not.toHaveBeenCalled();
+    });
+
     it('should create a vCon with auto-generated UUID and timestamp', async () => {
       const createdUuid = randomUUID();
       mockQueries.createVCon.mockResolvedValue({ uuid: createdUuid, id: '1' });

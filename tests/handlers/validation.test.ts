@@ -131,7 +131,12 @@ describe('Validation Utilities', () => {
       expect(() => requireValidAttachment(attachment)).not.toThrow();
     });
 
-    it('should throw for attachment without body+encoding or url+content_hash', () => {
+    it('should not throw for an attachment with a url and no content_hash', () => {
+      const attachment: Attachment = { party: 0, dialog: 0, url: 'https://example.com/file' };
+      expect(() => requireValidAttachment(attachment)).not.toThrow();
+    });
+
+    it('should throw for attachment without body+encoding or url', () => {
       const attachment: Attachment = {
         body: 'test',
         // Missing encoding

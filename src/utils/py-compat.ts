@@ -217,3 +217,74 @@ export function pyRepr(value: unknown): string {
 export function pyStr(value: unknown): string {
   return typeof value === 'string' ? value : pyRepr(value);
 }
+
+const B64_VALUES: Record<string, number> = {};
+'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'.split('').forEach((c, i) => {
+  B64_VALUES[c] = i;
+});
+
+/**
+ * Decode base64 or base64url the way Python's `base64.urlsafe_b64decode` does
+ * (non-strict binascii): characters outside the alphabet are skipped, decoding
+ * stops at complete padding, and a dangling partial quantum is an error
+ * (undefined). Non-ASCII input is an error too.
+ */
+export function lenientBase64UrlDecode(input: string): Uint8Array | undefined {
+  if ([...input].some(c => c.charCodeAt(0) > 0x7f)) return undefined;
+  const s = input.replace(/-/g, '+').replace(/_/g, '/');
+  const out: number[] = [];
+  let quadPos = 0;
+  let left = 0;
+  let pads = 0;
+  for (const c of s) {
+    if (c === '=') {
+      if (quadPos >= 2 && quadPos + ++pads >= 4) return Uint8Array.from(out);
+      continue;
+    }
+    const v = B64_VALUES[c];
+    if (v === undefined) continue;
+    pads = 0;
+    switch (quadPos) {
+      case 0:
+        left = v;
+        quadPos = 1;
+        break;
+      case 1:
+        out.push(((left << 2) | (v >> 4)) & 0xff);
+        left = v & 0x0f;
+        quadPos = 2;
+        break;
+      case 2:
+        out.push(((left << 4) | (v >> 2)) & 0xff);
+        left = v & 0x03;
+        quadPos = 3;
+        break;
+      default:
+        out.push(((left << 6) | v) & 0xff);
+        quadPos = 0;
+    }
+  }
+  return quadPos === 0 ? Uint8Array.from(out) : undefined;
+}
+
+/**
+ * The value of a JWS `payload` decoded as Python's
+ * `json.loads(base64.urlsafe_b64decode(raw + padding))` would, or undefined if
+ * that raises.
+ */
+export function decodeJsonPayload(raw: unknown): unknown {
+  if (typeof raw !== 'string') return undefined;
+  const bytes = lenientBase64UrlDecode(raw + '='.repeat((4 - (raw.length % 4)) % 4));
+  if (!bytes) return undefined;
+  let encoding = 'utf-8';
+  let start = 0;
+  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) start = 3;
+  else if (bytes[0] === 0xff && bytes[1] === 0xfe) encoding = 'utf-16le';
+  else if (bytes[0] === 0xfe && bytes[1] === 0xff) encoding = 'utf-16be';
+  try {
+    const text = new TextDecoder(encoding, { fatal: true }).decode(bytes.subarray(start));
+    return JSON.parse(text.replace(/^\ufeff/, ''));
+  } catch {
+    return undefined;
+  }
+}

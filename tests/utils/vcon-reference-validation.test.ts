@@ -1,6 +1,6 @@
 /**
- * The reference validation (vcon-lib 1.0.5): content_hash form, url without
- * content_hash, JSON bodies serialized as strings, lawful_basis bodies,
+ * The reference validation (vcon-lib 1.0.6): content_hash form, url without
+ * content_hash (allowed from 1.0.6), JSON bodies serialized as strings, lawful_basis bodies,
  * created_at offsets, and signed (JWS) / encrypted (JWE) containers. Expected
  * messages are the reference's, verbatim.
  */
@@ -76,14 +76,28 @@ describe('content_hash', () => {
   });
 });
 
-describe('warnings for url without content_hash and JSON bodies as strings', () => {
-  it('warns (an error from vcon 1.1) on a url with no content_hash', () => {
+describe('url without content_hash (allowed, vcon-lib 1.0.6) and JSON bodies as strings', () => {
+  it('allows a url with no content_hash on Dialog, Attachment and Analysis, with no warning', () => {
     const { content_hash: _h, ...noHash } = doc().dialog[0];
-    const { errors, warnings } = validateVconDict(doc({ dialog: [noHash] }));
+    const { errors, warnings } = validateVconDict(doc({
+      dialog: [noHash],
+      attachments: [{ purpose: 'note', start: T, party: 0, session: 0, url: 'https://example.com/n.txt' }],
+      analysis: [{ type: 'summary', vendor: 'v', dialog: 0, url: 'https://example.com/s.json' }],
+    }));
     expect(errors).toEqual([]);
-    expect(warnings).toContain(
-      'Dialog at index 0 has a url but no content_hash (an external reference MUST have both; this will be an error in vcon 1.1).'
-    );
+    expect(warnings.filter((w) => w.includes('content_hash'))).toEqual([]);
+  });
+
+  it('an Attachment needs body+encoding or url', () => {
+    const { errors } = validateVconDict(doc({ attachments: [{ purpose: 'note', start: T, party: 0, session: 0, content_hash: HASH }] }));
+    expect(errors).toEqual(['Attachment at index 0 must include body+encoding or url.']);
+  });
+
+  it('redacted_from and amended_from with a url still need a content_hash', () => {
+    expect(validateVconDict(doc({ redacted_from: { type: 'pii', url: 'https://example.com/o.vcon' } })).errors)
+      .toEqual(['redacted_from with url must include content_hash.']);
+    expect(validateVconDict(doc({ amended_from: { url: 'https://example.com/o.vcon' } })).errors)
+      .toEqual(['amended_from with url must include content_hash.']);
   });
 
   it('warns when an encoding json body is a serialized JSON string', () => {
@@ -159,6 +173,10 @@ describe('signed (JWS) and encrypted (JWE) vCons', () => {
       'Missing required field: uuid',
     ]);
     expect(validateVconDict({ payload: '!!!', signatures: [{ header: {}, signature: 's' }] }).errors).toEqual([
+      "Signed vCon: 'payload' is not a base64url-encoded JSON object.",
+    ]);
+    // base64.urlsafe_b64decode refuses a str with non-ASCII characters
+    expect(validateVconDict({ payload: b64(payload) + '\u00e9', signatures: [{ header: {}, signature: 's' }] }).errors).toEqual([
       "Signed vCon: 'payload' is not a base64url-encoded JSON object.",
     ]);
   });

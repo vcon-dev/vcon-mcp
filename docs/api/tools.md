@@ -621,7 +621,7 @@ At least one Session is required when `dialog` or `events` is non-empty.
 **Attachment**:
 `purpose` (the spec field for classification), `type` (legacy name for the same thing), `party` (required), `dialog` (a single index) or `session` (an index or a list), `start`, `mediatype`, `filename`, `body`, `encoding`, `url`, `content_hash`.
 
-- An attachment needs either `body` with `encoding`, or `url` with `content_hash`.
+- An attachment needs either `body` with `encoding`, or `url`. A `content_hash` is recommended with a `url` but not required (a producer cannot always obtain stable bytes for the URL); when present it must be well formed.
 - An attachment also needs `party` plus `dialog` or `session`. `lawful_basis` attachments are scoped with `party` plus `session`; other scopes produce warnings.
 
 **Body and encoding.** `encoding` is `base64url`, `json`, or `none`, and has no default. `body` is a string, except that when `encoding` is `json` it may be any JSON value (object, array, number, boolean, or null). A non-string body with any other `encoding`, or with none, is rejected. `content_hash` is a string or a list of strings.

@@ -1,5 +1,5 @@
 /**
- * The reference validation of vcon-lib 1.0.5 (Python), message for message:
+ * The reference validation of vcon-lib 1.0.6 (Python), message for message:
  * validate_vcon_dict (core-05 document rules, content_hash and body-form
  * checks, JWS and JWE containers) and Vcon.is_valid() /
  * get_validation_warnings() (those rules plus the body of every lawful_basis
@@ -7,12 +7,12 @@
  *
  * Ported from vcon-js (src/validation.ts, src/event.ts, src/session.ts, MIT),
  * which matches the reference byte for byte, with the JWS / JWE handling of
- * vcon-lib 1.0.5. The 0.4.0 -> 0.5.0 migration post-check uses
+ * vcon-lib 1.0.6. The 0.4.0 -> 0.5.0 migration post-check uses
  * validateVconDict; the server's own accept path (src/utils/validation.ts)
  * stays more lenient and borrows the content and lawful basis rules from here.
  */
 import { validateLawfulBasisAttachment } from './lawful-basis-validation.js';
-import { asList, dateTimeProblem, isIndex, isPlainObject, parseDateTime, pyRepr } from './py-compat.js';
+import { asList, dateTimeProblem, decodeJsonPayload, isIndex, isPlainObject, parseDateTime, pyRepr } from './py-compat.js';
 
 export interface Findings {
   errors: string[];
@@ -120,22 +120,20 @@ function isSerializedJson(body: string): boolean {
 /**
  * Integrity and body-form checks shared by Dialog, Attachment, Analysis and the
  * redacted_from / amended_from references (section 2.4).
+ *
+ * A `url` without a `content_hash` is allowed on Dialog, Attachment and
+ * Analysis: a producer cannot always obtain stable bytes for the URL (a
+ * streaming-service page, audio behind a login). This follows the working
+ * group's direction on draft-ietf-vcon-vcon-core issue #40 (vcon-lib 1.0.6);
+ * core-05 still says MUST. `redacted_from` and `amended_from` keep the
+ * requirement (checked by the callers).
  */
 export function checkContent(
   obj: Record<string, any>,
   label: string,
   errors: string[],
-  warnings: string[],
-  checkUrl = true
+  warnings: string[]
 ): void {
-  if (checkUrl && 'url' in obj && !('content_hash' in obj)) {
-    // A MUST in section 2.4. A warning in 1.0.x, as in the reference library,
-    // so producers that only hold a carrier URL keep validating.
-    warnings.push(
-      `${label} has a url but no content_hash (an external reference MUST have both; ` +
-        'this will be an error in vcon 1.1).'
-    );
-  }
   if ('content_hash' in obj) {
     for (const problem of contentHashProblems(obj.content_hash)) {
       errors.push(`${label} has an invalid content_hash: ${problem}.`);
@@ -571,7 +569,7 @@ export function validateEvent(
 }
 
 /**
- * The reference's validate_vcon_dict (vcon-lib 1.0.5): core-05 document rules.
+ * The reference's validate_vcon_dict (vcon-lib 1.0.6): core-05 document rules.
  * A signed (JWS) vCon is checked as a JWS and its payload as a vCon; an
  * encrypted (JWE) vCon is checked as a JWE only.
  */
@@ -657,7 +655,7 @@ export function validateVconDict(
     } else {
       if (!('type' in rf)) errors.push('redacted_from is missing required field: type');
       if ('url' in rf && !('content_hash' in rf)) errors.push('redacted_from with url must include content_hash.');
-      checkContent(rf, 'redacted_from', errors, warnings, false);
+      checkContent(rf, 'redacted_from', errors, warnings);
     }
   }
   if ('amended_from' in vcon) {
@@ -669,7 +667,7 @@ export function validateVconDict(
         errors.push('amended_from must include uuid, or an external reference (url).');
       }
       if ('url' in af && !('content_hash' in af)) errors.push('amended_from with url must include content_hash.');
-      checkContent(af, 'amended_from', errors, warnings, false);
+      checkContent(af, 'amended_from', errors, warnings);
     }
   }
 
@@ -857,11 +855,11 @@ export function validateVconDict(
     }
     if (!('purpose' in attachment)) errors.push(`Attachment at index ${i} is missing required field: purpose`);
     const hasInline = 'body' in attachment && 'encoding' in attachment;
-    const hasExternal = 'url' in attachment && 'content_hash' in attachment;
+    const hasExternal = 'url' in attachment;
     if (!(hasInline || hasExternal || redacted)) {
-      errors.push(`Attachment at index ${i} must include body+encoding or url+content_hash.`);
+      errors.push(`Attachment at index ${i} must include body+encoding or url.`);
     }
-    checkContent(attachment, `Attachment at index ${i}`, errors, warnings, hasInline || redacted);
+    checkContent(attachment, `Attachment at index ${i}`, errors, warnings);
     if ('encoding' in attachment && !CORE_ENCODINGS.includes(attachment.encoding) && extListed.length === 0) {
       errors.push(`Attachment at index ${i} has invalid encoding: ${attachment.encoding}`);
     }
@@ -989,18 +987,7 @@ export function encryptedForm(vcon: unknown): boolean {
 
 /** The decoded JWS payload of a signed vCon, or undefined if it is not base64url JSON. */
 export function signedPayload(vcon: Record<string, any>): unknown {
-  const raw = vcon.payload;
-  if (typeof raw !== 'string') return undefined;
-  // base64.urlsafe_b64decode does not validate: '-' and '_' become '+' and '/', and
-  // characters outside the base64 alphabet are dropped.
-  const cleaned = raw.replace(/-/g, '+').replace(/_/g, '/').replace(/[^A-Za-z0-9+/]/g, '');
-  if (cleaned.length % 4 === 1) return undefined;
-  try {
-    const text = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.from(cleaned, 'base64'));
-    return JSON.parse(text);
-  } catch {
-    return undefined;
-  }
+  return decodeJsonPayload(vcon.payload);
 }
 
 function validateJws(vcon: Record<string, any>, dialogMimeTypes: readonly string[]): Findings {
