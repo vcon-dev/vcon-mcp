@@ -113,6 +113,8 @@ describe('Validation Utilities', () => {
   describe('requireValidAttachment', () => {
     it('should not throw for valid attachment with body and encoding', () => {
       const attachment: Attachment = {
+        party: 0,
+        session: 0,
         body: 'test',
         encoding: 'none',
       };
@@ -121,13 +123,20 @@ describe('Validation Utilities', () => {
 
     it('should not throw for valid attachment with url and content_hash', () => {
       const attachment: Attachment = {
+        party: 0,
+        dialog: 0,
         url: 'https://example.com/file',
-        content_hash: 'hash123',
+        content_hash: 'sha512-K7gkq531t9atY96FBDkQ9b7tiTZxnlO-X17gnDOayQY6NU4tWLz6AXZxFK7R_l_kqwI_iDUVkqvg2ljFK0Z-4Q',
       };
       expect(() => requireValidAttachment(attachment)).not.toThrow();
     });
 
-    it('should throw for attachment without body+encoding or url+content_hash', () => {
+    it('should not throw for an attachment with a url and no content_hash', () => {
+      const attachment: Attachment = { party: 0, dialog: 0, url: 'https://example.com/file' };
+      expect(() => requireValidAttachment(attachment)).not.toThrow();
+    });
+
+    it('should throw for attachment without body+encoding or url', () => {
       const attachment: Attachment = {
         body: 'test',
         // Missing encoding

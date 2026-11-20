@@ -152,13 +152,23 @@ TB=t-bbbbbbbbbbbbbbbb
 TQ=_quarantine
 
 # save <uuid> <tenant json literal> <suffix> [extra attachments json array]
+# True once 20261118120000_vcon_core_05_sessions_events.sql is applied: vcons
+# has redacted_from / amended_from, and sessions and events exist.
+core05() { [ "$(sql "SELECT to_regclass('public.sessions') IS NOT NULL")" = t ]; }
+
 # One vCon through save_vcon_batch as service_role, rows shaped like the
 # batch writer's (src/db/batch-writer.ts): every child stamped with the
-# vCon's tenant, a tags attachment at index 0.
+# vCon's tenant, a tags attachment at index 0. Once the vCon 0.5.0 migration
+# is applied the rows are the 2.0.0 writer's: 0.5.0, the renamed columns, one
+# Session and one Event, through the seven-argument save_vcon_batch.
 save() {
-  local u=$1 t=$2 s=$3 extra=${4:-[]} payload
-  payload=$(jq -cn --arg u "$u" --argjson t "$t" --arg s "$s" --argjson extra "$extra" '{
-    v: [{id:$u, uuid:$u, vcon_version:"0.4.0", subject:("subject " + $s), created_at:"2026-11-01T00:00:00Z", updated_at:"2026-11-01T00:00:00Z", redacted:{}, amended:{}, group_data:[], tenant_id:$t}],
+  local u=$1 t=$2 s=$3 extra=${4:-[]} payload v05=false call
+  core05 && v05=true
+  payload=$(jq -cn --arg u "$u" --argjson t "$t" --arg s "$s" --argjson extra "$extra" --argjson v05 "$v05" '{
+    v: [{id:$u, uuid:$u, subject:("subject " + $s), created_at:"2026-11-01T00:00:00Z", updated_at:"2026-11-01T00:00:00Z", group_data:[], tenant_id:$t}
+        + (if $v05 then {vcon_version:"0.5.0", redacted_from:{}, amended_from:{}} else {vcon_version:"0.4.0", redacted:{}, amended:{}} end)],
+    s: [{vcon_id:$u, session_index:0, tenant_id:$t, start_time:"2026-11-01T00:00:00Z", parties:[1], dialog_indices:[0]}],
+    e: [{vcon_id:$u, event_index:0, tenant_id:$t, type:"join", time:"2026-11-01T00:00:00Z", session_indices:[0], party:0}],
     p: [{vcon_id:$u, party_index:0, tenant_id:$t, name:("caller " + $s), mailto:"caller@example.invalid"}],
     d: [{vcon_id:$u, dialog_index:0, tenant_id:$t, type:"text", start_time:"2026-11-01T00:00:00Z", parties:[0], body:("dialog " + $s), encoding:"none"}],
     an: [{vcon_id:$u, analysis_index:0, tenant_id:$t, type:"summary", vendor:"test", body:("analysis " + $s), encoding:"none"}],
@@ -166,7 +176,9 @@ save() {
          + [$extra | to_entries[] | .value + {vcon_id:$u, attachment_index:(.key + 1), tenant_id:$t}])
   }')
   local out
-  out=$(as_role service_role "SELECT save_vcon_batch(p->'v', p->'p', p->'d', p->'an', p->'at') FROM (SELECT '$payload'::jsonb AS p) x")
+  call="p->'v', p->'p', p->'d', p->'an', p->'at'"
+  $v05 && call="$call, p->'s', p->'e'"
+  out=$(as_role service_role "SELECT save_vcon_batch($call) FROM (SELECT '$payload'::jsonb AS p) x")
   case "$out" in ERR*) echo "fixture $s FAILED: $out" >&2;; esac
   printf '%s' "$out"
 }
@@ -179,10 +191,14 @@ tenants_of() { # uuid
    UNION SELECT 4, 'analysis', (SELECT string_agg(DISTINCT coalesce(tenant_id,'NULL'), ',') FROM analysis WHERE vcon_id = '$1')
    UNION SELECT 5, 'attachments', (SELECT string_agg(DISTINCT coalesce(tenant_id,'NULL'), ',') FROM attachments WHERE vcon_id = '$1')
    UNION SELECT 6, 'embedding_queue', (SELECT string_agg(DISTINCT coalesce(tenant_id,'NULL'), ',') FROM embedding_queue WHERE vcon_id = '$1')
+   $(core05 && echo "UNION SELECT 7, 'sessions', (SELECT string_agg(DISTINCT coalesce(tenant_id,'NULL'), ',') FROM sessions WHERE vcon_id = '$1')
+   UNION SELECT 8, 'events', (SELECT string_agg(DISTINCT coalesce(tenant_id,'NULL'), ',') FROM events WHERE vcon_id = '$1')")
   ) z" | sed "s/$TA/A/g; s/$TB/B/g"
 }
 all_of() { # tenant label -> the tenants_of line where every table holds it
-  echo "vcons=$1 parties=$1 dialog=$1 analysis=$1 attachments=$1 embedding_queue=$1"
+  local line="vcons=$1 parties=$1 dialog=$1 analysis=$1 attachments=$1 embedding_queue=$1"
+  core05 && line="$line sessions=$1 events=$1"
+  echo "$line"
 }
 subject_of() { sql "SELECT subject FROM vcons WHERE id = '$1'"; }
 
@@ -258,6 +274,14 @@ after_checks() { # stage
 
 head1 "2. both migrations applied"
 check setup-2 "$FIRST, $SECOND and any later migrations applied, none failed" "0" "$(apply_both)"
+if [ -f "$MIG/20261118120000_vcon_core_05_sessions_events.sql" ]; then
+  check core05-applied "the vCon 0.5.0 migration is in the chain: one save_vcon_batch, seven arguments" "7" \
+    "$(sql "SELECT string_agg(pronargs::text, ',') FROM pg_proc WHERE proname = 'save_vcon_batch' AND pronamespace = 'public'::regnamespace")"
+  check core05-anon "anon holds nothing on sessions, events, vcon_migration_reports" "f" \
+    "$(sql "SELECT bool_or(has_table_privilege('anon', t, 'SELECT, INSERT, UPDATE, DELETE')) FROM unnest(ARRAY['sessions', 'events', 'vcon_migration_reports']) t")"
+  check core05-rls "row level security is on for the three" "t" \
+    "$(sql "SELECT bool_and(relrowsecurity) FROM pg_class WHERE oid IN ('public.sessions'::regclass, 'public.events'::regclass, 'public.vcon_migration_reports'::regclass)")"
+fi
 after_checks after 100
 
 head1 "2a. release_vcon_from_quarantine"
@@ -377,10 +401,11 @@ check bvt-anon "anon cannot run backfill_vcon_tenant_ids" "ERR42501" "$(as_role 
 check bvt-auth "authenticated cannot run vcon_tenant_stamp" "ERR42501" "$(as_role authenticated "SELECT vcon_tenant_stamp('$(uuid_n 501)', true)")"
 check bvt-batch "a batch size below 1 is refused" "ERR22023" "$(as_role service_role "SELECT backfill_vcon_tenant_ids(0, true)")"
 
+# Whichever save_vcon_batch the chain left: five arguments, or seven after the vCon 0.5.0 migration.
 check auth-save "authenticated keeps EXECUTE on save_vcon_batch" "t" \
-  "$(sql "SELECT has_function_privilege('authenticated', 'save_vcon_batch(jsonb, jsonb, jsonb, jsonb, jsonb)', 'EXECUTE')")"
+  "$(sql "SELECT bool_and(has_function_privilege('authenticated', oid, 'EXECUTE')) FROM pg_proc WHERE proname = 'save_vcon_batch' AND pronamespace = 'public'::regnamespace")"
 check anon-save "anon has no EXECUTE on save_vcon_batch" "f" \
-  "$(sql "SELECT has_function_privilege('anon', 'save_vcon_batch(jsonb, jsonb, jsonb, jsonb, jsonb)', 'EXECUTE')")"
+  "$(sql "SELECT bool_or(has_function_privilege('anon', oid, 'EXECUTE')) FROM pg_proc WHERE proname = 'save_vcon_batch' AND pronamespace = 'public'::regnamespace")"
 
 # ---------------------------------------------------------------- 3. idempotent
 head1 "3. both migrations applied a second time"

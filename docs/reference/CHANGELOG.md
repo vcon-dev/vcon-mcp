@@ -7,7 +7,139 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - Unreleased
+
+Retargets the server to `draft-ietf-vcon-vcon-core-05` (syntax `"0.5.0"`). This is a breaking
+release: the Dialog Object lost its transfer, recording-set, party history and originator content,
+which moved to the new Session and Event Objects. Writers emit 0.5.0. Readers accept 0.4.0 and
+migrate it on read (and on create), using the semantics of the Python reference migration
+(vcon-lib 1.0.5, `migrate_0_4_0_to_0_5_0`).
+
+The tenant isolation work listed at the end of this entry landed on main while 2.0.0 was in review
+and ships with it.
+
 ### Migrations
+`20261118120000_vcon_core_05_sessions_events.sql` is included and is **not applied by this
+release**. Apply it with `supabase db push` (or your migration runner) when you deploy 2.0.0, and in
+each per-group schema (it creates objects in the caller's `search_path`, like `save_vcon_batch`).
+Deploy the migration and the server together: the server reads and writes the renamed
+`redacted_from` / `amended_from` columns, and the old server reads `redacted` / `amended`.
+
+- adds `sessions` and `events` tables, indexed where `dialog` is indexed (vCon, start or time,
+  session id, tenant) plus GIN indexes on the array columns, with the tenant trigger, cascade and
+  RLS policy of the other child tables
+- renames `vcons.redacted` to `redacted_from` and `vcons.amended` to `amended_from`; adds
+  `vcons.redacted_strings`
+- adds `session_indices` to `attachments` and `analysis`
+- allows the empty Dialog Object `{}` (`dialog.type` may be NULL) and replaces the type check
+- replaces `save_vcon_batch` with a seven-argument form (`p_sessions`, `p_events`); the old
+  five-argument form is dropped. Against a database without the new form the server takes the logged
+  non-atomic fallback, which also needs the new tables
+- does not convert existing rows. A row whose `vcon_version` is not `0.5.0` is migrated when it is
+  read, and is written back as 0.5.0 (Sessions and Events included) the first time a structural
+  write touches it: `add_dialog`, `add_attachment`, tag writes, `update_dialog`, `remove_dialog`,
+  `update_attachment`
+- adds the append-only `vcon_migration_reports` table: the report of every 0.4.0 vCon that is
+  rewritten as 0.5.0 (upgrade on write) or posted as 0.4.0, stored before the rewrite
+- sorts after the tenant migrations below and keeps them: the seven-argument `save_vcon_batch`
+  keeps a stored tenant on a re-post exactly as `20261112120000_keep_stored_tenant.sql` does, and is
+  closed to `PUBLIC` and `anon`. `sessions`, `events` and `vcon_migration_reports` carry `tenant_id`,
+  take the parent vCon's tenant on insert, follow it when it moves (`cascade_tenant_id_update`,
+  `release_vcon_from_quarantine`), have the tenant RLS policy of the other child tables and grant
+  `anon` nothing. Every function the migration creates or replaces is closed to `PUBLIC` and `anon`
+- the strict pack (`supabase/strict`) and its catalog guard list the three new tables as tenant
+  tables (thirteen in all), with composite `(vcon_id, tenant_id)` keys. A strict deployment applies
+  this migration first and then re-runs `supabase/strict/apply.sh`; the pack refuses a schema
+  without them
+- deploy order: an older server cannot write once the migration renames `redacted` and `amended`
+  (its `save_vcon_batch` rows name the old columns), so apply the migration and deploy 2.0.0 together
+
+### Added
+- `sessions[]` and `events[]` on the vCon, with the Session Object, Session_Reference, and the Event
+  Object including the per-type parameter table (party, key, transfer and channel-contributors
+  events). At least one Session is required when dialog or events are present
+- `redacted_from`, `amended_from` and `redacted_strings`; Dialog `redacted_segments`; Attachment
+  `session`; Analysis `sessions`, `attachment` and `analysis` references
+- `src/utils/vcon-migration.ts`: the ported 0.4.0 to 0.5.0 migration with its report (`inferred`,
+  `fallback`, `unresolved`, removed Dialogs kept verbatim, `resign_required` for signed input), and
+  `src/utils/vcon-validation.ts`: 0.5.0 document rules
+- `create_vcon` takes `sessions`, `events`, `redacted_from`, `amended_from`, `redacted_strings` and
+  `vcon`; a 0.4.0 vCon (or dialog with no `sessions` and no `vcon`) is migrated and the response
+  carries `migration_report`
+- `get_vcon` returns `migration_report` when the stored vCon was 0.4.0
+- `add_dialog` takes `session` and `new_session` and returns `index`, `session`, `session_created`
+- `create_vcon_from_template` takes `lawful_basis_party`
+- resources `vcon://v1/vcons/{uuid}/sessions` and `/events`; `metadata` omits both arrays
+- the bulk importer migrates 0.4.0 files and writes sessions and events
+
+### Changed (breaking)
+- Dialog types written are `recording`, `text` and `incomplete`; `audio` and `video` are read with a
+  warning. Dialog `parties` are the contributors; the receivers are the Session `parties`.
+  `party_history`, `originator`, the transfer parameters, `recordings` and `recording_set` are
+  rejected on write with a pointer to the Session or Event replacement
+- `redacted` and `amended` are `redacted_from` and `amended_from`; the old names, `appended` and
+  `must_support` stay as deprecated input aliases
+- attachments need `party` plus `dialog` or `session`. `add_attachment` uses the only Session when
+  the vCon has exactly one and fails otherwise; a dialog index is never widened to a Session.
+  `update_attachment` needs the scope. Tag attachments are written with `party: 0` and every Session
+  (an empty Session is added when there is none)
+- `extensions` must list every extension used: the server adds `lawful_basis`, `wtf_transcription`
+  and the names in `critical`
+- `remove_dialog` leaves the empty Dialog Object `{}`; Session, Event and attachment references to it
+  stay valid
+- a `lawful_basis` attachment is expected to be scoped with `party` plus `session`; the warnings say
+  when it is not. The server never creates a basis that the caller did not supply
+- `IVConQueries.addDialog` and `addAttachment` return `{ index, ... }` instead of `void`;
+  `addDialog` takes an options object
+- JWS `alg: "none"` is not permitted (the migration flags it; nothing in this server signs)
+
+### Fixed (since the port branched)
+- the migration reports a Dialog `start` that is not an RFC 3339 date-time as unresolved under T1
+  (strict mode throws), as the Python reference and vcon-js do
+- the migration post-check runs the reference's `validate_vcon_dict` exactly
+  (`src/utils/vcon-reference-validation.ts`, a port of vcon-lib 1.0.6 by way of vcon-js), so a report
+  says what the reference's says; accepting a vCon stays as lenient as before about Attachment
+  `start` / `purpose` / `mediatype`, Dialog `mediatype` and the like. Report messages print values as
+  the reference does. On 248 real 0.4.0 vCons the migrated documents and the full report entry lists
+  equal vcon-lib 1.0.6's, and on 257 + 147 + 176 + 23 validation cases the verdicts, errors and
+  warnings do too
+- a signed vCon whose `payload` holds a non-ASCII character is reported as not base64url JSON, as
+  the reference does (its payload used to be decoded and validated anyway)
+
+### Changed (since the port branched): the vcon-lib 1.0.4 / 1.0.5 / 1.0.6 rules
+- a malformed `content_hash` on a Dialog, Attachment, Analysis, `redacted_from` or `amended_from`
+  is a validation error, so `create_vcon` and `POST /vcons` refuse it. A ContentHash is
+  `<algorithm>-<unpadded base64url digest>`; `sha512` and `sha256` digests must be 86 and 43
+  characters, which catches hex digests (`sha256-<hex>`, `sha-256:<hex>`) and padding
+- a `url` without a `content_hash` is allowed on a Dialog, Attachment or Analysis, with no error and
+  no warning (vcon-lib 1.0.6, following the working group's direction on draft-ietf-vcon-vcon-core
+  issue #40: a producer cannot always obtain stable bytes for the URL; core-05 itself still says
+  MUST). `create_vcon`, `POST /vcons` and `add_attachment` accept an Attachment or Analysis with only
+  a `url` (they used to require `url` + `content_hash`), and the reference rules say
+  `Attachment at index N must include body+encoding or url.` `redacted_from` and `amended_from` with
+  a `url` still need a `content_hash`, and a malformed `content_hash` is still refused
+- a warning for an `encoding: "json"` body that is a serialized JSON string
+- `lawful_basis` attachment bodies are checked with the reference's validator (required
+  `lawful_basis`, `expiration`, `purpose_grants`; the fields of each grant, proof mechanism, content
+  hash and registry). The reference reports problems as errors; on create they are warnings, as
+  every lawful basis finding of this server is, so a vCon is not refused over its basis. Values
+  outside the draft's open vocabularies are warnings in both
+- `created_at` and `updated_at` must be ISO 8601 date-times; an offset of 24 hours or more is invalid
+- a signed (JWS) or encrypted (JWE) vCon is validated as one (signatures, payload validated as a
+  vCon; JWE members, with a warning that its content was not checked) and refused on create: the
+  tables cannot hold the container. Verify (and decrypt) it and send the vCon it carries
+- media offloaded to object storage gets `content_hash: "sha512-<base64url>"`; it was a bare SHA-256
+  hex digest, which is not a ContentHash
+
+### Known gaps
+- `remove_analysis` and `remove_attachment` still renumber without rewriting `analysis.attachment`
+  and `analysis.analysis` references to the moved elements
+- an old tags attachment with no `party` is not given one on read when the vCon has several Sessions;
+  the migration report says so
+
+### Tenant isolation
+
+#### Migrations
 - `20261109163739_revoke_anon_read_paths.sql` closes the paths that let the `anon` role read
   vCon rows past row-level security. Idempotent; apply with `supabase db push`.
   - `anon` can no longer read the `vcons_legacy` and `vcon_field_usage` views or the
@@ -48,7 +180,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     skip a body that is not JSON instead of aborting. They are called by an operator; applying
     the migration changes no stored tenant
 
-### Security
+#### Security
 - Deployments that run the server with `SUPABASE_ANON_KEY` instead of
   `SUPABASE_SERVICE_ROLE_KEY` lose the `exec_sql` and `explain_query` routes: analytics, tag and
   schema discovery, database inspection, query plans and health metrics. Tables already returned
@@ -62,7 +194,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default `PUBLIC` execute grant there, and leaves the `SECURITY DEFINER` helpers to
   `service_role`
 
-### Added
+#### Added
 - `scripts/test-anon-lockdown.sh` applies the migration chain to a throwaway Postgres behind a
   real PostgREST and checks that `anon` is refused on each closed path, before and after the
   migration and on a re-run, that `service_role` and `authenticated` see what they saw before,
@@ -171,7 +303,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   schema leaks through the lane). The `Tenant isolation` workflow runs both, and now runs on
   pull requests whatever their base branch
 
-### Changed
+#### Changed
 - `IVConQueries.deleteVCon` may resolve to the number of vCons it removed. `VConService.delete`
   treats 0 as not found. The Supabase and MongoDB implementations used by `TENANT_MODE=off` do not
   report a count, so their behaviour is unchanged
@@ -184,7 +316,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `npm run test:tenant` runs the new REST shape. `scripts/test-tenant-isolation.ts` now starts
   it; the old script's "authenticated" client used the service role key and could not see a leak
 
-### Fixed
+#### Fixed
 - `docs/guide/debugging-tenant-rls.md` described the service role key as tenant-scoped, named
   migrations and functions that do not exist, and treated rows with no tenant as shared. It now
   describes what each setting does, with and without the strict pack

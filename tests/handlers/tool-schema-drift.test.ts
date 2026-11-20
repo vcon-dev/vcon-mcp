@@ -94,7 +94,7 @@ describe('tool schema drift (CON-1240)', () => {
   });
 
   describe('VConService.create legacy field names', () => {
-    it('maps must_support, appended and mimetype to 0.4.0 names', async () => {
+    it('maps must_support, appended and mimetype to current names', async () => {
       const service = new VConService({ queries: mockQueries, pluginManager: mockPluginManager } as any);
       const amended = { uuid: UUID };
       const result = await service.create({
@@ -103,11 +103,14 @@ describe('tool schema drift (CON-1240)', () => {
         appended: amended,
         dialog: [{ type: 'text', mimetype: 'text/plain', body: 'hi', encoding: 'none' }],
         analysis: [{ type: 't', vendor: 'v', mimetype: 'text/plain', body: 'x', encoding: 'none' }],
-        attachments: [{ type: 'x', mimetype: 'text/plain', body: 'x', encoding: 'none' }],
+        sessions: [{}],
+        attachments: [{ type: 'x', party: 0, session: 0, mimetype: 'text/plain', body: 'x', encoding: 'none' }],
       } as any);
       const v: any = result.vcon;
       expect(v.critical).toEqual(['ext']);
-      expect(v.amended).toEqual(amended);
+      expect(v.amended_from).toEqual(amended);
+      expect(v.amended).toBeUndefined();
+      expect(v.extensions).toEqual(['ext']);
       expect(v).not.toHaveProperty('must_support');
       expect(v).not.toHaveProperty('appended');
       for (const list of [v.dialog, v.analysis, v.attachments]) {

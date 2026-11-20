@@ -23,6 +23,8 @@ interface AttachmentLike {
   purpose?: unknown;
   type?: unknown;
   body?: unknown;
+  party?: unknown;
+  session?: unknown;
 }
 
 interface VConLike {
@@ -75,6 +77,13 @@ export function lawfulBasisWarnings(
   const warnings: string[] = [];
   found.forEach((att, i) => {
     const label = found.length > 1 ? `lawful_basis attachment ${i}` : 'lawful_basis attachment';
+    // vCon 0.5.0 scopes a lawful basis with party plus session.
+    if (att.party === undefined || att.party === null) {
+      warnings.push(`${label}: party is missing (a lawful basis is scoped with party plus session)`);
+    }
+    if (att.session === undefined || att.session === null) {
+      warnings.push(`${label}: session is missing (a lawful basis is scoped with party plus session)`);
+    }
     const body = parseBody(att.body);
     if (!body) {
       warnings.push(`${label}: body is missing or not a JSON object`);

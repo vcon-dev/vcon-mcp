@@ -4,7 +4,10 @@
 
 import { Db, ObjectId } from 'mongodb';
 import { Analysis, Attachment, Dialog, Party, VCon } from '../types/vcon.js';
+import { MigrationReport, getMigrationReport, migrateOnRead } from '../utils/vcon-migration.js';
 import {
+    appendAttachmentWithScope,
+    appendDialogWithSession,
     appendParty,
     removeAnalysisAt,
     removeAttachmentAt,
@@ -21,7 +24,7 @@ import {
     type VconShapeGraphNode,
     type VconShapeGraphPayload,
 } from '../types/vcon-shape-graph.js';
-import { DateField, DistinctValuesResult, IVConQueries } from './interfaces.js';
+import { AddAttachmentResult, AddDialogOptions, AddDialogResult, DateField, DistinctValuesResult, IVConQueries } from './interfaces.js';
 import { logWithContext, recordCounter, withSpan } from '../observability/instrumentation.js';
 import { ATTR_DB_OPERATION, ATTR_SEARCH_RESULTS_COUNT, ATTR_SEARCH_THRESHOLD, ATTR_SEARCH_TYPE, ATTR_VCON_UUID } from '../observability/attributes.js';
 
@@ -38,6 +41,7 @@ function assertCreatedDateField(dateField?: DateField): void {
 export class MongoVConQueries implements IVConQueries {
     private db: Db;
     private readonly VCONS_COLLECTION = 'vcons';
+    private readonly MIGRATION_REPORTS_COLLECTION = 'vcon_migration_reports';
 
     constructor(db: Db) {
         this.db = db;
@@ -127,23 +131,18 @@ export class MongoVConQueries implements IVConQueries {
                 throw new Error(`vCon not found: ${uuid}`);
             }
 
-            // Remove MongoDB internal _id
+            // Remove MongoDB internal _id. A stored 0.4.0 document is migrated on read.
             const { _id, ...rest } = vcon;
-            return rest as unknown as VCon;
+            return migrateOnRead(rest as unknown as VCon);
         });
     }
 
-    async addDialog(vconUuid: string, dialog: Dialog): Promise<void> {
+    async addDialog(vconUuid: string, dialog: Dialog, options: AddDialogOptions = {}): Promise<AddDialogResult> {
         return withSpan('mongo.addDialog', async () => {
-            const collection = this.db.collection(this.VCONS_COLLECTION);
-            const result = await collection.updateOne(
-                { uuid: vconUuid },
-                { $push: { dialog: dialog } as any }
-            );
-
-            if (result.matchedCount === 0) {
-                throw new Error(`vCon not found: ${vconUuid}`);
-            }
+            const added = appendDialogWithSession(await this.loadVConDoc(vconUuid), dialog, options);
+            await this.setArray(vconUuid, 'dialog', added.vcon.dialog);
+            await this.setArray(vconUuid, 'sessions', added.vcon.sessions);
+            return { index: added.index, session: added.session, sessionCreated: added.sessionCreated };
         });
     }
 
@@ -161,17 +160,11 @@ export class MongoVConQueries implements IVConQueries {
         });
     }
 
-    async addAttachment(vconUuid: string, attachment: Attachment): Promise<void> {
+    async addAttachment(vconUuid: string, attachment: Attachment): Promise<AddAttachmentResult> {
         return withSpan('mongo.addAttachment', async () => {
-            const collection = this.db.collection(this.VCONS_COLLECTION);
-            const result = await collection.updateOne(
-                { uuid: vconUuid },
-                { $push: { attachments: attachment } as any }
-            );
-
-            if (result.matchedCount === 0) {
-                throw new Error(`vCon not found: ${vconUuid}`);
-            }
+            const added = appendAttachmentWithScope(await this.loadVConDoc(vconUuid), attachment);
+            await this.setArray(vconUuid, 'attachments', added.vcon.attachments);
+            return { index: added.index, attachment: added.attachment };
         });
     }
 
@@ -182,15 +175,40 @@ export class MongoVConQueries implements IVConQueries {
     // grow the array) — and writes back the single touched array. This keeps the
     // placeholder/compact semantics byte-identical to the helper's unit tests.
 
+    /**
+     * Load the stored document. A 0.4.0 document is migrated and written back whole first,
+     * so a structural write never mixes 0.5.0 children into a 0.4.0 document.
+     */
     private async loadVConDoc(uuid: string): Promise<VCon> {
         const collection = this.db.collection(this.VCONS_COLLECTION);
         const doc = await collection.findOne({ uuid });
         if (!doc) throw new Error(`vCon not found: ${uuid}`);
         const { _id, ...rest } = doc;
-        return rest as unknown as VCon;
+        const stored = rest as unknown as VCon;
+        const migrated = migrateOnRead(stored);
+        const report = migrated !== stored ? getMigrationReport(migrated) : undefined;
+        if (report) {
+            // The report is the only copy of what the migration dropped; keep it before the
+            // 0.4.0 document is replaced.
+            await this.saveMigrationReport(uuid, report, 'upgrade-on-write');
+            await collection.replaceOne({ uuid }, migrated as any);
+        }
+        return migrated;
     }
 
-    private async setArray(uuid: string, key: 'parties' | 'dialog' | 'analysis' | 'attachments', value: unknown): Promise<void> {
+    /** Append a migration report to the vcon_migration_reports collection (append-only). */
+    async saveMigrationReport(vconUuid: string, report: MigrationReport, trigger: 'upgrade-on-write' | 'create'): Promise<void> {
+        await this.db.collection(this.MIGRATION_REPORTS_COLLECTION).insertOne({
+            vcon_uuid: vconUuid,
+            source_version: report.source_version,
+            target_version: report.target_version,
+            trigger,
+            report,
+            created_at: new Date().toISOString(),
+        } as any);
+    }
+
+    private async setArray(uuid: string, key: 'parties' | 'dialog' | 'analysis' | 'attachments' | 'sessions' | 'events', value: unknown): Promise<void> {
         const collection = this.db.collection(this.VCONS_COLLECTION);
         await collection.updateOne({ uuid }, { $set: { [key]: value } as any });
     }
@@ -555,7 +573,7 @@ export class MongoVConQueries implements IVConQueries {
 
         return results.map(r => {
             const { _id, ...rest } = r;
-            return rest as unknown as VCon;
+            return migrateOnRead(rest as unknown as VCon);
         });
     }
 

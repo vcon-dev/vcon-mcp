@@ -94,7 +94,7 @@ async function main(): Promise<number> {
       ['g-base-rpc', 'search_vcons_keyword(text,timestamp with time zone,timestamp with time zone,jsonb,integer,text) treats the tenant in a NULL-tolerant way (IS NULL)'],
       ['g-base-truncate', 'anon or authenticated holds TRUNCATE, TRIGGER, REFERENCES or MAINTAIN on public.vcons'],
       ['g-base-insert', 'authenticated can insert into or update tenant table public.vcons'],
-      ['g-base-write-rpc', 'save_vcon_batch(jsonb,jsonb,jsonb,jsonb,jsonb) is VOLATILE, so it may write'],
+      ['g-base-write-rpc', 'save_vcon_batch(jsonb,jsonb,jsonb,jsonb,jsonb,jsonb,jsonb) is VOLATILE, so it may write'],
       ['g-base-view-write', 'authenticated can write through view public.vcons_legacy'],
       ['g-base-tagdate', 'search_vcons_by_tags_and_date(jsonb,timestamp with time zone,timestamp with time zone,integer,text) reads vcons without a tenant predicate'],
       ['g-base-key', 'parties has no key to vcons that includes tenant_id'],
@@ -234,8 +234,8 @@ async function main(): Promise<number> {
       `GRANT INSERT ON vcons_legacy TO authenticated`,
       'authenticated can write through view public.vcons_legacy');
     regress('up-write-rpc', 'authenticated granted save_vcon_batch again',
-      `GRANT EXECUTE ON FUNCTION save_vcon_batch(jsonb, jsonb, jsonb, jsonb, jsonb) TO authenticated`,
-      'save_vcon_batch(jsonb,jsonb,jsonb,jsonb,jsonb) is VOLATILE, so it may write');
+      `GRANT EXECUTE ON FUNCTION save_vcon_batch(jsonb, jsonb, jsonb, jsonb, jsonb, jsonb, jsonb) TO authenticated`,
+      'save_vcon_batch(jsonb,jsonb,jsonb,jsonb,jsonb,jsonb,jsonb) is VOLATILE, so it may write');
     regress('up-write-rpc2', 'authenticated granted remove_vcon_child_and_compact again',
       `GRANT EXECUTE ON FUNCTION remove_vcon_child_and_compact(text, uuid, integer) TO authenticated`,
       'remove_vcon_child_and_compact(text,uuid,integer) is VOLATILE, so it may write');
@@ -364,6 +364,9 @@ async function main(): Promise<number> {
       ['embedding_queue', `INSERT INTO embedding_queue (vcon_id, tenant_id) VALUES ('${b.uuid}', '%T%')`],
       ['s3_sync_tracking', `DELETE FROM s3_sync_tracking WHERE vcon_id = '${b.uuid}'; INSERT INTO s3_sync_tracking (vcon_id, vcon_uuid, s3_key, tenant_id) VALUES ('${b.uuid}', '${b.uuid}', 'planted', '%T%')`],
       ['party_history', `INSERT INTO party_history (id, dialog_id, party_index, time, event, tenant_id) VALUES ('eeeeeeee-0006-4000-8000-000000000001', '${rowId(b, 'dialog')}', 7, now(), 'join', '%T%')`],
+      ['sessions', `INSERT INTO sessions (id, vcon_id, session_index, tenant_id) VALUES ('eeeeeeee-0009-4000-8000-000000000001', '${b.uuid}', 7, '%T%')`],
+      ['events', `INSERT INTO events (id, vcon_id, event_index, type, time, tenant_id) VALUES ('eeeeeeee-000a-4000-8000-000000000001', '${b.uuid}', 7, 'join', now(), '%T%')`],
+      ['vcon_migration_reports', `INSERT INTO vcon_migration_reports (id, vcon_id, target_version, trigger, report, tenant_id) VALUES ('eeeeeeee-000b-4000-8000-000000000001', '${b.uuid}', '0.5.0', 'create', '{}', '%T%')`],
     ];
     for (const [tbl, ins] of children) {
       const wrap = (tenant: string) => `BEGIN; ALTER TABLE ${tbl} DISABLE TRIGGER USER; ${ins.replace('%T%', tenant)}; ROLLBACK;`;

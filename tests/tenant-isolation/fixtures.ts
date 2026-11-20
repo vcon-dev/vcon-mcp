@@ -1,7 +1,7 @@
 /**
  * Synthetic tenants and canaries for the tenant isolation shapes.
  *
- * Every row a fixture owns, in all ten tenant tables, carries its marker: ids
+ * Every row a fixture owns, in all thirteen tenant tables, carries its marker: ids
  * and vCon uuids start with a per-fixture prefix, and every text column a
  * search can reach holds a per-fixture canary word. A response to tenant A
  * that contains another fixture's marker is a leak. A positive read must also
@@ -55,20 +55,23 @@ export const FIXTURES: Record<FixtureKey, Fixture> = {
 export function rowId(f: Fixture, table: string): string {
   const kinds: Record<string, number> = {
     parties: 1, dialog: 2, analysis: 3, attachments: 4, groups: 5, party_history: 6, vcon_embeddings: 7, dealer: 8,
+    sessions: 9, events: 10, vcon_migration_reports: 11,
   };
   const n = parseInt(f.uuid.slice(-12), 16);
   return id(f.prefix, kinds[table], n);
 }
 
-/** The ten tables that carry tenant_id. */
+/** The thirteen tables that carry tenant_id (the last three come with vCon 0.5.0). */
 export const TENANT_TABLES = [
   'vcons', 'parties', 'dialog', 'attachments', 'analysis', 'groups',
   'party_history', 'vcon_embeddings', 'embedding_queue', 's3_sync_tracking',
+  'sessions', 'events', 'vcon_migration_reports',
 ] as const;
 
 /** Every child of vcons, keyed by vcon_id. party_history hangs off dialog. */
 export const VCON_CHILDREN = [
   'parties', 'dialog', 'attachments', 'analysis', 'groups', 'vcon_embeddings', 'embedding_queue', 's3_sync_tracking',
+  'sessions', 'events', 'vcon_migration_reports',
 ] as const;
 
 /** A 384-dimension unit vector; every fixture embeds the same one, so only the tenant filter separates them. */
@@ -103,6 +106,12 @@ INSERT INTO vcon_embeddings (id, vcon_id, content_type, content_reference, conte
   VALUES ('${rowId(f, 'vcon_embeddings')}', '${u}', 'subject', NULL, 'zebra ${c} embedding', '${EMBEDDING}', 'test-model', 384, ${t});
 INSERT INTO s3_sync_tracking (vcon_id, vcon_uuid, s3_key, synced_at, updated_at, embedding_model, embedding_dimension, tenant_id)
   VALUES ('${u}', '${u}', '${c}.json', '2026-11-01T00:00:00Z', '2026-11-01T00:00:00Z', 'test-model', 384, ${t});
+INSERT INTO sessions (id, vcon_id, session_index, start_time, parties, dialog_indices, extra, tenant_id)
+  VALUES ('${rowId(f, 'sessions')}', '${u}', 0, '2026-11-01T00:00:00Z', '{0}', '{0}', '{"note":"${c} session"}', ${t});
+INSERT INTO events (id, vcon_id, event_index, type, time, session_indices, party, extra, tenant_id)
+  VALUES ('${rowId(f, 'events')}', '${u}', 0, 'join', '2026-11-01T00:00:00Z', '{0}', 0, '{"note":"${c} event"}', ${t});
+INSERT INTO vcon_migration_reports (id, vcon_id, source_version, target_version, trigger, report, tenant_id)
+  VALUES ('${rowId(f, 'vcon_migration_reports')}', '${u}', '0.4.0', '0.5.0', 'create', '{"note":"${c} report"}', ${t});
 ${f.nullChildren ? VCON_CHILDREN.map(tbl => `UPDATE ${tbl} SET tenant_id = NULL WHERE vcon_id = '${u}';`).join('\n') + `\nUPDATE party_history SET tenant_id = NULL WHERE dialog_id = '${rowId(f, 'dialog')}';` : ''}
 `;
 }
@@ -123,7 +132,7 @@ REFRESH MATERIALIZED VIEW vcon_tags_mv;
 `);
 }
 
-/** Rows per tenant across the ten tables, for logs. */
+/** Rows per tenant across the tenant tables, for logs. */
 export function tenantCounts(stack: Stack): string {
   return stack.sql(`
 SELECT string_agg(t || '=' || n, ' ' ORDER BY t) FROM (

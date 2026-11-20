@@ -11,7 +11,8 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 import Redis from 'ioredis';
-import { Analysis, Attachment, Dialog, Party, VCon } from '../types/vcon.js';
+import { Analysis, Attachment, Dialog, Event, Party, Session, VCon, VCON_VERSION } from '../types/vcon.js';
+import { migrateOnRead } from '../utils/vcon-migration.js';
 import { deserializeBody, serializeBody } from '../utils/body-serialization.js';
 import { logWithContext, recordCounter } from '../observability/instrumentation.js';
 import { extractErrorMessage } from '../utils/errors.js';
@@ -306,6 +307,8 @@ async function saveVConsAtomic(pending: Pending[], tenantId: string | null): Pro
     p_dialog: rows.dialog,
     p_analysis: rows.analysis,
     p_attachments: rows.attachments,
+    p_sessions: rows.sessions,
+    p_events: rows.events,
   })) as { error: unknown };
   if (error) throw error;
 }
@@ -316,6 +319,8 @@ function buildBatchRows(pending: Pending[], tenantId: string | null) {
   const dialog: ReturnType<typeof buildDialogRows> = [];
   const analysis: ReturnType<typeof buildAnalysisRows> = [];
   const attachments: ReturnType<typeof buildAttachmentRows> = [];
+  const sessions: ReturnType<typeof buildSessionRows> = [];
+  const events: ReturnType<typeof buildEventRows> = [];
 
   for (const { vcon } of pending) {
     vcons.push(buildVconRow(vcon, tenantId));
@@ -323,13 +328,15 @@ function buildBatchRows(pending: Pending[], tenantId: string | null) {
     dialog.push(...buildDialogRows(vcon, tenantId));
     analysis.push(...buildAnalysisRows(vcon, tenantId));
     attachments.push(...buildAttachmentRows(vcon, tenantId));
+    sessions.push(...buildSessionRows(vcon, tenantId));
+    events.push(...buildEventRows(vcon, tenantId));
   }
-  return { vcons, parties, dialog, analysis, attachments };
+  return { vcons, parties, dialog, analysis, attachments, sessions, events };
 }
 
 /**
  * Fallback for databases without save_vcon_batch (migration
- * 20261020130000_save_vcon_batch.sql not applied). Not atomic: a failed child
+ * 20261020130000_save_vcon_batch.sql, or its 0.5.0 replacement 20261118120000_vcon_core_05_sessions_events.sql, not applied). Not atomic: a failed child
  * write leaves the vcons row and the other children committed. The whole batch
  * settles together, as it did before CON-957.
  */
@@ -374,6 +381,8 @@ async function writeTablesLegacy(pending: Pending[], tenantId: string | null): P
     ['dialog', rows.dialog, 'vcon_id,dialog_index'],
     ['analysis', rows.analysis, 'vcon_id,analysis_index'],
     ['attachments', rows.attachments, 'vcon_id,attachment_index'],
+    ['sessions', rows.sessions, 'vcon_id,session_index'],
+    ['events', rows.events, 'vcon_id,event_index'],
   ];
   const ops = children
     .filter(([, r]) => r.length > 0)
@@ -430,34 +439,45 @@ async function invalidateCache(committed: Pending[]): Promise<void> {
 //   body: 'string' -> a string body the legacy reader would JSON.parse (e.g. "false")
 //   body: 'json'   -> a non-string body stored as JSON text the legacy reader returns as a string
 //   dialog: 'array' -> analysis.dialog was a one-element array, not a bare int
+//   sessions: 'array' -> analysis/event sessions was a one-element array, not a bare int
+//   session: 'array'  -> attachment.session was a one-element array, not a bare int
 // ponytail: a client-supplied key named SHAPE_KEY is shadowed; rename if that ever collides.
 // ---------------------------------------------------------------------------
 
 export const SHAPE_KEY = '_vcon_mcp_shape';
 
-type Shape = { body?: 'string' | 'json'; dialog?: 'array' };
+type Shape = { body?: 'string' | 'json'; dialog?: 'array'; sessions?: 'array'; session?: 'array' };
 type Row = Record<string, any>;
 
 const VCON_KEYS = new Set([
   'vcon', 'uuid', 'subject', 'created_at', 'updated_at', 'extensions', 'critical',
-  'redacted', 'amended', 'group', 'parties', 'dialog', 'analysis', 'attachments',
+  'redacted_from', 'amended_from', 'redacted_strings', 'group', 'parties', 'sessions',
+  'dialog', 'events', 'analysis', 'attachments',
 ]);
 const PARTY_KEYS = new Set([
   'tel', 'sip', 'stir', 'mailto', 'name', 'did', 'uuid', 'validation', 'jcard',
   'gmlpos', 'civicaddress', 'timezone',
 ]);
-// party_history and transfer fields are not dialog columns, so they ride in extra.
+// redacted_segments and extension keys are not dialog columns, so they ride in extra.
+// `parties` is a column only when it is a flat list of ints; a null slot or a nested
+// per-channel list rides in extra (see buildDialogRow).
 const DIALOG_KEYS = new Set([
-  'type', 'start', 'duration', 'parties', 'originator', 'mediatype', 'filename', 'body',
+  'type', 'start', 'duration', 'parties', 'mediatype', 'filename', 'body',
   'encoding', 'url', 'content_hash', 'disposition', 'session_id', 'application', 'message_id',
 ]);
 const ANALYSIS_KEYS = new Set([
-  'type', 'dialog', 'mediatype', 'filename', 'vendor', 'product', 'schema', 'body',
+  'type', 'dialog', 'sessions', 'mediatype', 'filename', 'vendor', 'product', 'schema', 'body',
   'encoding', 'url', 'content_hash',
 ]);
 const ATTACHMENT_KEYS = new Set([
-  'type', 'purpose', 'start', 'party', 'dialog', 'mediatype', 'filename', 'body',
+  'type', 'purpose', 'start', 'party', 'dialog', 'session', 'mediatype', 'filename', 'body',
   'encoding', 'url', 'content_hash',
+]);
+
+const SESSION_KEYS = new Set(['start', 'duration', 'parties', 'originator', 'session_id', 'sessions', 'dialog']);
+const EVENT_KEYS = new Set([
+  'type', 'time', 'sessions', 'party', 'dialog', 'channel', 'contributors', 'button',
+  'transferee', 'transfer_target', 'consultation', 'target_session',
 ]);
 
 function extraOf(obj: object, known: Set<string>, shape: Shape = {}): Row | null {
@@ -504,7 +524,7 @@ function readBody(stored: unknown, parses: boolean, encoding: string | null | un
 }
 
 /**
- * vcons.redacted / amended / group_data default to '{}' / '[]', so an empty
+ * vcons.redacted_from / amended_from / group_data default to '{}' / '[]', so an empty
  * value means the parameter is absent. Drop it instead of round-tripping noise.
  */
 function nonEmpty<T>(value: T | null | undefined): T | undefined {
@@ -518,14 +538,15 @@ export function buildVconRow(vcon: VCon, tenantId: string | null) {
   return {
     id: vcon.uuid,
     uuid: vcon.uuid,
-    vcon_version: vcon.vcon ?? '0.4.0',
+    vcon_version: vcon.vcon ?? VCON_VERSION,
     subject: vcon.subject,
     created_at: vcon.created_at,
     updated_at: vcon.updated_at ?? new Date().toISOString(),
     extensions: vcon.extensions,
     critical: vcon.critical,
-    redacted: vcon.redacted || {},
-    amended: vcon.amended || {},
+    redacted_from: vcon.redacted_from || {},
+    amended_from: vcon.amended_from || {},
+    redacted_strings: vcon.redacted_strings ?? null,
     group_data: vcon.group || [],
     tenant_id: tenantId,
     extra: extraOf(vcon, VCON_KEYS),
@@ -567,10 +588,17 @@ export function buildPartyRow(vconUuid: string, party: Party, index: number, ten
 }
 
 export function buildDialogRow(vconUuid: string, dialog: Dialog, index: number, tenantId: string | null) {
+  // Contributors. The parties column is INTEGER[]: a flat list of ints goes there. A null slot
+  // (unknown contributor) or a per-channel nested list cannot, so it rides in extra and the
+  // column stays null (assembleVCon reads extra.parties back).
   let parties: unknown = null;
+  let rawParties: unknown;
   if (dialog.parties !== undefined) {
-    parties = Array.isArray(dialog.parties) ? dialog.parties : [dialog.parties];
+    const list = Array.isArray(dialog.parties) ? dialog.parties : [dialog.parties];
+    if (list.every((p) => Number.isInteger(p))) parties = list;
+    else rawParties = dialog.parties;
   }
+  const extra = extraOf(dialog, DIALOG_KEYS, bodyShape(dialog.body, legacyParses('dialog')));
   return {
     vcon_id: vconUuid,
     dialog_index: index,
@@ -579,7 +607,6 @@ export function buildDialogRow(vconUuid: string, dialog: Dialog, index: number, 
     start_time: dialog.start,
     duration_seconds: dialog.duration,
     parties,
-    originator: dialog.originator,
     mediatype: dialog.mediatype,
     filename: dialog.filename,
     body: serializeBody(dialog.body),
@@ -590,14 +617,17 @@ export function buildDialogRow(vconUuid: string, dialog: Dialog, index: number, 
     session_id: dialog.session_id,
     application: dialog.application,
     message_id: dialog.message_id,
-    extra: extraOf(dialog, DIALOG_KEYS, bodyShape(dialog.body, legacyParses('dialog'))),
+    extra: rawParties === undefined ? extra : { ...(extra ?? {}), parties: rawParties },
   };
 }
 
 export function buildAnalysisRow(vconUuid: string, analysis: Analysis, index: number, tenantId: string | null) {
   // dialog_indices is always an array. A one-element array is recorded in the
   // shape hint so it does not read back as the bare int the legacy reader emits.
-  const dialogShape: Shape = Array.isArray(analysis.dialog) && analysis.dialog.length === 1 ? { dialog: 'array' } : {};
+  const dialogShape: Shape = {
+    ...(Array.isArray(analysis.dialog) && analysis.dialog.length === 1 ? { dialog: 'array' as const } : {}),
+    ...(Array.isArray(analysis.sessions) && analysis.sessions.length === 1 ? { sessions: 'array' as const } : {}),
+  };
   return {
     vcon_id: vconUuid,
     analysis_index: index,
@@ -606,6 +636,9 @@ export function buildAnalysisRow(vconUuid: string, analysis: Analysis, index: nu
     dialog_indices: Array.isArray(analysis.dialog)
       ? analysis.dialog
       : (analysis.dialog !== undefined ? [analysis.dialog] : null),
+    session_indices: Array.isArray(analysis.sessions)
+      ? analysis.sessions
+      : (analysis.sessions !== undefined ? [analysis.sessions] : null),
     mediatype: analysis.mediatype,
     filename: analysis.filename,
     vendor: analysis.vendor,
@@ -632,38 +665,114 @@ export function buildAttachmentRow(vconUuid: string, attachment: Attachment, ind
     start_time: attachment.start,
     party: attachment.party,
     dialog: attachment.dialog,
+    session_indices: Array.isArray(attachment.session)
+      ? attachment.session
+      : (attachment.session !== undefined ? [attachment.session] : null),
     mimetype: attachment.mediatype,
     filename: attachment.filename,
     body: serializeBody(attachment.body),
     encoding: attachment.encoding,
     url: attachment.url,
     content_hash: attachment.content_hash,
-    extra: extraOf(attachment, ATTACHMENT_KEYS, bodyShape(attachment.body, legacyParses('other', attachment.encoding))),
+    extra: extraOf(attachment, ATTACHMENT_KEYS, {
+      ...bodyShape(attachment.body, legacyParses('other', attachment.encoding)),
+      ...(Array.isArray(attachment.session) && attachment.session.length === 1 ? { session: 'array' as const } : {}),
+    }),
   };
+}
+
+/** Session row (0.5.0). An empty Session `{}` is a row of nulls. */
+export function buildSessionRow(vconUuid: string, session: Session, index: number, tenantId: string | null) {
+  return {
+    vcon_id: vconUuid,
+    session_index: index,
+    tenant_id: tenantId,
+    start_time: session.start,
+    duration_seconds: session.duration,
+    parties: session.parties ?? null,
+    originator: session.originator,
+    session_id: session.session_id,
+    session_refs: session.sessions,
+    dialog_indices: session.dialog ?? null,
+    extra: extraOf(session, SESSION_KEYS),
+  };
+}
+
+/** Event row (0.5.0). Extension parameters ride in extra. */
+export function buildEventRow(vconUuid: string, event: Event, index: number, tenantId: string | null) {
+  const sessionsShape: Shape = Array.isArray(event.sessions) && event.sessions.length === 1 ? { sessions: 'array' } : {};
+  return {
+    vcon_id: vconUuid,
+    event_index: index,
+    tenant_id: tenantId,
+    type: event.type,
+    time: event.time,
+    session_indices: Array.isArray(event.sessions)
+      ? event.sessions
+      : (event.sessions !== undefined ? [event.sessions] : null),
+    party: event.party,
+    dialog: event.dialog,
+    channel: event.channel,
+    contributors: event.contributors,
+    button: event.button,
+    transferee: event.transferee,
+    transfer_target: event.transfer_target,
+    consultation: event.consultation,
+    target_session: event.target_session,
+    extra: extraOf(event, EVENT_KEYS, sessionsShape),
+  };
+}
+
+/** Remove null/undefined keys: DB columns come back as null for absent parameters. */
+function dropNullKeys<T extends Row>(o: T): T {
+  const out: Row = {};
+  for (const [k, v] of Object.entries(o)) if (v !== null && v !== undefined) out[k] = v;
+  return out as T;
+}
+
+/** The first non-empty of two index-array columns, restoring a bare int unless the shape says array. */
+function indexValue(arr: number[] | null | undefined, shape?: 'array'): number | number[] | undefined {
+  if (arr === null || arr === undefined) return undefined;
+  return shape === 'array' || arr.length !== 1 ? arr : arr[0];
 }
 
 /**
  * Rebuild a vCon from its vcons row and child rows (inverse of the builders).
  * Pure, so the store/read round trip is unit-testable without a database.
+ *
+ * Rows stored before 0.5.0 (vcon_version other than 0.5.0) carry the 0.4.0 shape:
+ * the dialog `originator` column, party_history and transfer fields in `extra`, and
+ * no sessions or events. They are assembled as 0.4.0 and migrated on read with the
+ * reference semantics (src/utils/vcon-migration.ts). The migration report is
+ * attached out of band (getMigrationReport).
  */
 export function assembleVCon(
   vconData: Row,
   parties: Row[] | null | undefined,
   dialogs: Row[] | null | undefined,
   analysis: Row[] | null | undefined,
-  attachments: Row[] | null | undefined
+  attachments: Row[] | null | undefined,
+  sessions?: Row[] | null,
+  events?: Row[] | null
 ): VCon {
-  return withExtra({
-    vcon: vconData.vcon_version || '0.4.0',
+  const version: string = vconData.vcon_version || '0.4.0';
+  const legacy = version !== VCON_VERSION;
+  const tidy = <T extends Row>(o: T): T => (legacy ? dropNullKeys(o) : o);
+
+  const assembled = withExtra({
+    vcon: version,
     uuid: vconData.uuid,
     extensions: vconData.extensions,
     critical: vconData.critical,
     created_at: vconData.created_at,
     updated_at: vconData.updated_at,
     subject: vconData.subject,
-    // Stored as '{}'/'[]' defaults, so empty means absent.
-    redacted: nonEmpty(vconData.redacted),
-    amended: nonEmpty(vconData.amended) ?? nonEmpty(vconData.appended),
+    // Stored as '{}'/'[]' defaults, so empty means absent. Rows written before the
+    // 0.5.0 column rename still carry the old names.
+    redacted_from: nonEmpty(vconData.redacted_from) ?? (legacy ? nonEmpty(vconData.redacted) : undefined),
+    amended_from: nonEmpty(vconData.amended_from)
+      ?? (legacy ? (nonEmpty(vconData.amended) ?? nonEmpty(vconData.appended)) : undefined),
+    redacted_strings: nonEmpty(vconData.redacted_strings),
     group: nonEmpty(vconData.group_data),
     parties: parties?.map(p => withExtra({
       tel: p.tel,
@@ -679,28 +788,62 @@ export function assembleVCon(
       civicaddress: p.civicaddress,
       timezone: p.timezone,
     }, p.extra)) || [],
-    dialog: dialogs?.map(d => withExtra({
-      type: d.type,
-      start: d.start_time,
-      duration: d.duration_seconds,
-      parties: d.parties,
-      originator: d.originator,
-      mediatype: d.mediatype,
-      filename: d.filename,
-      body: readBody(d.body, legacyParses('dialog'), d.encoding, d.extra?.[SHAPE_KEY]),
-      encoding: d.encoding,
-      url: d.url,
-      content_hash: d.content_hash,
-      disposition: d.disposition,
-      session_id: d.session_id,
-      application: d.application,
-      message_id: d.message_id,
-    }, d.extra)),
-    analysis: analysis?.map(a => withExtra({
+    sessions: sessions && sessions.length > 0
+      ? sessions.map(s => withExtra(dropNullKeys({
+          start: s.start_time,
+          duration: s.duration_seconds,
+          parties: s.parties,
+          originator: s.originator,
+          session_id: s.session_id,
+          sessions: s.session_refs,
+          dialog: s.dialog_indices,
+        }), s.extra))
+      : undefined,
+    dialog: dialogs?.map(d => {
+      // A placeholder row (type NULL, no content) is the empty Dialog Object {} (Section 4.5.1).
+      const row = tidy({
+        type: d.type ?? undefined,
+        start: d.start_time,
+        duration: d.duration_seconds,
+        parties: d.parties ?? d.extra?.parties,
+        // 0.4.0 rows only: originator moved to the Session in 0.5.0.
+        ...(legacy ? { originator: d.originator } : {}),
+        mediatype: d.mediatype,
+        filename: d.filename,
+        body: readBody(d.body, legacyParses('dialog'), d.encoding, d.extra?.[SHAPE_KEY]),
+        encoding: d.encoding,
+        url: d.url,
+        content_hash: d.content_hash,
+        disposition: d.disposition,
+        session_id: d.session_id,
+        application: d.application,
+        message_id: d.message_id,
+      });
+      const merged = withExtra(row, d.extra);
+      return d.type == null ? dropNullKeys(merged) : merged;
+    }),
+    events: events && events.length > 0
+      ? events.map(e => withExtra(dropNullKeys({
+          type: e.type,
+          time: e.time,
+          sessions: indexValue(e.session_indices, e.extra?.[SHAPE_KEY]?.sessions),
+          party: e.party,
+          dialog: e.dialog,
+          channel: e.channel,
+          contributors: e.contributors,
+          button: e.button,
+          transferee: e.transferee,
+          transfer_target: e.transfer_target,
+          consultation: e.consultation,
+          target_session: e.target_session,
+        }), e.extra))
+      : undefined,
+    analysis: analysis?.map(a => withExtra(tidy({
       type: a.type,
       dialog: a.extra?.[SHAPE_KEY]?.dialog === 'array' || a.dialog_indices?.length !== 1
         ? a.dialog_indices
         : a.dialog_indices[0],
+      sessions: indexValue(a.session_indices, a.extra?.[SHAPE_KEY]?.sessions),
       mediatype: a.mediatype,
       filename: a.filename,
       vendor: a.vendor,
@@ -710,29 +853,55 @@ export function assembleVCon(
       encoding: a.encoding,
       url: a.url,
       content_hash: a.content_hash,
-    }, a.extra)),
-    attachments: attachments?.map(att => withExtra({
+    }), a.extra)),
+    attachments: attachments?.map(att => withExtra(tidy({
       type: att.type,
       purpose: att.purpose,
       start: att.start_time,
       party: att.party,
       dialog: att.dialog,
+      session: indexValue(att.session_indices, att.extra?.[SHAPE_KEY]?.session),
       mediatype: att.mimetype,
       filename: att.filename,
       body: readBody(att.body, legacyParses('other', att.encoding), att.encoding, att.extra?.[SHAPE_KEY]),
       encoding: att.encoding,
       url: att.url,
       content_hash: att.content_hash,
-    }, att.extra)),
-  }, vconData.extra);
+    }), att.extra)),
+  }, vconData.extra) as VCon;
+
+  if (!legacy) return assembled;
+  // Legacy rows: drop nulls the DB filled in for absent parameters, then migrate.
+  for (const key of ['parties'] as const) {
+    if (Array.isArray(assembled[key])) assembled[key] = assembled[key]!.map((p) => dropNullKeys(p as Row)) as any;
+  }
+  return migrateOnRead(assembled, (err) =>
+    logWithContext('warn', 'Stored 0.4.0 vCon could not be migrated; returning it unmigrated', {
+      vcon_uuid: vconData.uuid,
+      error_message: extractErrorMessage(err),
+    })
+  );
 }
 
 export function buildPartyRows(vcon: VCon, tenantId: string | null) {
   return (vcon.parties ?? []).map((party, index) => buildPartyRow(vcon.uuid, party, index, tenantId));
 }
 
+/**
+ * Absent columns as explicit nulls. save_vcon_batch updates only the columns named by some
+ * row in the batch, so a column every row omits keeps its old value on conflict. When a
+ * stored 0.4.0 vCon is rewritten, a transfer or recording-set Dialog becomes {} and, if no
+ * other Dialog has a type, its row would keep type 'transfer' and come back as a 0.4.0
+ * transfer Dialog inside a 0.5.0 vCon.
+ */
+function withNulls<T extends Row>(row: T): T {
+  const out: Row = {};
+  for (const [k, v] of Object.entries(row)) out[k] = v === undefined ? null : v;
+  return out as T;
+}
+
 export function buildDialogRows(vcon: VCon, tenantId: string | null) {
-  return (vcon.dialog ?? []).map((dialog, index) => buildDialogRow(vcon.uuid, dialog, index, tenantId));
+  return (vcon.dialog ?? []).map((dialog, index) => withNulls(buildDialogRow(vcon.uuid, dialog, index, tenantId)));
 }
 
 export function buildAnalysisRows(vcon: VCon, tenantId: string | null) {
@@ -741,6 +910,14 @@ export function buildAnalysisRows(vcon: VCon, tenantId: string | null) {
 
 export function buildAttachmentRows(vcon: VCon, tenantId: string | null) {
   return (vcon.attachments ?? []).map((attachment, index) => buildAttachmentRow(vcon.uuid, attachment, index, tenantId));
+}
+
+export function buildSessionRows(vcon: VCon, tenantId: string | null) {
+  return (vcon.sessions ?? []).map((session, index) => withNulls(buildSessionRow(vcon.uuid, session, index, tenantId)));
+}
+
+export function buildEventRows(vcon: VCon, tenantId: string | null) {
+  return (vcon.events ?? []).map((event, index) => withNulls(buildEventRow(vcon.uuid, event, index, tenantId)));
 }
 
 /**

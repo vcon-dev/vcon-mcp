@@ -26,6 +26,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { migrateOnRead } from '../src/utils/vcon-migration.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -38,8 +39,9 @@ const SKIP_EXISTING = process.env.SKIP_EXISTING !== 'false';
 const DRY_RUN       = process.env.DRY_RUN === 'true';
 const TENANT_ID     = process.env.CURRENT_TENANT_ID || '1';
 
-// Valid dialog types per DB check constraint
-const VALID_DIALOG_TYPES = new Set(['recording', 'text', 'transfer', 'incomplete']);
+// Dialog types a 0.5.0 vCon carries (the DB check also tolerates legacy audio/video). An empty
+// Dialog Object {} has no type and is stored as a row with type NULL.
+const VALID_DIALOG_TYPES = new Set(['recording', 'text', 'incomplete']);
 // Valid encoding values per DB check constraint
 const VALID_ENCODINGS = new Set(['base64url', 'json', 'none']);
 
@@ -164,12 +166,15 @@ async function fetchExistingUUIDs(): Promise<Set<string>> {
 
 // ─── Insert one vCon ─────────────────────────────────────────────────────────
 
-export async function insertVCon(db: SupabaseClient, raw: any): Promise<void> {
+export async function insertVCon(db: SupabaseClient, input: any): Promise<void> {
+  // 0.4.0 (and older, undeclared) files are migrated to 0.5.0 with the reference semantics
+  // (Sessions, Events, scoped attachments) before they are stored; 0.5.0 files pass through.
+  const raw: any = migrateOnRead(input);
   const uuid: string = raw.uuid;
 
   // ── vcons ──────────────────────────────────────────────────────────────────
-  // Handle both spec v0.0.1 (appended/must_support) and v0.4.0 (amended/critical)
-  const amendedVal = raw.amended ?? raw.appended ?? null;
+  // 0.5.0 names; the migration above renamed amended -> amended_from. appended is the pre-0.4.0 spelling.
+  const amendedVal = raw.amended_from ?? raw.appended ?? null;
   const criticalVal = raw.critical ?? raw.must_support ?? null;
 
   const { data: vconRow, error: vconErr } = await db
@@ -181,11 +186,12 @@ export async function insertVCon(db: SupabaseClient, raw: any): Promise<void> {
       // dialog or analysis even though the rows are present.
       id: uuid,
       uuid,
-      vcon_version: typeof raw.vcon === 'string' ? raw.vcon : undefined,
+      vcon_version: typeof raw.vcon === 'string' ? raw.vcon : '0.5.0',
       subject:    raw.subject    || null,
       created_at: raw.created_at || new Date().toISOString(),
-      redacted:   typeof raw.redacted === 'object' && raw.redacted !== null ? raw.redacted : {},
-      amended:    typeof amendedVal  === 'object' && amendedVal  !== null ? amendedVal  : {},
+      redacted_from: typeof raw.redacted_from === 'object' && raw.redacted_from !== null ? raw.redacted_from : {},
+      amended_from:  typeof amendedVal  === 'object' && amendedVal  !== null ? amendedVal  : {},
+      redacted_strings: Array.isArray(raw.redacted_strings) ? raw.redacted_strings : null,
       group_data: Array.isArray(raw.group) ? raw.group : [],
       // extensions and critical are text[] — only pass real string arrays
       extensions: Array.isArray(raw.extensions) ? raw.extensions : null,
@@ -226,11 +232,11 @@ export async function insertVCon(db: SupabaseClient, raw: any): Promise<void> {
       return {
         vcon_id:          vconId,
         dialog_index:     i,
-        type:             VALID_DIALOG_TYPES.has(d.type) ? d.type : 'text',
+        // {} (an index placeholder) has no type; an unknown type is kept as text, as before
+        type:             d.type === undefined && Object.keys(d).length === 0 ? null : (VALID_DIALOG_TYPES.has(d.type) ? d.type : (d.type === 'audio' || d.type === 'video' ? d.type : 'text')),
         start_time:       d.start || d.start_time || null,
         duration_seconds: d.duration ?? null,
         parties:          Array.isArray(d.parties) ? d.parties : [],
-        originator:       d.originator ?? null,
         mediatype:        d.mimetype || d.mediatype || null,
         filename:         d.filename || null,
         body,
@@ -256,7 +262,8 @@ export async function insertVCon(db: SupabaseClient, raw: any): Promise<void> {
         vendor:         a.vendor  || 'unknown',
         product:        a.product || null,
         schema:         a.schema  || a.schema_version || null,
-        dialog_indices: Array.isArray(a.dialog) ? a.dialog : null,
+        dialog_indices: Array.isArray(a.dialog) ? a.dialog : (typeof a.dialog === 'number' ? [a.dialog] : null),
+        session_indices: Array.isArray(a.sessions) ? a.sessions : (typeof a.sessions === 'number' ? [a.sessions] : null),
         body,
         encoding,
         metadata:  a.meta ? { ...a.meta } : {},
@@ -289,6 +296,7 @@ export async function insertVCon(db: SupabaseClient, raw: any): Promise<void> {
         purpose:          a.purpose  || null,
         party:            a.party    ?? null,
         dialog:           a.dialog   ?? null,
+        session_indices:  Array.isArray(a.session) ? a.session : (typeof a.session === 'number' ? [a.session] : null),
         mimetype:         a.mimetype || a.mediatype || null,
         filename:         a.filename || null,
         body,
@@ -300,6 +308,47 @@ export async function insertVCon(db: SupabaseClient, raw: any): Promise<void> {
     });
     const { error } = await db.from('attachments').insert(rows);
     if (error) throw new Error(`attachments: ${error.message}`);
+  }
+
+  // ── sessions (0.5.0) ───────────────────────────────────────────────────────
+  if (raw.sessions?.length) {
+    const rows = (raw.sessions as any[]).map((s, i) => ({
+      vcon_id:          vconId,
+      session_index:    i,
+      start_time:       s.start    ?? null,
+      duration_seconds: s.duration ?? null,
+      parties:          Array.isArray(s.parties) ? s.parties : null,
+      originator:       s.originator ?? null,
+      session_id:       s.session_id ?? null,
+      session_refs:     Array.isArray(s.sessions) ? s.sessions : null,
+      dialog_indices:   Array.isArray(s.dialog) ? s.dialog : null,
+      tenant_id:        TENANT_ID,
+    }));
+    const { error } = await db.from('sessions').insert(rows);
+    if (error) throw new Error(`sessions: ${error.message}`);
+  }
+
+  // ── events (0.5.0) ─────────────────────────────────────────────────────────
+  if (raw.events?.length) {
+    const rows = (raw.events as any[]).map((e, i) => ({
+      vcon_id:         vconId,
+      event_index:     i,
+      type:            e.type,
+      time:            e.time ?? null,
+      session_indices: Array.isArray(e.sessions) ? e.sessions : (typeof e.sessions === 'number' ? [e.sessions] : null),
+      party:           e.party ?? null,
+      dialog:          e.dialog ?? null,
+      channel:         e.channel ?? null,
+      contributors:    e.contributors ?? null,
+      button:          e.button ?? null,
+      transferee:      e.transferee ?? null,
+      transfer_target: e.transfer_target ?? null,
+      consultation:    e.consultation ?? null,
+      target_session:  e.target_session ?? null,
+      tenant_id:       TENANT_ID,
+    }));
+    const { error } = await db.from('events').insert(rows);
+    if (error) throw new Error(`events: ${error.message}`);
   }
 }
 

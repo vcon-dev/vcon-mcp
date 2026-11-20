@@ -5,7 +5,7 @@ name: vcon-mcp
 category: ai-ml
 tags: [mcp, supabase, typescript, ietf-vcon, ai-agent]
 description: "Model Context Protocol (MCP) server for AI agents to access vCon data"
-spec_version: "0.4.0"
+spec_version: "0.5.0"
 
 relationships:
   - type: depends-on

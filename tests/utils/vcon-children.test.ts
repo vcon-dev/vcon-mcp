@@ -101,15 +101,15 @@ describe('remove: placeholders (parties, dialog)', () => {
   it('removePartyAt with anonymize writes {name:"anonymous"}', () => {
     expect(removePartyAt(sampleVCon(), 0, { anonymize: true }).parties[0]).toEqual({ name: 'anonymous' });
   });
-  it('strippedDialogPlaceholder keeps only type', () => {
-    expect(strippedDialogPlaceholder({ type: 'recording', body: 'x', url: 'y' })).toEqual({ type: 'recording' });
-    expect(strippedDialogPlaceholder({} as any)).toEqual({ type: 'incomplete' });
+  it('strippedDialogPlaceholder is the empty Dialog Object {}', () => {
+    expect(strippedDialogPlaceholder({ type: 'recording', body: 'x', url: 'y' })).toEqual({});
+    expect(strippedDialogPlaceholder({} as any)).toEqual({});
   });
-  it('removeDialogAt strips content, keeps type and index', () => {
+  it('removeDialogAt replaces the dialog with {} and keeps the index', () => {
     const v = sampleVCon();
     const out = removeDialogAt(v, 0);
     expect(out.dialog).toHaveLength(2);
-    expect(out.dialog![0]).toEqual({ type: 'text' });
+    expect(out.dialog![0]).toEqual({});
     expect(out.dialog![1].type).toBe('recording'); // sibling untouched
   });
 });

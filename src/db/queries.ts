@@ -20,7 +20,8 @@ import { logWithContext, recordCounter, withSpan } from '../observability/instru
 import { refreshTagsMvIfStale, markTagsMvDirty } from './tags-mv.js';
 import { SqlInputError, toSqlInt } from './sql-guards.js';
 import { createLogger } from '../observability/logger.js';
-import { Analysis, Attachment, Dialog, Party, VCon } from '../types/vcon.js';
+import { Analysis, Attachment, Dialog, Party, Session, VCon, VCON_VERSION } from '../types/vcon.js';
+import { MigrationReport, getMigrationReport, migrateOnRead } from '../utils/vcon-migration.js';
 import {
   VCON_SHAPE_GRAPH_SCHEMA_VERSION,
   type VconShapeGraphEdge,
@@ -29,7 +30,7 @@ import {
 } from '../types/vcon-shape-graph.js';
 import { isMissingFunctionError, vconLookupError } from '../utils/errors.js';
 import { parseTagsBody } from '../utils/read-surfaces.js';
-import { ChildIndexError } from '../utils/vcon-children.js';
+import { AttachmentScopeError, ChildIndexError, defaultAttachmentScope, sessionForNewDialog } from '../utils/vcon-children.js';
 import {
   assembleVCon,
   batchSaveVCon,
@@ -37,12 +38,13 @@ import {
   buildAttachmentRow,
   buildDialogRow,
   buildPartyRow,
+  buildSessionRow,
   vconCacheKey,
 } from './batch-writer.js';
 
 const logger = createLogger('queries');
 
-import { DateField, DistinctValuesResult, IVConQueries } from './interfaces.js';
+import { AddAttachmentResult, AddDialogOptions, AddDialogResult, DateField, DistinctValuesResult, IVConQueries } from './interfaces.js';
 import { extractErrorMessage } from '../utils/errors.js';
 
 /** table.column pairs getDistinctValues may interpolate into SQL. */
@@ -403,20 +405,20 @@ export class SupabaseVConQueries implements IVConQueries {
   }
 
   /**
-   * Add dialog to a vCon
-   * ✅ Includes new fields: session_id, application, message_id
+   * Add dialog to a vCon (0.5.0).
    *
-   * @param knownIndex - Pass the index directly (e.g. from createVCon) to skip
-   *                     the SELECT MAX round-trip. Omit for standalone add_dialog calls.
+   * Every Dialog SHOULD be referenced by a Session, so the new index is added to one:
+   * `options.session` (an existing Session), else the only Session when exactly one
+   * exists, else a new Session built from `options.newSession` (or, with none supplied,
+   * from the dialog's own start and duration) when the vCon has none. With two or more
+   * Sessions and none named, the call fails rather than guess. A stored 0.4.0 vCon is
+   * upgraded in place first (the migrated form is written back).
+   *
+   * `options.knownIndex` skips the SELECT MAX round-trip.
    */
-  async addDialog(vconUuid: string, dialog: Dialog, knownIndex?: number): Promise<void> {
-    const { data: vcon, error: vconError } = await this.supabase
-      .from('vcons')
-      .select('id, tenant_id')
-      .eq('uuid', vconUuid)
-      .single();
-
-    if (vconError) throw vconLookupError(vconError, vconUuid);
+  async addDialog(vconUuid: string, dialog: Dialog, options: AddDialogOptions = {}): Promise<AddDialogResult> {
+    const knownIndex = options.knownIndex;
+    const vcon = await this.loadVConForWrite(vconUuid, 'id, tenant_id');
 
     // Use provided index or query for the next available one
     let nextIndex: number;
@@ -434,31 +436,61 @@ export class SupabaseVConQueries implements IVConQueries {
         : 0;
     }
 
-    // party_history rides in dialog.extra (buildDialogRow) and reads back via
-    // assembleVCon. The party_history table is not written (CON-1243): nothing
-    // reads it, and a duplicate write could fail or drift independently.
+    // Decide the Session before writing anything, so a bad request leaves no orphan Dialog.
+    const { data: sessionRows, error: sessionsError } = await this.supabase
+      .from('sessions')
+      .select('session_index, dialog_indices')
+      .eq('vcon_id', vcon.id)
+      .order('session_index');
+    if (sessionsError) throw sessionsError;
+    const plan = sessionForNewDialog(sessionRows?.length ?? 0, dialog, options);
+
+    const tenantId = vcon.tenant_id ?? null;
     const { error: dialogError } = await this.supabase
       .from('dialog')
-      .insert(buildDialogRow(vcon.id, dialog, nextIndex, vcon.tenant_id ?? null));
-
+      .insert(buildDialogRow(vcon.id, dialog, nextIndex, tenantId));
     if (dialogError) throw dialogError;
+
+    if (plan.create) {
+      const row = buildSessionRow(vcon.id, { ...plan.create, dialog: [nextIndex] }, plan.session, tenantId);
+      const { error } = await this.supabase.from('sessions').insert(row);
+      if (error) throw error;
+    } else {
+      const existing = sessionRows?.find((r: any) => r.session_index === plan.session);
+      const merged = [...((existing?.dialog_indices as number[] | null) ?? []), nextIndex];
+      const { error } = await this.supabase
+        .from('sessions')
+        .update({ dialog_indices: merged })
+        .eq('vcon_id', vcon.id)
+        .eq('session_index', plan.session);
+      if (error) throw error;
+    }
+    await this.invalidateCachedVCon(vconUuid);
+    return { index: nextIndex, session: plan.session, sessionCreated: !!plan.create };
   }
 
   /**
-   * Add attachment to a vCon
-   * ✅ Includes dialog field per spec Section 4.4.4
+   * Add attachment to a vCon (0.5.0): `party` plus `dialog` or `session` (Sections 4.6.3-4.6.5).
+   * With neither dialog nor session given, the only Session is used when the vCon has exactly
+   * one; otherwise the call fails with AttachmentScopeError. A dialog index is never widened
+   * to a Session.
    *
-   * @param knownIndex - Pass the index directly (e.g. from createVCon) to skip
-   *                     the SELECT MAX round-trip. Omit for standalone add_attachment calls.
+   * @param knownIndex - Pass the index directly to skip the SELECT MAX round-trip.
    */
-  async addAttachment(vconUuid: string, attachment: Attachment, knownIndex?: number): Promise<void> {
-    const { data: vcon, error: vconError } = await this.supabase
-      .from('vcons')
-      .select('id, created_at, tenant_id')
-      .eq('uuid', vconUuid)
-      .single();
+  async addAttachment(vconUuid: string, attachment: Attachment, knownIndex?: number): Promise<AddAttachmentResult> {
+    const vcon = await this.loadVConForWrite(vconUuid, 'id, created_at, tenant_id');
 
-    if (vconError) throw vconLookupError(vconError, vconUuid);
+    // The Session count is only needed to default a missing scope.
+    let sessionCount = 0;
+    if (attachment.dialog === undefined && attachment.session === undefined) {
+      const { count, error: countError } = await this.supabase
+        .from('sessions')
+        .select('session_index', { count: 'exact', head: true })
+        .eq('vcon_id', vcon.id);
+      if (countError) throw countError;
+      sessionCount = count ?? 0;
+    }
+    const scoped = defaultAttachmentScope(attachment, sessionCount);
 
     // Use provided index or query for the next available one
     let nextIndex: number;
@@ -478,11 +510,78 @@ export class SupabaseVConQueries implements IVConQueries {
 
     const { error: attachmentError } = await this.supabase
       .from('attachments')
-      .insert({ ...buildAttachmentRow(vcon.id, attachment, nextIndex, vcon.tenant_id ?? null), created_at: vcon.created_at });
+      .insert({ ...buildAttachmentRow(vcon.id, scoped, nextIndex, vcon.tenant_id ?? null), created_at: vcon.created_at });
 
     if (attachmentError) throw attachmentError;
-    if (isTagsAttachment(attachment)) markTagsMvDirty(this.supabase);
+    if (isTagsAttachment(scoped)) markTagsMvDirty(this.supabase);
     await this.invalidateCachedVCon(vconUuid);
+    return { index: nextIndex, attachment: scoped };
+  }
+
+  /**
+   * A vCon stored before 0.5.0 is upgraded in place before a structural write: it is
+   * read (migrated with the reference semantics, report logged) and written back as
+   * 0.5.0, so the Sessions the migration created exist as rows. Mixing a 0.5.0 child
+   * into a 0.4.0 row set would otherwise read back wrong.
+   */
+  private async upgradeStoredVCon(vconUuid: string, tenantId: string | null): Promise<void> {
+    await this.invalidateCachedVCon(vconUuid);
+    const migrated = await this.getVCon(vconUuid);
+    if (migrated.vcon !== VCON_VERSION) {
+      throw new Error(`vCon ${vconUuid} is stored as an older version and could not be migrated to ${VCON_VERSION}; fix it before changing it`);
+    }
+    // The write-back replaces the 0.4.0 rows; the report is the only copy of what the
+    // migration dropped (removed Dialogs, unmapped values). Store it first, and do not
+    // rewrite the vCon when it cannot be stored.
+    const report = getMigrationReport(migrated);
+    if (!report) {
+      throw new Error(`vCon ${vconUuid}: no migration report for the 0.4.0 -> ${VCON_VERSION} upgrade; not rewriting it`);
+    }
+    await this.saveMigrationReport(vconUuid, report, 'upgrade-on-write');
+    logWithContext('info', 'Upgrading stored 0.4.0 vCon to 0.5.0 before a structural write', { vcon_uuid: vconUuid });
+    await batchSaveVCon(migrated, tenantId, this.supabase, this.redis);
+    await this.invalidateCachedVCon(vconUuid);
+  }
+
+  /**
+   * Append a migration report to vcon_migration_reports (migration 20261118120000). The
+   * table is append-only; tenant_id follows the parent vCon (insert trigger).
+   */
+  async saveMigrationReport(
+    vconUuid: string,
+    report: MigrationReport,
+    trigger: 'upgrade-on-write' | 'create'
+  ): Promise<void> {
+    const { error } = await this.supabase.from('vcon_migration_reports').insert({
+      vcon_id: vconUuid,
+      source_version: report.source_version,
+      target_version: report.target_version,
+      trigger,
+      report,
+    });
+    if (error) throw error;
+  }
+
+  /** vcon_version is NOT NULL in the schema; a missing value means there is nothing to upgrade. */
+  private isLegacyVersion(version: unknown): boolean {
+    return !!version && version !== VCON_VERSION;
+  }
+
+  /**
+   * Look up the vcons row for a structural write (new Dialog, Attachment, tags). A row
+   * stored before 0.5.0 is upgraded first and looked up again.
+   */
+  private async loadVConForWrite(vconUuid: string, columns: string): Promise<Record<string, any>> {
+    const select = `${columns}, vcon_version`;
+    const lookup = () => this.supabase.from('vcons').select(select).eq('uuid', vconUuid).single();
+    let { data, error } = await lookup();
+    if (error) throw vconLookupError(error, vconUuid);
+    if (this.isLegacyVersion((data as any).vcon_version)) {
+      await this.upgradeStoredVCon(vconUuid, (data as any).tenant_id ?? null);
+      ({ data, error } = await lookup());
+      if (error) throw vconLookupError(error, vconUuid);
+    }
+    return data as Record<string, any>;
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -511,7 +610,11 @@ export class SupabaseVConQueries implements IVConQueries {
    * parent's tenant explicitly (CON-1177) rather than relying on the insert
    * trigger, and an UPDATE fires no insert trigger at all.
    */
-  private async resolveVConRef(vconUuid: string): Promise<{ id: string; tenantId: string | null }> {
+  private async resolveVConRef(vconUuid: string, upgrade = false): Promise<{ id: string; tenantId: string | null }> {
+    if (upgrade) {
+      const row = await this.loadVConForWrite(vconUuid, 'id, tenant_id');
+      return { id: row.id, tenantId: row.tenant_id ?? null };
+    }
     const { data, error } = await this.supabase
       .from('vcons')
       .select('id, tenant_id')
@@ -661,7 +764,7 @@ export class SupabaseVConQueries implements IVConQueries {
    * rest of the dialog via `extra`; legacy party_history table rows are cleared.
    */
   async updateDialog(vconUuid: string, index: number, dialog: Dialog): Promise<void> {
-    const { id: vconId, tenantId } = await this.resolveVConRef(vconUuid);
+    const { id: vconId, tenantId } = await this.resolveVConRef(vconUuid, true);
     const { vcon_id: _v, dialog_index: _i, ...cols } = buildDialogRow(vconId, dialog, index, tenantId);
     const { data, error } = await this.supabase
       .from('dialog')
@@ -677,10 +780,10 @@ export class SupabaseVConQueries implements IVConQueries {
 
   /**
    * Remove the dialog at `index` by replacing it with a content-stripped
-   * placeholder that keeps `type` (index preserved; party_history cleared).
+   * empty Dialog Object `{}` (index preserved; legacy party_history rows cleared).
    */
   async removeDialog(vconUuid: string, index: number): Promise<void> {
-    const vconId = await this.resolveVConId(vconUuid);
+    const vconId = (await this.resolveVConRef(vconUuid, true)).id;
     const { data: existing, error: selErr } = await this.supabase
       .from('dialog')
       .select('id, type')
@@ -689,8 +792,10 @@ export class SupabaseVConQueries implements IVConQueries {
       .maybeSingle();
     if (selErr) throw selErr;
     if (!existing) throw new ChildIndexError(`dialog index ${index} not found`);
+    // 0.5.0: a removed Dialog becomes the empty Dialog Object {} (Section 4.5.1), so type is
+    // cleared too. The index stays valid for Sessions, Events and attachments that name it.
     const placeholder = {
-      type: existing.type,
+      type: null,
       start_time: null, duration_seconds: null, parties: null, originator: null,
       mediatype: null, filename: null, body: null, encoding: null, url: null,
       content_hash: null, disposition: null, session_id: null, application: null, message_id: null,
@@ -748,7 +853,7 @@ export class SupabaseVConQueries implements IVConQueries {
    * Replace the attachment at `index` (PUT). Omitted fields are cleared.
    */
   async updateAttachment(vconUuid: string, index: number, attachment: Attachment): Promise<void> {
-    const { id: vconId, tenantId } = await this.resolveVConRef(vconUuid);
+    const { id: vconId, tenantId } = await this.resolveVConRef(vconUuid, true);
     const { vcon_id: _v, attachment_index: _i, ...cols } = buildAttachmentRow(vconId, attachment, index, tenantId);
     const { data, error } = await this.supabase
       .from('attachments')
@@ -783,7 +888,8 @@ export class SupabaseVConQueries implements IVConQueries {
       const cached = await this.redis.get(vconCacheKey(uuid));
       if (cached) {
         logger.debug({ vcon_uuid: uuid, cache_hit: true }, 'Cache hit');
-        return JSON.parse(cached) as VCon;
+        // An entry cached before the 0.5.0 upgrade is still the 0.4.0 shape: migrate it on read.
+        return migrateOnRead(JSON.parse(cached) as VCon);
       }
       logger.debug({ vcon_uuid: uuid, cache_hit: false }, 'Cache miss');
       return null;
@@ -892,15 +998,20 @@ export class SupabaseVConQueries implements IVConQueries {
         { data: parties },
         { data: dialogs },
         { data: analysis },
-        { data: attachments }
+        { data: attachments },
+        { data: sessions },
+        { data: events },
       ] = await Promise.all([
         this.supabase.from('parties').select('*').eq('vcon_id', vconData.id).order('party_index'),
         this.supabase.from('dialog').select('*').eq('vcon_id', vconData.id).order('dialog_index'),
         this.supabase.from('analysis').select('*').eq('vcon_id', vconData.id).order('analysis_index'),
         this.supabase.from('attachments').select('*').eq('vcon_id', vconData.id).order('attachment_index'),
+        this.supabase.from('sessions').select('*').eq('vcon_id', vconData.id).order('session_index'),
+        this.supabase.from('events').select('*').eq('vcon_id', vconData.id).order('event_index'),
       ]);
 
-      const vcon = assembleVCon(vconData, parties, dialogs, analysis, attachments);
+      // Rows stored as 0.4.0 are migrated on read inside assembleVCon.
+      const vcon = assembleVCon(vconData, parties, dialogs, analysis, attachments, sessions, events);
 
       // Cache the result for future reads
       await this.setCachedVCon(uuid, vcon);
@@ -2368,18 +2479,29 @@ export class SupabaseVConQueries implements IVConQueries {
     }
   }
 
+  /** Indices of every Session of a vCon; inserts an empty placeholder Session when there is none. */
+  private async ensureSessionIndices(vconId: string, tenantId: string | null): Promise<number[]> {
+    const { data, error } = await this.supabase
+      .from('sessions')
+      .select('session_index')
+      .eq('vcon_id', vconId)
+      .order('session_index');
+    if (error) throw error;
+    if (data && data.length > 0) return data.map((r: any) => r.session_index as number);
+    const { error: insertError } = await this.supabase
+      .from('sessions')
+      .insert(buildSessionRow(vconId, {} as Session, 0, tenantId));
+    if (insertError) throw insertError;
+    return [0];
+  }
+
   /**
    * Internal helper to save tags to the database
    */
   private async saveTags(vconUuid: string, tags: Record<string, string>): Promise<void> {
     // Get vcon_id
-    const { data: vcon, error: vconError } = await this.supabase
-      .from('vcons')
-      .select('id')
-      .eq('uuid', vconUuid)
-      .single();
-
-    if (vconError) throw vconLookupError(vconError, vconUuid);
+    const vcon = await this.loadVConForWrite(vconUuid, 'id, tenant_id');
+    const tenantId: string | null = vcon.tenant_id ?? null;
 
     // Convert tags object to array of "key:value" strings
     const tagsArray = Object.entries(tags).map(([key, value]) => `${key}:${value}`);
@@ -2413,14 +2535,24 @@ export class SupabaseVConQueries implements IVConQueries {
         ? nextIndexData[0].attachment_index + 1
         : 0;
 
+      // 0.5.0 attachments need `party` plus `dialog` or `session`. Tags describe the whole
+      // vCon, so the attachment lists every Session (an empty placeholder Session is added
+      // when the vCon has none) and is attributed to party 0, the first party: the tag tools
+      // take no party argument, so this is a documented default, not a recorded contributor.
+      const sessionIndices = await this.ensureSessionIndices(vcon.id, tenantId);
       const { error: insertError } = await this.supabase
         .from('attachments')
         .insert({
           vcon_id: vcon.id,
           attachment_index: nextIndex,
           type: 'tags',
+          purpose: 'tags',
+          party: 0,
+          session_indices: sessionIndices,
+          mediatype: 'application/json',
           encoding: 'json',
           body: tagsBody,
+          ...(tenantId ? { tenant_id: tenantId } : {}),
         });
 
       if (insertError) throw insertError;

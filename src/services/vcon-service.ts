@@ -13,7 +13,10 @@ import { RequestContext } from '../hooks/plugin-interface.js';
 import { PluginManager } from '../hooks/plugin-manager.js';
 import { ATTR_VCON_UUID } from '../observability/attributes.js';
 import { logWithContext, recordCounter } from '../observability/instrumentation.js';
-import { VCon } from '../types/vcon.js';
+import { VCon, VCON_VERSION } from '../types/vcon.js';
+import { MigrationReport, carryMigrationReport, looksLegacy, migrate040To050, reportSummary } from '../utils/vcon-migration.js';
+import { extensionsInUse } from '../utils/vcon-validation.js';
+import { encryptedForm, signedForm, validateVconDict } from '../utils/vcon-reference-validation.js';
 import { isVConNotFoundError, VConNotFoundError } from '../utils/errors.js';
 import { validateVCon } from '../utils/validation.js';
 
@@ -41,6 +44,8 @@ export interface CreateVConResult {
   uuid: string;
   id: string;
   vcon: VCon;
+  /** Present when the input was a 0.4.0 vCon and was migrated to 0.5.0 before it was stored. */
+  migration?: MigrationReport;
 }
 
 export interface BatchCreateResult {
@@ -157,7 +162,9 @@ export class VConService {
     const requestContext = this.normalizeRequestContext(options.requestContext, source);
 
     // Step 1: Normalize vCon data
-    let vcon: VCon = this.normalizeVCon(vconData);
+    const normalized = this.normalizeVCon(vconData);
+    let vcon: VCon = normalized.vcon;
+    const migration = normalized.migration;
 
     // Step 2: Execute beforeCreate hook
     if (!options.skipHooks) {
@@ -179,6 +186,19 @@ export class VConService {
 
     // Step 4: Persist to database
     const result = await this.context.queries.createVCon(vcon);
+    if (migration && this.context.queries.saveMigrationReport) {
+      // Posted as 0.4.0: keep the report with the record (the reference requires it for a
+      // production migration). The vCon is already stored, so a failure is logged, not thrown;
+      // the caller still gets the report in the result.
+      try {
+        await this.context.queries.saveMigrationReport(result.uuid, migration, 'create');
+      } catch (err) {
+        logWithContext('error', 'Could not store the migration report of a vCon posted as 0.4.0', {
+          vcon_uuid: result.uuid,
+          error_message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
 
     // Step 5: Execute afterCreate hook
     if (!options.skipHooks) {
@@ -205,6 +225,7 @@ export class VConService {
       uuid: result.uuid,
       id: result.id,
       vcon,
+      ...(migration ? { migration } : {}),
     };
   }
 
@@ -263,12 +284,14 @@ export class VConService {
 
     const vcon = await this.context.queries.getVCon(uuid);
 
-    // Execute afterRead hook (can modify response)
+    // Execute afterRead hook (can modify response). A vCon migrated on read carries its report
+    // (getMigrationReport); a hook may return a different object, so the report is carried over.
     if (!options.skipHooks) {
       const modifiedVCon = await this.context.pluginManager.executeHook<VCon>(
         'afterRead', vcon, requestContext
       );
       if (modifiedVCon) {
+        carryMigrationReport(vcon, modifiedVCon);
         return modifiedVCon;
       }
     }
@@ -698,32 +721,77 @@ export class VConService {
   // ========== Private Helpers ==========
 
   /**
-   * Normalize vCon data with defaults
+   * Normalize vCon data with defaults. Writers emit 0.5.0.
+   *
+   * A 0.4.0 vCon (declared, or undeclared with dialog and none of the 0.5.0
+   * parameters) is migrated with the reference semantics before it is stored;
+   * the report comes back with the result. Deprecated key spellings are mapped
+   * to the current names and never carried through `...data`. Extensions the
+   * server recognises (lawful_basis, wtf_transcription) are added to
+   * `extensions` because 0.5.0 makes listing them a MUST.
    */
-  private normalizeVCon(data: Partial<VCon>): VCon {
-    // Strip legacy (pre-0.4.0) key spellings so they are not carried through `...data`.
-    // The 0.4.0 name wins when both are present.
-    const { must_support, appended, ...rest } = data as Partial<VCon> & {
-      must_support?: string[];
-      appended?: VCon['amended'];
-    };
-    return {
+  private normalizeVCon(data: Partial<VCon>): { vcon: VCon; migration?: MigrationReport } {
+    // A signed (JWS) or encrypted (JWE) container is not a vCon this server can store:
+    // the rows would hold neither the signature nor the ciphertext. It is refused, with
+    // what the reference finds in it, before any default (uuid, created_at) is added.
+    if (signedForm(data) || encryptedForm(data)) {
+      const what = signedForm(data)
+        ? 'A signed (JWS) vCon cannot be stored as is: verify it'
+        : 'An encrypted (JWE) vCon cannot be stored as is: verify and decrypt it';
+      throw new VConValidationError([
+        `${what} and send the vCon it carries.`,
+        ...validateVconDict(data as Record<string, any>).errors,
+      ]);
+    }
+    let migration: MigrationReport | undefined;
+    let input: Record<string, any> = data as Record<string, any>;
+
+    const declared = input.vcon;
+    const legacyShape = declared === '0.4.0' || (declared === undefined && looksLegacy(input));
+    if (legacyShape) {
+      const withDefaults = { ...input, created_at: input.created_at || new Date().toISOString(), vcon: '0.4.0' };
+      let migrated;
+      try {
+        migrated = migrate040To050(withDefaults);
+      } catch (err) {
+        throw new VConValidationError([err instanceof Error ? err.message : String(err)]);
+      }
+      input = migrated.vcon;
+      migration = migrated.report;
+      logWithContext('info', 'Migrated 0.4.0 vCon on create', { summary: reportSummary(migration) });
+    }
+
+    // Deprecated read aliases. The current name wins when both are present.
+    const { must_support, appended, redacted, amended, ...rest } = input as Record<string, any>;
+    const extensions = new Set<string>(Array.isArray(rest.extensions) ? rest.extensions : []);
+    const { names } = extensionsInUse(rest);
+    // Each extension named in critical MUST also be listed in extensions (4.1.3).
+    const critical: string[] | undefined = rest.critical ?? must_support;
+    const added = [...new Set([...names, ...(Array.isArray(critical) ? critical : [])])].filter((n) => !extensions.has(n));
+    const mergedExtensions = rest.extensions !== undefined || added.length > 0
+      ? [...(Array.isArray(rest.extensions) ? rest.extensions : []), ...added]
+      : undefined;
+
+    const vcon = {
       ...rest, // keep extension keys such as top-level meta (CON-1047)
-      vcon: (data.vcon || '0.4.0') as '0.4.0',
-      uuid: data.uuid || randomUUID(),
-      created_at: data.created_at || new Date().toISOString(),
-      updated_at: data.updated_at,
-      subject: data.subject,
-      parties: data.parties || [],
-      dialog: renameLegacyMimetype(data.dialog),
-      analysis: renameLegacyMimetype(data.analysis),
-      attachments: renameLegacyMimetype(data.attachments),
-      group: data.group,
-      extensions: data.extensions,
-      critical: data.critical ?? must_support,
-      redacted: data.redacted,
-      amended: data.amended ?? appended,
-    };
+      vcon: VCON_VERSION,
+      uuid: rest.uuid || randomUUID(),
+      created_at: rest.created_at || new Date().toISOString(),
+      updated_at: rest.updated_at,
+      subject: rest.subject,
+      parties: rest.parties || [],
+      sessions: rest.sessions,
+      dialog: renameLegacyMimetype(rest.dialog),
+      events: rest.events,
+      analysis: renameLegacyMimetype(rest.analysis),
+      attachments: renameLegacyMimetype(rest.attachments),
+      group: rest.group,
+      extensions: mergedExtensions,
+      critical: rest.critical ?? must_support,
+      redacted_from: rest.redacted_from ?? redacted,
+      amended_from: rest.amended_from ?? amended ?? appended,
+    } as VCon;
+    return { vcon, ...(migration ? { migration } : {}) };
   }
 }
 

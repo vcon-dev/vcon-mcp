@@ -57,7 +57,7 @@ describe('REST correctness (CON-1239)', () => {
   });
 
   describe('semantic validation on child writes -> 400', () => {
-    it('rejects an attachment with neither body+encoding nor url+content_hash', async () => {
+    it('rejects an attachment with neither body+encoding nor url', async () => {
       const res = await request(ctx.app.callback())
         .post(`${BASE}/vcons/${uuid}/attachments`)
         .send({ type: 'note' })
@@ -94,7 +94,7 @@ describe('REST correctness (CON-1239)', () => {
     it('still accepts a valid attachment', async () => {
       await request(ctx.app.callback())
         .post(`${BASE}/vcons/${uuid}/attachments`)
-        .send({ type: 'note', body: 'hello', encoding: 'none' })
+        .send({ type: 'note', party: 0, session: 0, body: 'hello', encoding: 'none' })
         .expect(201);
     });
   });

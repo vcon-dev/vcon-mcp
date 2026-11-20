@@ -71,7 +71,7 @@ describe('Infrastructure Routes', () => {
         .expect(200);
 
       expect(res.body.success).toBe(true);
-      expect(res.body.spec_version).toBe('0.4.0');
+      expect(res.body.spec_version).toBe('0.5.0');
     });
 
     it('should return typescript format info', async () => {
@@ -91,7 +91,7 @@ describe('Infrastructure Routes', () => {
 
       expect(res.body.success).toBe(true);
       expect(res.body.type).toBe('minimal');
-      expect(res.body.vcon.vcon).toBe('0.4.0');
+      expect(res.body.vcon.vcon).toBe('0.5.0');
       expect(res.body.vcon.parties).toHaveLength(1);
     });
 

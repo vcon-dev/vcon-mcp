@@ -45,6 +45,50 @@ describe('VConService', () => {
   });
 
   describe('create', () => {
+    it('refuses a signed (JWS) or encrypted (JWE) vCon instead of storing the container', async () => {
+      const payload = Buffer.from(JSON.stringify({ uuid: randomUUID(), created_at: '2026-01-01T00:00:00Z', parties: [{ name: 'A' }] })).toString('base64url');
+      await expect(service.create({ payload, signatures: [{ protected: 'e30', signature: 's' }] } as any))
+        .rejects.toThrow(/A signed \(JWS\) vCon cannot be stored as is/);
+      await expect(service.create({ ciphertext: 'x', recipients: [{}] } as any))
+        .rejects.toThrow(/An? encrypted \(JWE\) vCon cannot be stored as is: verify and decrypt it/);
+      expect(mockQueries.createVCon).not.toHaveBeenCalled();
+    });
+
+    it('refuses a malformed content_hash and reports lawful basis body problems as warnings only', async () => {
+      mockPluginManager.executeHook.mockResolvedValue(undefined);
+      const att = { purpose: 'note', party: 0, dialog: 0, encoding: 'none', body: 'x', content_hash: 'sha256:abcd' };
+      await expect(service.create({
+        parties: [{ name: 'A' }],
+        sessions: [{ parties: [0], dialog: [0] }],
+        dialog: [{ type: 'text', start: '2026-01-01T00:00:00Z', parties: [0], encoding: 'none', body: 'hi' }],
+        attachments: [att],
+      } as any)).rejects.toThrow(/Attachment at index 0 has an invalid content_hash/);
+    });
+
+    it('accepts a url without content_hash on Dialog, Attachment and Analysis (vcon-lib 1.0.6)', async () => {
+      mockQueries.createVCon.mockResolvedValue({ uuid: randomUUID(), id: '1' });
+      mockPluginManager.executeHook.mockResolvedValue(undefined);
+      const result = await service.create({
+        parties: [{ name: 'A' }],
+        sessions: [{ parties: [0], dialog: [0] }],
+        dialog: [{ type: 'recording', start: '2026-01-01T00:00:00Z', parties: [0], url: 'https://example.com/a.wav' }],
+        attachments: [{ purpose: 'note', party: 0, dialog: 0, url: 'https://example.com/n.txt' }],
+        analysis: [{ type: 'summary', vendor: 'v', dialog: 0, url: 'https://example.com/s.json' }],
+      } as any);
+      expect(result.vcon.attachments?.[0].url).toBe('https://example.com/n.txt');
+      expect(mockQueries.createVCon).toHaveBeenCalled();
+    });
+
+    it('refuses a malformed content_hash next to a url', async () => {
+      mockPluginManager.executeHook.mockResolvedValue(undefined);
+      await expect(service.create({
+        parties: [{ name: 'A' }],
+        sessions: [{ parties: [0], dialog: [0] }],
+        dialog: [{ type: 'recording', start: '2026-01-01T00:00:00Z', parties: [0], url: 'https://example.com/a.wav', content_hash: 'sha256-' + 'a'.repeat(64) }],
+      } as any)).rejects.toThrow(/Dialog at index 0 has an invalid content_hash/);
+      expect(mockQueries.createVCon).not.toHaveBeenCalled();
+    });
+
     it('should create a vCon with auto-generated UUID and timestamp', async () => {
       const createdUuid = randomUUID();
       mockQueries.createVCon.mockResolvedValue({ uuid: createdUuid, id: '1' });
@@ -55,7 +99,7 @@ describe('VConService', () => {
       });
 
       expect(result.uuid).toBe(createdUuid);
-      expect(result.vcon.vcon).toBe('0.4.0');
+      expect(result.vcon.vcon).toBe('0.5.0');
       expect(result.vcon.uuid).toBeDefined();
       expect(result.vcon.created_at).toBeDefined();
       expect(result.vcon.parties).toEqual([{ name: 'Test User' }]);
@@ -74,7 +118,7 @@ describe('VConService', () => {
       expect(mockPluginManager.executeHook).toHaveBeenCalledWith(
         'beforeCreate',
         expect.objectContaining({
-          vcon: '0.4.0',
+          vcon: '0.5.0',
           parties: [{ name: 'Test User' }],
         }),
         expect.objectContaining({
@@ -96,7 +140,7 @@ describe('VConService', () => {
       expect(mockPluginManager.executeHook).toHaveBeenCalledWith(
         'afterCreate',
         expect.objectContaining({
-          vcon: '0.4.0',
+          vcon: '0.5.0',
           parties: [{ name: 'Test User' }],
         }),
         expect.objectContaining({
@@ -108,7 +152,7 @@ describe('VConService', () => {
     it('should apply modifications from beforeCreate hook', async () => {
       const createdUuid = randomUUID();
       const modifiedVCon: VCon = {
-        vcon: '0.4.0',
+        vcon: '0.5.0',
         uuid: createdUuid,
         created_at: new Date().toISOString(),
         subject: 'Modified by plugin',
@@ -262,7 +306,7 @@ describe('VConService', () => {
   describe('get', () => {
     it('should retrieve a vCon by UUID', async () => {
       const testVCon: VCon = {
-        vcon: '0.4.0',
+        vcon: '0.5.0',
         uuid: randomUUID(),
         created_at: new Date().toISOString(),
         parties: [{ name: 'Test User' }],
@@ -280,7 +324,7 @@ describe('VConService', () => {
     it('should call beforeRead hook before fetching', async () => {
       const uuid = randomUUID();
       const testVCon: VCon = {
-        vcon: '0.4.0',
+        vcon: '0.5.0',
         uuid,
         created_at: new Date().toISOString(),
         parties: [],
@@ -302,7 +346,7 @@ describe('VConService', () => {
 
     it('should call afterRead hook after fetching', async () => {
       const testVCon: VCon = {
-        vcon: '0.4.0',
+        vcon: '0.5.0',
         uuid: randomUUID(),
         created_at: new Date().toISOString(),
         parties: [],
@@ -324,7 +368,7 @@ describe('VConService', () => {
 
     it('should apply modifications from afterRead hook', async () => {
       const testVCon: VCon = {
-        vcon: '0.4.0',
+        vcon: '0.5.0',
         uuid: randomUUID(),
         created_at: new Date().toISOString(),
         parties: [{ name: 'Test User' }],
@@ -354,7 +398,7 @@ describe('VConService', () => {
 
     it('should skip hooks when skipHooks option is true', async () => {
       const testVCon: VCon = {
-        vcon: '0.4.0',
+        vcon: '0.5.0',
         uuid: randomUUID(),
         created_at: new Date().toISOString(),
         parties: [],
@@ -372,7 +416,7 @@ describe('VConService', () => {
     it('should delete a vCon by UUID', async () => {
       const uuid = randomUUID();
       const testVCon: VCon = {
-        vcon: '0.4.0',
+        vcon: '0.5.0',
         uuid,
         created_at: new Date().toISOString(),
         parties: [],
@@ -435,7 +479,7 @@ describe('VConService', () => {
     it('should call beforeDelete hook before deleting', async () => {
       const uuid = randomUUID();
       const testVCon: VCon = {
-        vcon: '0.4.0',
+        vcon: '0.5.0',
         uuid,
         created_at: new Date().toISOString(),
         parties: [],
@@ -459,7 +503,7 @@ describe('VConService', () => {
     it('should call afterDelete hook after deleting', async () => {
       const uuid = randomUUID();
       const testVCon: VCon = {
-        vcon: '0.4.0',
+        vcon: '0.5.0',
         uuid,
         created_at: new Date().toISOString(),
         parties: [],
@@ -483,7 +527,7 @@ describe('VConService', () => {
     it('should throw if beforeDelete hook throws (deletion blocked)', async () => {
       const uuid = randomUUID();
       const testVCon: VCon = {
-        vcon: '0.4.0',
+        vcon: '0.5.0',
         uuid,
         created_at: new Date().toISOString(),
         parties: [],
@@ -501,7 +545,7 @@ describe('VConService', () => {
     it('should skip hooks when skipHooks option is true', async () => {
       const uuid = randomUUID();
       const testVCon: VCon = {
-        vcon: '0.4.0',
+        vcon: '0.5.0',
         uuid,
         created_at: new Date().toISOString(),
         parties: [],
@@ -519,8 +563,8 @@ describe('VConService', () => {
   describe('search', () => {
     it('should search vCons with filters', async () => {
       const testVCons: VCon[] = [
-        { vcon: '0.4.0', uuid: randomUUID(), created_at: new Date().toISOString(), parties: [] },
-        { vcon: '0.4.0', uuid: randomUUID(), created_at: new Date().toISOString(), parties: [] },
+        { vcon: '0.5.0', uuid: randomUUID(), created_at: new Date().toISOString(), parties: [] },
+        { vcon: '0.5.0', uuid: randomUUID(), created_at: new Date().toISOString(), parties: [] },
       ];
 
       mockQueries.searchVCons.mockResolvedValue(testVCons);
@@ -563,7 +607,7 @@ describe('VConService', () => {
 
     it('should call afterSearch hook to filter results', async () => {
       const testVCons: VCon[] = [
-        { vcon: '0.4.0', uuid: randomUUID(), created_at: new Date().toISOString(), parties: [] },
+        { vcon: '0.5.0', uuid: randomUUID(), created_at: new Date().toISOString(), parties: [] },
       ];
 
       mockQueries.searchVCons.mockResolvedValue(testVCons);
@@ -582,8 +626,8 @@ describe('VConService', () => {
 
     it('should apply filtered results from afterSearch hook', async () => {
       const testVCons: VCon[] = [
-        { vcon: '0.4.0', uuid: 'uuid-1', created_at: new Date().toISOString(), parties: [] },
-        { vcon: '0.4.0', uuid: 'uuid-2', created_at: new Date().toISOString(), parties: [] },
+        { vcon: '0.5.0', uuid: 'uuid-1', created_at: new Date().toISOString(), parties: [] },
+        { vcon: '0.5.0', uuid: 'uuid-2', created_at: new Date().toISOString(), parties: [] },
       ];
       const filteredVCons = [testVCons[0]]; // Plugin filters out second result
 
@@ -602,7 +646,7 @@ describe('VConService', () => {
 
   describe('searchPage (CON-1243)', () => {
     const mk = (uuid: string): VCon =>
-      ({ vcon: '0.4.0', uuid, created_at: new Date().toISOString(), parties: [] });
+      ({ vcon: '0.5.0', uuid, created_at: new Date().toISOString(), parties: [] });
 
     it('queries one probe row past the page size', async () => {
       mockQueries.searchVCons.mockResolvedValue([]);

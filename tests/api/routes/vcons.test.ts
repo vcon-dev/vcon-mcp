@@ -93,10 +93,10 @@ describe('vCon CRUD Routes', () => {
     });
 
     it('should add per-item lawful_basis warnings', async () => {
-      const lb = { purpose: 'lawful_basis', mediatype: 'application/json', encoding: 'json', body: { lawful_basis: 'legitimate_interests', expiration: null, purpose_grants: [{ purpose: 'recording', granted: true }], proof_mechanisms: [{ mechanism_type: 'external_system' }] } };
+      const lb = { purpose: 'lawful_basis', start: '2026-01-01T00:00:00Z', party: 0, session: 0, mediatype: 'application/json', encoding: 'json', body: { lawful_basis: 'legitimate_interests', expiration: null, purpose_grants: [{ purpose: 'recording', granted: true }], proof_mechanisms: [{ mechanism_type: 'external_system' }] } };
       const res = await request(ctx.app.callback())
         .post(`${BASE}/vcons/batch`)
-        .send([{ parties: [{ name: 'A' }] }, { parties: [{ name: 'B' }], attachments: [lb] }])
+        .send([{ parties: [{ name: 'A' }] }, { parties: [{ name: 'B' }], sessions: [{}], attachments: [lb] }])
         .expect(201);
       expect(res.body.results[0].warnings.join()).toContain('no lawful_basis attachment');
       expect(res.body.results[1].warnings).toEqual([]);
@@ -431,7 +431,7 @@ describe('vCon CRUD Routes', () => {
         .expect(201);
 
       expect(res.body.dialog.session_id).toEqual(session_id);
-      expect(ctx.mocks.queries.addDialog).toHaveBeenCalledWith(uuid, expect.objectContaining({ session_id }));
+      expect(ctx.mocks.queries.addDialog).toHaveBeenCalledWith(uuid, expect.objectContaining({ session_id }), { session: undefined });
     });
 
     it('should return 400 for invalid dialog', async () => {
@@ -522,7 +522,7 @@ describe('vCon CRUD Routes', () => {
       const uuid = randomUUID();
       const res = await request(ctx.app.callback())
         .post(`${BASE}/vcons/${uuid}/attachments`)
-        .send({ type: 'document', body: 'content', encoding: 'none' })
+        .send({ type: 'document', party: 0, session: 0, body: 'content', encoding: 'none' })
         .expect(201);
 
       expect(res.body.success).toBe(true);
@@ -535,7 +535,7 @@ describe('vCon CRUD Routes', () => {
       const uuid = randomUUID();
       const res = await request(ctx.app.callback())
         .post(`${BASE}/vcons/${uuid}/attachments`)
-        .send({ purpose: 'tags', body: ['priority:high'], encoding: 'json' })
+        .send({ purpose: 'tags', party: 0, session: 0, body: ['priority:high'], encoding: 'json' })
         .expect(201);
 
       expect(res.body.success).toBe(true);

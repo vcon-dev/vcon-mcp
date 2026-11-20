@@ -69,7 +69,7 @@ describe('tag writes invalidate the vCon cache (#102)', () => {
   });
 
   it('addAttachment of a tags attachment deletes the cached vCon', async () => {
-    await queries.addAttachment(UUID, { type: 'tags', encoding: 'json', body: '["a:1"]' } as any);
+    await queries.addAttachment(UUID, { type: 'tags', party: 0, session: 0, encoding: 'json', body: '["a:1"]' } as any);
     expect(redis.del).toHaveBeenCalledTimes(1);
   });
 

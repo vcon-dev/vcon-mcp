@@ -67,12 +67,14 @@ Get the most recently created vCons with full data.
   "limit": 10,
   "vcons": [
     {
-      "vcon": "0.4.0",
+      "vcon": "0.5.0",
       "uuid": "123e4567-e89b-12d3-a456-426614174000",
       "created_at": "2025-10-14T10:30:00Z",
       "subject": "Customer Support Call",
       "parties": [...],
+      "sessions": [...],
       "dialog": [...],
+      "events": [...],
       "analysis": [...],
       "attachments": [...]
     }
@@ -197,7 +199,7 @@ Retrieve a complete vCon object by UUID.
 
 ```json
 {
-  "vcon": "0.4.0",
+  "vcon": "0.5.0",
   "uuid": "123e4567-e89b-12d3-a456-426614174000",
   "created_at": "2025-10-14T10:30:00Z",
   "updated_at": "2025-10-14T11:00:00Z",
@@ -212,11 +214,20 @@ Retrieve a complete vCon object by UUID.
       "tel": "+1-555-1234"
     }
   ],
+  "sessions": [
+    {
+      "start": "2025-10-14T10:30:00Z",
+      "duration": 60,
+      "parties": [1],
+      "originator": 0,
+      "dialog": [0]
+    }
+  ],
   "dialog": [
     {
       "type": "text",
       "start": "2025-10-14T10:30:00Z",
-      "parties": [0, 1],
+      "parties": [0],
       "body": "Hello, how can I help you?"
     }
   ],
@@ -229,7 +240,9 @@ Retrieve a complete vCon object by UUID.
   ],
   "attachments": [
     {
-      "type": "tags",
+      "purpose": "tags",
+      "party": 0,
+      "session": 0,
       "encoding": "json",
       "body": "[\"department:support\", \"priority:high\"]"
     }
@@ -255,7 +268,7 @@ Get only metadata fields, excluding conversation content arrays.
 
 ```json
 {
-  "vcon": "0.4.0",
+  "vcon": "0.5.0",
   "uuid": "123e4567-e89b-12d3-a456-426614174000",
   "created_at": "2025-10-14T10:30:00Z",
   "updated_at": "2025-10-14T11:00:00Z",
@@ -267,7 +280,9 @@ Get only metadata fields, excluding conversation content arrays.
 
 **Excluded Fields:**
 - `parties`
+- `sessions`
 - `dialog`
+- `events`
 - `analysis`
 - `attachments`
 
@@ -328,7 +343,7 @@ Get only the dialog array from a vCon.
     {
       "type": "text",
       "start": "2025-10-14T10:30:00Z",
-      "parties": [0, 1],
+      "parties": [0],
       "body": "Hello, how can I help you?"
     },
     {

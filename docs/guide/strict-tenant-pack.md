@@ -15,7 +15,7 @@ The pack lives in `supabase/strict/`:
 ## Before you apply
 
 1. **Apply every migration**, including `20261109163739_revoke_anon_read_paths.sql`. The pack refuses an older schema. PostgreSQL 15 or later is required.
-2. **Give every row a tenant.** The pack refuses while any of the ten tenant tables holds a NULL or empty `tenant_id`, and while a child row's tenant differs from its vCon's. Nothing is guessed for you. Rows that cannot be assigned go to the reserved tenant `_quarantine`, which no token can read.
+2. **Give every row a tenant.** The pack refuses while any of the thirteen tenant tables holds a NULL or empty `tenant_id`, and while a child row's tenant differs from its vCon's. Nothing is guessed for you. Rows that cannot be assigned go to the reserved tenant `_quarantine`, which no token can read.
 
    ```sql
    -- vCons with no tenant go to quarantine; a trigger carries the change to their children.
@@ -91,7 +91,7 @@ Each change prints a line starting `strict-pack: changed:`. A run on a database 
 
 The first apply runs as one transaction and holds what it takes until it commits:
 
-- `SET NOT NULL` and the `tenant_id <> ''` check scan each of the ten tables under an `ACCESS EXCLUSIVE` lock.
+- `SET NOT NULL` and the `tenant_id <> ''` check scan each of the thirteen tables under an `ACCESS EXCLUSIVE` lock.
 - Each new foreign key scans its child table to validate it, and each new unique key builds an index.
 - Policies, functions and grants change catalog rows and lock those objects briefly.
 
@@ -128,10 +128,10 @@ An upgrade that drops `vcon_tags_mv` without `CASCADE` fails on a strict databas
 | Tag view | `vcon_tags_scoped` shows the caller's tenant's rows of `vcon_tags_mv`, runs as the owner of `vcon_tags_mv`, and is a security barrier. `authenticated` reads it and loses `vcon_tags_mv` and the refresh functions; the service key keeps both |
 | Search RPCs | Twelve functions lose their NULL-tenant branch and read `vcon_tags_scoped`. `search_vcons_by_tags_and_date` and its count gain a tenant predicate |
 | `vkong.vcons` | `authenticated` loses it. It has no tenant column |
-| Backstops | `tenant_id` is `NOT NULL` and never empty on all ten tables. These bind the service key too |
+| Backstops | `tenant_id` is `NOT NULL` and never empty on all thirteen tables. These bind the service key too |
 | Keys | Each child references its parent by `(id, tenant_id)`: the eight children of `vcons` by `(uuid, tenant_id)`, `party_history` by `dialog (id, tenant_id)`. A row cannot hang off another tenant's vCon, and a tenant move cascades to every child |
 
-The ten tenant tables are `vcons`, `parties`, `dialog`, `attachments`, `analysis`, `groups`, `party_history`, `vcon_embeddings`, `embedding_queue` and `s3_sync_tracking`.
+The thirteen tenant tables are `vcons`, `parties`, `dialog`, `attachments`, `analysis`, `groups`, `party_history`, `vcon_embeddings`, `embedding_queue`, `s3_sync_tracking`, and the three that the vCon 0.5.0 migration `20261118120000_vcon_core_05_sessions_events.sql` adds: `sessions`, `events` and `vcon_migration_reports`. Apply that migration before the pack; the pack refuses a schema that lacks them.
 
 ## What the guard checks
 
@@ -177,7 +177,7 @@ On Node 22.18 or later, `node tests/tenant-isolation/rest-shape.ts` works withou
 
 The REST shape sends each request as the first tenant and fails if a response contains another fixture's canary, or if a read that should return the tenant's own rows does not contain its canary. It covers:
 
-- the ten tables by read, insert, upsert, update and delete;
+- the thirteen tables by read, insert, upsert, update and delete;
 - `TRUNCATE` and `CREATE TRIGGER` as `authenticated`;
 - the search and tag RPCs, including those behind `search_vcons`, `search_vcons_content`, `search_vcons_semantic`, `get_vcon` and `delete_vcon`;
 - every write RPC;

@@ -57,9 +57,10 @@ SET LOCAL client_min_messages = notice;
 DO $strict$
 DECLARE
   tenant_tables constant text[] := ARRAY['vcons', 'parties', 'dialog', 'attachments', 'analysis', 'groups',
-    'party_history', 'vcon_embeddings', 'embedding_queue', 's3_sync_tracking'];
+    'party_history', 'vcon_embeddings', 'embedding_queue', 's3_sync_tracking',
+    'sessions', 'events', 'vcon_migration_reports'];
   vcon_children constant text[] := ARRAY['parties', 'dialog', 'attachments', 'analysis', 'groups',
-    'vcon_embeddings', 'embedding_queue', 's3_sync_tracking'];
+    'vcon_embeddings', 'embedding_queue', 's3_sync_tracking', 'sessions', 'events', 'vcon_migration_reports'];
   problems text[] := '{}';
   t text;
   n bigint;
@@ -146,7 +147,8 @@ END $strict$;
 DO $strict$
 DECLARE
   tenant_tables constant text[] := ARRAY['vcons', 'parties', 'dialog', 'attachments', 'analysis', 'groups',
-    'party_history', 'vcon_embeddings', 'embedding_queue', 's3_sync_tracking'];
+    'party_history', 'vcon_embeddings', 'embedding_queue', 's3_sync_tracking',
+    'sessions', 'events', 'vcon_migration_reports'];
   -- pg_get_expr output for tenant_id = (SELECT get_current_tenant_id())
   strict_expr constant text := '^\(tenant_id = \( SELECT (public\.)?get_current_tenant_id\(\) AS get_current_tenant_id\)\)$';
   t text;
@@ -220,7 +222,8 @@ END $strict$;
 DO $strict$
 DECLARE
   tenant_tables constant text[] := ARRAY['vcons', 'parties', 'dialog', 'attachments', 'analysis', 'groups',
-    'party_history', 'vcon_embeddings', 'embedding_queue', 's3_sync_tracking'];
+    'party_history', 'vcon_embeddings', 'embedding_queue', 's3_sync_tracking',
+    'sessions', 'events', 'vcon_migration_reports'];
   noread constant text[] := ARRAY['TRUNCATE', 'TRIGGER', 'REFERENCES']
     || CASE WHEN current_setting('server_version_num')::int >= 170000 THEN ARRAY['MAINTAIN'] ELSE '{}'::text[] END;
   roles constant oid[] := ARRAY[0::oid, 'anon'::regrole::oid, 'authenticated'::regrole::oid];
@@ -523,7 +526,8 @@ END $strict$;
 DO $strict$
 DECLARE
   tenant_tables constant text[] := ARRAY['vcons', 'parties', 'dialog', 'attachments', 'analysis', 'groups',
-    'party_history', 'vcon_embeddings', 'embedding_queue', 's3_sync_tracking'];
+    'party_history', 'vcon_embeddings', 'embedding_queue', 's3_sync_tracking',
+    'sessions', 'events', 'vcon_migration_reports'];
   t text;
   rel regclass;
   con text;
@@ -565,6 +569,9 @@ DECLARE
     ARRAY['vcon_embeddings', 'vcon_id', 'vcons', 'uuid'],
     ARRAY['embedding_queue', 'vcon_id', 'vcons', 'uuid'],
     ARRAY['s3_sync_tracking', 'vcon_id', 'vcons', 'uuid'],
+    ARRAY['sessions', 'vcon_id', 'vcons', 'uuid'],
+    ARRAY['events', 'vcon_id', 'vcons', 'uuid'],
+    ARRAY['vcon_migration_reports', 'vcon_id', 'vcons', 'uuid'],
     ARRAY['party_history', 'dialog_id', 'dialog', 'id']];
   parent_keys constant text[][] := ARRAY[
     ARRAY['vcons', 'uuid', 'vcons_uuid_tenant_key'],

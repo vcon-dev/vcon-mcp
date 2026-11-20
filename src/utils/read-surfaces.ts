@@ -18,7 +18,9 @@ export function toDiscoveryValues(result: DistinctValuesResult): DiscoveryValue[
 export function getVConMetadata(vcon: VCon): Record<string, unknown> {
   const metadata = { ...(vcon as unknown as Record<string, unknown>) };
   delete (metadata as any).parties;
+  delete (metadata as any).sessions;
   delete (metadata as any).dialog;
+  delete (metadata as any).events;
   delete (metadata as any).analysis;
   delete (metadata as any).attachments;
   return metadata;

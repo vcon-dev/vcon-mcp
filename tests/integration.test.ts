@@ -36,6 +36,7 @@ describe('Integration Tests', () => {
             uuid: randomUUID()
           }
         ],
+        sessions: [{ dialog: [0] }],
         dialog: [
           {
             type: 'text',
@@ -200,11 +201,12 @@ describe('Integration Tests', () => {
             mailto: 'alice@example.com'
           }
         ],
+        sessions: [{ dialog: [0] }],
         dialog: [
           {
             type: 'recording',
             url: 'https://example.com/recording.wav',
-            content_hash: 'sha256:abcd1234',
+            content_hash: 'sha512-K7gkq531t9atY96FBDkQ9b7tiTZxnlO-X17gnDOayQY6NU4tWLz6AXZxFK7R_l_kqwI_iDUVkqvg2ljFK0Z-4Q',
             start: new Date().toISOString(),
             duration: 120
           }
@@ -253,6 +255,7 @@ describe('Integration Tests', () => {
             did: 'did:example:123'
           }
         ],
+        sessions: [{ dialog: [0] }],
         dialog: [
           {
             type: 'text',  // ✅ Correction #6
@@ -373,6 +376,7 @@ describe('Integration Tests', () => {
         created_at: new Date().toISOString(),
         subject: 'Integration Test Call',
         parties: [{ name: 'Test User', uuid: randomUUID() }],
+        sessions: [{ dialog: [0] }],
         dialog: [{
           type: 'text',
           body: 'Test message',

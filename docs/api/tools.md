@@ -202,7 +202,7 @@ In hybrid mode, if the query embedding cannot be generated the search falls back
   "items": [
     {
       "id": "11111111-1111-1111-1111-111111111111",
-      "vcon_version": "0.4.0",
+      "vcon_version": "0.5.0",
       "created_at": "2026-05-11T14:00:00Z",
       "subject": "Upset customer call",
       "summary": [{ "type": "summary", "vendor": "OpenAI", "body": "..." }],
@@ -355,7 +355,7 @@ Legacy tools in this document return `{ success: true, ... }` on success and sig
 
 ### create_vcon
 
-Create a new vCon (Virtual Conversation) record. The server generates `created_at` and sets `vcon` to `"0.4.0"`. The `uuid` is optional: when supplied (a valid UUID) it is used as the vCon identifier, so re-posting the same `uuid` replaces the stored vCon instead of creating a duplicate (idempotent create). Without it the server generates one. An invalid `uuid` is rejected with `InvalidParams`.
+Create a new vCon (Virtual Conversation) record. The server generates `created_at` and sets `vcon` to `"0.5.0"`. A 0.4.0 body (dialog without `sessions`, or `vcon: "0.4.0"`) is migrated and the response carries a `migration_report`. The `uuid` is optional: when supplied (a valid UUID) it is used as the vCon identifier, so re-posting the same `uuid` replaces the stored vCon instead of creating a duplicate (idempotent create). Without it the server generates one. An invalid `uuid` is rejected with `InvalidParams`.
 
 **Input Parameters:**
 
@@ -364,12 +364,18 @@ Create a new vCon (Virtual Conversation) record. The server generates `created_a
   uuid?: string,              // Optional UUID; makes the create idempotent (re-post replaces)
   subject?: string,           // Conversation subject
   parties: Party[],           // Required, at least one
+  sessions?: Session[],       // Required (at least one) when dialog or events is non-empty
   dialog?: Dialog[],          // Optional inline conversation content
+  events?: Event[],           // Optional point-in-time events (join, drop, hold, transfers, ...)
   analysis?: Analysis[],      // Optional inline analysis (vendor required on each)
   attachments?: Attachment[], // Optional inline attachments
   extensions?: string[],      // Optional extension identifiers
-  critical?: string[],        // Extensions that must be supported (v0.4.0)
-  must_support?: string[]     // Deprecated alias for critical; used only when critical is absent
+  critical?: string[],        // Extensions that must be supported
+  must_support?: string[],    // Deprecated alias for critical; used only when critical is absent
+  redacted_from?: object,     // Source vCon this one was redacted from (alias: redacted)
+  amended_from?: object,      // Source vCon this one amends (aliases: amended, appended); not with redacted_from
+  redacted_strings?: object[],// [{ ref, type?, orig? }]
+  vcon?: string               // Syntax version; the server writes 0.5.0
 }
 ```
 
@@ -383,11 +389,12 @@ See [Child object fields](#child-object-fields) for the shape of `Party`, `Dialo
   uuid: string,
   message: string,       // "Created vCon with UUID: ..."
   vcon: object,          // The stored vCon
+  migration_report?: object, // Present when the input was a 0.4.0 vCon
   warnings: string[]     // Lawful basis findings; empty when a well-formed lawful_basis attachment is present
 }
 ```
 
-`warnings` is never blocking. When the vCon has no attachment with `purpose` (or legacy `type`) `"lawful_basis"`, it contains `no lawful_basis attachment: this vCon carries no record of the lawful basis for processing`. When one exists, `warnings` lists problems with its body (unknown basis value, missing or past `expiration`, empty `purpose_grants` or `proof_mechanisms`). The server never adds a lawful basis on its own.
+`warnings` is never blocking. When the vCon has no attachment with `purpose` (or legacy `type`) `"lawful_basis"`, it contains `no lawful_basis attachment: this vCon carries no record of the lawful basis for processing`. When one exists, `warnings` lists problems with its body (unknown basis value, missing or past `expiration`, empty `purpose_grants` or `proof_mechanisms`). The server never adds a lawful basis on its own. `extensions` must list every extension the vCon uses; the server adds `lawful_basis`, `wtf_transcription`, and any name listed in `critical` automatically.
 
 **Example:**
 
@@ -417,19 +424,20 @@ Retrieve a vCon by UUID.
 ```
 
 - `full`: the complete vCon.
-- `summary`: top-level fields (`vcon`, `uuid`, `created_at`, `updated_at`, `subject`, `extensions`, `critical`), `parties`, and only the analysis entries of type `summary`. Recommended for browsing, since transcripts can be very large.
-- `metadata`: the same top-level fields and `parties`, with no dialog, analysis, or attachments.
+- `summary`: top-level fields (`vcon`, `uuid`, `created_at`, `updated_at`, `subject`, `extensions`, `critical`), `parties`, `sessions`, and only the analysis entries of type `summary`. Recommended for browsing, since transcripts can be very large.
+- `metadata`: the same top-level fields and `parties`, with no sessions, dialog, events, analysis, or attachments.
 
 **Response:**
 
 ```typescript
 {
   success: true,
-  vcon: object
+  vcon: object,
+  migration_report?: object   // Present when the stored vCon was 0.4.0 and was migrated on read
 }
 ```
 
-Reads run the `beforeRead` and `afterRead` plugin hooks. A missing vCon raises an `InternalError` whose message contains `not found`.
+The returned vCon is always syntax 0.5.0. Reads run the `beforeRead` and `afterRead` plugin hooks. A missing vCon raises an `InternalError` whose message contains `not found`.
 
 **Example:**
 
@@ -534,6 +542,7 @@ Create a vCon from a predefined template.
   template_name: "phone_call" | "chat_conversation" | "email_thread" | "video_meeting" | "custom",  // Required
   parties: Party[],   // Required, at least one
   subject?: string,
+  lawful_basis_party?: number,  // Party index that owns the lawful_basis attachment; default 0
   lawful_basis?: {    // Optional; attached as a lawful_basis attachment only when supplied
     lawful_basis: "consent" | "contract" | "legal_obligation" | "vital_interests" | "public_task" | "legitimate_interests",
     expiration?: string | null,
@@ -543,9 +552,9 @@ Create a vCon from a predefined template.
 }
 ```
 
-The server never invents a lawful basis. When `lawful_basis` is supplied it is stored as an attachment with `purpose` and `type` `"lawful_basis"`, `mediatype` `application/json`, `encoding` `json`, and the object serialized as the string `body`. When omitted, no attachment is added and `warnings` reports the missing lawful basis. `create_vcon` already accepts inline `attachments`, so it needs no extra parameter.
+The server never invents a lawful basis. When `lawful_basis` is supplied it is stored as an attachment with `purpose` and `type` `"lawful_basis"`, `mediatype` `application/json`, `encoding` `json`, and the object serialized as the string `body`. The attachment is scoped with `party` (`lawful_basis_party`, default 0) plus `session` (an empty Session the template adds), and `lawful_basis` is added to `extensions`. When omitted, no attachment is added and `warnings` reports the missing lawful basis. `create_vcon` already accepts inline `attachments`, so it needs no extra parameter.
 
-**What a template adds:** the template sets the vCon version to `0.4.0`, generates the `uuid` and `created_at`, and stores your `parties` and `subject`. `phone_call`, `chat_conversation`, and `video_meeting` add an empty `dialog` array. `email_thread` adds an empty `attachments` array. `custom` adds nothing. The templates do not add timestamps, durations, or threading data. An unrecognized `template_name` behaves like `custom`.
+**What a template adds:** the template sets the vCon version to `0.5.0`, generates the `uuid` and `created_at`, and stores your `parties` and `subject`. `phone_call`, `chat_conversation`, and `video_meeting` add an empty `dialog` array. `email_thread` adds an empty `attachments` array. `custom` adds nothing. The templates do not add timestamps, durations, or threading data. An unrecognized `template_name` behaves like `custom`.
 
 **Response:**
 
@@ -575,7 +584,7 @@ The server never invents a lawful basis. When `lawful_basis` is supplied it is s
 
 ## Component Management
 
-Index-addressed tools use zero-based positions in the vCon's `parties`, `dialog`, `analysis`, and `attachments` arrays. These tools write through the database layer directly and do not run plugin hooks.
+Index-addressed tools use zero-based positions in the vCon's `parties`, `dialog`, `analysis`, and `attachments` arrays. These tools write through the database layer directly and do not run plugin hooks. A stored 0.4.0 vCon is upgraded to 0.5.0 in place on the first structural write (`add_dialog`, `add_attachment`, tag writes, `update_dialog`, `remove_dialog`, `update_attachment`). The upgrade needs the `20261118120000_vcon_core_05_sessions_events.sql` migration, which the operator applies.
 
 ### Child object fields
 
@@ -585,19 +594,35 @@ These shapes apply to `create_vcon` and to every add and update tool below. The 
 `name`, `tel`, `mailto`, `sip`, `stir`, `did`, `uuid`, `validation`, `jcard` (object), `gmlpos`, `civicaddress` (object), `timezone`.
 
 **Dialog**:
-`type` (required: `recording`, `text`, `transfer`, `incomplete`), `start` (ISO 8601), `duration` (seconds), `parties` (index, list of indexes, or nested lists), `originator`, `mediatype`, `filename`, `body`, `encoding`, `url`, `content_hash`, `disposition`, `session_id`, `application`, `message_id`, `party_history` (`[{ party, time, event }]` with `event` one of `join`, `drop`, `hold`, `unhold`, `mute`, `unmute`), and the transfer fields `transferee`, `transferor`, `transfer_target`, `original`, `consultation`, `target_dialog`.
+`type` (required unless the Dialog is the empty Object `{}`: `recording`, `text`, `incomplete`; `audio` and `video` are accepted on read with a warning), `start` (ISO 8601), `duration` (seconds), `parties` (contributors only: an index, a list of indexes with `null` for an unknown contributor, or a nested list with one entry per channel), `mediatype`, `filename`, `body`, `encoding`, `url`, `content_hash`, `disposition`, `application`, and `message_id`.
 
 - `incomplete` dialogs require a `disposition` string.
-- `session_id` is a `{ local, remote }` object, or an array of them (vCon 0.4.0). A plain string, the pre-0.4.0 form, is still accepted and stored as given.
-- `create_vcon` also requires `transferee`, `transferor`, and `transfer_target` on `transfer` dialogs.
+- Dialog has no `originator`, `party_history`, transfer fields, `recordings`, or `recording_set`. The originator and receivers belong to the Session; join, drop, hold, mute, and transfer moments are Events.
+- The empty Dialog Object `{}` holds an index position.
+
+**Session** (`sessions[]`):
+`start`, `duration`, `parties` (the receivers), `originator` (only when the first party is not the originator), `session_id` (a single `{ local, remote }` object), `sessions` (references to other Sessions: `[{ session, type, description? }]` with `type` one of `child`, `peer`, `precursor`, `breakout`), and `dialog` (indexes of the Dialogs the Session holds).
+
+**Event** (`events[]`):
+`type` and `time` (required), `sessions`, `party`, `dialog`, `channel`, `contributors`, `button`, `transferee`, `transfer_target`, `consultation`, `target_session`. Which parameters apply depends on `type`:
+
+| Event type | Required parameters |
+|------------|---------------------|
+| `join`, `drop`, `hold`, `unhold`, `mute`, `unmute` | `sessions`, `party` |
+| `keydown`, `keyup` | `sessions`, `party`, `button` |
+| `consultation-start`, `blind-transfer`, `consultative-transfer`, `transfer-abandoned` | `sessions` (a single index), `transferee`, `transfer_target`; plus `consultation` or `target_session` where the type calls for it |
+| `channel-contributors` | `dialog`, `channel`; no `sessions` or `party` |
+
+At least one Session is required when `dialog` or `events` is non-empty.
 
 **Analysis**:
-`type` (required), `vendor` (required), `product`, `schema` (a schema identifier, not a version), `dialog` (index or list of indexes), `body`, `encoding`, `mediatype`, `filename`, `url`, `content_hash`.
+`type` (required), `vendor` (required), `product`, `schema` (a schema identifier, not a version), `dialog` (index or list of indexes), `sessions`, `attachment`, `analysis` (references to Sessions, Attachments, and other Analysis entries), `body`, `encoding`, `mediatype`, `filename`, `url`, `content_hash`.
 
 **Attachment**:
-`purpose` (the spec field for classification), `type` (legacy name for the same thing), `party`, `dialog`, `start`, `mediatype`, `filename`, `body`, `encoding`, `url`, `content_hash`.
+`purpose` (the spec field for classification), `type` (legacy name for the same thing), `party` (required), `dialog` (a single index) or `session` (an index or a list), `start`, `mediatype`, `filename`, `body`, `encoding`, `url`, `content_hash`.
 
-- An attachment needs either `body` with `encoding`, or `url` with `content_hash`.
+- An attachment needs either `body` with `encoding`, or `url`. A `content_hash` is recommended with a `url` but not required (a producer cannot always obtain stable bytes for the URL); when present it must be well formed.
+- An attachment also needs `party` plus `dialog` or `session`. `lawful_basis` attachments are scoped with `party` plus `session`; other scopes produce warnings.
 
 **Body and encoding.** `encoding` is `base64url`, `json`, or `none`, and has no default. `body` is a string, except that when `encoding` is `json` it may be any JSON value (object, array, number, boolean, or null). A non-string body with any other `encoding`, or with none, is rejected. `content_hash` is a string or a list of strings.
 
@@ -610,11 +635,15 @@ Add a dialog entry (conversation segment) to a vCon.
 ```typescript
 {
   vcon_uuid: string,   // required
-  dialog: Dialog       // required; see Child object fields
+  dialog: Dialog,      // required; see Child object fields
+  session?: number,    // existing Session index; optional when the vCon has 0 or 1 Session
+  new_session?: {      // used only when the vCon has no Session
+    start?, duration?, parties?, originator?, session_id?
+  }
 }
 ```
 
-The input schema advertises `type`, `start`, `duration`, `parties`, `body`, `encoding`, `mediatype`, `session_id`, `application`, and `message_id`. The handler parses the full dialog shape, so the other dialog fields are also accepted.
+The new Dialog is listed by a Session. With no Session and no `new_session`, one is created from the dialog `start` and `duration` with no parties. With two or more Sessions, `session` is required. The input schema advertises `type`, `start`, `duration`, `parties`, `body`, `encoding`, `mediatype`, `application`, and `message_id`; the handler parses the full dialog shape.
 
 **Response:**
 
@@ -622,7 +651,10 @@ The input schema advertises `type`, `start`, `duration`, `parties`, `body`, `enc
 {
   success: true,
   message: string,   // "Added <type> dialog to vCon <uuid>"
-  dialog: object     // The dialog as parsed; no index is returned
+  dialog: object,    // The dialog as parsed
+  index: number,     // Position of the new dialog
+  session: number,   // Session that lists it
+  session_created: boolean
 }
 ```
 
@@ -634,10 +666,14 @@ The input schema advertises `type`, `start`, `duration`, `parties`, `body`, `enc
   "dialog": {
     "type": "text",
     "start": "2025-10-14T10:30:00Z",
-    "parties": [0, 1],
-    "originator": 1,
+    "parties": [1],
     "body": "Hello, I need help with my account.",
     "encoding": "none"
+  },
+  "new_session": {
+    "start": "2025-10-14T10:30:00Z",
+    "parties": [0],
+    "originator": 1
   }
 }
 ```
@@ -712,6 +748,8 @@ Add an attachment (file, document, etc.) to a vCon. Use `purpose` to classify th
 }
 ```
 
+The scope defaults to the only Session when the vCon has exactly one and the attachment gives neither `dialog` nor `session`. Otherwise the caller passes the scope. A dialog index is never widened to a Session.
+
 **Response:**
 
 ```typescript
@@ -729,6 +767,8 @@ Add an attachment (file, document, etc.) to a vCon. Use `purpose` to classify th
   "vcon_uuid": "123e4567-e89b-12d3-a456-426614174000",
   "attachment": {
     "purpose": "invoice",
+    "party": 0,
+    "session": 0,
     "mediatype": "application/pdf",
     "filename": "invoice-12345.pdf",
     "body": "base64url-encoded-pdf-content",
@@ -757,17 +797,17 @@ Append a party to an existing vCon.
 
 ### Sub-resource Updates & Removal
 
-Index-addressed edits to a vCon's child arrays. Each tool takes `vcon_uuid` plus an integer `index` (zero or greater, the element's position in its array). **Update** tools use PUT semantics: omitted fields are cleared. **Removal** follows IETF core-02 §4.1.8: party and dialog removals preserve the slot as a placeholder so positional references (`dialog.parties`, `attachment.party`, `analysis.dialog`, etc.) do not shift; analysis and attachment removals hard-delete the element and renumber the rest.
+Index-addressed edits to a vCon's child arrays. Each tool takes `vcon_uuid` plus an integer `index` (zero or greater, the element's position in its array). **Update** tools use PUT semantics: omitted fields are cleared. **Removal** follows IETF core-05: party and dialog removals preserve the slot (an empty placeholder Party, or the empty Dialog Object `{}`) so positional references (`dialog.parties`, `session.dialog`, `attachment.party`, `analysis.dialog`, etc.) do not shift; analysis and attachment removals hard-delete the element and renumber the rest.
 
 | Tool | Parameters | Behavior |
 |------|-----------|----------|
 | `update_party` | `vcon_uuid`, `index`, `party` | Replace the party at `index` |
 | `remove_party` | `vcon_uuid`, `index`, `anonymize?` | Remove party; leaves an empty placeholder, or `{name:"anonymous"}` when `anonymize=true` |
 | `update_dialog` | `vcon_uuid`, `index`, `dialog` | Replace the dialog at `index` |
-| `remove_dialog` | `vcon_uuid`, `index` | Remove dialog; leaves a content-stripped placeholder that keeps `type` |
+| `remove_dialog` | `vcon_uuid`, `index` | Remove dialog; leaves the empty Dialog Object `{}` |
 | `update_analysis` | `vcon_uuid`, `index`, `analysis` | Replace the analysis at `index` (`vendor` required) |
 | `remove_analysis` | `vcon_uuid`, `index` | Hard-delete; remaining analyses renumbered contiguously |
-| `update_attachment` | `vcon_uuid`, `index`, `attachment` | Replace the attachment at `index` |
+| `update_attachment` | `vcon_uuid`, `index`, `attachment` | Replace the attachment at `index`; the attachment must carry its scope (`party` plus `dialog` or `session`) |
 | `remove_attachment` | `vcon_uuid`, `index` | Hard-delete and renumber; removing a `tags` attachment clears the vCon's tags |
 
 Update tools return `{ success: true, message, <party|dialog|analysis|attachment> }` with the replacement object echoed back. Remove tools return `{ success: true, message }`. An `index` that is missing, negative, or not an integer, or that is out of range for the array, is an `InvalidParams` error.
@@ -1007,7 +1047,7 @@ If the query embedding cannot be generated, the search falls back to keyword-onl
 The tag toolset was consolidated to 5 tools. Tags are stored as a
 special vCon attachment (`type: "tags"`, `encoding: "json"`, body is a
 JSON array of `"key:value"` strings). The attachment is also readable as
-`purpose: "tags"`; the database mirrors the two fields on write.
+`purpose: "tags"`; the database mirrors the two fields on write. A tag write on a stored 0.4.0 vCon upgrades it to 0.5.0 in place.
 
 ### manage_tag
 
@@ -1918,7 +1958,7 @@ There is no `version` parameter and no `openapi` format. Any other `format` valu
 
 **Response:** the raw schema, not wrapped in a `success` envelope.
 
-- `json_schema`: a JSON Schema document (definition name `VCon`) generated from the server's validation schemas. It describes the vCon 0.4.0 shape, including `critical`, `amended`, `redacted`, and `group`.
+- `json_schema`: a JSON Schema document (definition name `VCon`) generated from the server's validation schemas. It describes the vCon 0.5.0 shape, including `sessions`, `events`, `critical`, `amended_from`, `redacted_from`, `redacted_strings`, and `group`.
 - `typescript`: the text of `src/types/vcon.ts`, returned as plain text rather than JSON.
 
 ---

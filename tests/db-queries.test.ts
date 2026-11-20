@@ -176,10 +176,10 @@ describe('VConQueries', () => {
         data: {
           id: '1',
           uuid,
-          vcon_version: '0.4.0',
+          vcon_version: '0.5.0',
           created_at: new Date().toISOString(),
-          redacted,
-          amended,
+          redacted_from: redacted,
+          amended_from: amended,
           group_data: group,
         },
         error: null
@@ -188,9 +188,28 @@ describe('VConQueries', () => {
 
       const result = await queries.getVCon(uuid);
 
-      expect(result.redacted).toEqual(redacted);
-      expect(result.amended).toEqual(amended);
+      expect(result.redacted_from).toEqual(redacted);
+      expect(result.amended_from).toEqual(amended);
       expect(result.group).toEqual(group);
+    });
+
+    // A row written before the 0.5.0 column rename still has redacted/amended; it is read
+    // as 0.4.0 and migrated, which renames them.
+    it('should read the pre-rename redacted and amended columns of a 0.4.0 row as redacted_from / amended_from', async () => {
+      const uuid = randomUUID();
+      const redacted = { type: 'de-identified', uuid: '0197cc22-09bb-8c9d-9dd8-dd37220d739c' };
+
+      mockSupabase.single.mockResolvedValueOnce({
+        data: { id: '1', uuid, vcon_version: '0.4.0', created_at: new Date().toISOString(), redacted, amended: {} },
+        error: null,
+      });
+      mockSupabase.order.mockResolvedValue({ data: [], error: null });
+
+      const result = await queries.getVCon(uuid);
+
+      expect(result.vcon).toBe('0.5.0');
+      expect(result.redacted_from).toEqual(redacted);
+      expect(result).not.toHaveProperty('redacted');
     });
 
     it('should omit empty top-level redacted/amended/group defaults', async () => {
@@ -200,10 +219,10 @@ describe('VConQueries', () => {
         data: {
           id: '1',
           uuid,
-          vcon_version: '0.4.0',
+          vcon_version: '0.5.0',
           created_at: new Date().toISOString(),
-          redacted: {},
-          amended: {},
+          redacted_from: {},
+          amended_from: {},
           group_data: [],
         },
         error: null
@@ -212,8 +231,8 @@ describe('VConQueries', () => {
 
       const result = await queries.getVCon(uuid);
 
-      expect(result.redacted).toBeUndefined();
-      expect(result.amended).toBeUndefined();
+      expect(result.redacted_from).toBeUndefined();
+      expect(result.amended_from).toBeUndefined();
       expect(result.group).toBeUndefined();
     });
 
@@ -236,7 +255,7 @@ describe('VConQueries', () => {
 
       const result = await queries.getVCon(uuid);
 
-      expect(result.amended).toEqual({ uuid: 'cccccccc-0000-0000-0000-000000000003' });
+      expect(result.amended_from).toEqual({ uuid: 'cccccccc-0000-0000-0000-000000000003' });
     });
 
     it('should throw when vCon not found', async () => {
@@ -799,9 +818,9 @@ describe('VConQueries', () => {
 
     it('addDialog, addAnalysis and addAttachment stamp the parent tenant', async () => {
       for (const add of [
-        () => queries.addDialog(randomUUID(), { type: 'text', body: 'x', encoding: 'none' }, 0),
+        () => queries.addDialog(randomUUID(), { type: 'text', body: 'x', encoding: 'none' }, { knownIndex: 0 }),
         () => queries.addAnalysis(randomUUID(), { type: 's', vendor: 'V', body: 'x', encoding: 'none' }, 0),
-        () => queries.addAttachment(randomUUID(), { purpose: 'doc', body: 'x', encoding: 'none' }, 0),
+        () => queries.addAttachment(randomUUID(), { purpose: 'doc', party: 0, session: 0, body: 'x', encoding: 'none' }),
       ]) {
         mockSupabase.single.mockResolvedValueOnce({ data: { id: 'vcon-row', tenant_id: 'T-1' }, error: null });
         mockSupabase.insert.mockClear();
@@ -1040,6 +1059,8 @@ describe('VConQueries', () => {
       const uuid = randomUUID();
       const attachment: Attachment = {
         type: 'document',
+        party: 0,
+        session: 0,
         body: 'content',
         encoding: 'base64url'
       };
@@ -1062,6 +1083,8 @@ describe('VConQueries', () => {
       const uuid = randomUUID();
       const attachment: Attachment = {
         type: 'document',
+        party: 0,
+        session: 0,
         body: 'content',
         encoding: 'base64url'
       };
@@ -1097,6 +1120,8 @@ describe('VConQueries', () => {
       const uuid = randomUUID();
       const attachment: Attachment = {
         type: 'document',
+        party: 0,
+        session: 0,
         body: 'content',
         encoding: 'base64url'
       };

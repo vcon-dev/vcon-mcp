@@ -5,14 +5,17 @@
  * ✅ Enforces all 7 critical corrections
  */
 
-import { 
-  VCon, 
-  Analysis, 
-  Dialog, 
+import {
+  VCon,
+  Analysis,
+  Dialog,
   Party,
+  isEmptyDialog,
+  isLegacyDialogType,
   isValidDialogType,
   isValidEncoding
 } from '../types/vcon.js';
+import { validateVConDocument } from './vcon-validation.js';
 
 export interface ValidationResult {
   valid: boolean;
@@ -36,6 +39,11 @@ export class VConValidator {
     this.validateDates(vcon);
     this.validateParties(vcon.parties);
     
+    // 0.5.0 structure: Sessions, Events, references, Attachment scope, redacted_from/amended_from
+    const doc = validateVConDocument(vcon as unknown as Record<string, any>);
+    this.errors.push(...doc.errors);
+    this.warnings.push(...doc.warnings);
+
     if (vcon.dialog) this.validateDialogs(vcon.dialog);
     if (vcon.analysis) this.validateAnalysis(vcon.analysis);
     if (vcon.attachments) this.validateAttachments(vcon.attachments);
@@ -49,7 +57,11 @@ export class VConValidator {
     };
   }
 
-  private validateUUID(uuid: string): void {
+  private validateUUID(uuid: string | undefined): void {
+    if (typeof uuid !== 'string') {
+      this.errors.push(`Invalid UUID format: ${uuid}`);
+      return;
+    }
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(uuid)) {
       this.errors.push(`Invalid UUID format: ${uuid}`);
@@ -79,6 +91,9 @@ export class VConValidator {
     }
 
     parties.forEach((party, index) => {
+      // An empty Party Object is valid: it stands for an unknown party (4.3.9, 4.2.4)
+      if (party && typeof party === 'object' && Object.keys(party).length === 0) return;
+
       // At least one identifier should be present
       const hasIdentifier = party.tel || party.sip || party.mailto || party.name || party.uuid;
       if (!hasIdentifier) {
@@ -97,13 +112,11 @@ export class VConValidator {
 
   private validateDialogs(dialogs: Dialog[]): void {
     dialogs.forEach((dialog, index) => {
-      // ✅ Validate dialog type (one of 4 valid types)
-      if (!isValidDialogType(dialog.type)) {
-        this.errors.push(
-          `Dialog ${index} has invalid type: ${dialog.type}. ` +
-          `Must be one of: recording, text, transfer, incomplete`
-        );
-      }
+      // An empty Dialog Object {} holds an index position (Section 4.5.1)
+      if (isEmptyDialog(dialog)) return;
+
+      // Dialog type is checked by validateVConDocument (invalid types are errors;
+      // audio/video are read-only legacy values and only warn).
 
       // Validate encoding if present
       if (dialog.encoding && !isValidEncoding(dialog.encoding)) {
@@ -122,22 +135,16 @@ export class VConValidator {
         this.errors.push(`Dialog ${index} disposition must be a string`);
       }
 
-      // Transfer dialogs must have transfer fields
-      if (dialog.type === 'transfer') {
-        if (dialog.transferee === undefined || dialog.transferor === undefined || dialog.transfer_target === undefined) {
-          this.errors.push(`Dialog ${index} is transfer type but missing transfer fields`);
-        }
-      }
-
       // Content validation is relaxed - dialogs may have missing content in some cases
-      // (e.g., incomplete recordings, external references not yet available)
+      // (e.g., incomplete recordings, external references not yet available).
+      // A url without a content_hash is allowed (vcon-lib 1.0.6, core issue #40).
       const hasInline = dialog.body !== undefined && dialog.encoding !== undefined;
-      const hasExternal = dialog.url !== undefined && dialog.content_hash !== undefined;
+      const hasExternal = dialog.url !== undefined;
       
-      if (!hasInline && !hasExternal) {
+      if (!hasInline && !hasExternal && dialog.type !== 'incomplete') {
         // Only warn, don't error - some dialogs may legitimately have no content
         this.warnings.push(
-          `Dialog ${index} has no content (body + encoding) or external reference (url + content_hash)`
+          `Dialog ${index} has no content (body + encoding) or external reference (url)`
         );
       }
 
@@ -182,13 +189,14 @@ export class VConValidator {
         }
       }
 
-      // Must have either (body + encoding) or (url + content_hash)
+      // Must have either (body + encoding) or url; a url without a content_hash is
+      // allowed (vcon-lib 1.0.6, core issue #40)
       const hasInline = analysis.body !== undefined && analysis.encoding !== undefined;
-      const hasExternal = analysis.url !== undefined && analysis.content_hash !== undefined;
+      const hasExternal = analysis.url !== undefined;
       
       if (!hasInline && !hasExternal) {
         this.errors.push(
-          `Analysis ${index} must have either (body + encoding) or (url + content_hash)`
+          `Analysis ${index} must have either (body + encoding) or url`
         );
       }
 
@@ -212,13 +220,14 @@ export class VConValidator {
         );
       }
 
-      // Must have either (body + encoding) or (url + content_hash)
+      // Must have either (body + encoding) or url; a url without a content_hash is
+      // allowed (vcon-lib 1.0.6, core issue #40)
       const hasInline = attachment.body !== undefined && attachment.encoding !== undefined;
-      const hasExternal = attachment.url !== undefined && attachment.content_hash !== undefined;
+      const hasExternal = attachment.url !== undefined;
       
       if (!hasInline && !hasExternal) {
         this.errors.push(
-          `Attachment ${index} must have either (body + encoding) or (url + content_hash)`
+          `Attachment ${index} must have either (body + encoding) or url`
         );
       }
     });
@@ -327,9 +336,17 @@ export function validateDialog(dialog: Dialog): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  if (!isValidDialogType(dialog.type)) {
+  if (isEmptyDialog(dialog)) {
+    return { valid: true, errors, warnings };
+  }
+
+  if (!dialog.type) {
+    errors.push('Dialog is missing required field: type (unless the Dialog is empty)');
+  } else if (isLegacyDialogType(dialog.type)) {
+    warnings.push(`Dialog type '${dialog.type}' is not defined in core-05; it is read as 'recording' and never written`);
+  } else if (!isValidDialogType(dialog.type)) {
     errors.push(
-      `Invalid dialog type: ${dialog.type}. Must be one of: recording, text, transfer, incomplete`
+      `Invalid dialog type: ${dialog.type}. Must be one of: recording, text, incomplete`
     );
   }
 
@@ -378,7 +395,10 @@ export function validateParty(party: Party): ValidationResult {
 
 /**
  * Validate Attachment object
- * Per spec Section 4.4, attachments must have either (body + encoding) or (url + content_hash)
+ * Per spec Section 4.6, attachments must have either (body + encoding) or url (a url without
+ * a content_hash is allowed, vcon-lib 1.0.6)
+ * and a scope: at least one of dialog or session. Index range is checked against the vCon
+ * by validateVCon; a lone attachment is checked for shape only.
  */
 export function validateAttachment(attachment: any): ValidationResult {
   const errors: string[] = [];
@@ -392,14 +412,21 @@ export function validateAttachment(attachment: any): ValidationResult {
     );
   }
 
-  // Must have either (body + encoding) or (url + content_hash)
+  // Must have either (body + encoding) or url
   const hasInline = attachment.body !== undefined && attachment.encoding !== undefined;
-  const hasExternal = attachment.url !== undefined && attachment.content_hash !== undefined;
+  const hasExternal = attachment.url !== undefined;
   
   if (!hasInline && !hasExternal) {
     errors.push(
-      'Attachment must have either (body + encoding) or (url + content_hash)'
+      'Attachment must have either (body + encoding) or url'
     );
+  }
+
+  if (attachment.party === undefined) {
+    errors.push('Attachment is missing required field: party (Section 4.6.3)');
+  }
+  if (attachment.dialog === undefined && attachment.session === undefined) {
+    errors.push('Attachment must have at least one of dialog or session (Sections 4.6.4, 4.6.5)');
   }
 
   return {

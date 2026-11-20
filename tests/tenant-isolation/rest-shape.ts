@@ -15,7 +15,7 @@
  * leave, and the checks marked `leak` assert that the known leaks still
  * appear: proof that the harness can see one.
  *
- * Covered: the ten tenant tables by read, insert, upsert, update and delete;
+ * Covered: the thirteen tenant tables by read, insert, upsert, update and delete;
  * the search and tag RPCs, including those behind the five lane tools
  * (search_vcons with ids_only, metadata and a tags filter, search_vcons_content,
  * search_vcons_semantic, get_vcon, delete_vcon); both views; the tag
@@ -110,6 +110,7 @@ function tenantOf(table: string, pkCol: string, pk: string | number): string {
 const PK: Record<string, string> = {
   vcons: 'uuid', parties: 'id', dialog: 'id', attachments: 'id', analysis: 'id', groups: 'id',
   party_history: 'id', vcon_embeddings: 'id', embedding_queue: 'id', s3_sync_tracking: 'vcon_id',
+  sessions: 'id', events: 'id', vcon_migration_reports: 'id',
 };
 
 /** The primary key value of a fixture's row in a table. */
@@ -124,6 +125,7 @@ const TOUCH: Record<string, Record<string, unknown>> = {
   vcons: { subject: 'zqhijack' }, parties: { name: 'zqhijack' }, dialog: { body: 'zqhijack' }, attachments: { body: 'zqhijack' },
   analysis: { body: 'zqhijack' }, groups: { body: '{"zq":"hijack"}' }, party_history: { event: 'drop' },
   vcon_embeddings: { content_text: 'zqhijack' }, embedding_queue: { created_at: '2026-11-02T00:00:00+00:00' }, s3_sync_tracking: { s3_key: 'zqhijack' },
+  sessions: { extra: { zq: 'hijack' } }, events: { button: 'zqhijack' }, vcon_migration_reports: { trigger: 'zqhijack' },
 };
 
 let seq = 0;
@@ -147,6 +149,9 @@ function rowBody(table: string, o: { vcon: string; dialog?: string; tenant: stri
     case 'vcon_embeddings': return { id: o.id, vcon_id: o.vcon, content_type: 'zqwrite', content_reference: o.id, content_text: 'zqwrite', embedding: EMBEDDING, embedding_model: 'test-model', embedding_dimension: 384, ...t };
     case 'embedding_queue': return { vcon_id: o.vcon, ...t };
     case 's3_sync_tracking': return { vcon_id: o.vcon, vcon_uuid: o.vcon, s3_key: 'zqwrite', ...t };
+    case 'sessions': return { id: o.id, vcon_id: o.vcon, session_index: o.idx, dialog_indices: [0], extra: { note: 'zqwrite' }, ...t };
+    case 'events': return { id: o.id, vcon_id: o.vcon, event_index: o.idx, type: 'join', time: '2026-11-01T00:00:00Z', party: 0, ...t };
+    case 'vcon_migration_reports': return { id: o.id, vcon_id: o.vcon, target_version: '0.5.0', trigger: 'create', report: { note: 'zqwrite' }, ...t };
   }
   throw new Error(table);
 }
@@ -175,7 +180,9 @@ function freshOrphan(table: string): string {
   }
   const body = rowBody(table, { vcon: parent.uuid, dialog: rowId(parent, 'dialog'), tenant: null, id, idx: 100 + seq });
   const cols = Object.keys(body).filter(k => k !== 'tenant_id');
-  const vals = cols.map(k => (k === 'embedding' ? q(String(body[k])) : typeof body[k] === 'number' ? String(body[k]) : q(String(body[k]))));
+  const lit = (v: unknown) => (Array.isArray(v) ? q(`{${v.join(',')}}`)
+    : v !== null && typeof v === 'object' ? q(JSON.stringify(v)) : q(String(v)));
+  const vals = cols.map(k => (k === 'embedding' ? q(String(body[k])) : typeof body[k] === 'number' ? String(body[k]) : lit(body[k])));
   stack.sql(`INSERT INTO ${table} (${cols.join(', ')}, tenant_id) VALUES (${vals.join(', ')}, ${tenant})`);
   // The child triggers stamp the parent's tenant; put the intended one back.
   stack.sql(`UPDATE ${table} SET tenant_id = ${tenant} WHERE id = '${id}'`);
@@ -679,7 +686,7 @@ async function main(): Promise<number> {
     expect('lane-delete-own', 'delete_vcon(own uuid) deletes one vCon', r, ['isolated', 'isolated']);
     const left = stack.sql(`SELECT ${[...VCON_CHILDREN.map(t => `(SELECT count(*) FROM ${t} WHERE vcon_id = '${a2.uuid}')`),
       `(SELECT count(*) FROM party_history WHERE dialog_id = '${rowId(a2, 'dialog')}')`].join(' + ')}`).trim();
-    expectValue('lane-delete-cascade', 'and every child row of it, in all nine child tables', left, ['0', '0']);
+    expectValue('lane-delete-cascade', 'and every child row of it, in every child table', left, ['0', '0']);
     expectValue('lane-delete-others', "B's and the no-tenant vCons are untouched", stack.sql(`SELECT count(*) FROM vcons WHERE uuid IN ('${B.uuid}', '${BN.uuid}', '${NONE().uuid}')`).trim(), ['3', '3']);
 
     // ------------------------------------------------------------ lane PostgREST

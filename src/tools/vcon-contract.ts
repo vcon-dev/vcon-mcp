@@ -7,7 +7,9 @@ const fetchIncludeValues = [
   'tags',
   'dealer',
   'counts',
+  'sessions',
   'dialog',
+  'events',
   'analysis',
   'attachments',
 ] as const;
@@ -18,7 +20,7 @@ export const vconFetchTool = {
   description:
     'Fetch a single vCon using the redesigned stable envelope: {ok, item}. ' +
     'Use the include array to request only the fields you need. Default include is ["core", "parties", "summary"]. ' +
-    'Available include values: core, parties, summary, tags, dealer, counts, dialog, analysis, attachments. ' +
+    'Available include values: core, parties, summary, tags, dealer, counts, sessions, dialog, events, analysis, attachments. ' +
     'Use include=["core","summary"] for lightweight browsing without loading full transcript payloads. ' +
     'The primary identifier in the returned item is always "id". ' +
     'Use vcon_capabilities to inspect supported include values and byte-budget defaults before calling. ' +

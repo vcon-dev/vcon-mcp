@@ -931,7 +931,7 @@ Use \`get_content_analytics\` with date filtering to get aggregate breakdowns fo
 }
 \`\`\`
 This returns:
-- Dialog type breakdown (recording, text, transfer, incomplete)
+- Dialog type breakdown (recording, text, incomplete)
 - Analysis vendor and type distribution
 - Party role patterns, unique agents, unique customers
 - Average dialogs/analysis per conversation

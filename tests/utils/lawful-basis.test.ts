@@ -5,7 +5,7 @@ const valid = {
   purpose: 'lawful_basis',
   start: '2025-01-02T12:15:30Z',
   party: 0,
-  dialog: 0,
+  session: 0,
   mediatype: 'application/json',
   encoding: 'json',
   body: {
@@ -39,6 +39,14 @@ describe('lawfulBasisWarnings', () => {
   it('is empty for a complete attachment, object or string body', () => {
     expect(lawfulBasisWarnings({ attachments: [valid] })).toEqual([]);
     expect(lawfulBasisWarnings({ attachments: [{ ...valid, body: JSON.stringify(valid.body) }] })).toEqual([]);
+  });
+  it('flags a lawful basis that is not scoped with party plus session', () => {
+    const { party: _p, ...noParty } = valid;
+    const { session: _s, ...noSession } = valid;
+    expect(lawfulBasisWarnings({ attachments: [noParty] }).join()).toContain('party is missing');
+    expect(lawfulBasisWarnings({ attachments: [noSession] }).join()).toContain('session is missing');
+    // a dialog scope alone is the 0.4.0 form: flagged, never widened to a Session
+    expect(lawfulBasisWarnings({ attachments: [{ ...noSession, dialog: 0 }] }).join()).toContain('session is missing');
   });
   it('flags a bad enum', () => {
     const w = lawfulBasisWarnings({ attachments: [{ ...valid, body: { ...valid.body, lawful_basis: 'vibes' } }] });

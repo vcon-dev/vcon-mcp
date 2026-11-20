@@ -228,15 +228,24 @@ labels() { # stdin -> which fixtures appear
 seen() { if [ "$CODE" = 401 ] || [ "$CODE" = 403 ]; then echo denied; elif [ "$CODE" -lt 300 ]; then printf '%s' "$BODY" | labels; else echo "HTTP $CODE"; fi; }
 status() { if [ "$CODE" = 401 ] || [ "$CODE" = 403 ]; then echo denied; elif [ "$CODE" -lt 300 ]; then echo ok; else echo "HTTP $CODE"; fi; }
 
+# True once 20261118120000_vcon_core_05_sessions_events.sql is applied (renamed vcons columns, sessions, events).
+core05() { [ "$(sql "SELECT to_regclass('public.sessions') IS NOT NULL")" = t ]; }
 batch_json() { # uuid tenant-json-literal suffix
-  jq -cn --arg u "$1" --argjson t "$2" --arg s "$3" '{
-    p_vcons: [{id:$u, uuid:$u, vcon_version:"0.4.0", subject:("zebra subject " + $s), created_at:"2026-11-01T00:00:00Z", updated_at:"2026-11-01T00:00:00Z", redacted:{}, amended:{}, group_data:[], tenant_id:$t}],
+  local v05=false
+  core05 && v05=true
+  jq -cn --arg u "$1" --argjson t "$2" --arg s "$3" --argjson v05 "$v05" '{
+    p_vcons: [{id:$u, uuid:$u, subject:("zebra subject " + $s), created_at:"2026-11-01T00:00:00Z", updated_at:"2026-11-01T00:00:00Z", group_data:[], tenant_id:$t}
+      + (if $v05 then {vcon_version:"0.5.0", redacted_from:{}, amended_from:{}} else {vcon_version:"0.4.0", redacted:{}, amended:{}} end)],
     p_parties: [{vcon_id:$u, party_index:0, tenant_id:$t, name:("zebra caller " + $s), tel:"+15550100000"}],
     p_dialog: [{vcon_id:$u, dialog_index:0, tenant_id:$t, type:"text", start_time:"2026-11-01T00:00:00Z", parties:[0], body:("zebra dialog " + $s), encoding:"none"}],
     p_analysis: [{vcon_id:$u, analysis_index:0, tenant_id:$t, type:"summary", vendor:"test", body:("zebra analysis " + $s), encoding:"none"}],
     p_attachments: [
       {vcon_id:$u, attachment_index:0, tenant_id:$t, purpose:"tags", start_time:"2026-11-01T00:00:00Z", party:0, dialog:0, encoding:"json", body:"[\"team:sales\"]"}
-    ]}'
+    ]}
+    + (if $v05 then {
+      p_sessions: [{vcon_id:$u, session_index:0, tenant_id:$t, start_time:"2026-11-01T00:00:00Z", parties:[0], dialog_indices:[0]}],
+      p_events: [{vcon_id:$u, event_index:0, tenant_id:$t, type:"join", time:"2026-11-01T00:00:00Z", session_indices:[0], party:0}]
+    } else {} end)'
 }
 
 head1 "fixtures"
@@ -250,8 +259,9 @@ say "$(sql "SELECT 'vcons by tenant: ' || string_agg(coalesce(tenant_id,'NULL') 
 
 TABLES="vcons parties dialog attachments analysis groups party_history vcon_embeddings embedding_queue s3_sync_tracking"
 tables_seen() { # token -> union of tenant ids over all tables, or ERR<code>
-  local tok=$1 t all=""
-  for t in $TABLES; do
+  local tok=$1 t all="" tables=$TABLES
+  core05 && tables="$tables sessions events vcon_migration_reports"
+  for t in $tables; do
     api GET "/$t?select=tenant_id" "$tok"
     if [ "$CODE" = 200 ]; then all="$all $(printf '%s' "$BODY" | jq -r '.[] | .tenant_id // "NULL"' | tr '\n' ' ')"; else all="$all ERR$CODE"; fi
   done
