@@ -10,7 +10,7 @@ import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { RequestContext } from '../../hooks/plugin-interface.js';
 import type { ServerContext } from '../../server/setup.js';
 import { withSpan, recordCounter, recordHistogram, logWithContext, attachErrorToSpan } from '../../observability/instrumentation.js';
-import { ATTR_TOOL_NAME, ATTR_TOOL_SUCCESS } from '../../observability/attributes.js';
+import { ATTR_TENANT_ID, ATTR_TOOL_NAME, ATTR_TOOL_SUCCESS } from '../../observability/attributes.js';
 import {
   createTextResponse,
   createSuccessResponse,
@@ -31,7 +31,13 @@ import { SqlInputError } from '../../db/sql-guards.js';
 export type ToolHandlerContext = Pick<
   ServerContext,
   'queries' | 'pluginManager' | 'dbInspector' | 'dbAnalytics' | 'dbSizeAnalyzer' | 'supabase' | 'vconService'
->;
+> & {
+  /**
+   * The tenant this request runs as, when the request carries one (the tenant lane). Recorded on the
+   * tool span as tenant.id. Never a metric attribute: tenants are unbounded, metrics are not.
+   */
+  tenantId?: string;
+};
 
 /**
  * Tool response format
@@ -80,6 +86,7 @@ export abstract class BaseToolHandler implements ToolHandler {
       span.setAttributes({
         [ATTR_TOOL_NAME]: this.toolName,
       });
+      if (context.tenantId) span.setAttribute(ATTR_TENANT_ID, context.tenantId);
 
       try {
         // Log incoming tool request

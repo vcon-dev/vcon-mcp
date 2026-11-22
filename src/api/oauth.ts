@@ -147,7 +147,7 @@ export async function verifyOAuthToken(
       const email = typeof payload.email === 'string' ? payload.email.toLowerCase() : '';
       const domain = email.split('@')[1] || '';
       if (!config.allowedEmailDomains.includes(domain)) {
-        logWithContext('warn', 'OAuth token rejected: email domain not allowed', { subject: payload.sub, domain });
+        logWithContext('warn', 'OAuth token rejected: email domain not allowed', { subject: payload.sub });
         return null;
       }
     }
@@ -180,7 +180,6 @@ export async function applyOAuth(
     if (verified) return { ok: true, readonly: verified.readonly };
     logWithContext('warn', 'Invalid MCP auth token attempted', {
       remote_address: req.socket?.remoteAddress,
-      token_prefix: token.substring(0, 8) + '...',
     });
   }
   if (!token && authConfig.anonymousReadonly) return { ok: true, readonly: true };

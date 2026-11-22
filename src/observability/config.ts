@@ -66,7 +66,14 @@ let isInitialized = false;
 function getConfig(): ObservabilityConfig {
   const enabled = process.env.OTEL_ENABLED !== 'false'; // Default to true
   const exporterType = (process.env.OTEL_EXPORTER_TYPE?.toLowerCase() as 'console' | 'otlp') || 'console';
-  const endpoint = process.env.OTEL_ENDPOINT || 'http://localhost:4318';
+  // The standard variable wins; OTEL_ENDPOINT stays as the older fallback. Trailing slashes are dropped
+  // so `${endpoint}/v1/traces` is well formed.
+  const endpoint = (
+    process.env.OTEL_EXPORTER_OTLP_ENDPOINT ||
+    process.env.OTEL_ENDPOINT ||
+    'http://localhost:4318'
+  ).replace(/\/+$/, '');
+  // Set OTEL_SERVICE_NAME per instance (for example vcon-mcp-writer and vcon-mcp-lane).
   const serviceName = process.env.OTEL_SERVICE_NAME || 'vcon-mcp-server';
   const serviceVersion = process.env.OTEL_SERVICE_VERSION || '1.0.0';
 
@@ -98,7 +105,8 @@ function getConfig(): ObservabilityConfig {
  */
 export async function initializeObservability(): Promise<void> {
   if (isInitialized) {
-    logger.warn('Observability already initialized');
+    // Normal when the --import preload (src/instrumentation.ts) started the SDK first.
+    logger.debug('Observability already initialized');
     return;
   }
 
@@ -213,6 +221,9 @@ export async function shutdownObservability(): Promise<void> {
   try {
     logger.info('Flushing OpenTelemetry data');
     await sdk.shutdown();
+    sdk = null;
+    isInitialized = false;
+    resetMetricInstruments();
     logger.info('OpenTelemetry shutdown complete');
   } catch (error) {
     logger.error({
@@ -246,6 +257,17 @@ export function isObservabilityEnabled(): boolean {
   return config.enabled && isInitialized;
 }
 
-// Export singleton instances
-export const tracer = getTracer();
-export const meter = getMeter();
+/**
+ * Metric instruments are created from the meter on first use, after the SDK has started, and are cached
+ * here. Shutdown clears the cache so a restarted SDK gets fresh instruments.
+ */
+const metricResetHooks: Array<() => void> = [];
+
+/** Register a function that drops cached metric instruments. */
+export function onMetricInstrumentsReset(hook: () => void): void {
+  metricResetHooks.push(hook);
+}
+
+function resetMetricInstruments(): void {
+  for (const hook of metricResetHooks) hook();
+}

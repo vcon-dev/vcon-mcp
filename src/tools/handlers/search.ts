@@ -316,7 +316,7 @@ export class SearchVConsHybridHandler extends BaseToolHandler {
       } catch (e) {
         logWithContext('warn', 'Failed to generate embedding for hybrid search, falling back to keyword-only', {
           tool_name: this.toolName,
-          query,
+          query_length: query.length,
           error: extractErrorMessage(e)
         });
       }

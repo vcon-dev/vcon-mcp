@@ -146,7 +146,8 @@ describe('TENANT_MODE writer and lane keep their start checks apart', () => {
       }
     );
     expect(output).toContain('Tenant lane started');
-    expect(output).toMatch(/ignores these settings.*CURRENT_TENANT_ID, TENANT_ATTACHMENT_TYPE, TENANT_JSON_PATH, TAGS_MV_REFRESH_INTERVAL_MS/);
+    expect(output).toContain('ignores these settings');
+    expect(output).toContain('CURRENT_TENANT_ID, TENANT_ATTACHMENT_TYPE, TENANT_JSON_PATH, TAGS_MV_REFRESH_INTERVAL_MS');
     expect(output).not.toContain('TENANT_MODE=writer');
     expect(output).not.toContain('save_vcon_batch');
     expect(code).toBe(0);

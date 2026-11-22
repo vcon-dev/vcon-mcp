@@ -1,0 +1,113 @@
+/**
+ * The SDK has to start before the application's imports for auto-instrumentation to patch anything.
+ * Runs a child process with the preload and checks an HTTP request produced a SERVER span at a collector.
+ */
+
+import { spawn } from 'child_process';
+import http from 'http';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const TSX = join(ROOT, 'node_modules', 'tsx', 'dist', 'esm', 'index.mjs');
+
+interface Received {
+  path: string;
+  body: any;
+}
+
+let collector: http.Server;
+let received: Received[] = [];
+let endpoint = '';
+
+beforeAll(async () => {
+  collector = http.createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (c) => chunks.push(c));
+    req.on('end', () => {
+      try {
+        received.push({ path: req.url || '', body: JSON.parse(Buffer.concat(chunks).toString('utf8')) });
+      } catch {
+        received.push({ path: req.url || '', body: null });
+      }
+      res.setHeader('content-type', 'application/json');
+      res.end('{}');
+    });
+  });
+  await new Promise<void>((r) => collector.listen(0, '127.0.0.1', r));
+  endpoint = `http://127.0.0.1:${(collector.address() as import('net').AddressInfo).port}`;
+});
+
+afterAll(async () => {
+  await new Promise((r) => collector.close(r));
+});
+
+function runChild(args: string[], env: NodeJS.ProcessEnv): Promise<{ code: number | null; output: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, args, {
+      cwd: ROOT,
+      env: { PATH: process.env.PATH, HOME: process.env.HOME, ENV_FILE: '/nonexistent', ...env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let output = '';
+    child.stdout.on('data', (d) => { output += d; });
+    child.stderr.on('data', (d) => { output += d; });
+    const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error(`timed out:\n${output}`)); }, 30_000);
+    child.on('exit', (code) => { clearTimeout(timer); resolve({ code, output }); });
+  });
+}
+
+function spans(): any[] {
+  return received
+    .filter((r) => r.path === '/v1/traces' && r.body)
+    .flatMap((r) => r.body.resourceSpans ?? [])
+    .flatMap((rs: any) => (rs.scopeSpans ?? []).flatMap((ss: any) => ss.spans.map((s: any) => ({ ...s, resource: rs.resource }))));
+}
+
+const OTEL_ENV = {
+  OTEL_ENABLED: 'true',
+  OTEL_EXPORTER_TYPE: 'otlp',
+  OTEL_LOG_LEVEL: 'none',
+  OTEL_SERVICE_NAME: 'vcon-mcp-test-instance',
+};
+
+describe('startup order', () => {
+  it('records an HTTP server span when the SDK is loaded with node --import', async () => {
+    received = [];
+    const { code, output } = await runChild(
+      ['--import', TSX, '--import', './src/instrumentation.ts', 'tests/observability/fixtures/http-server.ts'],
+      { ...OTEL_ENV, OTEL_EXPORTER_OTLP_ENDPOINT: endpoint }
+    );
+    expect(code, output).toBe(0);
+
+    const all = spans();
+    // SpanKind.SERVER is 2 in OTLP JSON
+    const server = all.filter((s) => s.kind === 2);
+    expect(server.length, JSON.stringify(all.map((s) => [s.name, s.kind]))).toBeGreaterThan(0);
+
+    // OTEL_SERVICE_NAME is honored per instance
+    const names = server[0].resource.attributes.filter((a: any) => a.key === 'service.name').map((a: any) => a.value.stringValue);
+    expect(names).toEqual(['vcon-mcp-test-instance']);
+  }, 40_000);
+
+  it('records no server span when the app starts the SDK itself after its imports (the old order)', async () => {
+    received = [];
+    const { code, output } = await runChild(
+      ['--import', TSX, 'tests/observability/fixtures/http-server-late.ts'],
+      { ...OTEL_ENV, OTEL_EXPORTER_OTLP_ENDPOINT: endpoint }
+    );
+    expect(code, output).toBe(0);
+    expect(spans().filter((s) => s.kind === 2)).toEqual([]);
+  }, 40_000);
+
+  it('falls back to OTEL_ENDPOINT when OTEL_EXPORTER_OTLP_ENDPOINT is unset', async () => {
+    received = [];
+    const { code, output } = await runChild(
+      ['--import', TSX, '--import', './src/instrumentation.ts', 'tests/observability/fixtures/http-server.ts'],
+      { ...OTEL_ENV, OTEL_ENDPOINT: endpoint }
+    );
+    expect(code, output).toBe(0);
+    expect(spans().filter((s) => s.kind === 2).length).toBeGreaterThan(0);
+  }, 40_000);
+});

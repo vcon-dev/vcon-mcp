@@ -70,7 +70,7 @@ export async function startLaneHttpServer(config: LaneHttpConfig, store: LaneSto
     // the token, and the store policies read the verified claim.
     logWithContext('info', 'Lane request', { tenant_id: bearer.tenantIdForLog });
 
-    const server = createLaneMcpServer(createLaneContext(bearer.jwt, store));
+    const server = createLaneMcpServer(createLaneContext(bearer.jwt, store, bearer.tenantIdForLog));
     const transport = createHttpTransport({
       stateless: true,
       jsonOnly: config.jsonOnly,

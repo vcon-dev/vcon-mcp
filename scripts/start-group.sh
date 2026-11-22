@@ -34,4 +34,4 @@ export ENV_FILE
 export VCON_INSTANCE_LABEL="${VCON_INSTANCE_LABEL:-$GROUP}"
 
 echo "Starting vCon MCP instance: group=$GROUP env=$ENV_FILE" >&2
-exec node "$ROOT/dist/index.js"
+exec node --import "$ROOT/dist/instrumentation.js" "$ROOT/dist/index.js"

@@ -40,7 +40,7 @@ function createRootLogger() {
 
     // Base fields for all logs (includes build metadata from CI/CD)
     base: {
-      service: 'vcon-mcp-server',
+      service: process.env.OTEL_SERVICE_NAME || 'vcon-mcp-server',
       version: process.env.VCON_MCP_VERSION || 'dev',
       git_commit: process.env.VCON_MCP_GIT_COMMIT || 'unknown',
       build_time: process.env.VCON_MCP_BUILD_TIME || undefined,

@@ -252,7 +252,7 @@ build:
       - echo "Using pre-built image"
 run:
   runtime-version: 20
-  command: node /app/dist/index.js
+  command: node --import /app/dist/instrumentation.js /app/dist/index.js
   network:
     port: 3000
     env: MCP_HTTP_PORT

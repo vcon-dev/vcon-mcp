@@ -26,9 +26,8 @@ export function setupHttpMiddleware(
   logWithContext('info', 'HTTP request received', {
     request_id: requestId,
     method: req.method,
-    url: req.url,
+    // Path only: a query string can carry tokens or search text.
     path: req.url?.split('?')[0],
-    query: req.url?.includes('?') ? req.url.split('?')[1] : undefined,
     remote_address: remoteAddress,
     remote_port: remotePort,
     user_agent: req.headers['user-agent'],
@@ -36,7 +35,7 @@ export function setupHttpMiddleware(
     content_length: req.headers['content-length'],
     mcp_session_id: req.headers['mcp-session-id'] || req.headers['x-session-id'] || 'none',
     accept: req.headers['accept'],
-    referer: req.headers['referer'],
+    referer: req.headers['referer']?.split('?')[0],
     origin: req.headers['origin'],
     all_headers: Object.keys(req.headers).join(', '),
   });
@@ -53,7 +52,7 @@ export function setupHttpMiddleware(
     logWithContext('error', 'HTTP request error', {
       request_id: requestId,
       method: req.method,
-      url: req.url,
+      path: req.url?.split('?')[0],
       error_message: error.message,
       error_stack: error.stack,
       duration_ms: duration,
@@ -72,7 +71,7 @@ export function setupHttpMiddleware(
     logWithContext('error', 'HTTP response error', {
       request_id: requestId,
       method: req.method,
-      url: req.url,
+      path: req.url?.split('?')[0],
       status_code: statusCode,
       error_message: error.message,
       error_stack: error.stack,
@@ -104,7 +103,7 @@ export function setupHttpMiddleware(
       logWithContext('info', 'HTTP response sent', {
         request_id: requestId,
         method: req.method,
-        url: req.url,
+        path: req.url?.split('?')[0],
         status_code: statusCode,
         duration_ms: duration,
         remote_address: remoteAddress,

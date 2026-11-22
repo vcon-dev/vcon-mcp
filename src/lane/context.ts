@@ -90,7 +90,11 @@ export interface LaneRequestContext extends ToolHandlerContext {
 }
 
 /** The handler context for one lane request, built from its bearer JWT. */
-export function createLaneContext(jwt: string, options: LaneStoreOptions): LaneRequestContext {
+export function createLaneContext(
+  jwt: string,
+  options: LaneStoreOptions,
+  tenantId?: string
+): LaneRequestContext {
   // Every store response passes through here, so a 401 is seen whatever body PostgREST or a proxy
   // in front of it sends. Per request, like everything else in this context.
   let tokenRefused = false;
@@ -105,6 +109,7 @@ export function createLaneContext(jwt: string, options: LaneStoreOptions): LaneR
   const pluginManager = new PluginManager();
   return {
     storeRefusedToken: () => tokenRefused,
+    tenantId,
     queries,
     pluginManager,
     vconService: new VConService({ queries, pluginManager }),
