@@ -17,6 +17,9 @@ type Attrs = Record<string, unknown>;
 /** Attributes that exist only to carry a query string. */
 const QUERY_ONLY_KEYS = new Set(['url.query']);
 
+/** Dropped from every event: stacks carry file paths and can carry values. Class and message stay. */
+const EVENT_DROP_KEYS = new Set(['exception.stacktrace']);
+
 function stripQuery(value: string): string {
   return value.replace(/[?#].*$/s, '');
 }
@@ -39,7 +42,7 @@ function cleanValue(key: string, value: unknown): unknown {
 }
 
 /** A cleaned copy of an attribute bag. An attribute that cannot be read or cleaned is dropped. */
-function cleanAttributes(attributes: unknown): Attrs {
+function cleanAttributes(attributes: unknown, drop: Set<string> = QUERY_ONLY_KEYS): Attrs {
   const out: Attrs = {};
   if (!attributes || typeof attributes !== 'object') return out;
   let keys: string[] = [];
@@ -50,7 +53,7 @@ function cleanAttributes(attributes: unknown): Attrs {
   }
   for (const key of keys) {
     try {
-      if (QUERY_ONLY_KEYS.has(key)) continue;
+      if (drop.has(key) || QUERY_ONLY_KEYS.has(key)) continue;
       out[key] = cleanValue(key, (attributes as Attrs)[key]);
     } catch {
       // drop it
@@ -84,7 +87,7 @@ export function sanitizeSpan(span: ReadableSpan): ReadableSpan {
     events: read(() => (s.events as any[]) ?? [], []).map((e) => ({
       ...e,
       name: typeof e?.name === 'string' ? stripEmbeddedUrlQueries(e.name) : e?.name,
-      attributes: cleanAttributes(e?.attributes),
+      attributes: cleanAttributes(e?.attributes, EVENT_DROP_KEYS),
     })),
     duration: read(() => s.duration, [0, 0]),
     ended: read(() => s.ended, true),

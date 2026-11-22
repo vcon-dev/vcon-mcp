@@ -110,4 +110,23 @@ describe('span sanitizer covers every field and never throws', () => {
       .export([full()], (r) => { result = r; });
     expect(result?.code).toBe(1);
   });
+
+  it('removes exception.stacktrace from events, including ones auto-instrumentation adds', () => {
+    const span = full();
+    span.events.push({
+      name: 'exception',
+      time: [0, 0],
+      attributes: {
+        'exception.type': 'Error',
+        'exception.message': 'boom',
+        'exception.stacktrace': 'Error: boom\n    at /app/dist/x.js:1:1',
+      },
+    });
+    const out = sanitizeSpan(span) as any;
+    const ex = out.events.find((e: any) => e.name === 'exception');
+    expect(ex.attributes['exception.type']).toBe('Error');
+    expect(ex.attributes['exception.message']).toBe('boom');
+    expect(JSON.stringify(out)).not.toContain('stacktrace');
+    expect(JSON.stringify(out)).not.toContain('/app/dist');
+  });
 });
