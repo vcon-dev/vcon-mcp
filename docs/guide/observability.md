@@ -75,7 +75,7 @@ their `service` field.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `OTEL_ENABLED` | `true` | Enable/disable OpenTelemetry |
-| `OTEL_EXPORTER_TYPE` | `console` | Export type: `console` or `otlp` |
+| `OTEL_EXPORTER_TYPE` | `console`, or `otlp` when an endpoint variable is set | Export type: `console` or `otlp` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4318` | OTLP collector base URL (standard variable) |
 | `OTEL_ENDPOINT` | `http://localhost:4318` | Fallback when `OTEL_EXPORTER_OTLP_ENDPOINT` is unset |
 | `OTEL_SERVICE_NAME` | `vcon-mcp-server` | Service name in telemetry, set per instance |
@@ -281,7 +281,7 @@ Every tool call creates a root span:
   - `mcp.tool.name`: Tool name
   - `mcp.tool.success`: Boolean success status
   - `vcon.uuid`: vCon UUID (when applicable)
-  - `tenant.id`: tenant of the request, on the tenant lane only. A span attribute, never a metric label
+  - `tenant.id`: tenant of the request, on the tenant lane only, and only after the store has accepted the request's token. A span attribute, never a metric label
   - `error.type`: Error class (on failure)
   - `error.message`: Sanitized error message, at most 200 characters (on failure). URL query strings,
     tokens, bearer values and email addresses are removed, and no stack is recorded
@@ -333,6 +333,8 @@ Database queries create child spans:
 | `cache.hit` | Counter | Cache hits | `operation` |
 | `cache.miss` | Counter | Cache misses | `operation` |
 | `cache.error` | Counter | Cache errors | `error_type` |
+
+Query strings are removed from every HTTP and undici span (`http.target`, `http.url`, `url.full`, `url.query` and span names) before export, because they can carry keys, search text, emails and phone numbers. Exports give up after 2.5 s and shutdown after 3 s, so an unreachable collector cannot hold the process past Docker's stop grace. The loader hook is registered only when OTLP export is configured, so an unconfigured server starts as fast as before.
 
 Metric labels stay low-cardinality. Per-vCon and per-tenant identifiers belong on spans and logs only.
 

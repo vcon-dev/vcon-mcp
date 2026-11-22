@@ -33,10 +33,12 @@ export type ToolHandlerContext = Pick<
   'queries' | 'pluginManager' | 'dbInspector' | 'dbAnalytics' | 'dbSizeAnalyzer' | 'supabase' | 'vconService'
 > & {
   /**
-   * The tenant this request runs as, when the request carries one (the tenant lane). Recorded on the
-   * tool span as tenant.id. Never a metric attribute: tenants are unbounded, metrics are not.
+   * Telemetry only, never an authorization input. The tenant a lane request claims, returned once the
+   * store has accepted the request's token and undefined before that, so a forged token yields nothing.
+   * Recorded on the tool span as tenant.id after the handler ran. Never a metric attribute: tenants are
+   * unbounded, metrics are not.
    */
-  tenantId?: string;
+  telemetryTenantId?: () => string | undefined;
 };
 
 /**
@@ -86,7 +88,6 @@ export abstract class BaseToolHandler implements ToolHandler {
       span.setAttributes({
         [ATTR_TOOL_NAME]: this.toolName,
       });
-      if (context.tenantId) span.setAttribute(ATTR_TENANT_ID, context.tenantId);
 
       try {
         // Log incoming tool request
@@ -151,7 +152,7 @@ export abstract class BaseToolHandler implements ToolHandler {
         // Values rejected before being placed into SQL are client errors too
         if (error instanceof SqlInputError) {
           const mcpError = new McpError(ErrorCode.InvalidParams, `Invalid parameters: ${error.message}`);
-          attachErrorToSpan(span, mcpError);
+          attachErrorToSpan(span, error, mcpError.message);
           throw mcpError;
         }
 
@@ -161,7 +162,7 @@ export abstract class BaseToolHandler implements ToolHandler {
             .map(i => `${i.path.length ? i.path.join('.') : '(root)'}: ${i.message}`)
             .join('; ')}`;
           const mcpError = new McpError(ErrorCode.InvalidParams, message);
-          attachErrorToSpan(span, mcpError);
+          attachErrorToSpan(span, error, message);
           throw mcpError;
         }
 
@@ -182,6 +183,10 @@ export abstract class BaseToolHandler implements ToolHandler {
           ErrorCode.InternalError,
           `Tool execution failed: ${errorMessage}`
         );
+      } finally {
+        // After the handler: only then has the store had the chance to accept or refuse the token.
+        const tenant = context.telemetryTenantId?.();
+        if (tenant) span.setAttribute(ATTR_TENANT_ID, tenant);
       }
     });
   }

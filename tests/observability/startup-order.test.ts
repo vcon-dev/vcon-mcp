@@ -86,6 +86,14 @@ describe('startup order', () => {
     const server = all.filter((s) => s.kind === 2);
     expect(server.length, JSON.stringify(all.map((s) => [s.name, s.kind]))).toBeGreaterThan(0);
 
+    // No query string or personal data reaches the collector, in any span name or attribute.
+    const exported = JSON.stringify(all.map((s) => [s.name, s.attributes]));
+    for (const leak of ['secret=1', 'mailto', 'ilike', 'person%40example', 'person@example', '15551234567']) {
+      expect(exported, leak).not.toContain(leak);
+    }
+    // The outbound call was traced (a client span), so the absence above is not an empty result.
+    expect(all.filter((s) => s.kind === 3 && JSON.stringify(s.attributes).includes('/rest/v1/vcons')).length).toBeGreaterThan(0);
+
     // OTEL_SERVICE_NAME is honored per instance
     const names = server[0].resource.attributes.filter((a: any) => a.key === 'service.name').map((a: any) => a.value.stringValue);
     expect(names).toEqual(['vcon-mcp-test-instance']);

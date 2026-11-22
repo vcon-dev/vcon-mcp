@@ -6,13 +6,23 @@
 import { IncomingMessage, ServerResponse } from 'http';
 import { EventEmitter } from 'events';
 import { trace } from '@opentelemetry/api';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { logger } from '../../src/observability/logger.js';
+import { initializeObservability } from '../../src/observability/config.js';
 import { logWithContext } from '../../src/observability/instrumentation.js';
 import { createAuthMiddleware, requestLogger, validateHttpRequestAuth, type AuthConfig } from '../../src/api/auth.js';
 import { setupHttpMiddleware } from '../../src/transport/middleware.js';
 
 let lines: string[];
+
+// Observability must be live: with it off, logWithContext never touched the span, so the span test
+// passed on the old code for the wrong reason.
+beforeAll(async () => {
+  process.env.OTEL_ENABLED = 'true';
+  process.env.OTEL_EXPORTER_TYPE = 'console';
+  process.env.OTEL_LOG_LEVEL = 'error';
+  await initializeObservability();
+});
 
 beforeEach(() => {
   lines = [];

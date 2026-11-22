@@ -103,9 +103,16 @@ export function withSpanSync<T>(
  * @param span - The span to attach error to
  * @param error - The error object
  */
-export function attachErrorToSpan(span: Span, error: unknown): void {
+export function attachErrorToSpan(span: Span, error: unknown, messageOverride?: string): void {
+  // Once per span. The first caller sees the underlying error; withSpan then sees the wrapped one the
+  // handler rethrows, and must not add a second event or overwrite the class.
+  if (errorRecorded.has(span)) return;
+  errorRecorded.add(span);
+
   const errorType = error instanceof Error ? error.constructor.name : typeof error;
-  const message = sanitizeErrorMessage(error instanceof Error ? error.message : String(error));
+  const message = sanitizeErrorMessage(
+    messageOverride ?? (error instanceof Error ? error.message : String(error))
+  );
 
   span.setStatus({ code: SpanStatusCode.ERROR, message });
   span.setAttributes({
@@ -120,6 +127,8 @@ export function attachErrorToSpan(span: Span, error: unknown): void {
   });
 }
 
+const errorRecorded = new WeakSet<Span>();
+
 const MAX_ERROR_MESSAGE_LENGTH = 200;
 
 /**
@@ -132,6 +141,9 @@ export function sanitizeErrorMessage(message: string): string {
     .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/g, '[redacted]')
     .replace(/\b(bearer|basic)\s+\S+/gi, '$1 [redacted]')
     .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[redacted]')
+    // Phone numbers keep their last four digits: international (+...), grouped (555-123-4567,
+    // (555) 123 4567) and bare runs of 10 to 15 digits. Dates and short ids are left alone.
+    .replace(/\+\d[\d\s().-]{6,}\d|\(?\b\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}\b|\b\d{10,15}\b/g, (m) => `***${m.replace(/\D/g, '').slice(-4)}`)
     .replace(/\b[A-Za-z0-9_-]{32,}\b/g, '[redacted]')
     .replace(/\s+/g, ' ')
     .trim()

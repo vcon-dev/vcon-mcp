@@ -24,6 +24,8 @@ import { NodeSDK } from '@opentelemetry/sdk-node';
 import { ReadableSpan, SpanExporter } from '@opentelemetry/sdk-trace-base';
 import { SEMRESATTRS_SERVICE_NAME, SEMRESATTRS_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
 import { logger as pinoLogger } from './logger.js';
+import { configuredOtlpEndpoint, resolveExporterType } from './env.js';
+import { SanitizingSpanExporter } from './span-sanitizer.js';
 
 // Use a child logger for observability config
 const logger = pinoLogger.child({ component: 'observability-config' });
@@ -57,6 +59,13 @@ class NullMetricExporter implements PushMetricExporter {
   shutdown(): Promise<void> { return Promise.resolve(); }
 }
 
+/**
+ * An unreachable collector must not hold the process past its stop grace. Each export gives up after
+ * this long, and shutdown is bounded separately.
+ */
+const EXPORT_TIMEOUT_MS = 2500;
+const SHUTDOWN_TIMEOUT_MS = 3000;
+
 let sdk: NodeSDK | null = null;
 let isInitialized = false;
 
@@ -65,14 +74,9 @@ let isInitialized = false;
  */
 function getConfig(): ObservabilityConfig {
   const enabled = process.env.OTEL_ENABLED !== 'false'; // Default to true
-  const exporterType = (process.env.OTEL_EXPORTER_TYPE?.toLowerCase() as 'console' | 'otlp') || 'console';
-  // The standard variable wins; OTEL_ENDPOINT stays as the older fallback. Trailing slashes are dropped
-  // so `${endpoint}/v1/traces` is well formed.
-  const endpoint = (
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT ||
-    process.env.OTEL_ENDPOINT ||
-    'http://localhost:4318'
-  ).replace(/\/+$/, '');
+  const exporterType = resolveExporterType();
+  // The standard variable wins; OTEL_ENDPOINT stays as the older fallback.
+  const endpoint = configuredOtlpEndpoint() || 'http://localhost:4318';
   // Set OTEL_SERVICE_NAME per instance (for example vcon-mcp-writer and vcon-mcp-lane).
   const serviceName = process.env.OTEL_SERVICE_NAME || 'vcon-mcp-server';
   const serviceVersion = process.env.OTEL_SERVICE_VERSION || '1.0.0';
@@ -134,9 +138,10 @@ export async function initializeObservability(): Promise<void> {
     // Configure trace exporter
     let traceExporter;
     if (config.exporterType === 'otlp') {
-      traceExporter = new OTLPTraceExporter({
+      traceExporter = new SanitizingSpanExporter(new OTLPTraceExporter({
         url: `${config.endpoint}/v1/traces`,
-      });
+        timeoutMillis: EXPORT_TIMEOUT_MS,
+      }));
       logger.info({
         exporter: 'otlp',
         endpoint: config.endpoint
@@ -153,6 +158,7 @@ export async function initializeObservability(): Promise<void> {
     if (config.exporterType === 'otlp') {
       const metricExporter = new OTLPMetricExporter({
         url: `${config.endpoint}/v1/metrics`,
+        timeoutMillis: EXPORT_TIMEOUT_MS,
       });
       metricReader = new PeriodicExportingMetricReader({
         exporter: metricExporter,
@@ -220,7 +226,18 @@ export async function shutdownObservability(): Promise<void> {
 
   try {
     logger.info('Flushing OpenTelemetry data');
-    await sdk.shutdown();
+    const closing = sdk;
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([
+      closing.shutdown(),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(() => {
+          logger.warn({ timeout_ms: SHUTDOWN_TIMEOUT_MS }, 'OpenTelemetry shutdown timed out; dropping pending telemetry');
+          resolve();
+        }, SHUTDOWN_TIMEOUT_MS);
+        timer.unref();
+      }),
+    ]).finally(() => clearTimeout(timer));
     sdk = null;
     isInitialized = false;
     resetMetricInstruments();

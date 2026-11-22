@@ -15,10 +15,12 @@
 
 import { register } from 'node:module';
 import dotenv from 'dotenv';
+import { shouldInstrument } from './observability/env.js';
 
 dotenv.config({ path: process.env.ENV_FILE || '.env' });
 
-if (process.env.OTEL_ENABLED !== 'false') {
+// Only when telemetry will be exported: the hook adds a few hundred ms to startup.
+if (shouldInstrument()) {
   register('@opentelemetry/instrumentation/hook.mjs', import.meta.url);
 }
 
