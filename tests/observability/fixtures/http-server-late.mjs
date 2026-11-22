@@ -3,7 +3,7 @@
  * its static imports have loaded http. Documents why the preload exists.
  */
 import http from 'http';
-import { initializeObservability, shutdownObservability } from '../../../src/observability/config.js';
+import { initializeObservability, shutdownObservability } from '../../../dist/observability/config.js';
 
 await initializeObservability();
 
@@ -12,7 +12,7 @@ const server = http.createServer((_req, res) => {
 });
 
 server.listen(0, '127.0.0.1', () => {
-  const { port } = server.address() as import('net').AddressInfo;
+  const { port } = server.address();
   http.get(`http://127.0.0.1:${port}/ping`, (res) => {
     res.resume();
     res.on('end', async () => {
