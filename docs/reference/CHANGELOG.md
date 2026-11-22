@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Observability
+- **Breaking: Node.js 18.19 or newer** is required for auto-instrumentation. The preload uses `node --import` and `module.register`. `package.json` `engines` and the README say so.
+- **Breaking: new start command** `node --import ./dist/instrumentation.js dist/index.js`. The Docker image, `npm start`, `npm run dev` and `scripts/start-group.sh` are updated. Running `dist/index.js` without it works but records no auto-instrumented spans (HTTP, Koa, undici).
+- **Behaviour change:** OTLP export is now used whenever an endpoint is set (`OTEL_EXPORTER_OTLP_ENDPOINT`, or `OTEL_ENDPOINT` as the fallback) and `OTEL_EXPORTER_TYPE` is unset. Before, that combination exported nothing. Check for a stale `OTEL_ENDPOINT` before upgrading.
+- **Log format change:** log lines now use `time`, `level` (a number), `msg` and `path` (no query string) in place of `timestamp`, `level` (a string), `message` and `url`. Existing log parsers may break.
+- The SDK starts before the application's imports, so custom metrics and spans record.
+- `vcon.uuid` is removed from `vcon.created.count`, `vcon.updated.count` and `vcon.deleted.count`, and the tenant label from `db.batch.commit`.
+- `tenant.id` is set on lane tool spans only after the store accepts the request's token, and never on metrics.
+- Exported spans carry no query strings (HTTP and undici attributes, span names, events, links, status), no `exception.stacktrace`, and sanitized error messages.
+- `OTEL_SERVICE_NAME` sets the service name per instance, and exports and shutdown time out in seconds when the collector is unreachable.
+- No token or key prefixes, email domains or search query text in logs.
+- `@opentelemetry/sdk-trace-base` is now declared in `package.json`.
+
 ### Migrations
 - `20261109163739_revoke_anon_read_paths.sql` closes the paths that let the `anon` role read
   vCon rows past row-level security. Idempotent; apply with `supabase db push`.
