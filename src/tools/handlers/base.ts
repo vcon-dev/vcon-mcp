@@ -177,7 +177,7 @@ export abstract class BaseToolHandler implements ToolHandler {
           error_message: errorMessage,
         });
 
-        attachErrorToSpan(span, error);
+        attachErrorToSpan(span, error, errorMessage);
 
         throw new McpError(
           ErrorCode.InternalError,

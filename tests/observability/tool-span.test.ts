@@ -159,3 +159,29 @@ describe('a failed tool span records the error once', () => {
     expect(toolSpan()!.events.filter((e) => e.name === 'exception')).toHaveLength(1);
   });
 });
+
+describe('a store error that is a plain object', () => {
+  it('records a meaningful class and its message, not object and [object Object]', async () => {
+    class StoreFail extends EchoHandler {
+      protected async execute(): Promise<ToolResponse> {
+        throw { code: 'PGRST116', message: 'The result contains 0 rows', details: null };
+      }
+    }
+    await new StoreFail().handle({}, ctx()).catch(() => undefined);
+    const span = toolSpan()!;
+    expect(span.attributes['error.type']).toBe('PGRST116');
+    expect(String(span.attributes['error.message'])).toContain('The result contains 0 rows');
+    expect(String(span.attributes['error.message'])).not.toContain('[object Object]');
+    expect(span.events.filter((e) => e.name === 'exception')).toHaveLength(1);
+  });
+
+  it('uses a fixed class for an object with no code', async () => {
+    class Odd extends EchoHandler {
+      protected async execute(): Promise<ToolResponse> {
+        throw { reason: 'x' };
+      }
+    }
+    await new Odd().handle({}, ctx()).catch(() => undefined);
+    expect(toolSpan()!.attributes['error.type']).toBe('UnknownError');
+  });
+});

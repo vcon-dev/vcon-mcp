@@ -109,10 +109,8 @@ export function attachErrorToSpan(span: Span, error: unknown, messageOverride?: 
   if (errorRecorded.has(span)) return;
   errorRecorded.add(span);
 
-  const errorType = error instanceof Error ? error.constructor.name : typeof error;
-  const message = sanitizeErrorMessage(
-    messageOverride ?? (error instanceof Error ? error.message : String(error))
-  );
+  const errorType = errorClassOf(error);
+  const message = sanitizeErrorMessage(messageOverride ?? errorTextOf(error));
 
   span.setStatus({ code: SpanStatusCode.ERROR, message });
   span.setAttributes({
@@ -128,6 +126,30 @@ export function attachErrorToSpan(span: Span, error: unknown, messageOverride?: 
 }
 
 const errorRecorded = new WeakSet<Span>();
+
+/**
+ * A class for the span. Store errors are plain objects, so use their short code (for example PGRST116)
+ * when they have one, and a fixed name otherwise, never 'object'.
+ */
+function errorClassOf(error: unknown): string {
+  if (error instanceof Error) return error.constructor.name;
+  if (error && typeof error === 'object') {
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === 'string' && /^[A-Za-z0-9_.-]{1,40}$/.test(code)) return code;
+    return 'UnknownError';
+  }
+  return typeof error;
+}
+
+function errorTextOf(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object') {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string') return message;
+    return 'unknown error object';
+  }
+  return String(error);
+}
 
 const MAX_ERROR_MESSAGE_LENGTH = 200;
 
