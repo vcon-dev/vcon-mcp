@@ -228,6 +228,8 @@ export async function startHttpServer(
     });
   });
 
+  applyKeepAliveTimeouts(httpServer);
+
   // Setup server event handlers
   httpServer.on('error', (error) => {
     logWithContext('error', 'HTTP server error', {
@@ -250,6 +252,33 @@ export async function startHttpServer(
 
     httpServer.on('error', reject);
   });
+}
+
+/** Default idle keep-alive window; Node's own default is 5 s. */
+export const DEFAULT_KEEPALIVE_TIMEOUT_MS = 65_000;
+
+/**
+ * Keep idle client connections open longer than Node's 5 s default.
+ *
+ * The conserver writes every vCon through a pooled keep-alive session
+ * (requests/urllib3) that never expires idle sockets itself. With a 5 s server
+ * timeout, a write that reuses a socket just as Node closes it fails with
+ * ConnectionResetError / RemoteDisconnected and is dead-lettered (CON-1487).
+ * headersTimeout must exceed keepAliveTimeout or Node can drop a reused socket
+ * before the next request's headers arrive.
+ */
+export function applyKeepAliveTimeouts(
+  server: http.Server,
+  keepAliveTimeoutMs: number = keepAliveTimeoutFromEnv()
+): void {
+  server.keepAliveTimeout = keepAliveTimeoutMs;
+  server.headersTimeout = keepAliveTimeoutMs + 1_000;
+}
+
+function keepAliveTimeoutFromEnv(): number {
+  const raw = process.env.MCP_HTTP_KEEPALIVE_TIMEOUT_MS;
+  const n = raw ? Number.parseInt(raw, 10) : NaN;
+  return Number.isFinite(n) && n >= 0 ? n : DEFAULT_KEEPALIVE_TIMEOUT_MS;
 }
 
 /**
