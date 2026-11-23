@@ -90,13 +90,21 @@ export interface LaneRequestContext extends ToolHandlerContext {
 }
 
 /** The handler context for one lane request, built from its bearer JWT. */
-export function createLaneContext(jwt: string, options: LaneStoreOptions): LaneRequestContext {
+export function createLaneContext(
+  jwt: string,
+  options: LaneStoreOptions,
+  claimedTenantId?: string
+): LaneRequestContext {
   // Every store response passes through here, so a 401 is seen whatever body PostgREST or a proxy
   // in front of it sends. Per request, like everything else in this context.
   let tokenRefused = false;
+  // True once the store answered any call with a 2xx. PostgREST verifies the token's signature on every
+  // call, so a 2xx means the claimed tenant is the token's real one.
+  let tokenAccepted = false;
   const watched = (async (...args: Parameters<typeof fetch>) => {
     const response = await (options.fetch ?? globalThis.fetch)(...args);
     if (response.status === 401) tokenRefused = true;
+    if (response.status >= 200 && response.status < 300) tokenAccepted = true;
     return response;
   }) as typeof fetch;
 
@@ -105,6 +113,7 @@ export function createLaneContext(jwt: string, options: LaneStoreOptions): LaneR
   const pluginManager = new PluginManager();
   return {
     storeRefusedToken: () => tokenRefused,
+    telemetryTenantId: () => (tokenAccepted && !tokenRefused ? claimedTenantId : undefined),
     queries,
     pluginManager,
     vconService: new VConService({ queries, pluginManager }),

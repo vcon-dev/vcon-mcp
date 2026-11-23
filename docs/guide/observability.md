@@ -42,10 +42,31 @@ Export to an OpenTelemetry collector:
 # .env
 OTEL_ENABLED=true
 OTEL_EXPORTER_TYPE=otlp
-OTEL_ENDPOINT=http://localhost:4318
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 OTEL_SERVICE_NAME=vcon-mcp-server
 OTEL_SERVICE_VERSION=1.0.0
 ```
+
+### Startup order
+
+The package is ESM. Auto-instrumentation patches `http`, Koa and the other libraries as they load, so
+the SDK must start before the application's imports. `src/instrumentation.ts` does that, and it is
+loaded with `node --import`:
+
+```bash
+node --import ./dist/instrumentation.js dist/index.js
+```
+
+`npm start`, `npm run dev`, `scripts/start-group.sh` and the Docker image already do this. If you start
+`dist/index.js` another way, add the `--import` flag, or the server runs with custom spans and metrics
+only and no HTTP, Koa or database auto-instrumentation. The preload reads `ENV_FILE` (default `.env`),
+so `OTEL_*` settings in a per-instance env file apply.
+
+### One image, several instances
+
+Set `OTEL_SERVICE_NAME` per instance so each reports under its own name, for example `vcon-mcp-writer`
+for `TENANT_MODE=writer` and `vcon-mcp-lane` for `TENANT_MODE=lane`. Log lines carry the same name in
+their `service` field.
 
 ## Configuration
 
@@ -54,9 +75,10 @@ OTEL_SERVICE_VERSION=1.0.0
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `OTEL_ENABLED` | `true` | Enable/disable OpenTelemetry |
-| `OTEL_EXPORTER_TYPE` | `console` | Export type: `console` or `otlp` |
-| `OTEL_ENDPOINT` | `http://localhost:4318` | OTLP collector endpoint |
-| `OTEL_SERVICE_NAME` | `vcon-mcp-server` | Service name in telemetry |
+| `OTEL_EXPORTER_TYPE` | `console`, or `otlp` when an endpoint variable is set | Export type: `console` or `otlp` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4318` | OTLP collector base URL (standard variable) |
+| `OTEL_ENDPOINT` | `http://localhost:4318` | Fallback when `OTEL_EXPORTER_OTLP_ENDPOINT` is unset |
+| `OTEL_SERVICE_NAME` | `vcon-mcp-server` | Service name in telemetry, set per instance |
 | `OTEL_SERVICE_VERSION` | `1.0.0` | Service version in telemetry |
 | `OTEL_LOG_LEVEL` | `info` | Diagnostic log level |
 
@@ -259,8 +281,10 @@ Every tool call creates a root span:
   - `mcp.tool.name`: Tool name
   - `mcp.tool.success`: Boolean success status
   - `vcon.uuid`: vCon UUID (when applicable)
-  - `error.type`: Error type (on failure)
-  - `error.message`: Error message (on failure)
+  - `tenant.id`: tenant of the request, on the tenant lane only, and only after the store has accepted the request's token. A span attribute, never a metric label
+  - `error.type`: Error class (on failure)
+  - `error.message`: Sanitized error message, at most 200 characters (on failure). URL query strings,
+    tokens, bearer values and email addresses are removed, and no stack is recorded
 
 #### Database Operations
 
@@ -286,8 +310,9 @@ Database queries create child spans:
 
 | Metric | Type | Description | Labels |
 |--------|------|-------------|--------|
-| `vcon.created.count` | Counter | vCons created | `vcon.uuid` |
-| `vcon.deleted.count` | Counter | vCons deleted | `vcon.uuid` |
+| `vcon.created.count` | Counter | vCons created | `source` |
+| `vcon.updated.count` | Counter | vCons updated | `source` |
+| `vcon.deleted.count` | Counter | vCons deleted | `source` |
 | `vcon.search.count` | Counter | Searches performed | `search.type` |
 | `tool.execution.count` | Counter | Tool executions | `mcp.tool.name`, `status` |
 
@@ -309,15 +334,22 @@ Database queries create child spans:
 | `cache.miss` | Counter | Cache misses | `operation` |
 | `cache.error` | Counter | Cache errors | `error_type` |
 
+Query strings are removed from every HTTP and undici span (`http.target`, `http.url`, `url.full`, `url.query` and span names) before export, because they can carry keys, search text, emails and phone numbers. Exports give up after 2.5 s and shutdown after 3 s, so an unreachable collector cannot hold the process past Docker's stop grace. The loader hook is registered only when OTLP export is configured, so an unconfigured server starts as fast as before.
+
+Metric labels stay low-cardinality. Per-vCon and per-tenant identifiers belong on spans and logs only.
+
 ### Structured Logs
 
-All logs include automatic trace context correlation:
+All logs go through pino to stderr with automatic trace context correlation. Logs record the request
+path without the query string, never a token or key (not even a prefix), and the length of a search
+query rather than its text. Log attributes are not copied onto spans.
 
 ```json
 {
-  "timestamp": "2025-10-15T10:30:45.123Z",
-  "level": "info",
-  "message": "Cache layer enabled",
+  "time": "2025-10-15T10:30:45.123Z",
+  "level": 30,
+  "service": "vcon-mcp-server",
+  "msg": "Cache layer enabled",
   "trace_id": "1234567890abcdef",
   "span_id": "abcdef123456",
   "trace_flags": 1,

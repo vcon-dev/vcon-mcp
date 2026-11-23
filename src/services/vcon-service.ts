@@ -11,7 +11,6 @@ import pLimit from 'p-limit';
 import { IVConQueries } from '../db/interfaces.js';
 import { RequestContext } from '../hooks/plugin-interface.js';
 import { PluginManager } from '../hooks/plugin-manager.js';
-import { ATTR_VCON_UUID } from '../observability/attributes.js';
 import { logWithContext, recordCounter } from '../observability/instrumentation.js';
 import { VCon } from '../types/vcon.js';
 import { isVConNotFoundError, VConNotFoundError } from '../utils/errors.js';
@@ -188,7 +187,6 @@ export class VConService {
     // Step 6: Record metrics
     const duration = Date.now() - startTime;
     recordCounter('vcon.created.count', 1, {
-      [ATTR_VCON_UUID]: result.uuid,
       source,
     }, 'vCon creation count');
 
@@ -329,7 +327,6 @@ export class VConService {
 
     // Record metrics
     recordCounter('vcon.updated.count', 1, {
-      [ATTR_VCON_UUID]: uuid,
       source,
     }, 'vCon update count');
 
@@ -371,7 +368,6 @@ export class VConService {
 
     // Record metrics
     recordCounter('vcon.deleted.count', 1, {
-      [ATTR_VCON_UUID]: uuid,
       source,
     }, 'vCon deletion count');
 

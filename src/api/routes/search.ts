@@ -190,7 +190,7 @@ export function createSearchRoutes(apiContext: RestApiContext): Router {
       embedding = await generateEmbedding(query);
     } catch (error) {
       logWithContext('warn', 'Failed to generate embedding for hybrid search REST, falling back to keyword-only', {
-        query,
+        query_length: query.length,
         error: extractErrorMessage(error),
       });
     }

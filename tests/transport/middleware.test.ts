@@ -71,7 +71,7 @@ describe('HTTP Middleware', () => {
         'HTTP request received',
         expect.objectContaining({
           method: 'POST',
-          url: '/mcp',
+          path: '/mcp',
         })
       );
     });

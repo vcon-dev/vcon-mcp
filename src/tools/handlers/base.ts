@@ -10,7 +10,7 @@ import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { RequestContext } from '../../hooks/plugin-interface.js';
 import type { ServerContext } from '../../server/setup.js';
 import { withSpan, recordCounter, recordHistogram, logWithContext, attachErrorToSpan } from '../../observability/instrumentation.js';
-import { ATTR_TOOL_NAME, ATTR_TOOL_SUCCESS } from '../../observability/attributes.js';
+import { ATTR_TENANT_ID, ATTR_TOOL_NAME, ATTR_TOOL_SUCCESS } from '../../observability/attributes.js';
 import {
   createTextResponse,
   createSuccessResponse,
@@ -31,7 +31,15 @@ import { SqlInputError } from '../../db/sql-guards.js';
 export type ToolHandlerContext = Pick<
   ServerContext,
   'queries' | 'pluginManager' | 'dbInspector' | 'dbAnalytics' | 'dbSizeAnalyzer' | 'supabase' | 'vconService'
->;
+> & {
+  /**
+   * Telemetry only, never an authorization input. The tenant a lane request claims, returned once the
+   * store has accepted the request's token and undefined before that, so a forged token yields nothing.
+   * Recorded on the tool span as tenant.id after the handler ran. Never a metric attribute: tenants are
+   * unbounded, metrics are not.
+   */
+  telemetryTenantId?: () => string | undefined;
+};
 
 /**
  * Tool response format
@@ -144,7 +152,7 @@ export abstract class BaseToolHandler implements ToolHandler {
         // Values rejected before being placed into SQL are client errors too
         if (error instanceof SqlInputError) {
           const mcpError = new McpError(ErrorCode.InvalidParams, `Invalid parameters: ${error.message}`);
-          attachErrorToSpan(span, mcpError);
+          attachErrorToSpan(span, error, mcpError.message);
           throw mcpError;
         }
 
@@ -154,7 +162,7 @@ export abstract class BaseToolHandler implements ToolHandler {
             .map(i => `${i.path.length ? i.path.join('.') : '(root)'}: ${i.message}`)
             .join('; ')}`;
           const mcpError = new McpError(ErrorCode.InvalidParams, message);
-          attachErrorToSpan(span, mcpError);
+          attachErrorToSpan(span, error, message);
           throw mcpError;
         }
 
@@ -169,12 +177,16 @@ export abstract class BaseToolHandler implements ToolHandler {
           error_message: errorMessage,
         });
 
-        attachErrorToSpan(span, error);
+        attachErrorToSpan(span, error, errorMessage);
 
         throw new McpError(
           ErrorCode.InternalError,
           `Tool execution failed: ${errorMessage}`
         );
+      } finally {
+        // After the handler: only then has the store had the chance to accept or refuse the token.
+        const tenant = context.telemetryTenantId?.();
+        if (tenant) span.setAttribute(ATTR_TENANT_ID, tenant);
       }
     });
   }

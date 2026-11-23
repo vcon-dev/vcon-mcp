@@ -15,6 +15,7 @@ import http from 'http';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { logger } from '../../src/observability/logger.js';
 import { startLaneHttpServer } from '../../src/lane/http.js';
 import { LANE_TOOL_NAMES } from '../../src/lane/mcp-server.js';
 import { allContractTools } from '../../src/tools/vcon-contract.js';
@@ -479,6 +480,12 @@ describe('logging', () => {
     const lines: string[] = [];
     const capture = (...args: unknown[]) => { lines.push(args.map(String).join(' ')); };
     for (const m of ['error', 'warn', 'info', 'log', 'debug'] as const) vi.spyOn(console, m).mockImplementation(capture);
+    // logWithContext now goes through the pino logger, which writes to fd 2 and not through console.
+    for (const m of ['trace', 'debug', 'info', 'warn', 'error', 'fatal'] as const) {
+      vi.spyOn(logger, m).mockImplementation(((obj: unknown, msg?: string) => {
+        lines.push(JSON.stringify([obj, msg]));
+      }) as never);
+    }
     const outWrite = vi.spyOn(process.stdout, 'write').mockImplementation((c: any) => { lines.push(String(c)); return true; });
     const errWrite = vi.spyOn(process.stderr, 'write').mockImplementation((c: any) => { lines.push(String(c)); return true; });
 

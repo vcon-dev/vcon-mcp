@@ -14,13 +14,15 @@ import {
   Histogram,
   UpDownCounter
 } from '@opentelemetry/api';
-import { tracer, meter, isObservabilityEnabled } from './config.js';
-import { ATTR_ERROR_TYPE, ATTR_ERROR_MESSAGE, ATTR_ERROR_STACK } from './attributes.js';
+import { getTracer, getMeter, isObservabilityEnabled, onMetricInstrumentsReset } from './config.js';
+import { ATTR_ERROR_TYPE, ATTR_ERROR_MESSAGE } from './attributes.js';
+import { logger } from './logger.js';
 
 /**
  * Metric cache to avoid recreating instruments
  */
 const metricCache = new Map<string, Counter | Histogram | UpDownCounter>();
+onMetricInstrumentsReset(() => metricCache.clear());
 
 /**
  * Wrap an async function with a span
@@ -45,7 +47,7 @@ export async function withSpan<T>(
     return fn(dummySpan as Span);
   }
   
-  return tracer.startActiveSpan(name, { attributes }, async (span) => {
+  return getTracer().startActiveSpan(name, { attributes }, async (span) => {
     try {
       const result = await fn(span);
       span.setStatus({ code: SpanStatusCode.OK });
@@ -81,7 +83,7 @@ export function withSpanSync<T>(
     return fn(dummySpan as Span);
   }
   
-  return tracer.startActiveSpan(name, { attributes }, (span) => {
+  return getTracer().startActiveSpan(name, { attributes }, (span) => {
     try {
       const result = fn(span);
       span.setStatus({ code: SpanStatusCode.OK });
@@ -101,25 +103,73 @@ export function withSpanSync<T>(
  * @param span - The span to attach error to
  * @param error - The error object
  */
-export function attachErrorToSpan(span: Span, error: unknown): void {
-  span.setStatus({ 
-    code: SpanStatusCode.ERROR,
-    message: error instanceof Error ? error.message : String(error)
+export function attachErrorToSpan(span: Span, error: unknown, messageOverride?: string): void {
+  // Once per span. The first caller sees the underlying error; withSpan then sees the wrapped one the
+  // handler rethrows, and must not add a second event or overwrite the class.
+  if (errorRecorded.has(span)) return;
+  errorRecorded.add(span);
+
+  const errorType = errorClassOf(error);
+  const message = sanitizeErrorMessage(messageOverride ?? errorTextOf(error));
+
+  span.setStatus({ code: SpanStatusCode.ERROR, message });
+  span.setAttributes({
+    [ATTR_ERROR_TYPE]: errorType,
+    [ATTR_ERROR_MESSAGE]: message,
   });
-  
-  if (error instanceof Error) {
-    span.setAttributes({
-      [ATTR_ERROR_TYPE]: error.constructor.name,
-      [ATTR_ERROR_MESSAGE]: error.message,
-      [ATTR_ERROR_STACK]: error.stack || '',
-    });
-    span.recordException(error);
-  } else {
-    span.setAttributes({
-      [ATTR_ERROR_TYPE]: typeof error,
-      [ATTR_ERROR_MESSAGE]: String(error),
-    });
+  // Not span.recordException(error): it copies the raw message and the stack, which can carry
+  // tokens, query text and file paths. Record the class and the sanitized message only.
+  span.addEvent('exception', {
+    'exception.type': errorType,
+    'exception.message': message,
+  });
+}
+
+const errorRecorded = new WeakSet<Span>();
+
+/**
+ * A class for the span. Store errors are plain objects, so use their short code (for example PGRST116)
+ * when they have one, and a fixed name otherwise, never 'object'.
+ */
+function errorClassOf(error: unknown): string {
+  if (error instanceof Error) return error.constructor.name;
+  if (error && typeof error === 'object') {
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === 'string' && /^[A-Za-z0-9_.-]{1,40}$/.test(code)) return code;
+    return 'UnknownError';
   }
+  return typeof error;
+}
+
+function errorTextOf(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object') {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string') return message;
+    return 'unknown error object';
+  }
+  return String(error);
+}
+
+const MAX_ERROR_MESSAGE_LENGTH = 200;
+
+/**
+ * Make an error message safe to put on a span: strips URL query strings, JWTs, bearer values,
+ * email addresses and long opaque tokens, and caps the length.
+ */
+export function sanitizeErrorMessage(message: string): string {
+  return message
+    .replace(/(https?:\/\/[^\s?#"']*)[?#][^\s"']*/gi, '$1')
+    .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/g, '[redacted]')
+    .replace(/\b(bearer|basic)\s+\S+/gi, '$1 [redacted]')
+    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[redacted]')
+    // Phone numbers keep their last four digits: international (+...), grouped (555-123-4567,
+    // (555) 123 4567) and bare runs of 10 to 15 digits. Dates and short ids are left alone.
+    .replace(/\+\d[\d\s().-]{6,}\d|\(?\b\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}\b|\b\d{10,15}\b/g, (m) => `***${m.replace(/\D/g, '').slice(-4)}`)
+    .replace(/\b[A-Za-z0-9_-]{32,}\b/g, '[redacted]')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_ERROR_MESSAGE_LENGTH);
 }
 
 /**
@@ -135,7 +185,7 @@ function getCounter(name: string, description: string): Counter {
     return cached as Counter;
   }
   
-  const counter = meter.createCounter(name, { description });
+  const counter = getMeter().createCounter(name, { description });
   metricCache.set(name, counter);
   return counter;
 }
@@ -153,7 +203,7 @@ function getHistogram(name: string, description: string): Histogram {
     return cached as Histogram;
   }
   
-  const histogram = meter.createHistogram(name, { description });
+  const histogram = getMeter().createHistogram(name, { description });
   metricCache.set(name, histogram);
   return histogram;
 }
@@ -171,7 +221,7 @@ function getUpDownCounter(name: string, description: string): UpDownCounter {
     return cached as UpDownCounter;
   }
   
-  const upDownCounter = meter.createUpDownCounter(name, { description });
+  const upDownCounter = getMeter().createUpDownCounter(name, { description });
   metricCache.set(name, upDownCounter);
   return upDownCounter;
 }
@@ -259,33 +309,9 @@ export function logWithContext(
   message: string,
   attributes?: Record<string, any>
 ): void {
-  const span = trace.getSpan(context.active());
-  const spanContext = span?.spanContext();
-  
-  const logData: Record<string, any> = {
-    timestamp: new Date().toISOString(),
-    level,
-    message,
-    ...attributes,
-  };
-  
-  // Add trace context if available
-  if (spanContext) {
-    logData.trace_id = spanContext.traceId;
-    logData.span_id = spanContext.spanId;
-    logData.trace_flags = spanContext.traceFlags;
-  }
-  
-  // Output as structured JSON
-  const logLine = JSON.stringify(logData);
-  
-  // Write to stderr (MCP servers use stdout for protocol)
-  console.error(logLine);
-  
-  // Also add event to current span if available
-  if (span && isObservabilityEnabled()) {
-    span.addEvent(message, attributes);
-  }
+  // Through pino, which writes to stderr and adds the active trace and span ids. The attributes are
+  // not copied onto the span: span events leave the process, log lines stay with the operator.
+  logger[level](attributes ?? {}, message);
 }
 
 /**
@@ -336,7 +362,7 @@ export function createSpan(name: string, attributes?: Attributes): Span {
     }) as Span;
   }
   
-  return tracer.startSpan(name, { attributes }, context.active());
+  return getTracer().startSpan(name, { attributes }, context.active());
 }
 
 /**

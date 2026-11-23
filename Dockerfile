@@ -218,7 +218,7 @@ case "$1" in
         exit 0
         ;;
     *)
-        exec dumb-init node /app/dist/index.js "$@"
+        exec dumb-init node --import /app/dist/instrumentation.js /app/dist/index.js "$@"
         ;;
 esac
 EOF

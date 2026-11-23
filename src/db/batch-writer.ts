@@ -193,7 +193,7 @@ async function commitBatch(pending: Pending[], tenantId: string | null): Promise
   }
 
   if (batchError === undefined) {
-    recordBatchCommit(pending.length, tenantId);
+    recordBatchCommit(pending.length);
     await invalidateCache(pending);
     reportKeptTenants(pending);
     for (const p of pending) p.resolve({ uuid: p.vcon.uuid, id: p.vcon.uuid });
@@ -223,7 +223,7 @@ async function commitBatch(pending: Pending[], tenantId: string | null): Promise
       p.reject(err);
       continue;
     }
-    recordBatchCommit(1, tenantId);
+    recordBatchCommit(1);
     await invalidateCache([p]);
     reportKeptTenants([p]);
     p.resolve({ uuid: p.vcon.uuid, id: p.vcon.uuid });
@@ -352,7 +352,7 @@ async function commitBatchLegacy(
     for (const p of pending) p.reject(err);
     return;
   }
-  recordBatchCommit(pending.length, tenantId);
+  recordBatchCommit(pending.length);
   await invalidateCache(pending);
   for (const p of pending) p.resolve({ uuid: p.vcon.uuid, id: p.vcon.uuid });
 }
@@ -387,10 +387,9 @@ async function writeTablesLegacy(pending: Pending[], tenantId: string | null): P
   }
 }
 
-function recordBatchCommit(count: number, tenantId: string | null): void {
+function recordBatchCommit(count: number): void {
   recordCounter('db.batch.commit', 1, {
     operation: 'batchSaveVCon',
-    tenant_id: tenantId ?? '(null)',
   }, 'Batched vCon commits');
   recordCounter('db.batch.vcons', count, {
     operation: 'batchSaveVCon',

@@ -140,7 +140,6 @@ export function validateHttpRequestAuth(
   if (!allKeys(config).includes(token)) {
     if (options.logInvalid !== false) logWithContext('warn', 'Invalid MCP auth token attempted', {
       remote_address: req.socket?.remoteAddress,
-      token_prefix: token.substring(0, 8) + '...',
     });
     return {
       ok: false,
@@ -225,7 +224,6 @@ export function createAuthMiddleware(config?: Partial<AuthConfig>) {
     if (!allKeys(authConfig).includes(apiKey)) {
       logWithContext('warn', 'Invalid API key attempted', {
         remote_address: ctx.ip,
-        api_key_prefix: apiKey.substring(0, 8) + '...',
       });
 
       ctx.status = 401;
@@ -248,7 +246,6 @@ export function createAuthMiddleware(config?: Partial<AuthConfig>) {
         remote_address: ctx.ip,
         method: ctx.method,
         path: ctx.path,
-        api_key_prefix: apiKey.substring(0, 8) + '...',
       });
       ctx.status = 403;
       ctx.body = {
@@ -303,7 +300,6 @@ export function requestLogger() {
     logWithContext('info', 'REST API request', {
       method: ctx.method,
       path: ctx.path,
-      query: ctx.querystring || undefined,
       remote_address: ctx.ip,
       user_agent: ctx.get('user-agent'),
     });

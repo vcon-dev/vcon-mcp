@@ -4,7 +4,9 @@
  * The lane never verifies the signature. It holds no secret: PostgREST verifies the token on every store
  * call. What this module does is refuse, before any store call, a request with no bearer or with one that
  * cannot be a tenant token. Claims read here are unverified, so they may only ever refuse a request. They
- * never grant anything, and nothing but a log line reads the tenant id this returns.
+ * never grant anything. The tenant id this returns is read by a log line and, through the lane context's
+ * telemetryTenantId getter, by the tool span, and the getter yields it only after the store has accepted
+ * the token. No handler may use it to decide access.
  */
 
 /** Longer bearers are refused unread. A tenant token is a few hundred bytes. */

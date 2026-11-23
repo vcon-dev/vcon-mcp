@@ -64,5 +64,7 @@ export const ATTR_ERROR_STACK = 'error.stack';
  * Request context attributes
  */
 export const ATTR_USER_ID = 'user.id';
+/** Span attribute only. Never use as a metric attribute: tenant count is unbounded. */
+export const ATTR_TENANT_ID = 'tenant.id';
 export const ATTR_REQUEST_PURPOSE = 'request.purpose';
 
