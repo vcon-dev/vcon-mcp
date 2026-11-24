@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-11-24
+
+### Upgrading from 1.11.0
+Four OpenTelemetry changes are not opt-in. Each needs an operator action before you upgrade.
+
+- **Start command.** The server now starts with `node --import ./dist/instrumentation.js dist/index.js`. The Docker image, `npm start`, `npm run dev` and `scripts/start-group.sh` already do. Change any unit file, Procfile, App Runner `command` or other launcher that runs `node dist/index.js` directly. Without `--import` the server runs but records no auto-instrumented spans (HTTP, Koa, undici).
+- **Node.js 18.19 or newer.** `package.json` `engines` now says `>=18.19.0`, because the preload needs `node --import` and `module.register`. Upgrade any runtime older than 18.19 (or 20.0 to 20.5 where `module.register` is missing) first.
+- **OTLP turns on when an endpoint is set.** If `OTEL_EXPORTER_OTLP_ENDPOINT` (or `OTEL_ENDPOINT` as the fallback) is set and `OTEL_EXPORTER_TYPE` is unset, the server now exports over OTLP. Before, it exported nothing. Unset any stale endpoint variable, or set `OTEL_EXPORTER_TYPE` explicitly, if you do not want export.
+- **Renamed log fields.** Log lines use `time`, `level` (a number), `msg` and `path` (no query string) in place of `timestamp`, `level` (a string), `message` and `url`. Update log parsers, alerts and dashboards that read the old names.
+
 ### Observability
 - **Breaking: Node.js 18.19 or newer** is required for auto-instrumentation. The preload uses `node --import` and `module.register`. `package.json` `engines` and the README say so.
 - **Breaking: new start command** `node --import ./dist/instrumentation.js dist/index.js`. The Docker image, `npm start`, `npm run dev` and `scripts/start-group.sh` are updated. Running `dist/index.js` without it works but records no auto-instrumented spans (HTTP, Koa, undici).
@@ -21,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `@opentelemetry/sdk-trace-base` is now declared in `package.json`.
 
 ### Migrations
+- `20261020120000_guard_dialog_body_tsvector.sql` makes the dialog and analysis full-text triggers skip base64url and non-text bodies and cap the text size, so a binary body no longer fails the write (#120)
+- `20261020130000_save_vcon_batch.sql` adds the `save_vcon_batch` RPC. A vCon and its children are written in one transaction, and the batch writer retries per vCon on failure. Apply it before upgrading a deployment that runs `TENANT_MODE=writer`, which needs it (#120)
+- `20261020140000_dealer_rpc_attachment_type.sql` gives the four dealer RPCs a trailing `p_attachment_type` parameter (default `'dealer'`) and drops the old signatures. A deployment that stores another attachment type must run this server version with `VCON_DEALER_ATTACHMENT_TYPE` set (#121)
+- `20261020150000_child_tenant_id_keep_explicit.sql` makes child rows carry the parent's `tenant_id` explicitly, and the trigger keeps an explicit value when row-level security hides the parent (#120)
 - `20261109163739_revoke_anon_read_paths.sql` closes the paths that let the `anon` role read
   vCon rows past row-level security. Idempotent; apply with `supabase db push`.
   - `anon` can no longer read the `vcons_legacy` and `vcon_field_usage` views or the
@@ -76,6 +90,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `service_role`
 
 ### Added
+- `VCON_TAXONOMY_DATASET`, `VCON_DEALER_ATTACHMENT_TYPE` and `VCON_TAXONOMY_CONFIG` replace the deployment-specific taxonomy that was built into tool text. Tool descriptions are now neutral by default. See `docs/guide/configuration.md` and `examples/taxonomy-config.example.json` (#121)
+- `create_vcon` accepts a client `uuid`, so a re-post is idempotent (#121)
+- `create_vcon_from_template` takes an optional `lawful_basis` and never defaults one (#121)
+- Plugins can register resource templates, and `ReadResource` falls back to plugin resources (#122)
 - `scripts/test-anon-lockdown.sh` applies the migration chain to a throwaway Postgres behind a
   real PostgREST and checks that `anon` is refused on each closed path, before and after the
   migration and on a re-run, that `service_role` and `authenticated` see what they saw before,
@@ -198,6 +216,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it; the old script's "authenticated" client used the service role key and could not see a leak
 
 ### Fixed
+- Read hooks run on every vCon read path: `vcon_fetch`, `vcon_search`, the `search_*` and tag tools, resources, REST search and `update_vcon`. Search hits are dropped, or their snippets nulled, when a hook hides or changes the vCon (#122)
+- Tag writes invalidate the Redis vCon cache, and every `vcon_tags_mv` reader shares one throttled refresh policy (#120)
+- `embed-vcons` returns 503 when a lookup query fails instead of `embedded: 0`, so a backfill no longer stops early (#119)
+- CI publishes the `:main` image tag on every main build again. Pin a version in production (#119)
 - `docs/guide/debugging-tenant-rls.md` described the service role key as tenant-scoped, named
   migrations and functions that do not exist, and treated rows with no tenant as shared. It now
   describes what each setting does, with and without the strict pack
