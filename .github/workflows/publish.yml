@@ -4,7 +4,6 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
 
 jobs:
   publish:
@@ -28,12 +27,7 @@ jobs:
       # is the whole release. v1.4.0 was tagged but never published because the
       # old trigger waited on a GitHub release nobody cut.
       - name: Tag matches package.json
-        if: github.event_name == 'push'
-        run: |
-          pkg=$(node -p "require('./package.json').version")
-          tag="${GITHUB_REF_NAME#v}"
-          echo "tag: $tag / package.json: $pkg"
-          [ "$tag" = "$pkg" ] || { echo "::error::release tag $GITHUB_REF_NAME does not match package.json $pkg"; exit 1; }
+        run: ./scripts/check-release-tag.sh
 
       - name: Install dependencies
         run: npm ci

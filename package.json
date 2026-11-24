@@ -4,7 +4,7 @@
   "description": "MCP Server for IETF vCon - Open Source Core",
   "type": "module",
   "engines": {
-    "node": ">=18.19.0"
+    "node": "^18.19.0 || >=20.6.0"
   },
   "main": "dist/index.js",
   "bin": {

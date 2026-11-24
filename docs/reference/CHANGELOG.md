@@ -10,12 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.12.0] - 2026-11-24
 
 ### Upgrading from 1.11.0
-Four OpenTelemetry changes are not opt-in. Each needs an operator action before you upgrade.
+Several defaults change in this release and none is opt-in. Each item says what to do before you upgrade.
 
-- **Start command.** The server now starts with `node --import ./dist/instrumentation.js dist/index.js`. The Docker image, `npm start`, `npm run dev` and `scripts/start-group.sh` already do. Change any unit file, Procfile, App Runner `command` or other launcher that runs `node dist/index.js` directly. Without `--import` the server runs but records no auto-instrumented spans (HTTP, Koa, undici).
-- **Node.js 18.19 or newer.** `package.json` `engines` now says `>=18.19.0`, because the preload needs `node --import` and `module.register`. Upgrade any runtime older than 18.19 (or 20.0 to 20.5 where `module.register` is missing) first.
-- **OTLP turns on when an endpoint is set.** If `OTEL_EXPORTER_OTLP_ENDPOINT` (or `OTEL_ENDPOINT` as the fallback) is set and `OTEL_EXPORTER_TYPE` is unset, the server now exports over OTLP. Before, it exported nothing. Unset any stale endpoint variable, or set `OTEL_EXPORTER_TYPE` explicitly, if you do not want export.
-- **Renamed log fields.** Log lines use `time`, `level` (a number), `msg` and `path` (no query string) in place of `timestamp`, `level` (a string), `message` and `url`. Update log parsers, alerts and dashboards that read the old names.
+**OpenTelemetry (#130)**
+- **Start command.** The server now starts with `node --import ./dist/instrumentation.js dist/index.js`. The Docker image, `npm start`, `npm run dev` and `scripts/start-group.sh` already do. Change any unit file, Procfile, App Runner or Railway `command`, or other launcher that runs `node dist/index.js` directly. Without `--import` the server runs but records no auto-instrumented spans (HTTP, Koa, undici). The npm `bin` entry cannot take `--import`, so `npx vcon-mcp` and a global install never get auto-instrumented spans; run the node command above instead.
+- **Node.js 18.19 or newer.** `engines` is now `^18.19.0 || >=20.6.0`, because the preload needs `node --import` and `module.register`. On Node 19 and on 20.0 to 20.5 the server fails to start. Upgrade the runtime first.
+- **OTLP turns on when an endpoint is set.** If `OTEL_EXPORTER_OTLP_ENDPOINT` (or `OTEL_ENDPOINT` as the fallback) is set and `OTEL_EXPORTER_TYPE` is unset, the server now exports over OTLP. Before, it exported nothing. To stop export, unset the endpoint variables, or set `OTEL_EXPORTER_TYPE=console` or `OTEL_ENABLED=false`. `none` and `off` still resolve to OTLP.
+- **Renamed log fields.** Log lines use `time`, `level` (a number), `msg` and `path` (no query string) in place of `timestamp`, `level` (a string), `message` and `url`. `query` is dropped from request logs and `referer` loses its query. `service` follows `OTEL_SERVICE_NAME`, and these lines now respect `LOG_LEVEL`. `vcon.uuid` and the tenant label are gone from metrics. Update log parsers, alerts and dashboards that read the old names.
+
+**Other changes**
+- **Dealer attachment type (#121).** In 1.11.0 the four dealer RPCs and `vcon_fetch` with `include=["dealer"]` matched one built-in attachment type. They now match `dealer` unless `VCON_DEALER_ATTACHMENT_TYPE` is set. A deployment that keeps dealer data under the old type gets empty dealer filters, counts, aggregates and `include=["dealer"]` results, and a store without the new migration fails every dealer filter. `vcon_taxonomy` and `vcon_capabilities` also lose the built-in label, portal values, bad-call signals and recommended patterns. Before you start 1.12.0: apply `20261020140000_dealer_rpc_attachment_type.sql`, set `VCON_DEALER_ATTACHMENT_TYPE` to the type that `20260512180000_vcon_dealer_filter_and_aggregate.sql` matched, and supply the old hints through `VCON_TAXONOMY_CONFIG` (see `examples/taxonomy-config.example.json`).
+- **`SUPABASE_ANON_KEY` deployments (#123).** After `supabase db push`, a server that runs on `SUPABASE_ANON_KEY` loses the analytics, tag, schema and health routes, which call `exec_sql` and `explain_query`. The quick start and `claude-desktop-config.json` use the anon key. Switch to `SUPABASE_SERVICE_ROLE_KEY` before you apply `20261109163739_revoke_anon_read_paths.sql`.
+- **`create_vcon` with a `uuid` (#121).** A supplied `uuid` is now used, and posting it again replaces the stored vCon. 1.11.0 ignored the argument and made a new uuid. A malformed `uuid` now fails the call. Stop sending `uuid` from callers that relied on it being ignored.
+- **`DELETE /api/v1/vcons/:uuid`.** It answers 500 instead of 404 when the store errors on the existence check. Nothing is deleted. Update clients that treat 404 as "retry later" or "gone".
+- **Search plugin hooks (#122).** `beforeSearch` and `afterSearch` now run on keyword, semantic, hybrid and tag search, and receive different criteria shapes for each. Check any plugin that implements them.
 
 ### Observability
 - **Breaking: Node.js 18.19 or newer** is required for auto-instrumentation. The preload uses `node --import` and `module.register`. `package.json` `engines` and the README say so.
@@ -91,7 +99,7 @@ Four OpenTelemetry changes are not opt-in. Each needs an operator action before 
 
 ### Added
 - `VCON_TAXONOMY_DATASET`, `VCON_DEALER_ATTACHMENT_TYPE` and `VCON_TAXONOMY_CONFIG` replace the deployment-specific taxonomy that was built into tool text. Tool descriptions are now neutral by default. See `docs/guide/configuration.md` and `examples/taxonomy-config.example.json` (#121)
-- `create_vcon` accepts a client `uuid`, so a re-post is idempotent (#121)
+- `create_vcon` accepts a client `uuid`, so a re-post replaces the stored vCon (#121)
 - `create_vcon_from_template` takes an optional `lawful_basis` and never defaults one (#121)
 - Plugins can register resource templates, and `ReadResource` falls back to plugin resources (#122)
 - `scripts/test-anon-lockdown.sh` applies the migration chain to a throwaway Postgres behind a

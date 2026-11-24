@@ -37,8 +37,8 @@ docker run -d -p 3000:3000 --env-file .env vcon-mcp
 # Build
 npm run build
 
-# Run
-node dist/index.js
+# Run (the preload starts OpenTelemetry before the imports it patches)
+node --import ./dist/instrumentation.js dist/index.js
 ```
 
 ### Option 3: Kubernetes
@@ -95,7 +95,7 @@ kubectl apply -f k8s/deployment.yaml
 
 ## Prerequisites
 
-- Node.js 18 or higher
+- Node.js 18.19 or higher, except 19 and 20.0 to 20.5
 - PostgreSQL 14+ (or Supabase account)
 - Sufficient resources (see requirements)
 

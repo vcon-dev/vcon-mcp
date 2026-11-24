@@ -57,7 +57,7 @@ The Model Context Protocol (MCP) enables AI assistants to use external tools and
 
 ### Prerequisites
 
-- Node.js 18.19+ (the OpenTelemetry preload uses `node --import` and `module.register`, added in 18.19 and 20.6)
+- Node.js 18.19+ (not 19, and not 20.0 to 20.5: the OpenTelemetry preload needs `module.register`, added in 18.19 and 20.6)
 - npm or yarn
 - Supabase account ([sign up free](https://supabase.com))
 
