@@ -26,7 +26,7 @@ Several defaults change in this release and none is opt-in. Each item says what 
 - **Search plugin hooks (#122).** `beforeSearch` and `afterSearch` now run on keyword, semantic, hybrid and tag search, and receive different criteria shapes for each. Check any plugin that implements them.
 
 ### Observability
-- **Breaking: Node.js `^18.19.0 || >=20.6.0`** is required for auto-instrumentation. The preload uses `node --import` and `module.register`. `package.json` `engines` and the README say so.
+- **Breaking: Node.js `^18.19.0 || >=20.6.0`** is required. With the default start command the server does not start outside that range, because the preload uses `node --import` and `module.register`. `package.json` `engines` and the README say so.
 - **Breaking: new start command** `node --import ./dist/instrumentation.js dist/index.js`. The Docker image, `npm start`, `npm run dev` and `scripts/start-group.sh` are updated. Running `dist/index.js` without it works but records no auto-instrumented spans (HTTP, Koa, undici).
 - **Behaviour change:** OTLP export is now used whenever an endpoint is set (`OTEL_EXPORTER_OTLP_ENDPOINT`, or `OTEL_ENDPOINT` as the fallback) and `OTEL_EXPORTER_TYPE` is unset. Before, that combination exported nothing. Check for a stale `OTEL_ENDPOINT` before upgrading.
 - **Log format change:** log lines now use `time`, `level` (a number), `msg` and `path` (no query string) in place of `timestamp`, `level` (a string), `message` and `url`. Existing log parsers may break.

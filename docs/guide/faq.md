@@ -301,7 +301,7 @@ Many existing vCon implementations have errors:
 
 **Recommended:** Node.js 20.x (LTS)
 
-**Why this range:** the OpenTelemetry preload needs `node --import` and `module.register`. Also required for: Required for:
+**Why this range:** the OpenTelemetry preload needs `node --import` and `module.register`. Also required for:
 - ESM module support
 - Modern JavaScript features
 - Supabase SDK compatibility
