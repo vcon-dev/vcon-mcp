@@ -162,7 +162,7 @@ kill <PID>
 
 ### Restart the Server
 ```bash
-cd /Users/thomashowe/Documents/GitHub/vcon-mcp
+cd /path/to/vcon-mcp
 npm run dev
 ```
 
@@ -228,9 +228,9 @@ Subject: "Your Custom Vehicle Reservation at Burleson Nissan."
 
 ## 📚 Documentation
 
-- Full documentation: `/Users/thomashowe/Documents/GitHub/vcon-mcp/README.md`
-- Getting started: `/Users/thomashowe/Documents/GitHub/vcon-mcp/GETTING_STARTED.md`
-- Build guide: `/Users/thomashowe/Documents/GitHub/vcon-mcp/BUILD_GUIDE.md`
+- Full documentation: `/path/to/vcon-mcp/README.md`
+- Getting started: `/path/to/vcon-mcp/GETTING_STARTED.md`
+- Build guide: `/path/to/vcon-mcp/BUILD_GUIDE.md`
 
 ## ⚙️ Environment Variables
 
