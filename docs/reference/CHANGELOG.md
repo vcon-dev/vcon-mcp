@@ -7,8 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-11-25
+
+### Upgrading from 1.11.0
+Several defaults change in this release and none is opt-in. Each item says what to do before you upgrade.
+
+**OpenTelemetry (#130)**
+- **Start command.** The server now starts with `node --import ./dist/instrumentation.js dist/index.js`. The Docker image, `npm start`, `npm run dev` and `scripts/start-group.sh` already do. Change any unit file, Procfile, App Runner or Railway `command`, or other launcher that runs `node dist/index.js` directly. Without `--import` the server runs but records no auto-instrumented spans (HTTP, Koa, undici). The npm `bin` entry cannot take `--import`, so `npx vcon-mcp` and a global install never get auto-instrumented spans; run the node command above instead.
+- **Node.js 18.19 or newer.** `engines` is now `^18.19.0 || >=20.6.0`, because the preload needs `node --import` and `module.register`. On Node 19 and on 20.0 to 20.5 the server fails to start. Upgrade the runtime first.
+- **OTLP turns on when an endpoint is set.** If `OTEL_EXPORTER_OTLP_ENDPOINT` (or `OTEL_ENDPOINT` as the fallback) is set and `OTEL_EXPORTER_TYPE` is unset, the server now exports over OTLP. Before, it exported nothing. To stop export, unset the endpoint variables, or set `OTEL_EXPORTER_TYPE=console` or `OTEL_ENABLED=false`. `none` and `off` still resolve to OTLP.
+- **Renamed log fields.** Log lines use `time`, `level` (a number), `msg` and `path` (no query string) in place of `timestamp`, `level` (a string), `message` and `url`. `query` is dropped from request logs and `referer` loses its query. `service` follows `OTEL_SERVICE_NAME`, and these lines now respect `LOG_LEVEL`. `vcon.uuid` and the tenant label are gone from metrics. Update log parsers, alerts and dashboards that read the old names.
+
+**Other changes**
+- **Dealer attachment type (#121).** In 1.11.0 the four dealer RPCs and `vcon_fetch` with `include=["dealer"]` matched one built-in attachment type. They now match `dealer` unless `VCON_DEALER_ATTACHMENT_TYPE` is set. A deployment that keeps dealer data under the old type gets empty dealer filters, counts, aggregates and `include=["dealer"]` results, and a store without the new migration fails every dealer filter. `vcon_taxonomy` and `vcon_capabilities` also lose the built-in label, portal values, bad-call signals and recommended patterns. Before you start 1.12.0: apply `20261020140000_dealer_rpc_attachment_type.sql`, set `VCON_DEALER_ATTACHMENT_TYPE` to the type that `20260512180000_vcon_dealer_filter_and_aggregate.sql` matched, and supply the old hints through `VCON_TAXONOMY_CONFIG` (see `examples/taxonomy-config.example.json`). Once that migration is applied, a 1.11.0 server also matches `dealer` and ignores the variable. A deployment with another type therefore gets empty dealer results in the window before 1.12.0 starts, and after a rollback to 1.11.0.
+- **`SUPABASE_ANON_KEY` deployments (#123).** After `supabase db push`, a server that runs on `SUPABASE_ANON_KEY` loses the analytics, tag, schema and health routes, which call `exec_sql` and `explain_query`. The quick start and `claude-desktop-config.json` use the anon key. Switch to `SUPABASE_SERVICE_ROLE_KEY` before you apply `20261109163739_revoke_anon_read_paths.sql`.
+- **`create_vcon` with a `uuid` (#121).** A supplied `uuid` is now used, and posting it again replaces the stored vCon. 1.11.0 ignored the argument and made a new uuid. A malformed `uuid` now fails the call. Stop sending `uuid` from callers that relied on it being ignored.
+- **`DELETE /api/v1/vcons/:uuid`.** It answers 500 instead of 404 when the store errors on the existence check. Nothing is deleted. Update clients that treat 404 as "retry later" or "gone".
+- **Search plugin hooks (#122).** `beforeSearch` and `afterSearch` now run on keyword, semantic, hybrid and tag search, and receive different criteria shapes for each. Check any plugin that implements them.
+
 ### Observability
-- **Breaking: Node.js 18.19 or newer** is required for auto-instrumentation. The preload uses `node --import` and `module.register`. `package.json` `engines` and the README say so.
+- **Breaking: Node.js `^18.19.0 || >=20.6.0`** is required. With the default start command the server does not start outside that range, because the preload uses `node --import` and `module.register`. `package.json` `engines` and the README say so.
 - **Breaking: new start command** `node --import ./dist/instrumentation.js dist/index.js`. The Docker image, `npm start`, `npm run dev` and `scripts/start-group.sh` are updated. Running `dist/index.js` without it works but records no auto-instrumented spans (HTTP, Koa, undici).
 - **Behaviour change:** OTLP export is now used whenever an endpoint is set (`OTEL_EXPORTER_OTLP_ENDPOINT`, or `OTEL_ENDPOINT` as the fallback) and `OTEL_EXPORTER_TYPE` is unset. Before, that combination exported nothing. Check for a stale `OTEL_ENDPOINT` before upgrading.
 - **Log format change:** log lines now use `time`, `level` (a number), `msg` and `path` (no query string) in place of `timestamp`, `level` (a string), `message` and `url`. Existing log parsers may break.
@@ -21,6 +39,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `@opentelemetry/sdk-trace-base` is now declared in `package.json`.
 
 ### Migrations
+- `20261020120000_guard_dialog_body_tsvector.sql` makes the dialog and analysis full-text triggers skip base64url and non-text bodies and cap the text size, so a binary body no longer fails the write (#120)
+- `20261020130000_save_vcon_batch.sql` adds the `save_vcon_batch` RPC. A vCon and its children are written in one transaction, and the batch writer retries per vCon on failure. Apply it before upgrading a deployment that runs `TENANT_MODE=writer`, which needs it (#120)
+- `20261020140000_dealer_rpc_attachment_type.sql` gives the four dealer RPCs a trailing `p_attachment_type` parameter (default `'dealer'`) and drops the old signatures. A deployment that stores another attachment type must run this server version with `VCON_DEALER_ATTACHMENT_TYPE` set (#121)
+- `20261020150000_child_tenant_id_keep_explicit.sql` makes child rows carry the parent's `tenant_id` explicitly, and the trigger keeps an explicit value when row-level security hides the parent (#120)
 - `20261109163739_revoke_anon_read_paths.sql` closes the paths that let the `anon` role read
   vCon rows past row-level security. Idempotent; apply with `supabase db push`.
   - `anon` can no longer read the `vcons_legacy` and `vcon_field_usage` views or the
@@ -76,6 +98,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `service_role`
 
 ### Added
+- `VCON_TAXONOMY_DATASET`, `VCON_DEALER_ATTACHMENT_TYPE` and `VCON_TAXONOMY_CONFIG` replace the deployment-specific taxonomy that was built into tool text. Tool descriptions are now neutral by default. See `docs/guide/configuration.md` and `examples/taxonomy-config.example.json` (#121)
+- `create_vcon` accepts a client `uuid`, so a re-post replaces the stored vCon (#121)
+- `create_vcon_from_template` takes an optional `lawful_basis` and never defaults one (#121)
+- Plugins can register resource templates, and `ReadResource` falls back to plugin resources (#122)
 - `scripts/test-anon-lockdown.sh` applies the migration chain to a throwaway Postgres behind a
   real PostgREST and checks that `anon` is refused on each closed path, before and after the
   migration and on a re-run, that `service_role` and `authenticated` see what they saw before,
@@ -198,6 +224,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it; the old script's "authenticated" client used the service role key and could not see a leak
 
 ### Fixed
+- Read hooks run on every vCon read path: `vcon_fetch`, `vcon_search`, the `search_*` and tag tools, resources, REST search and `update_vcon`. Search hits are dropped, or their snippets nulled, when a hook hides or changes the vCon (#122)
+- Tag writes invalidate the Redis vCon cache, and every `vcon_tags_mv` reader shares one throttled refresh policy (#120)
+- `embed-vcons` returns 503 when a lookup query fails instead of `embedded: 0`, so a backfill no longer stops early (#119)
+- CI publishes the `:main` image tag on every main build again. Pin a version in production (#119)
 - `docs/guide/debugging-tenant-rls.md` described the service role key as tenant-scoped, named
   migrations and functions that do not exist, and treated rows with no tenant as shared. It now
   describes what each setting does, with and without the strict pack

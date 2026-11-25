@@ -614,7 +614,7 @@ fly deploy
     "builder": "DOCKERFILE"
   },
   "deploy": {
-    "startCommand": "node /app/dist/index.js",
+    "startCommand": "node --import /app/dist/instrumentation.js /app/dist/index.js",
     "healthcheckPath": "/api/v1/health",
     "healthcheckTimeout": 30,
     "restartPolicyType": "ON_FAILURE"

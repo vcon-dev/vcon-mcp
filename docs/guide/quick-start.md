@@ -31,7 +31,7 @@ That's it! Continue reading for details.
 **Check you have:**
 
 ```bash
-# Node.js 18+
+# Node.js 18.19+ (not 19, not 20.0 to 20.5)
 node --version
 
 # npm 9+

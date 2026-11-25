@@ -106,7 +106,7 @@ interface Analysis {
 
 ### Prerequisites
 
-- Node.js 18+ installed
+- Node.js 18.19 or newer (not 19, not 20.0 to 20.5) installed
 - Supabase account (free tier works)
 - Git installed
 
@@ -302,7 +302,7 @@ Before you start building:
 - [ ] Read QUICK_REFERENCE.md
 - [ ] Understand the 7 critical corrections
 - [ ] Have Supabase account ready
-- [ ] Have Node.js 18+ installed
+- [ ] Have Node.js 18.19 or newer (not 19, not 20.0 to 20.5) installed
 - [ ] Have code editor ready
 - [ ] Have 4-6 hours available for first build
 

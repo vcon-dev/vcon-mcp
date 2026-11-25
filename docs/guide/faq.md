@@ -297,11 +297,11 @@ Many existing vCon implementations have errors:
 
 ### What Node.js version do I need?
 
-**Minimum:** Node.js 18.0
+**Minimum:** Node.js 18.19, or 20.6 and later (the server fails to start on Node 19 and on 20.0 to 20.5)
 
 **Recommended:** Node.js 20.x (LTS)
 
-**Why 18+:** Required for:
+**Why this range:** the OpenTelemetry preload needs `node --import` and `module.register`. Also required for:
 - ESM module support
 - Modern JavaScript features
 - Supabase SDK compatibility
