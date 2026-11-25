@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.12.0] - 2026-11-24
+## [1.12.0] - 2026-11-25
 
 ### Upgrading from 1.11.0
 Several defaults change in this release and none is opt-in. Each item says what to do before you upgrade.
