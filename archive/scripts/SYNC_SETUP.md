@@ -17,13 +17,13 @@ The sync runs every hour and loads vCons from the last 3 hours (to handle gaps i
 ### 1. Make the script executable
 
 ```bash
-chmod +x /Users/thomashowe/Documents/GitHub/vcon-mcp/scripts/sync-vcons-hourly.sh
+chmod +x /path/to/vcon-mcp/scripts/sync-vcons-hourly.sh
 ```
 
 ### 2. Test the script manually
 
 ```bash
-cd /Users/thomashowe/Documents/GitHub/vcon-mcp
+cd /path/to/vcon-mcp
 ./scripts/sync-vcons-hourly.sh
 ```
 

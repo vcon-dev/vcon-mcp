@@ -7,7 +7,7 @@ set -e
 echo "🚀 Installing hourly vCon sync job..."
 echo ""
 
-PROJECT_DIR="/Users/thomashowe/Documents/GitHub/vcon-mcp"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$PROJECT_DIR"
 
 # Step 1: Make script executable

@@ -8,7 +8,7 @@
     
     <!-- Program to run -->
     <key>Program</key>
-    <string>/Users/thomashowe/Documents/GitHub/vcon-mcp/scripts/sync-vcons-hourly.sh</string>
+    <string>/path/to/vcon-mcp/scripts/sync-vcons-hourly.sh</string>
     
     <!-- Run every hour -->
     <key>StartInterval</key>
@@ -24,10 +24,10 @@
     
     <!-- Standard output/error logs -->
     <key>StandardOutPath</key>
-    <string>/Users/thomashowe/Documents/GitHub/vcon-mcp/logs/vcon-sync-stdout.log</string>
+    <string>/path/to/vcon-mcp/logs/vcon-sync-stdout.log</string>
     
     <key>StandardErrorPath</key>
-    <string>/Users/thomashowe/Documents/GitHub/vcon-mcp/logs/vcon-sync-stderr.log</string>
+    <string>/path/to/vcon-mcp/logs/vcon-sync-stderr.log</string>
     
     <!-- Environment variables -->
     <key>EnvironmentVariables</key>
@@ -35,12 +35,12 @@
         <key>PATH</key>
         <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin</string>
         <key>HOME</key>
-        <string>/Users/thomashowe</string>
+        <string>/Users/YOUR_USERNAME</string>
     </dict>
     
     <!-- Working directory -->
     <key>WorkingDirectory</key>
-    <string>/Users/thomashowe/Documents/GitHub/vcon-mcp</string>
+    <string>/path/to/vcon-mcp</string>
     
     <!-- Only run when laptop is awake and has network -->
     <key>StartOnMount</key>

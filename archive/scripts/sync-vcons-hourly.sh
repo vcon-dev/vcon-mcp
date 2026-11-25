@@ -7,7 +7,7 @@
 set -e
 
 # Configuration
-PROJECT_DIR="/Users/thomashowe/Documents/GitHub/vcon-mcp"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LOG_DIR="$PROJECT_DIR/logs"
 LOG_FILE="$LOG_DIR/vcon-sync-$(date +%Y%m%d).log"
 LOCK_FILE="/tmp/vcon-sync.lock"

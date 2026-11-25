@@ -58,7 +58,7 @@ Integrate your MCP server directly with Claude Desktop.
 
 1. **Copy the config file:**
    ```bash
-   cp /Users/thomashowe/Documents/GitHub/vcon-mcp/claude-desktop-config.json \
+   cp /path/to/vcon-mcp/claude-desktop-config.json \
       ~/Library/Application\ Support/Claude/claude_desktop_config.json
    ```
 
@@ -100,7 +100,7 @@ Run the test script directly to verify all functionality.
 
 **Run tests:**
 ```bash
-cd /Users/thomashowe/Documents/GitHub/vcon-mcp
+cd /path/to/vcon-mcp
 npx tsx scripts/test-mcp-tools.ts
 ```
 

@@ -34,7 +34,7 @@ The server now logs:
 ### Step 1: Run the Migration
 
 ```bash
-cd /Users/thomashowe/Documents/GitHub/vcon-mcp
+cd /path/to/vcon-mcp
 
 # Apply the new migration
 psql $DATABASE_URL -f supabase/migrations/20251113000000_add_set_tenant_helper.sql
@@ -97,7 +97,7 @@ Edit your Claude Desktop config (`~/Library/Application Support/Claude/claude_de
   "mcpServers": {
     "vcon": {
       "command": "node",
-      "args": ["/Users/thomashowe/Documents/GitHub/vcon-mcp/build/index.js"],
+      "args": ["/path/to/vcon-mcp/build/index.js"],
       "env": {
         "SUPABASE_URL": "https://your-project.supabase.co",
         "SUPABASE_SERVICE_ROLE_KEY": "your_service_role_key",

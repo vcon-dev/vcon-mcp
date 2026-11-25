@@ -3,7 +3,7 @@
         "vcon": {
             "command": "node",
             "args": [
-                "/Users/thomashowe/Documents/GitHub/vcon-mcp/dist/index.js"
+                "/path/to/vcon-mcp/dist/index.js"
             ],
             "env": {
                 "SUPABASE_URL": "http://127.0.0.1:54321",
